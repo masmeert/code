@@ -597,7 +597,10 @@ export function PromptSelect({
                   )}
                 >
                   {option.icon ? (
-                    <span className="grid size-3.5 shrink-0 place-items-center self-start [&_svg]:size-3.5" style={option.description ? { marginTop: 3 } : undefined}>
+                    <span
+                      className={cn("grid size-4 shrink-0 place-items-center [&_svg]:size-3.5", option.description && "self-start")}
+                      style={option.description ? { marginTop: 2 } : undefined}
+                    >
                       {option.icon}
                     </span>
                   ) : null}
