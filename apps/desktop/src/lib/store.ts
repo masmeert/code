@@ -221,7 +221,13 @@ const reduceItems = (items: ReadonlyArray<TranscriptItem>, event: RuntimeEvent, 
       }));
     case "turn.checkpoint": {
       const { messageId, files, additions, deletions } = event;
-      return upsert(items, `checkpoint:${messageId}`, () => ({ kind: "checkpoint", id: `checkpoint:${messageId}`, messageId, files, additions, deletions }));
+      const item: TranscriptItem = { kind: "checkpoint", id: `checkpoint:${messageId}`, messageId, files, additions, deletions };
+      // Worked out after the turn ends, by which time a queued message may have started the next
+      // turn: it goes at the end of its own turn, before the next prompt.
+      const start = items.findIndex((i) => i.id === messageId);
+      const next = start === -1 ? -1 : items.findIndex((i, index) => index > start && i.kind === "user" && !i.steer);
+      if (next === -1) return upsert(items, item.id, () => item);
+      return [...items.slice(0, next).filter((i) => i.id !== item.id), item, ...items.slice(next).filter((i) => i.id !== item.id)];
     }
     case "thread.rewound": {
       const index = items.findIndex((item) => item.id === event.messageId);

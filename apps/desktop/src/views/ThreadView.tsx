@@ -10,29 +10,36 @@ import {
 } from "@/components/agents/message";
 import { Markdown } from "@/components/agents/markdown";
 import { ThinkingShimmer } from "@/components/agents/loading-states/thinking-shimmer";
-import { PromptInput, PromptSelect } from "@/components/agents/prompt-input";
+import { PromptSelect } from "@/components/agents/prompt-input";
 import { StreamingResponse } from "@/components/agents/streaming-response";
 import { ToolApproval, ToolApprovalCode } from "@/components/agents/tool-approval";
 import { ToolGroup, type ToolCall } from "@/components/agents/tool-group";
 import { ProjectBadge } from "@/components/project-badge";
+import { cn } from "@/lib/utils";
 import { PROVIDER_AVATAR_CLASS, PROVIDER_LOGO } from "@/components/provider-logo";
-import type { Attachment, PermissionLevel, Project, ProviderKind, TurnOptions } from "@apcode/contracts";
+import type { Attachment, Project, ProviderKind, TurnOptions } from "@apcode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@/components/motion/animated-sidebar";
-import { FilePen, FileText, Folder, FolderPlus, GitBranch, ImageIcon, LockOpen, PanelLeft, PanelRight, ShieldCheck } from "lucide-react";
-import { lazy, memo, type ReactNode, Suspense, useEffect, useMemo, useState } from "react";
+import { ArrowUp, FileDiff, FileText, FolderTree, ImageIcon, PanelLeft, PanelRight, Quote, Undo2, X } from "lucide-react";
+import { createContext, lazy, memo, type ReactNode, type RefObject, Suspense, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fromSent } from "../lib/composer.ts";
+import { appendToDraft, focusComposer, setDraft } from "../lib/drafts.ts";
+import { decodeChoice, defaultModel, encodeChoice, modelChoices, PROVIDER_LABEL } from "../lib/models.ts";
 import {
-  EFFORT_LABEL,
-  EFFORTS,
-  PERMISSION_DESCRIPTION,
-  PERMISSION_LABEL,
-  toTurnOptions,
-  useAttachments,
-  useTurnPrefs,
-} from "../lib/composer.ts";
-import { decodeChoice, defaultEffort, defaultModel, encodeChoice, modelChoices, PROVIDER_LABEL, recommendedBadge } from "../lib/models.ts";
-import { createThread, loadOlder, markSeen, respondApproval, send, useStore, useTranscript, type TranscriptItem } from "../lib/store.ts";
+  createThread,
+  type FollowUp,
+  loadOlder,
+  markSeen,
+  queueFollowUp,
+  respondApproval,
+  send,
+  sendFollowUpNow,
+  takeFollowUps,
+  useStore,
+  useTranscript,
+  type TranscriptItem,
+} from "../lib/store.ts";
 import { readWidth } from "../lib/useResizable.ts";
-import { addProject } from "../lib/projects.ts";
+import { Composer, useWorkspaceChoice } from "./Composer.tsx";
 import { GitMenu } from "./GitMenu.tsx";
 
 /** Same key the panel saves its dragged width under. */
@@ -42,15 +49,15 @@ const PANEL_WIDTH_KEY = "apcode.diffPanelWidth";
 const DiffPanel = lazy(() => import("./DiffPanel.tsx").then((m) => ({ default: m.DiffPanel })));
 
 /** Consecutive agent items form one turn under a single avatar. */
-type Turn =
-  | { readonly from: "user"; readonly id: string; readonly text: string; readonly attachments: ReadonlyArray<Attachment> }
-  | { readonly from: "assistant"; readonly id: string; readonly items: Array<TranscriptItem> };
+type UserItem = Extract<TranscriptItem, { kind: "user" }>;
+
+type Turn = { readonly from: "user"; readonly id: string; readonly item: UserItem } | { readonly from: "assistant"; readonly id: string; readonly items: Array<TranscriptItem> };
 
 const toTurns = (items: ReadonlyArray<TranscriptItem>): Array<Turn> => {
   const turns: Array<Turn> = [];
   for (const item of items) {
     if (item.kind === "user") {
-      turns.push({ from: "user", id: item.id, text: item.text, attachments: item.attachments });
+      turns.push({ from: "user", id: item.id, item });
       continue;
     }
     const last = turns.at(-1);
@@ -80,7 +87,17 @@ const toBlocks = (items: ReadonlyArray<TranscriptItem>): Array<Block> => {
 };
 
 /** Top bar: project / title breadcrumb. Leaves room for the traffic lights when the sidebar is folded away. */
-const Header = ({ project, title, actions }: { project?: Pick<Project, "id" | "name"> | undefined; title: string; actions?: ReactNode }) => {
+const Header = ({
+  project,
+  title,
+  badge,
+  actions,
+}: {
+  project?: Pick<Project, "id" | "name"> | undefined;
+  title: string;
+  badge?: ReactNode;
+  actions?: ReactNode;
+}) => {
   const { open } = useAnimatedSidebar();
   return (
     // Same row geometry as the sidebar's title bar, so both line up with the traffic lights.
@@ -98,6 +115,7 @@ const Header = ({ project, title, actions }: { project?: Pick<Project, "id" | "n
         </>
       ) : null}
       <span className="min-w-0 truncate text-sm font-medium text-foreground">{title}</span>
+      {badge}
       {actions ? <span className="ml-auto flex shrink-0 items-center gap-1 pl-2">{actions}</span> : null}
     </header>
   );
@@ -113,6 +131,10 @@ export const DraftView = ({ path, onPickProject }: { path: string | null; onPick
   const preferred = lastModel ? encodeChoice(settings.lastProvider, lastModel) : undefined;
   const [choice, setChoice] = useState<string | undefined>(undefined);
   const selected = [choice, preferred].find((c) => c && choices.some((o) => o.value === c)) ?? choices[0]?.value;
+  // Shift-click adds models: the prompt then starts one thread per model, each in its own worktree.
+  const [extras, setExtras] = useState<Array<string>>([]);
+  const extraModels = extras.filter((c) => c !== selected && choices.some((o) => o.value === c));
+  const workspace = useWorkspaceChoice();
 
   return (
     <>
@@ -133,181 +155,34 @@ export const DraftView = ({ path, onPickProject }: { path: string | null; onPick
         sendDisabled={!path}
         models={choices}
         model={selected}
-        onModelChange={setChoice}
+        onModelChange={(value) => {
+          setChoice(value);
+          setExtras([]);
+        }}
+        extraModels={extraModels}
+        onToggleModel={(value) => setExtras((prev) => (prev.includes(value) ? prev.filter((c) => c !== value) : [...prev, value]))}
+        workspace={workspace}
         placeholder={
           !selected
             ? "No harness linked"
             : !path
               ? "Pick a project below to start…"
-              : `Ask ${PROVIDER_LABEL[decodeChoice(selected).provider]}…`
+              : extraModels.length
+                ? `Ask ${extraModels.length + 1} models, each in its own worktree…`
+                : `Ask ${PROVIDER_LABEL[decodeChoice(selected).provider]}…`
         }
-        onSubmit={(text, options) => {
+        onSubmit={(text, options, how) => {
           if (!selected || !path) return;
-          const { provider, model } = decodeChoice(selected);
-          createThread({ path, provider, model, text, options });
+          const all = [selected, ...extraModels];
+          for (const value of all) {
+            const { provider, model } = decodeChoice(value);
+            // Several models, or ⌘Enter: start in the background and stay in the draft.
+            const open = all.length === 1 && !how.alternate;
+            createThread({ path, provider, model, text, options, workspace: all.length > 1 ? "worktree" : workspace.value, open });
+          }
         }}
       />
     </>
-  );
-};
-
-const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {
-  ask: ShieldCheck,
-  "auto-edit": FilePen,
-  "full-access": LockOpen,
-};
-
-const PERMISSION_OPTIONS = (Object.keys(PERMISSION_LABEL) as Array<PermissionLevel>).map((level) => {
-  const Icon = PERMISSION_ICON[level];
-  return { value: level, label: PERMISSION_LABEL[level], description: PERMISSION_DESCRIPTION[level], icon: <Icon /> };
-});
-
-const Composer = (props: {
-  /** Whose effort/permission picks these are: a thread, or a draft. */
-  prefsKey: string;
-  provider: ProviderKind;
-  /** Project folder; null in a draft whose project isn't picked yet. */
-  cwd: string | null;
-  /** Drafts only: turns the folder chip into a project picker. */
-  onPickProject?: (path: string | null) => void;
-  busy?: boolean;
-  disabled?: boolean;
-  /** Keeps the composer usable but blocks sending (e.g. no project picked yet). */
-  sendDisabled?: boolean;
-  models: ReturnType<typeof modelChoices>;
-  model: string | undefined;
-  onModelChange: (value: string) => void;
-  placeholder: string;
-  onSubmit: (text: string, options: TurnOptions) => void;
-  onStop?: () => void;
-}) => {
-  const [prefs, setPrefs] = useTurnPrefs(props.prefsKey, props.provider);
-  const files = useAttachments({ acceptDrops: !props.disabled });
-  const providers = useStore((s) => s.providers);
-  // No pick means the model's own default, which the menu stars; picking the starred level keeps following it.
-  const fallbackEffort = defaultEffort(providers, props.model);
-  const effortOptions = EFFORTS[props.provider].map((effort) => ({
-    value: effort,
-    label: EFFORT_LABEL[effort],
-    badge: effort === fallbackEffort ? recommendedBadge() : undefined,
-  }));
-
-  return (
-    <div className="shrink-0 px-3 pb-3">
-      <div className="mx-auto max-w-3xl">
-        <PromptInput
-          loading={props.busy ?? false}
-          disabled={props.disabled ?? false}
-          submitDisabled={props.sendDisabled ?? false}
-          models={props.models}
-          model={props.model}
-          onModelChange={props.onModelChange}
-          controls={[
-            <PromptSelect
-              key="effort"
-              title="Reasoning effort"
-              options={effortOptions}
-              value={prefs.effort ?? fallbackEffort}
-              onChange={(value) => setPrefs({ effort: value === fallbackEffort ? null : (value as NonNullable<typeof prefs.effort>) })}
-              placeholder="Default effort"
-              disabled={props.disabled}
-              width="w-52"
-            />,
-            <PromptSelect
-              key="permission"
-              title="Permissions"
-              options={PERMISSION_OPTIONS}
-              value={prefs.permission}
-              onChange={(value) => setPrefs({ permission: value as PermissionLevel })}
-              disabled={props.disabled}
-              showOptionIcon
-              width="w-72"
-              className={prefs.permission === "full-access" ? "text-warning hover:text-warning" : undefined}
-            />,
-          ]}
-          attachments={[...files.attachments]}
-          onAttach={() => void files.pick()}
-          onRemoveAttachment={files.remove}
-          onPasteFiles={(pasted) => void files.addFiles(pasted)}
-          onSubmit={(text) => props.onSubmit(text, toTurnOptions(prefs, files.take()))}
-          onStop={props.onStop}
-          minRows={2}
-          maxRows={10}
-          placeholder={props.placeholder}
-          footer={
-            <>
-              {props.onPickProject ? (
-                <ProjectSelect cwd={props.cwd} onPick={props.onPickProject} />
-              ) : (
-                <span className="flex min-w-0 items-center gap-1.5 px-1.5">
-                  <Folder className="size-3.5 shrink-0" />
-                  <span className="truncate">{props.cwd?.split("/").at(-1) ?? props.cwd}</span>
-                </span>
-              )}
-              {props.cwd ? <BranchPicker cwd={props.cwd} disabled={props.busy ?? false} /> : <span />}
-            </>
-          }
-          autoFocus
-        />
-      </div>
-    </div>
-  );
-};
-
-const ADD_PROJECT = "\u0000add-project";
-
-/** Which project a draft starts in; also the way to add one. */
-const ProjectSelect = ({ cwd, onPick }: { cwd: string | null; onPick: (path: string | null) => void }) => {
-  const projects = useStore((s) => s.projects);
-  const options = [
-    ...[...projects]
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((project) => ({ value: project.path, label: project.name, icon: <ProjectBadge project={project} /> })),
-    { value: ADD_PROJECT, label: "Add project…", icon: <FolderPlus /> },
-  ];
-  return (
-    <PromptSelect
-      title="Project"
-      icon={<Folder />}
-      options={options}
-      value={cwd ?? undefined}
-      placeholder="Pick a project"
-      onChange={(value) => (value === ADD_PROJECT ? void addProject().then((path) => path && onPick(path)) : onPick(value))}
-      width="w-64"
-      className={cwd ? "h-6 text-[11px]" : "h-6 text-[11px] text-foreground"}
-    />
-  );
-};
-
-/** Current branch of the project folder; picking another checks it out. */
-const BranchPicker = ({ cwd, disabled }: { cwd: string; disabled: boolean }) => {
-  const list = useStore((s) => s.branches[cwd]);
-  useEffect(() => send({ _tag: "git.listBranches", path: cwd }), [cwd]);
-
-  if (!list) return null;
-  if (!list.current && !list.branches.length) return <span className="px-1.5 text-muted-foreground/70">Not a git repo</span>;
-  return (
-    <PromptSelect
-      title="Switch branch"
-      icon={<GitBranch />}
-      searchPlaceholder="Find or create a branch…"
-      onCreate={(branch) => send({ _tag: "git.createBranch", path: cwd, branch })}
-      createLabel={(branch) => (
-        <>
-          Create <span className="font-mono">{branch}</span>
-        </>
-      )}
-      options={list.branches.map((branch) => ({ value: branch, label: branch }))}
-      value={list.current ?? undefined}
-      placeholder="Detached"
-      onChange={(branch) => branch !== list.current && send({ _tag: "git.checkout", path: cwd, branch })}
-      onOpenChange={(open) => open && send({ _tag: "git.listBranches", path: cwd })}
-      disabled={disabled}
-      note={list.error ? <span className="whitespace-pre-wrap text-destructive">{list.error}</span> : undefined}
-      align="end"
-      width="w-72"
-      className="h-6 font-mono text-[11px]"
-    />
   );
 };
 
@@ -330,6 +205,99 @@ const AttachmentList = ({ attachments }: { attachments: ReadonlyArray<Attachment
 );
 
 const NO_ITEMS: ReadonlyArray<TranscriptItem> = [];
+const NO_FOLLOW_UPS: ReadonlyArray<FollowUp> = [];
+
+/** Opens the changes panel on one turn; provided by the thread view to the checkpoint chips deep in the transcript. */
+const TurnDiffContext = createContext<(messageId: string) => void>(() => {});
+
+/** Held messages go back into the composer, after whatever is there. */
+const returnToComposer = (threadId: string, followUps: ReadonlyArray<FollowUp>) => {
+  if (!followUps.length) return;
+  appendToDraft(threadId, followUps.map((f) => f.text).join("\n\n"));
+  focusComposer();
+};
+
+/** A message waiting for the turn to end: sends by itself then, or now, or goes back to the composer. */
+const FollowUpBubble = ({ threadId, followUp }: { threadId: string; followUp: FollowUp }) => (
+  <Message from="user" animateIn>
+    <MessageContent className="items-end gap-1">
+      <div className="max-w-full rounded-2xl border border-dashed border-border px-3.5 py-2 text-sm whitespace-pre-wrap text-muted-foreground">
+        {followUp.text}
+      </div>
+      <div className="flex items-center gap-0.5 text-muted-foreground">
+        <span className="px-1 text-[11px]">Sends when the turn ends</span>
+        <IconAction label="Send now" onClick={() => sendFollowUpNow(threadId, followUp.id)}>
+          <ArrowUp className="size-3.5" />
+        </IconAction>
+        <IconAction label="Back to the composer" onClick={() => returnToComposer(threadId, takeFollowUps(threadId, followUp.id))}>
+          <X className="size-3.5" />
+        </IconAction>
+      </div>
+    </MessageContent>
+  </Message>
+);
+
+const IconAction = (props: { label: string; onClick: () => void; children: ReactNode }) => (
+  <button
+    type="button"
+    title={props.label}
+    aria-label={props.label}
+    onClick={props.onClick}
+    className="grid size-6 place-items-center rounded-md outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+  >
+    {props.children}
+  </button>
+);
+
+/**
+ * Selecting text in an agent reply offers to quote it in the composer, where you can
+ * comment on it (t3code's "Cite in composer").
+ */
+const QuoteSelection = ({ container, threadId }: { container: RefObject<HTMLDivElement | null>; threadId: string }) => {
+  const [quote, setQuote] = useState<{ text: string; top: number; left: number } | null>(null);
+  useEffect(() => {
+    const area = container.current;
+    if (!area) return;
+    const update = () => {
+      const selection = document.getSelection();
+      const text = selection?.toString().trim() ?? "";
+      const node = selection?.anchorNode;
+      const inReply = node && area.contains(node) && (node instanceof Element ? node : node.parentElement)?.closest('[data-from="assistant"]');
+      if (!selection || selection.isCollapsed || !text || !inReply) return setQuote(null);
+      const rect = selection.getRangeAt(0).getBoundingClientRect();
+      const box = area.getBoundingClientRect();
+      setQuote({ text, top: rect.top - box.top - 34, left: Math.min(Math.max(rect.left - box.left + rect.width / 2, 40), box.width - 40) });
+    };
+    const clear = () => document.getSelection()?.isCollapsed && setQuote(null);
+    area.addEventListener("mouseup", update);
+    area.addEventListener("keyup", update);
+    document.addEventListener("selectionchange", clear);
+    return () => {
+      area.removeEventListener("mouseup", update);
+      area.removeEventListener("keyup", update);
+      document.removeEventListener("selectionchange", clear);
+    };
+  }, [container]);
+  if (!quote) return null;
+  return (
+    <button
+      type="button"
+      style={{ top: Math.max(quote.top, 4), left: quote.left }}
+      // Keep the selection while clicking.
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={() => {
+        appendToDraft(threadId, `${quote.text.split("\n").map((line) => `> ${line}`).join("\n")}\n\n`);
+        document.getSelection()?.removeAllRanges();
+        setQuote(null);
+        focusComposer();
+      }}
+      className="absolute z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-lg border border-border bg-popover px-2 py-1 text-xs text-foreground shadow-panel"
+    >
+      <Quote className="size-3" />
+      Quote in composer
+    </button>
+  );
+};
 
 export const ThreadView = ({ threadId }: { threadId: string }) => {
   const info = useStore((s) => s.threads[threadId])!;
@@ -347,6 +315,21 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   const project = useStore((s) => s.projects.find((p) => p.id === info.projectId));
   // Per thread: switching threads remounts this view, so the panel starts closed.
   const [diffOpen, setDiffOpen] = useState(false);
+  // Null shows all uncommitted changes; a message id shows just what that turn changed.
+  const [diffTurn, setDiffTurn] = useState<string | null>(null);
+  const openTurnDiff = useCallback((messageId: string) => {
+    setDiffTurn(messageId);
+    setDiffOpen(true);
+  }, []);
+  // A rewind can take the turn on show with it.
+  const diffTurnGone = diffTurn !== null && transcript?.status === "live" && !items.some((item) => item.id === diffTurn);
+  useEffect(() => {
+    if (diffTurnGone) setDiffTurn(null);
+  }, [diffTurnGone]);
+  const followUps = useStore((s) => s.followUps[threadId]) ?? NO_FOLLOW_UPS;
+  const followUpMode = useStore((s) => s.settings.followUp ?? "queue");
+  const history = useMemo(() => items.flatMap((item) => (item.kind === "user" && item.text ? [item.text] : [])), [items]);
+  const scrollArea = useRef<HTMLDivElement>(null);
   // Re-read the diff whenever a tool finishes or a turn ends: either may have changed files.
   const finishedTools = items.reduce((n, item) => (item.kind === "tool" && item.output !== null ? n + 1 : n), 0);
   const diffKey = `${status}:${info.updatedAt}:${finishedTools}`;
@@ -365,6 +348,17 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
       <Header
         project={project ?? { id: info.projectId, name: info.cwd.split("/").at(-1) ?? info.cwd }}
         title={info.title}
+        badge={
+          info.worktree ? (
+            <span
+              title={`Worktree: ${info.cwd}`}
+              className="flex shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+            >
+              <FolderTree className="size-3" />
+              {info.branch ?? "worktree"}
+            </span>
+          ) : null
+        }
         actions={
           <>
             <GitMenu cwd={info.cwd} refreshKey={diffKey} />
@@ -373,7 +367,10 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
               title={diffOpen ? "Hide changes" : "Show changes"}
               aria-label={diffOpen ? "Hide changes" : "Show changes"}
               aria-pressed={diffOpen}
-              onClick={() => setDiffOpen(!diffOpen)}
+              onClick={() => {
+                setDiffOpen(!diffOpen);
+                setDiffTurn(null);
+              }}
               className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${diffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
             >
               <PanelRight className="size-4" />
@@ -383,7 +380,8 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
       />
 
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div ref={scrollArea} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <QuoteSelection container={scrollArea} threadId={threadId} />
           <MessageScroller
             busy={busy}
             navigation="rail"
@@ -402,7 +400,9 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                   {transcript.loadingOlder ? "Loading…" : "Load earlier messages"}
                 </button>
               ) : null}
-              <TurnList items={items} provider={provider} threadId={threadId} busy={busy} />
+              <TurnDiffContext value={openTurnDiff}>
+                <TurnList items={items} provider={provider} threadId={threadId} busy={busy} />
+              </TurnDiffContext>
 
               {status === "running" && lastItem?.kind !== "assistant" && !(lastItem?.kind === "tool" && lastItem.output === null) ? (
                 <Message from="assistant" animateIn>
@@ -414,25 +414,50 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                   </MessageContent>
                 </Message>
               ) : null}
+              {followUps.map((followUp) => (
+                <FollowUpBubble key={followUp.id} threadId={threadId} followUp={followUp} />
+              ))}
             </MessageGroup>
           </MessageScroller>
 
           <Composer
             prefsKey={threadId}
+            threadId={threadId}
+            history={history}
             provider={provider}
             cwd={info.cwd}
             busy={busy}
             models={choices}
             model={current ? encodeChoice(provider, current) : undefined}
             onModelChange={(value) => send({ _tag: "thread.setModel", threadId, model: decodeChoice(value).model })}
-            placeholder={busy ? "Working…" : `Ask ${PROVIDER_LABEL[provider]}…`}
-            onSubmit={(text, options) => send({ _tag: "thread.send", threadId, text, options })}
-            onStop={() => send({ _tag: "thread.interrupt", threadId })}
+            placeholder={
+              busy
+                ? followUpMode === "queue"
+                  ? "Working… messages wait for the turn to end (⌘↩ to send now)"
+                  : "Working… messages go in right away (⌘↩ to queue)"
+                : `Ask ${PROVIDER_LABEL[provider]}…`
+            }
+            onSubmit={(text, options, how) => {
+              // While the agent works, a message waits for the turn to end, or steers it; ⌘Enter flips that.
+              const steer = (followUpMode === "steer") !== how.alternate;
+              if (busy && !steer) queueFollowUp(threadId, text, options);
+              else send({ _tag: "thread.send", threadId, text, options });
+            }}
+            onStop={() => {
+              send({ _tag: "thread.interrupt", threadId });
+              returnToComposer(threadId, takeFollowUps(threadId));
+            }}
           />
         </div>
         {diffOpen ? (
           <Suspense fallback={<div style={{ width: readWidth(PANEL_WIDTH_KEY, Math.min(960, Math.round(window.innerWidth * 0.45))) }} className="shrink-0 border-l border-border" />}>
-            <DiffPanel cwd={info.cwd} refreshKey={diffKey} onClose={() => setDiffOpen(false)} />
+            <DiffPanel
+              cwd={info.cwd}
+              refreshKey={diffKey}
+              turn={diffTurn ? { threadId, messageId: diffTurn } : null}
+              onShowAll={() => setDiffTurn(null)}
+              onClose={() => setDiffOpen(false)}
+            />
           </Suspense>
         ) : null}
       </div>
@@ -470,7 +495,7 @@ export const TurnList = ({
     // The latest exchange stays fully rendered: it's what streams and what the scroller follows.
     const className = settled && index < turns.length - 2 ? OFFSCREEN_SKIP : KEEP_RENDERED;
     return turn.from === "user" ? (
-      <UserTurn key={turn.id} text={turn.text} attachments={turn.attachments} className={className} />
+      <UserTurn key={turn.id} item={turn.item} threadId={threadId} busy={busy} className={className} />
     ) : (
       <AssistantTurn
         key={turn.id}
@@ -492,18 +517,73 @@ export const TurnList = ({
 const OFFSCREEN_SKIP = "[content-visibility:auto] [contain-intrinsic-size:auto_240px]";
 const KEEP_RENDERED = "[contain-intrinsic-size:auto_240px]";
 
-const UserTurn = memo(({ text, attachments, className }: { text: string; attachments: ReadonlyArray<Attachment>; className: string }) => (
-  <Message from="user" animateIn className={className}>
+const UserTurn = memo(({ item, threadId, busy, className }: { item: UserItem; threadId: string; busy: boolean; className: string }) => (
+  <Message from="user" animateIn className={cn("group/turn", className)}>
     <MessageContent className="gap-1.5">
-      {attachments.length ? <AttachmentList attachments={attachments} /> : null}
-      {text ? (
+      {item.attachments.length ? <AttachmentList attachments={item.attachments} /> : null}
+      {item.text ? (
         <MessageBubble variant="soft">
-          <MessageBubbleContent className="selectable whitespace-pre-wrap">{text}</MessageBubbleContent>
+          <MessageBubbleContent className="selectable whitespace-pre-wrap">{item.text}</MessageBubbleContent>
         </MessageBubble>
       ) : null}
+      {/* A message sent mid-turn has no turn of its own to go back to. */}
+      {busy || item.steer ? null : <EditFromHere item={item} threadId={threadId} />}
     </MessageContent>
   </Message>
 ));
+
+const REWIND_OPTIONS = [
+  { value: "keep", label: "Rewind conversation", description: "The files stay as they are now" },
+  { value: "files", label: "Rewind conversation and files", description: "The folder goes back to how it was when this was sent" },
+];
+
+/** Rewinds to before this message and puts it back in the composer to edit and resend. */
+const EditFromHere = ({ item, threadId }: { item: UserItem; threadId: string }) => (
+  <div className="flex justify-end opacity-0 transition-opacity group-hover/turn:opacity-100 has-[[aria-expanded=true]]:opacity-100">
+    <PromptSelect
+      title="Edit from here"
+      icon={<Undo2 />}
+      options={REWIND_OPTIONS}
+      value={undefined}
+      placeholder="Edit from here"
+      side="bottom"
+      align="end"
+      width="w-72"
+      className="h-6 text-[11px]"
+      onChange={(choice) => {
+        // An unsent draft stays, above the restored prompt.
+        setDraft(threadId, (prev) => ({
+          text: prev.text.trim() ? `${prev.text.trimEnd()}\n\n${item.text}` : item.text,
+          attachments: [...prev.attachments, ...item.attachments.map(fromSent)],
+        }));
+        send({ _tag: "thread.rewind", threadId, messageId: item.id, restoreFiles: choice === "files" });
+        focusComposer();
+      }}
+    />
+  </div>
+);
+
+/** What a turn changed on disk; opens those changes. */
+const CheckpointChip = ({ item }: { item: Extract<TranscriptItem, { kind: "checkpoint" }> }) => {
+  const openTurnDiff = use(TurnDiffContext);
+  return (
+    <button
+      type="button"
+      onClick={() => openTurnDiff(item.messageId)}
+      className="flex w-fit items-center gap-2 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <FileDiff className="size-3.5" />
+      <span>
+        {item.files} {item.files === 1 ? "file" : "files"} changed
+      </span>
+      <span className="font-mono tabular-nums">
+        {item.additions ? <span className="text-emerald-600 dark:text-emerald-400">+{item.additions}</span> : null}
+        {item.additions && item.deletions ? " " : null}
+        {item.deletions ? <span className="text-rose-600 dark:text-rose-400">−{item.deletions}</span> : null}
+      </span>
+    </button>
+  );
+};
 
 interface AssistantTurnProps {
   items: ReadonlyArray<TranscriptItem>;
@@ -598,5 +678,7 @@ const AgentBlockContent = ({ block: item, threadId, live, streaming }: AgentBloc
       );
     case "error":
       return <div className="selectable text-xs text-destructive">{item.text}</div>;
+    case "checkpoint":
+      return <CheckpointChip item={item} />;
   }
 };

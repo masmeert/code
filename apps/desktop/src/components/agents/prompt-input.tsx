@@ -4,10 +4,12 @@
 import { ArrowUp, Check, ChevronDown, CirclePlus, FileText, ImageIcon, Paperclip, Plus, Square, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
+  type ButtonHTMLAttributes,
   type ClipboardEvent,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
+  type Ref,
   type TextareaHTMLAttributes,
   useCallback,
   useEffect,
@@ -22,7 +24,9 @@ import {
   MorphPopoverMenu,
   MorphPopoverTrigger,
 } from "@/components/motion/popover-morph";
-import { SPRING_SWAP } from "@/lib/ease";
+import { RangeSlider } from "@/components/motion/range-slider";
+import { EASE_OUT, SPRING_SWAP } from "@/lib/ease";
+import { KEYBINDINGS, type KeybindingId, matches } from "@/lib/keybindings";
 import { cn } from "@/lib/utils";
 
 /** One row in a composer picker (model, effort, permissions, branch…). */
@@ -69,9 +73,14 @@ export interface PromptInputProps extends Omit<
   model?: string;
   defaultModel?: string;
   onModelChange?: (model: string) => void;
+  /** Models picked alongside `model` by shift-clicking; the message goes to each. */
+  extraModels?: string[];
+  /** Shift-click in the model menu; without it, shift-click picks like a click. */
+  onToggleModel?: (model: string) => void;
   actions?: PromptAction[];
   onAction?: (action: string) => void;
-  onSubmit?: (value: string, model?: string) => void | Promise<void>;
+  /** `alternate` is set when sent with ⌘/Ctrl+Enter, for the opposite of the usual follow-up behavior. */
+  onSubmit?: (value: string, model?: string, how?: { alternate: boolean }) => void | Promise<void>;
   /** Blocks sending only; typing and the pickers stay usable. */
   submitDisabled?: boolean;
   loading?: boolean;
@@ -87,6 +96,11 @@ export interface PromptInputProps extends Omit<
   onRemoveAttachment?: (id: string) => void;
   /** Files pasted into the textarea. */
   onPasteFiles?: (files: File[]) => void;
+  /**
+   * Text pasted into the textarea; return true to take it over (it isn't inserted).
+   * `plain` is set for ⌘⇧V / Ctrl+Shift+V, which asks to keep a paste as text.
+   */
+  onPasteText?: (text: string, plain: boolean) => boolean;
   /** Strip tucked under the card; children lay out left-to-right, spread apart. */
   footer?: ReactNode;
   className?: string;
@@ -114,6 +128,9 @@ export function PromptInput({
   onAttach,
   onRemoveAttachment,
   onPasteFiles,
+  onPasteText,
+  extraModels,
+  onToggleModel,
   footer,
   className,
   disabled,
@@ -133,7 +150,10 @@ export function PromptInput({
   const currentValue = value ?? internalValue;
   const currentModelValue = model ?? internalModel;
   const hasContent = Boolean(currentValue.trim()) || attachments.length > 0;
-  const canSubmit = hasContent && !disabled && !submitDisabled && !loading;
+  // While the agent works, a message can still go (queued or steering); the button stops it only when there's nothing to send.
+  const canSubmit = hasContent && !disabled && !submitDisabled;
+  const showStop = loading && !hasContent;
+  const plainPaste = useRef(false);
 
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current;
@@ -171,17 +191,18 @@ export function PromptInput({
     onModelChange?.(next);
   };
 
-  const submit = (event?: FormEvent) => {
+  const submit = (event?: FormEvent, alternate = false) => {
     event?.preventDefault();
     if (!canSubmit) return;
 
-    onSubmit?.(currentValue.trim(), currentModelValue);
+    onSubmit?.(currentValue.trim(), currentModelValue, { alternate });
     if (value === undefined) setInternalValue("");
     textareaRef.current?.focus({ preventScroll: true });
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     onKeyDown?.(event);
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "v") plainPaste.current = true;
     if (
       event.defaultPrevented ||
       event.key !== "Enter" ||
@@ -191,15 +212,20 @@ export function PromptInput({
       return;
     }
     event.preventDefault();
-    submit();
+    submit(undefined, event.metaKey || event.ctrlKey);
   };
 
   const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    if (!onPasteFiles) return;
+    const plain = plainPaste.current;
+    plainPaste.current = false;
     const files = [...event.clipboardData.files];
-    if (!files.length) return;
-    event.preventDefault();
-    onPasteFiles(files);
+    if (files.length && onPasteFiles) {
+      event.preventDefault();
+      onPasteFiles(files);
+      return;
+    }
+    const text = event.clipboardData.getData("text/plain");
+    if (text && onPasteText?.(text, plain)) event.preventDefault();
   };
 
   const pickers = [
@@ -209,6 +235,9 @@ export function PromptInput({
         options={models}
         value={currentModelValue}
         onChange={setModel}
+        {...(extraModels ? { multi: extraModels } : {})}
+        {...(onToggleModel ? { onToggle: onToggleModel } : {})}
+        shortcut="picker.model"
         disabled={disabled || loading}
         placeholder="Choose model"
         showOptionIcon
@@ -358,23 +387,23 @@ export function PromptInput({
               </Button>
             ) : null}
             <Button
-              type={loading ? "button" : "submit"}
+              type={showStop ? "button" : "submit"}
               size="icon"
-              disabled={loading ? !onStop : !canSubmit}
-              aria-label={loading ? "Stop generating" : "Send prompt"}
-              onClick={loading ? onStop : undefined}
+              disabled={showStop ? !onStop : !canSubmit}
+              aria-label={showStop ? "Stop generating" : loading ? "Send when the agent is done" : "Send prompt"}
+              onClick={showStop ? onStop : undefined}
               className="size-8 rounded-lg"
             >
               <AnimatePresence initial={false} mode="popLayout">
                 <motion.span
-                  key={loading ? "stop" : "send"}
+                  key={showStop ? "stop" : "send"}
                   initial={reduce ? { opacity: 1 } : { opacity: 0, y: 3, scale: 0.8 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={reduce ? { opacity: 0 } : { opacity: 0, y: -3, scale: 0.8 }}
                   transition={reduce ? { duration: 0 } : SPRING_SWAP}
                   className="grid place-items-center"
                 >
-                  {loading ? (
+                  {showStop ? (
                     <Square className="size-3 fill-current" />
                   ) : (
                     <ArrowUp className="size-4" />
@@ -430,6 +459,242 @@ function AttachmentChip({
   );
 }
 
+/** Opens a picker from its keyboard shortcut, or whenever `openSignal` changes. */
+function usePickerOpener(
+  setOpen: (open: boolean) => void,
+  { shortcut, disabled, openSignal }: { shortcut?: KeybindingId; disabled: boolean; openSignal?: number },
+) {
+  const setOpenRef = useRef(setOpen);
+  setOpenRef.current = setOpen;
+  useEffect(() => {
+    if (!shortcut || disabled) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || !matches(event, KEYBINDINGS[shortcut])) return;
+      event.preventDefault();
+      setOpenRef.current(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shortcut, disabled]);
+  useEffect(() => {
+    if (openSignal) setOpenRef.current(true);
+  }, [openSignal]);
+}
+
+/**
+ * The compact footer button every composer picker opens from. MorphPopoverTrigger
+ * clones in its ref, click handler and aria props, so those pass through to the button.
+ */
+function PickerTrigger({
+  open,
+  disabled,
+  icon,
+  className,
+  children,
+  ...rest
+}: {
+  open: boolean;
+  disabled: boolean;
+  icon?: ReactNode;
+  className?: string;
+  children: ReactNode;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & { ref?: Ref<HTMLButtonElement> }) {
+  return (
+    <button
+      {...rest}
+      type="button"
+      disabled={disabled}
+      className={cn(
+        "flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+        open && "bg-muted text-foreground",
+        className,
+      )}
+    >
+      {icon ? <span className="grid size-3.5 shrink-0 place-items-center [&_svg]:size-3.5">{icon}</span> : null}
+      <span className="truncate">{children}</span>
+      <ChevronDown className="size-3 shrink-0 opacity-60" />
+    </button>
+  );
+}
+
+/**
+ * Label that turns like a dial when `value` changes: rolls up for a higher value,
+ * down for a lower one. Same spring and blur as beui's ActionSwapRollText.
+ */
+function DialText({ value, className, children }: { value: number; className?: string; children: ReactNode }) {
+  const reduce = useReducedMotion();
+  const previous = useRef(value);
+  const direction = value >= previous.current ? 1 : -1;
+  useEffect(() => {
+    previous.current = value;
+  }, [value]);
+  const variants = {
+    enter: (dir: number) => ({ opacity: 0, y: `${dir * 80}%`, rotateX: dir * -70, filter: "blur(3px)" }),
+    center: { opacity: 1, y: "0%", rotateX: 0, filter: "blur(0px)", transition: SPRING_SWAP },
+    exit: (dir: number) => ({
+      opacity: 0,
+      y: `${dir * -80}%`,
+      rotateX: dir * 70,
+      filter: "blur(3px)",
+      transition: { duration: 0.14, ease: EASE_OUT },
+    }),
+  };
+  return (
+    <span className={cn("relative inline-grid overflow-hidden whitespace-nowrap [perspective:200px]", className)}>
+      <AnimatePresence initial={false} mode="popLayout" custom={direction}>
+        <motion.span
+          key={value}
+          custom={direction}
+          variants={reduce ? undefined : variants}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          className="inline-block origin-center"
+        >
+          {children}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+export interface PromptSliderProps {
+  /** Ordered stops, lowest first. */
+  options: PromptOption[];
+  value: string | undefined;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  placeholder?: ReactNode;
+  /** Shown before the current label at the top of the menu. */
+  title?: ReactNode;
+  /** Captions under the title at either end of the scale. */
+  minLabel?: ReactNode;
+  maxLabel?: ReactNode;
+  side?: "top" | "bottom";
+  align?: "start" | "end";
+  width?: string;
+  /** Opens the menu from the keyboard. */
+  shortcut?: KeybindingId;
+  className?: string;
+}
+
+/** Picker over an ordered scale (e.g. effort): a menu holding a stepped slider instead of a list. */
+export function PromptSlider({
+  options,
+  value,
+  onChange,
+  disabled = false,
+  placeholder = "Choose",
+  title,
+  minLabel,
+  maxLabel,
+  side = "top",
+  align = "start",
+  width = "w-72",
+  shortcut,
+  className,
+}: PromptSliderProps) {
+  const [open, setOpenState] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const index = options.findIndex((option) => option.value === value);
+  const current = options[index];
+
+  // The thumb moves a local draft; `onChange` only fires once the user settles
+  // (pointer released, a pause after arrow keys, or the menu closing).
+  const [draft, setDraftState] = useState<number | null>(null);
+  const draftRef = useRef<number | null>(null);
+  const settleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const setDraft = (next: number | null) => {
+    draftRef.current = next;
+    setDraftState(next);
+  };
+  const settle = () => {
+    clearTimeout(settleTimer.current);
+    const next = draftRef.current;
+    if (next === null) return;
+    setDraft(null);
+    const option = options[next];
+    if (option && option.value !== value) onChange(option.value);
+  };
+  const settleSoon = () => {
+    clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(settle, 400);
+  };
+  useEffect(() => () => clearTimeout(settleTimer.current), []);
+  const shown = options[draft ?? index];
+
+  const setOpen = (next: boolean) => {
+    if (!next) settle();
+    setOpenState(next);
+  };
+  usePickerOpener(setOpen, { shortcut, disabled });
+
+  // Focus the handle once the panel has morphed in, so arrow keys step right away.
+  useEffect(() => {
+    if (!open) return;
+    const frame = requestAnimationFrame(() =>
+      contentRef.current?.querySelector<HTMLElement>('[role="slider"]')?.focus({ preventScroll: true }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
+
+  return (
+    <MorphPopover open={open} onOpenChange={setOpen}>
+      <MorphPopoverTrigger>
+        <PickerTrigger open={open} disabled={disabled} className={className}>
+          {current?.label ?? placeholder}
+        </PickerTrigger>
+      </MorphPopoverTrigger>
+      <MorphPopoverContent side={side} align={align} sideOffset={6} radius={12} className={cn(width, "p-3")}>
+        <div
+          ref={contentRef}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            setOpen(false);
+          }}
+          onKeyUp={(event) => {
+            if (draftRef.current !== null && event.key !== "Enter") settleSoon();
+          }}
+          onPointerUp={settle}
+          onPointerCancel={settle}
+        >
+          <div className="flex items-center gap-1.5 text-[13px]">
+            {title ? <span className="text-muted-foreground">{title}</span> : null}
+            <DialText value={draft ?? index} className="text-foreground">
+              {shown?.label ?? placeholder}
+            </DialText>
+            {shown?.badge ? <span className="grid shrink-0 place-items-center [&_svg]:size-3">{shown.badge}</span> : null}
+          </div>
+          {minLabel || maxLabel ? (
+            <div className="mt-3 mb-1.5 flex justify-between text-[11px] text-muted-foreground">
+              <span>{minLabel}</span>
+              <span>{maxLabel}</span>
+            </div>
+          ) : (
+            <div className="h-3" />
+          )}
+          <RangeSlider
+            min={0}
+            max={Math.max(0, options.length - 1)}
+            step={1}
+            value={Math.max(0, draft ?? index)}
+            onValueChange={(next) => {
+              if (next !== (draftRef.current ?? index)) setDraft(next);
+            }}
+            disabled={disabled || options.length < 2}
+            aria-label={typeof title === "string" ? title : "Level"}
+            formatValueText={(next) => {
+              const label = options[next]?.label;
+              return typeof label === "string" ? label : String(next);
+            }}
+          />
+        </div>
+      </MorphPopoverContent>
+    </MorphPopover>
+  );
+}
+
 export interface PromptSelectProps {
   options: PromptOption[];
   value: string | undefined;
@@ -455,6 +720,14 @@ export interface PromptSelectProps {
   align?: "start" | "end";
   width?: string;
   onOpenChange?: (open: boolean) => void;
+  /** Opens the menu from the keyboard. */
+  shortcut?: KeybindingId;
+  /** Opens the menu whenever this number changes (for callers with their own trigger logic). */
+  openSignal?: number;
+  /** Values picked alongside `value` (multi-select by shift-click). */
+  multi?: string[];
+  /** Shift-click on an option; without it, shift-click picks like a click. */
+  onToggle?: (value: string) => void;
   className?: string;
 }
 
@@ -478,6 +751,10 @@ export function PromptSelect({
   align = "start",
   width = "w-56",
   onOpenChange,
+  shortcut,
+  openSignal,
+  multi = [],
+  onToggle,
   className,
 }: PromptSelectProps) {
   const [open, setOpenState] = useState(false);
@@ -488,6 +765,7 @@ export function PromptSelect({
     if (!next) setQuery("");
     onOpenChange?.(next);
   };
+  usePickerOpener(setOpen, { shortcut, disabled, openSignal });
   const current = options.find((option) => option.value === value);
   const triggerIcon = icon ?? (showOptionIcon ? current?.groupIcon ?? current?.icon : undefined);
   const searchable = Boolean(onCreate) || options.length >= searchThreshold;
@@ -513,21 +791,9 @@ export function PromptSelect({
   return (
     <MorphPopover open={open} onOpenChange={setOpen}>
       <MorphPopoverTrigger>
-        <button
-          type="button"
-          disabled={disabled}
-          className={cn(
-            "flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
-            open && "bg-muted text-foreground",
-            className,
-          )}
-        >
-          {triggerIcon ? (
-            <span className="grid size-3.5 shrink-0 place-items-center [&_svg]:size-3.5">{triggerIcon}</span>
-          ) : null}
-          <span className="truncate">{current?.label ?? placeholder}</span>
-          <ChevronDown className="size-3 shrink-0 opacity-60" />
-        </button>
+        <PickerTrigger open={open} disabled={disabled} icon={triggerIcon} className={className}>
+          {multi.length ? `${multi.length + 1} models` : (current?.label ?? placeholder)}
+        </PickerTrigger>
       </MorphPopoverTrigger>
       <MorphPopoverContent side={side} align={align} sideOffset={6} radius={12} className={cn(width, "p-1")}>
         {title ? <div className="px-2 pt-1 pb-1.5 text-[11px] text-muted-foreground">{title}</div> : null}
@@ -571,7 +837,7 @@ export function PromptSelect({
           ) : null}
           {canCreate && visible.length ? <div aria-hidden="true" className="mx-2 my-0.5 h-px shrink-0 bg-border" /> : null}
           {visible.map((option, index) => {
-            const selected = option.value === value;
+            const selected = option.value === value || multi.includes(option.value);
             const header = option.group && option.group !== visible[index - 1]?.group;
             return (
               <div key={option.value}>
@@ -586,7 +852,12 @@ export function PromptSelect({
                   role="option"
                   aria-selected={selected}
                   disabled={option.disabled}
-                  onClick={() => {
+                  onClick={(event) => {
+                    // Shift-click adds or removes the option and keeps the menu open.
+                    if (event.shiftKey && onToggle) {
+                      onToggle(option.value);
+                      return;
+                    }
                     onChange(option.value);
                     setOpen(false);
                   }}

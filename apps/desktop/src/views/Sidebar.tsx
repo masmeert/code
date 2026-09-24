@@ -4,6 +4,9 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { Input } from "@/components/motion/input";
 import { Tooltip } from "@/components/motion/tooltip";
 import { MorphPopover, MorphPopoverContent, MorphPopoverMenu, MorphPopoverTrigger } from "@/components/motion/popover-morph";
+import { EASE_OUT } from "@/lib/ease";
+import { NumberTicker } from "@/components/motion/number-ticker";
+import { SharedLayoutBg } from "@/components/motion/shared-layout-bg";
 import { Separator } from "@/components/ui/separator";
 import { ProjectBadge } from "@/components/project-badge";
 import { PROVIDER_LOGO } from "@/components/provider-logo";
@@ -26,12 +29,19 @@ import {
   SquarePen,
   Trash2,
 } from "lucide-react";
+import { AnimatePresence, motion, type Transition, useReducedMotion } from "motion/react";
 import { useMemo, useState } from "react";
 import { canSettle, isSeen, isSettled, send, setSettled, useStore } from "../lib/store.ts";
 import { addProject } from "../lib/projects.ts";
 import { ago, useNow } from "../lib/time.ts";
 import { usePersistedFlag } from "../lib/usePersistedFlag.ts";
 import type { ModalView } from "./AppModal.tsx";
+
+// Fold springs, borrowed from beUI's bouncy accordion.
+const FOLD_OPEN: Transition = { type: "spring", duration: 0.58, bounce: 0.32 };
+// Closing is a plain ease: a bouncy spring overshoots past zero height, which clamps and stutters.
+const FOLD_CLOSE: Transition = { duration: 0.24, ease: EASE_OUT, opacity: { duration: 0.12, ease: EASE_OUT } };
+const FOLD_CHEVRON: Transition = { type: "spring", duration: 0.42, bounce: 0.28 };
 
 const IconButton = ({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) => (
   <Tooltip content={label} side="bottom">
@@ -58,6 +68,7 @@ export const Sidebar = (props: {
   // Projects to show; empty means all.
   const [projectFilter, setProjectFilter] = useState<ReadonlySet<string>>(new Set());
   const now = useNow();
+  const reduce = useReducedMotion();
 
   // One flat list across projects: whatever still needs you on top, then settled threads; newest activity first in each.
   const [showArchived, setShowArchived] = useState(false);
@@ -86,11 +97,20 @@ export const Sidebar = (props: {
   const projectOf = (info: ThreadInfo) =>
     projects.find((p) => p.id === info.projectId) ?? { id: info.projectId, name: info.cwd.split("/").at(-1) ?? info.cwd, path: info.cwd, addedAt: 0 };
 
+  // One hover pill glides between rows. Each row carries the hairline above it, centred in the gap
+  // and hidden next to a filled (hovered or current) row.
   const renderCards = (infos: Array<ThreadInfo>) => (
-    <div className="flex flex-col gap-1">
+    <SharedLayoutBg inset={0} pillClassName="rounded-xl bg-muted/50" className="gap-1">
       {infos.map((info) => (
+        <div
+          key={info.id}
+          className={cn(
+            "before:pointer-events-none before:absolute before:inset-x-3 before:-top-[2.5px] before:h-px before:bg-border/60",
+            "first:before:hidden hover:before:hidden has-[[aria-current=page]]:before:hidden",
+            "[:hover+&]:before:hidden [:has([aria-current=page])+&]:before:hidden",
+          )}
+        >
           <ThreadCard
-            key={info.id}
             info={info}
             project={projectOf(info)}
             active={info.id === props.activeId}
@@ -99,8 +119,9 @@ export const Sidebar = (props: {
             now={now}
             onSelect={() => props.onSelect(info.id)}
           />
+        </div>
       ))}
-    </div>
+    </SharedLayoutBg>
   );
 
   const renderList = (label: string, infos: Array<ThreadInfo>) =>
@@ -112,22 +133,54 @@ export const Sidebar = (props: {
     );
 
   // Foldable sections open themselves while searching, so matches are never hidden.
-  const renderFolding = (label: string, infos: Array<ThreadInfo>, open: boolean, toggle: () => void) => {
+  // The header is a full-width row, sticky while open so it can be folded from anywhere in the list.
+  const renderFolding = (label: string, icon: LucideIcon, infos: Array<ThreadInfo>, open: boolean, toggle: () => void) => {
     if (infos.length === 0) return null;
     const expanded = open || Boolean(query);
+    const Icon = icon;
     return (
-      <section className="flex flex-col">
+      <section className="flex flex-col gap-1">
         <button
           type="button"
           aria-expanded={expanded}
           onClick={toggle}
-          className="flex items-center gap-1 self-start px-3 pt-2 pb-1 text-left text-[11px] font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground"
+          className={cn(
+            "group/fold flex h-9 w-full shrink-0 items-center gap-2 rounded-xl px-3 text-left text-xs text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
+            expanded && "sticky top-0 z-20 bg-sidebar hover:bg-sidebar",
+          )}
         >
-          {label}
-          <span className="tabular-nums text-muted-foreground/60">{infos.length}</span>
-          <ChevronRight className={cn("size-3 transition-transform", expanded && "rotate-90")} />
+          <Icon aria-hidden="true" className="size-3.5 shrink-0" />
+          <span className="font-medium">{label}</span>
+          <NumberTicker
+            value={infos.length}
+            startOnView={false}
+            duration={0.5}
+            className="ml-auto rounded-full bg-muted px-1.5 py-px text-[11px] leading-4"
+          />
+          <motion.span
+            aria-hidden="true"
+            initial={false}
+            animate={{ rotate: expanded ? 90 : 0 }}
+            transition={reduce ? { duration: 0 } : FOLD_CHEVRON}
+            className="grid shrink-0 place-items-center"
+          >
+            <ChevronRight className="size-3.5" />
+          </motion.span>
         </button>
-        {expanded ? renderCards(infos) : null}
+        <AnimatePresence initial={false}>
+          {expanded ? (
+            <motion.div
+              key="rows"
+              // Clip only while moving, so focus rings aren't cut once open.
+              initial={{ height: 0, opacity: 0, overflow: "hidden" }}
+              animate={{ height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }}
+              exit={{ height: 0, opacity: 0, overflow: "hidden", transition: reduce ? { duration: 0 } : FOLD_CLOSE }}
+              transition={reduce ? { duration: 0 } : FOLD_OPEN}
+            >
+              {renderCards(infos)}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </section>
     );
   };
@@ -182,8 +235,12 @@ export const Sidebar = (props: {
           ) : (
             <>
               {renderList("Active", active)}
-              {renderFolding("Settled", settled, showSettled, () => setShowSettled(!showSettled))}
-              {renderFolding("Archived", archived, showArchived, () => setShowArchived((open) => !open))}
+              {settled.length + archived.length > 0 ? (
+                <div className={cn("flex flex-col gap-0.5", active.length > 0 && "mt-2 border-t border-border/60 pt-2")}>
+                  {renderFolding("Settled", CircleCheck, settled, showSettled, () => setShowSettled(!showSettled))}
+                  {renderFolding("Archived", Archive, archived, showArchived, () => setShowArchived((open) => !open))}
+                </div>
+              ) : null}
             </>
           )}
         </div>
@@ -394,11 +451,8 @@ const ThreadCard = (props: {
             props.onSelect();
           }}
           className={cn(
-            "group/card relative cursor-default rounded-xl px-3 py-2.5 outline-none transition-colors focus-visible:ring-4 focus-visible:ring-ring",
-            // Hairline centred in the gap above each row; hidden next to a filled (hovered or current) row.
-            "before:pointer-events-none before:absolute before:inset-x-3 before:-top-[2.5px] before:h-px before:bg-border/60",
-            "first:before:hidden [:hover+&]:before:hidden [[aria-current=page]+&]:before:hidden",
-            props.active ? "bg-muted before:hidden" : "hover:bg-muted/50 hover:before:hidden",
+            "group/card cursor-default rounded-xl px-3 py-2.5 outline-none transition-colors focus-visible:ring-4 focus-visible:ring-ring",
+            props.active && "bg-muted",
           )}
         >
           <p className={cn("truncate text-sm text-foreground", props.unread ? "font-semibold" : "font-medium", props.settled && !props.active && "text-foreground/75")}>

@@ -1,11 +1,14 @@
 import { ChatApp } from "@/components/agents/chat-app";
 import { AnimatedSidebarInset } from "@/components/motion/animated-sidebar";
+import { AppWindow, Settings as SettingsIcon, SquarePen } from "lucide-react";
 import { useEffect, useState } from "react";
+import { describe, useKeybinding } from "./lib/keybindings.ts";
 import { useStore } from "./lib/store.ts";
 import { useShortcut } from "./lib/useShortcut.ts";
 import { useTheme } from "./lib/useTheme.ts";
 import { openWindow } from "./lib/windows.ts";
 import { AppModal, type ModalView } from "./views/AppModal.tsx";
+import { CommandPalette } from "./views/CommandPalette.tsx";
 import { DiffWorkers } from "./views/DiffWorkers.tsx";
 import { Sidebar } from "./views/Sidebar.tsx";
 import { DraftView, ThreadView } from "./views/ThreadView.tsx";
@@ -39,6 +42,8 @@ export const App = () => {
   const createdHere = useStore((s) => s.createdHere);
   const [chosen, setView] = useState<View | null>(initialView);
   const [modal, setModal] = useState<ModalView | null>(null);
+  const [palette, setPalette] = useState(false);
+  useKeybinding("palette.open", () => setPalette((open) => !open));
   useTheme(theme);
 
   // Main window with nothing chosen yet: show the latest thread, else a new one.
@@ -95,6 +100,18 @@ export const App = () => {
           )}
         </AnimatedSidebarInset>
         <AppModal view={modal} onView={setModal} />
+        {palette ? (
+          <CommandPalette
+            onClose={() => setPalette(false)}
+            onOpenThread={(id) => setView({ kind: "thread", id })}
+            onNewThreadIn={(path) => draft(path)}
+            actions={[
+              { id: "thread.new", label: "New thread", hint: describe("thread.new"), icon: <SquarePen />, run: () => draft(currentPath) },
+              { id: "window.new", label: "New window", icon: <AppWindow />, run: () => openWindow(currentPath) },
+              { id: "settings.open", label: "Settings", hint: describe("settings.open"), icon: <SettingsIcon />, run: () => setModal("settings") },
+            ]}
+          />
+        ) : null}
       </ChatApp>
     </DiffWorkers>
   );

@@ -1,6 +1,6 @@
 import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import { CodeView, type CodeViewHandle, type CodeViewItem } from "@pierre/diffs/react";
-import { Columns2, ListTree, RefreshCw, Rows2, X } from "lucide-react";
+import { ChevronLeft, Columns2, ListTree, RefreshCw, Rows2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ResizeHandle } from "@/components/resize-handle";
 import { cn } from "@/lib/utils";
@@ -85,11 +85,29 @@ const IconButton = (props: { label: string; onClick: () => void; active?: boolea
 );
 
 /**
- * Uncommitted changes in the thread's folder (vs HEAD, untracked files included).
+ * Uncommitted changes in the thread's folder (vs HEAD, untracked files included), or with
+ * `turn`, just what one turn changed (from the snapshots taken around it).
  * `refreshKey` changes whenever the thread may have touched files, which re-reads the diff.
  */
-export const DiffPanel = ({ cwd, refreshKey, onClose }: { cwd: string; refreshKey: string; onClose: () => void }) => {
-  const diff = useStore((s) => s.diffs[cwd]);
+export const DiffPanel = ({
+  cwd,
+  refreshKey,
+  turn,
+  onShowAll,
+  onClose,
+}: {
+  cwd: string;
+  refreshKey: string;
+  turn: { readonly threadId: string; readonly messageId: string } | null;
+  onShowAll: () => void;
+  onClose: () => void;
+}) => {
+  const turnKey = turn ? `${turn.threadId}:${turn.messageId}` : null;
+  const diff = useStore((s) => (turnKey ? s.turnDiffs[turnKey] : s.diffs[cwd]));
+  const refresh = useCallback(
+    () => send(turn ? { _tag: "checkpoint.diff", threadId: turn.threadId, messageId: turn.messageId } : { _tag: "git.diff", path: cwd }),
+    [cwd, turn?.threadId, turn?.messageId],
+  );
   const theme = useStore((s) => s.settings.theme);
   const [style, setStyle] = useState<DiffStyle>(readStyle);
   const [showTree, setShowTree] = useState(readTree);
@@ -109,11 +127,11 @@ export const DiffPanel = ({ cwd, refreshKey, onClose }: { cwd: string; refreshKe
   });
   const jumpTo = useCallback((path: string) => viewer.current?.scrollTo({ type: "item", id: path, align: "start", behavior: "instant" }), []);
 
-  // Agents edit in bursts; wait for a short lull before re-reading.
+  // Agents edit in bursts; wait for a short lull before re-reading. A finished turn's changes don't change.
   useEffect(() => {
-    const timer = window.setTimeout(() => send({ _tag: "git.diff", path: cwd }), 250);
+    const timer = window.setTimeout(refresh, turnKey ? 0 : 250);
     return () => window.clearTimeout(timer);
-  }, [cwd, refreshKey]);
+  }, [refresh, turnKey ? null : refreshKey]);
 
   const files = useMemo(() => parseFiles(diff?.patch ?? ""), [diff?.patch]);
   // CodeView reconciles by id; a file whose content changed keeps its id, so its version must go up.
@@ -163,8 +181,13 @@ export const DiffPanel = ({ cwd, refreshKey, onClose }: { cwd: string; refreshKe
       className="relative flex min-h-0 shrink-0 flex-col border-l border-border bg-background"
     >
       <ResizeHandle side="start" label="Resize changes panel" value={panel.width} dragging={panel.dragging} {...panel.handleProps} />
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border pr-2 pl-4">
-        <span className="text-sm font-medium text-foreground">Changes</span>
+      <div className={cn("flex h-10 shrink-0 items-center gap-2 border-b border-border pr-2", turn ? "pl-2" : "pl-4")}>
+        {turn ? (
+          <IconButton label="All uncommitted changes" onClick={onShowAll}>
+            <ChevronLeft className="size-3.5" />
+          </IconButton>
+        ) : null}
+        <span className="text-sm font-medium text-foreground">{turn ? "Turn changes" : "Changes"}</span>
         {files.length ? (
           <span className="flex items-center gap-2 font-mono text-xs tabular-nums">
             <span className="text-muted-foreground">
@@ -184,7 +207,7 @@ export const DiffPanel = ({ cwd, refreshKey, onClose }: { cwd: string; refreshKe
           <IconButton label="Split" active={style === "split"} onClick={() => pickStyle("split")}>
             <Columns2 className="size-3.5" />
           </IconButton>
-          <IconButton label="Refresh" onClick={() => send({ _tag: "git.diff", path: cwd })}>
+          <IconButton label="Refresh" onClick={refresh}>
             <RefreshCw className="size-3.5" />
           </IconButton>
           <IconButton label="Close changes" onClick={onClose}>
@@ -199,7 +222,7 @@ export const DiffPanel = ({ cwd, refreshKey, onClose }: { cwd: string; refreshKe
         ) : diff.error ? (
           <Empty>{diff.error}</Empty>
         ) : !files.length ? (
-          <Empty>No uncommitted changes</Empty>
+          <Empty>{turn ? "This turn changed no files" : "No uncommitted changes"}</Empty>
         ) : (
           <>
             {showTree ? (

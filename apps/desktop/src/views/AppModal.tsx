@@ -128,6 +128,32 @@ const SettingsView = () => {
               </SelectContent>
             </Select>
           </SettingsRow>
+          <SettingsRow
+            label={
+              <>
+                <p>Messages while the agent works</p>
+                <p className="text-xs text-muted-foreground">⌘↩ does the other one for a single message</p>
+              </>
+            }
+          >
+            <Select
+              value={settings.followUp ?? "queue"}
+              onValueChange={(v) => updateSettings({ ...settings, followUp: v as "queue" | "steer" })}
+              className="w-44"
+            >
+              <SelectTrigger className="py-1.5 text-[13px] whitespace-nowrap">
+                <SelectValue className="min-w-0 truncate" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="queue" className="text-[13px]">
+                  Wait for the turn
+                </SelectItem>
+                <SelectItem value="steer" className="text-[13px]">
+                  Send right away
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingsRow>
         </SettingsGroup>
       </Section>
       <Section title="Harnesses">
