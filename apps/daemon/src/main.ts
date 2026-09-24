@@ -1,3 +1,4 @@
+import "./shellEnv.ts"; // must stay first: fixes process.env before other modules read it
 import { BunRuntime } from "@effect/platform-bun";
 import { DEFAULT_DAEMON_PORT } from "@apcode/contracts";
 import * as Effect from "effect/Effect";
