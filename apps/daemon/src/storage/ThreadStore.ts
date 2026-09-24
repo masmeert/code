@@ -1,4 +1,4 @@
-import { RuntimeEvent, type PageInfo, type ProviderKind, type StoredEvent, type ThreadInfo } from "@apcode/contracts";
+import { RuntimeEvent, type PageInfo, type ProviderKind, type SearchHit, type StoredEvent, type ThreadInfo } from "@apcode/contracts";
 import { Database } from "bun:sqlite";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -21,6 +21,8 @@ export const isPersisted = (event: RuntimeEvent) =>
   event._tag !== "thread.meta" &&
   event._tag !== "thread.archived" &&
   event._tag !== "thread.removed" &&
+  event._tag !== "thread.commands" &&
+  event._tag !== "checkpoint.diff" &&
   "threadId" in event &&
   event.threadId !== null;
 
@@ -36,6 +38,8 @@ export class ThreadStore extends Context.Service<
     readonly firstUserMessage: (threadId: string) => string | null;
     /** Newest stored event id of a thread; 0 if none. */
     readonly cursor: (threadId: string) => number;
+    /** How many events come after id `after`, and their encoded size, without reading them. */
+    readonly measureAfter: (threadId: string, after: number) => { readonly count: number; readonly bytes: number };
     /** Events after id `after`, oldest first. */
     readonly readAfter: (threadId: string, after: number) => ReadonlyArray<StoredEvent>;
     /**
@@ -48,7 +52,23 @@ export class ThreadStore extends Context.Service<
       before?: number,
     ) => { readonly events: ReadonlyArray<StoredEvent>; readonly page: PageInfo | null };
     readonly insertThread: (info: ThreadInfo) => void;
-    readonly setResumeToken: (threadId: string, token: string) => void;
+    /** Null starts the provider conversation over on the next message. */
+    readonly setResumeToken: (threadId: string, token: string | null) => void;
+    /** Where user message `messageId` is in the thread, and the ids of the user messages from it on. */
+    readonly findUserMessage: (
+      threadId: string,
+      messageId: string,
+    ) => {
+      readonly seq: number;
+      readonly event: Extract<RuntimeEvent, { _tag: "user.message" }>;
+      /** User messages before it. */
+      readonly before: number;
+      readonly from: ReadonlyArray<Extract<RuntimeEvent, { _tag: "user.message" }>>;
+    } | null;
+    /** Deletes the thread's events from id `seq` on. */
+    readonly truncate: (threadId: string, seq: number) => void;
+    /** Messages matching `query` (words, prefix-matched), newest first. */
+    readonly search: (query: string, limit: number) => ReadonlyArray<SearchHit>;
     readonly setModel: (threadId: string, model: string | null) => void;
     readonly setArchived: (threadId: string, archivedAt: number | null) => void;
     readonly setMeta: (threadId: string, meta: { readonly title: string; readonly updatedAt: number }) => void;
@@ -65,6 +85,9 @@ const make = Effect.acquireRelease(
     mkdirSync(DATA_DIR, { recursive: true });
     const db = new Database(join(DATA_DIR, "apcode.db"), { create: true, strict: true });
     db.run("PRAGMA journal_mode = WAL");
+    // With WAL, NORMAL only fsyncs at checkpoints: still safe against corruption, much cheaper per append.
+    db.run("PRAGMA synchronous = NORMAL");
+    db.run("PRAGMA busy_timeout = 5000");
     db.run("PRAGMA foreign_keys = ON");
     db.run(`CREATE TABLE IF NOT EXISTS threads (
       id TEXT PRIMARY KEY,
@@ -102,19 +125,47 @@ const make = Effect.acquireRelease(
       db.run("ALTER TABLE threads ADD COLUMN updated_at INTEGER");
       db.run("UPDATE threads SET updated_at = created_at");
     }
+    if (!columns.has("worktree")) db.run("ALTER TABLE threads ADD COLUMN worktree INTEGER NOT NULL DEFAULT 0");
+    // Full-text index of what was said, for search. Filled as messages are stored; built from the log once.
+    const hasSearch = db.query("SELECT name FROM sqlite_master WHERE name = 'messages_fts'").get() !== null;
+    if (!hasSearch) {
+      db.run(
+        `CREATE VIRTUAL TABLE messages_fts USING fts5(text, thread_id UNINDEXED, message_id UNINDEXED, sender UNINDEXED, seq UNINDEXED, tokenize = "unicode61 remove_diacritics 2")`,
+      );
+      db.run(`INSERT INTO messages_fts (text, thread_id, message_id, sender, seq)
+        SELECT json_extract(json, '$.text'), thread_id, json_extract(json, '$.messageId'),
+          CASE kind WHEN 'user.message' THEN 'user' ELSE 'assistant' END, seq
+        FROM events WHERE kind IN ('user.message', 'assistant.completed') AND json_extract(json, '$.text') != ''`);
+    }
     return db;
   }),
   (db) => Effect.sync(() => db.close()),
 ).pipe(
   Effect.map((db) => {
     const insertThread = db.prepare(
-      "INSERT INTO threads (id, project_id, provider, model, cwd, title, created_at, updated_at) VALUES ($id, $projectId, $provider, $model, $cwd, $title, $createdAt, $updatedAt)",
+      "INSERT INTO threads (id, project_id, provider, model, cwd, title, created_at, updated_at, worktree) VALUES ($id, $projectId, $provider, $model, $cwd, $title, $createdAt, $updatedAt, $worktree)",
     );
     const setMeta = db.prepare("UPDATE threads SET title = $title, updated_at = $updatedAt WHERE id = $id");
     const setModel = db.prepare("UPDATE threads SET model = $model WHERE id = $id");
     const setArchived = db.prepare("UPDATE threads SET archived_at = $archivedAt WHERE id = $id");
     const setResumeToken = db.prepare("UPDATE threads SET resume_token = $token WHERE id = $id");
     const appendEvent = db.prepare("INSERT INTO events (thread_id, kind, json) VALUES ($threadId, $kind, $json)");
+    const indexMessage = db.prepare(
+      "INSERT INTO messages_fts (text, thread_id, message_id, sender, seq) VALUES ($text, $threadId, $messageId, $sender, $seq)",
+    );
+    const selectUserMessages = db.prepare<{ seq: number; json: string }, { threadId: string }>(
+      "SELECT seq, json FROM events WHERE thread_id = $threadId AND kind = 'user.message' ORDER BY seq",
+    );
+    const truncateEvents = db.prepare("DELETE FROM events WHERE thread_id = $threadId AND seq >= $seq");
+    const truncateIndex = db.prepare("DELETE FROM messages_fts WHERE thread_id = $threadId AND seq >= $seq");
+    const deleteIndex = db.prepare("DELETE FROM messages_fts WHERE thread_id = $threadId");
+    const selectSearch = db.prepare<
+      { thread_id: string; message_id: string; sender: "user" | "assistant"; snippet: string },
+      { query: string; limit: number }
+    >(
+      `SELECT thread_id, message_id, sender, snippet(messages_fts, 0, char(57344), char(57345), '…', 16) AS snippet
+       FROM messages_fts WHERE messages_fts MATCH $query ORDER BY seq DESC LIMIT $limit`,
+    );
     const dataId = db.query<{ value: string }, []>("SELECT value FROM meta WHERE key = 'data_id'").get()!.value;
     const toStored = (rows: ReadonlyArray<{ seq: number; json: string }>): Array<StoredEvent> =>
       rows.flatMap((row) => {
@@ -123,6 +174,9 @@ const make = Effect.acquireRelease(
       });
     const selectAfter = db.prepare<{ seq: number; json: string }, { threadId: string; after: number }>(
       "SELECT seq, json FROM events WHERE thread_id = $threadId AND seq > $after ORDER BY seq",
+    );
+    const selectMeasure = db.prepare<{ count: number; bytes: number | null }, { threadId: string; after: number }>(
+      "SELECT COUNT(*) AS count, SUM(length(CAST(json AS BLOB))) AS bytes FROM events WHERE thread_id = $threadId AND seq > $after",
     );
     const selectRange = db.prepare<{ seq: number; json: string }, { threadId: string; from: number; before: number }>(
       "SELECT seq, json FROM events WHERE thread_id = $threadId AND seq >= $from AND seq < $before ORDER BY seq",
@@ -149,7 +203,7 @@ const make = Effect.acquireRelease(
       load: Effect.sync(() =>
         db
           .query<
-            { id: string; project_id: string; provider: ProviderKind; model: string | null; cwd: string; title: string; created_at: number; updated_at: number; archived_at: number | null; resume_token: string | null },
+            { id: string; project_id: string; provider: ProviderKind; model: string | null; cwd: string; title: string; created_at: number; updated_at: number; archived_at: number | null; resume_token: string | null; worktree: number },
             []
           >("SELECT * FROM threads ORDER BY created_at")
           .all()
@@ -166,6 +220,7 @@ const make = Effect.acquireRelease(
               updatedAt: row.updated_at,
               branch: null,
               archivedAt: row.archived_at,
+              worktree: row.worktree === 1,
             },
             resumeToken: row.resume_token,
           })),
@@ -184,6 +239,10 @@ const make = Effect.acquireRelease(
         return row ? (JSON.parse(row.json) as { text: string }).text : null;
       },
       cursor: (threadId) => selectCursor.get({ threadId })?.seq ?? 0,
+      measureAfter: (threadId, after) => {
+        const row = selectMeasure.get({ threadId, after });
+        return { count: row?.count ?? 0, bytes: row?.bytes ?? 0 };
+      },
       readAfter: (threadId, after) => toStored(selectAfter.all({ threadId, after })),
       readTurns: (threadId, turnLimit, before = Number.MAX_SAFE_INTEGER) => {
         const start = selectTurnStart.get({ threadId, before, offset: Math.max(0, turnLimit - 1) });
@@ -203,6 +262,7 @@ const make = Effect.acquireRelease(
           title: info.title,
           createdAt: info.createdAt,
           updatedAt: info.updatedAt,
+          worktree: info.worktree ? 1 : 0,
         });
       },
       setResumeToken: (id, token) => {
@@ -217,10 +277,44 @@ const make = Effect.acquireRelease(
       setMeta: (id, meta) => {
         setMeta.run({ id, ...meta });
       },
-      appendEvent: (threadId, event) =>
-        Number(appendEvent.run({ threadId, kind: event._tag, json: JSON.stringify(event) }).lastInsertRowid),
+      appendEvent: (threadId, event) => {
+        const seq = Number(appendEvent.run({ threadId, kind: event._tag, json: JSON.stringify(event) }).lastInsertRowid);
+        if ((event._tag === "user.message" || event._tag === "assistant.completed") && event.text) {
+          const sender = event._tag === "user.message" ? "user" : "assistant";
+          indexMessage.run({ text: event.text, threadId, messageId: event.messageId, sender, seq });
+        }
+        return seq;
+      },
+      findUserMessage: (threadId, messageId) => {
+        const messages = toStored(selectUserMessages.all({ threadId })).flatMap(({ id, event }) =>
+          event._tag === "user.message" ? [{ seq: id, event }] : [],
+        );
+        const index = messages.findIndex((m) => m.event.messageId === messageId);
+        if (index === -1) return null;
+        return { seq: messages[index]!.seq, event: messages[index]!.event, before: index, from: messages.slice(index).map((m) => m.event) };
+      },
+      truncate: (threadId, seq) => {
+        db.transaction(() => {
+          truncateEvents.run({ threadId, seq });
+          truncateIndex.run({ threadId, seq });
+        })();
+      },
+      search: (query, limit) => {
+        // Each word prefix-matches; quoting keeps FTS syntax in the query from being interpreted.
+        const terms = query.split(/\s+/).filter(Boolean).map((word) => `"${word.replaceAll('"', '""')}"*`);
+        if (!terms.length) return [];
+        return selectSearch.all({ query: terms.join(" "), limit }).map((row) => ({
+          threadId: row.thread_id,
+          messageId: row.message_id,
+          from: row.sender,
+          snippet: row.snippet,
+        }));
+      },
       deleteThread: (id) => {
-        deleteThread.run({ id });
+        db.transaction(() => {
+          deleteThread.run({ id });
+          deleteIndex.run({ threadId: id });
+        })();
       },
     });
   }),

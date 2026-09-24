@@ -55,6 +55,10 @@ export const Settings = Schema.Struct({
   providers: Schema.Struct({ claude: ProviderSettings, codex: ProviderSettings }),
   /** Minutes a finished, seen thread stays in Active before it settles. Optional so older settings files still load. */
   settleDelayMinutes: Schema.optional(Schema.Number),
+  /** A message sent while the agent works: held until the turn ends ("queue"), or sent into it right away ("steer"). */
+  followUp: Schema.optional(Schema.Literals(["queue", "steer"])),
+  /** Where new threads start: the project folder, or a git worktree of their own. */
+  workspace: Schema.optional(Schema.Literals(["local", "worktree"])),
   /** Writes commit messages left empty, as `provider:model`; null/absent uses the last harness's default model. */
   commitModel: Schema.optional(Schema.NullOr(Schema.String)),
 });
@@ -124,8 +128,28 @@ export const ThreadInfo = Schema.Struct({
   branch: Schema.NullOr(Schema.String),
   /** When the thread was archived (hidden from the main list); null when it isn't. */
   archivedAt: Schema.NullOr(Schema.Number),
+  /** `cwd` is a git worktree made for this thread (removed with it when it has no changes). */
+  worktree: Schema.Boolean,
 });
 export type ThreadInfo = typeof ThreadInfo.Type;
+
+/** A slash command the thread's harness offers. */
+export const SlashCommand = Schema.Struct({
+  name: Schema.String,
+  description: Schema.String,
+  argumentHint: Schema.String,
+});
+export type SlashCommand = typeof SlashCommand.Type;
+
+/** One message matching a search. */
+export const SearchHit = Schema.Struct({
+  threadId: Schema.String,
+  messageId: Schema.String,
+  from: Schema.Literals(["user", "assistant"]),
+  /** Text around the match; the match itself is wrapped in U+E000 / U+E001. */
+  snippet: Schema.String,
+});
+export type SearchHit = typeof SearchHit.Type;
 
 // ---------------------------------------------------------------------------
 // Runtime events: every provider adapter normalizes into this shape.
@@ -167,6 +191,8 @@ export const RuntimeEvent = Schema.Union([
     text: Schema.String,
     /** Missing on messages stored before attachments existed. */
     attachments: Schema.optionalKey(Schema.Array(Attachment)),
+    /** Sent into a running turn rather than starting one; can't be rewound to. */
+    steer: Schema.optionalKey(Schema.Boolean),
   }),
   Schema.TaggedStruct("assistant.delta", { threadId: Schema.String, messageId: Schema.String, delta: Schema.String }),
   Schema.TaggedStruct("assistant.completed", { threadId: Schema.String, messageId: Schema.String, text: Schema.String }),
@@ -190,6 +216,26 @@ export const RuntimeEvent = Schema.Union([
   }),
   Schema.TaggedStruct("approval.resolved", { threadId: Schema.String, requestId: Schema.String }),
   Schema.TaggedStruct("turn.completed", { threadId: Schema.String, durationMs: Schema.NullOr(Schema.Number) }),
+  /** What the turn started by `messageId` changed on disk, from the snapshots taken before and after it. */
+  Schema.TaggedStruct("turn.checkpoint", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+    files: Schema.Number,
+    additions: Schema.Number,
+    deletions: Schema.Number,
+  }),
+  /** The conversation was rewound to before `messageId`: it and everything after it are gone. */
+  Schema.TaggedStruct("thread.rewound", { threadId: Schema.String, messageId: Schema.String }),
+  /** Slash commands the thread's harness offers; answers `thread.listCommands`. */
+  Schema.TaggedStruct("thread.commands", { threadId: Schema.String, commands: Schema.Array(SlashCommand) }),
+  /** The changes of one turn (see `turn.checkpoint`); answers `checkpoint.diff`. */
+  Schema.TaggedStruct("checkpoint.diff", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+    patch: Schema.String,
+    truncated: Schema.Boolean,
+    error: Schema.NullOr(Schema.String),
+  }),
   Schema.TaggedStruct("error", { threadId: Schema.NullOr(Schema.String), message: Schema.String }),
   Schema.TaggedStruct("settings.updated", { settings: Settings }),
   Schema.TaggedStruct("project.added", { project: Project }),
@@ -238,10 +284,26 @@ export const ClientCommand = Schema.Union([
     text: Schema.String,
     options: TurnOptions,
     requestId: Schema.String,
+    /** "worktree" starts the thread in a new git worktree on its own branch. */
+    workspace: Schema.Literals(["local", "worktree"]),
   }),
   Schema.TaggedStruct("thread.setModel", { threadId: Schema.String, model: Schema.NullOr(Schema.String) }),
   Schema.TaggedStruct("project.add", { path: Schema.String }),
+  /** Starts a turn; while one is running, the message goes into it instead (steering). */
   Schema.TaggedStruct("thread.send", { threadId: Schema.String, text: Schema.String, options: TurnOptions }),
+  /**
+   * Rewinds the conversation to before user message `messageId`. With `restoreFiles`, the
+   * thread's folder also goes back to how it was when that message was sent.
+   */
+  Schema.TaggedStruct("thread.rewind", { threadId: Schema.String, messageId: Schema.String, restoreFiles: Schema.Boolean }),
+  /** Summarizes the conversation so far to free up context. */
+  Schema.TaggedStruct("thread.compact", { threadId: Schema.String }),
+  /** Answered with a `thread.commands` event. */
+  Schema.TaggedStruct("thread.listCommands", { threadId: Schema.String }),
+  /** Answered with a `checkpoint.diff` event. */
+  Schema.TaggedStruct("checkpoint.diff", { threadId: Schema.String, messageId: Schema.String }),
+  /** Full-text search over messages; answered with a `search.results` frame. */
+  Schema.TaggedStruct("search", { query: Schema.String, requestId: Schema.String }),
   /** Answered with a `git.branches` event. */
   Schema.TaggedStruct("git.listBranches", { path: Schema.String }),
   /** Answered with a `git.diff` event. */
@@ -314,6 +376,8 @@ export const isTranscriptEvent = (event: RuntimeEvent): event is Extract<Runtime
     case "approval.requested":
     case "approval.resolved":
     case "turn.completed":
+    case "turn.checkpoint":
+    case "thread.rewound":
       return true;
     case "error":
       return event.threadId !== null;
@@ -356,6 +420,8 @@ export const ServerFrame = Schema.Union([
     events: Schema.Array(StoredEvent),
     page: PageInfo,
   }),
+  /** Answers a `search` command from this connection. */
+  Schema.TaggedStruct("search.results", { requestId: Schema.String, hits: Schema.Array(SearchHit) }),
   /** A live event; `id` is set on stored (transcript) events and advances the thread's cursor. */
   Schema.TaggedStruct("event", { id: Schema.NullOr(Schema.Number), event: RuntimeEvent }),
 ]);

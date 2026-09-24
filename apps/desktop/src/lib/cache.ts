@@ -11,7 +11,7 @@ import type { PageInfo, Project, ProviderStatus, Settings, ThreadInfo } from "@a
 import type { TranscriptItem } from "./store.ts";
 
 /** Bump when a record's shape changes; older records then read as a cold cache. */
-const VERSION = 2;
+const VERSION = 3;
 const DB = "apcode.cache";
 const SHELL = "shell";
 const THREADS = "threads";

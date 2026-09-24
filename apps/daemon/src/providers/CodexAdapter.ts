@@ -12,6 +12,7 @@ import {
   type ProviderAdapter,
   type ProviderSession,
   type StartSessionInput,
+  type TurnInput,
 } from "./ProviderAdapter.ts";
 
 const fail = (message: string) => new ProviderError({ provider: "codex", message });
@@ -137,6 +138,14 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
     threadId = started.thread.id;
     onResumeToken(threadId);
 
+    const input = (turn: TurnInput) => {
+      const text = textWithFiles(turn);
+      return [
+        ...turn.attachments.filter((a) => a.isImage).map((a) => ({ type: "localImage", path: a.path })),
+        ...(text ? [{ type: "text", text, text_elements: [] }] : []),
+      ];
+    };
+
     const session: ProviderSession = {
       send: (turn) =>
         Effect.gen(function* () {
@@ -146,13 +155,9 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
           const effortChanged = turn.effort !== null && turn.effort !== effort;
           permission = turn.permission;
           if (turn.effort) effort = turn.effort;
-          const text = textWithFiles(turn);
           const res = yield* request("turn/start", {
             threadId,
-            input: [
-              ...turn.attachments.filter((a) => a.isImage).map((a) => ({ type: "localImage", path: a.path })),
-              ...(text ? [{ type: "text", text, text_elements: [] }] : []),
-            ],
+            input: input(turn),
             ...(currentModel ? { model: currentModel } : {}),
             ...(effortChanged ? { effort: toCodexEffort(turn.effort!) } : {}),
             ...(permissionChanged
@@ -161,6 +166,18 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
           });
           activeTurnId = res.turn.id;
         }),
+      // Joins the running turn; with none running (it just ended), starts one.
+      steer: (turn) =>
+        Effect.suspend(() =>
+          activeTurnId
+            ? request("turn/steer", { threadId, input: input(turn), expectedTurnId: activeTurnId }).pipe(Effect.asVoid)
+            : session.send(turn),
+        ),
+      compact: Effect.suspend(() => {
+        emit({ _tag: "thread.status", status: "running" });
+        return request("thread/compact/start", { threadId }).pipe(Effect.asVoid);
+      }),
+      commands: Effect.succeed([]),
       interrupt: Effect.suspend(() =>
         activeTurnId ? request("turn/interrupt", { threadId, turnId: activeTurnId }).pipe(Effect.asVoid) : Effect.void,
       ),
@@ -181,4 +198,20 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
     return session;
   });
 
-export const CodexAdapter: ProviderAdapter = { kind: "codex", start };
+/** Loads the thread in a short-lived app-server and drops its last turns. The thread id stays. */
+const rewind: ProviderAdapter["rewind"] = ({ cwd, resumeToken, dropTurns }) =>
+  Effect.tryPromise({
+    try: async () => {
+      const rpc = await connectCodex(cwd, { onNotification: () => {}, onServerRequest: () => false, onExit: () => {} });
+      try {
+        await rpc.request("thread/resume", { threadId: resumeToken, excludeTurns: true, cwd });
+        if (dropTurns > 0) await rpc.request("thread/rollback", { threadId: resumeToken, numTurns: dropTurns });
+        return resumeToken;
+      } finally {
+        rpc.close();
+      }
+    },
+    catch: (e) => fail(`Couldn't rewind: ${e instanceof Error ? e.message : String(e)}`),
+  });
+
+export const CodexAdapter: ProviderAdapter = { kind: "codex", start, rewind };

@@ -1,7 +1,7 @@
-import type { AttachmentInput, Effort, PermissionLevel, ProviderKind, TurnOptions } from "@apcode/contracts";
+import type { Attachment, AttachmentInput, Effort, PermissionLevel, ProviderKind, TurnOptions } from "@apcode/contracts";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { useEffect, useReducer, useRef, useState } from "react";
-import type { PromptAttachment } from "@/components/agents/prompt-input";
+import { useEffect, useReducer, useRef } from "react";
+import { type DraftAttachment, getDraft, setDraft, useDraft } from "./drafts.ts";
 import { isTauri } from "./platform.ts";
 
 /** Effort levels each harness accepts, lowest first. */
@@ -82,14 +82,10 @@ export const useTurnPrefs = (key: string, provider: ProviderKind) => {
 
 // --- attachments -----------------------------------------------------------
 
-export interface DraftAttachment extends PromptAttachment {
-  readonly input: AttachmentInput;
-}
-
 const IMAGE_NAME = /\.(png|jpe?g|gif|webp)$/i;
 const fileName = (path: string) => path.split(/[\\/]/).at(-1) ?? path;
 
-const fromPath = (path: string): DraftAttachment => ({
+export const fromPath = (path: string): DraftAttachment => ({
   id: crypto.randomUUID(),
   name: fileName(path),
   image: IMAGE_NAME.test(path),
@@ -116,10 +112,31 @@ const fromFile = async (file: File): Promise<DraftAttachment> => {
   };
 };
 
-/** Files queued for the next message: picked, pasted, or dropped onto the window. */
-export const useAttachments = ({ acceptDrops }: { acceptDrops: boolean }) => {
-  const [attachments, setAttachments] = useState<ReadonlyArray<DraftAttachment>>([]);
+/** A sent message's files, back in a composer (they're on disk by then). */
+export const fromSent = (attachment: Attachment): DraftAttachment => fromPath(attachment.path);
+
+/** Past this, pasted text becomes an attached file instead of flooding the prompt (t3code uses 32 KiB too). */
+export const LARGE_PASTE_BYTES = 32 * 1024;
+
+const toBase64 = (text: string) => {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+};
+
+/** Pasted text as a file the agent can read. */
+export const fromText = (text: string): DraftAttachment => {
+  const name = `Pasted text (${Math.max(1, Math.round(text.length / 1024))} KB).txt`;
+  return { id: crypto.randomUUID(), name, image: false, input: { _tag: "data", name, mediaType: "text/plain", data: toBase64(text) } };
+};
+
+/** Files queued for the next message of composer `key`: picked, pasted, or dropped onto the window. */
+export const useAttachments = ({ key, acceptDrops }: { key: string; acceptDrops: boolean }) => {
+  const attachments = useDraft(key).attachments;
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const setAttachments = (update: (prev: ReadonlyArray<DraftAttachment>) => ReadonlyArray<DraftAttachment>) =>
+    setDraft(key, (draft) => ({ ...draft, attachments: update(draft.attachments) }));
 
   const add = (next: ReadonlyArray<DraftAttachment>) => setAttachments((prev) => [...prev, ...next]);
   const revoke = (list: ReadonlyArray<DraftAttachment>) => {
@@ -152,10 +169,10 @@ export const useAttachments = ({ acceptDrops }: { acceptDrops: boolean }) => {
 
   /** Hands the queue over for sending and empties it. */
   const take = (): ReadonlyArray<AttachmentInput> => {
-    const inputs = attachments.map((a) => a.input);
-    revoke(attachments);
-    setAttachments([]);
-    return inputs;
+    const current = getDraft(key).attachments;
+    revoke(current);
+    setAttachments(() => []);
+    return current.map((a) => a.input);
   };
 
   // Tauri swallows HTML drag-and-drop of files and reports their paths instead.
@@ -174,9 +191,9 @@ export const useAttachments = ({ acceptDrops }: { acceptDrops: boolean }) => {
       cancelled = true;
       unlisten?.();
     };
-  }, [acceptDrops]);
+  }, [acceptDrops, key]);
 
-  return { attachments, pick, addFiles, remove, take };
+  return { attachments, add, pick, addFiles, remove, take };
 };
 
 export const toTurnOptions = (prefs: TurnPrefs, attachments: ReadonlyArray<AttachmentInput>): TurnOptions => ({

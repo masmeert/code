@@ -3,6 +3,8 @@
  * binary so it runs on their own login (subscription or API key).
  */
 import {
+  forkSession,
+  getSessionMessages,
   query,
   type CanUseTool,
   type EffortLevel,
@@ -225,10 +227,34 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
                 effort = turn.effort;
               }
               const content = await toContent(turn);
-              inbox.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null });
+              inbox.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, uuid: turn.messageId as UUID });
             },
             catch: (e) => fail(e instanceof Error ? e.message : String(e)),
           }),
+        // Claude Code takes a message sent mid-turn in at its next step.
+        steer: (turn) =>
+          Effect.tryPromise({
+            try: async () => {
+              const content = await toContent(turn);
+              inbox.push({
+                type: "user",
+                message: { role: "user", content },
+                parent_tool_use_id: null,
+                uuid: turn.messageId as UUID,
+                priority: "now",
+              });
+            },
+            catch: (e) => fail(e instanceof Error ? e.message : String(e)),
+          }),
+        compact: Effect.sync(() => {
+          emit({ _tag: "thread.status", status: "running" });
+          inbox.push({ type: "user", message: { role: "user", content: "/compact" }, parent_tool_use_id: null });
+        }),
+        commands: Effect.tryPromise({
+          try: async () =>
+            (await q.supportedCommands()).map((c) => ({ name: c.name, description: c.description, argumentHint: c.argumentHint })),
+          catch: (e) => fail(String(e)),
+        }),
         interrupt: Effect.tryPromise({ try: () => q.interrupt(), catch: (e) => fail(String(e)) }).pipe(Effect.asVoid),
         respondApproval: (requestId, decision) =>
           Effect.suspend(() => {
@@ -260,4 +286,36 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
     catch: (e) => fail(e instanceof Error ? e.message : String(e)),
   });
 
-export const ClaudeAdapter: ProviderAdapter = { kind: "claude", start };
+type UUID = `${string}-${string}-${string}-${string}-${string}`;
+
+/** A real prompt in the session log, rather than a tool result or something injected. */
+const isPrompt = (entry: { type: string; parent_tool_use_id: string | null; message: unknown }) => {
+  if (entry.type !== "user" || entry.parent_tool_use_id) return false;
+  const content = (entry.message as { content?: unknown } | null)?.content;
+  if (typeof content === "string") return true;
+  return Array.isArray(content) && !content.some((block) => (block as { type?: string }).type === "tool_result");
+};
+
+/**
+ * Forks the session just before the message: the original stays intact, and the fork
+ * is what later turns resume. Messages carry our id when we sent them; older ones are
+ * found by counting prompts.
+ */
+const rewind: ProviderAdapter["rewind"] = ({ cwd, resumeToken, messageId, keep }) =>
+  Effect.tryPromise({
+    try: async () => {
+      if (keep === 0) return null;
+      const entries = await getSessionMessages(resumeToken, { dir: cwd });
+      let index = entries.findIndex((entry) => entry.uuid === messageId);
+      if (index === -1) {
+        let prompts = 0;
+        index = entries.findIndex((entry) => isPrompt(entry) && prompts++ === keep);
+      }
+      if (index <= 0) throw new Error("couldn't find that message in Claude's session log");
+      const { sessionId } = await forkSession(resumeToken, { dir: cwd, upToMessageId: entries[index - 1]!.uuid });
+      return sessionId;
+    },
+    catch: (e) => fail(`Couldn't rewind: ${e instanceof Error ? e.message : String(e)}`),
+  });
+
+export const ClaudeAdapter: ProviderAdapter = { kind: "claude", start, rewind };

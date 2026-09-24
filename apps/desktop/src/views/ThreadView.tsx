@@ -459,17 +459,41 @@ export const TurnList = ({
   busy: boolean;
 }) => {
   const turns = useMemo(() => toTurns(items), [items]);
-  return turns.map((turn, index) =>
-    turn.from === "user" ? (
-      <UserTurn key={turn.id} text={turn.text} attachments={turn.attachments} />
+  // Older turns skip layout and paint while off screen. Switched on after the first
+  // frame, so every turn has been laid out once and its real height is remembered.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setSettled(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  return turns.map((turn, index) => {
+    // The latest exchange stays fully rendered: it's what streams and what the scroller follows.
+    const className = settled && index < turns.length - 2 ? OFFSCREEN_SKIP : KEEP_RENDERED;
+    return turn.from === "user" ? (
+      <UserTurn key={turn.id} text={turn.text} attachments={turn.attachments} className={className} />
     ) : (
-      <AssistantTurn key={turn.id} items={turn.items} provider={provider} threadId={threadId} busy={busy} last={index === turns.length - 1} />
-    ),
-  );
+      <AssistantTurn
+        key={turn.id}
+        items={turn.items}
+        provider={provider}
+        threadId={threadId}
+        busy={busy}
+        last={index === turns.length - 1}
+        className={className}
+      />
+    );
+  });
 };
 
-const UserTurn = memo(({ text, attachments }: { text: string; attachments: ReadonlyArray<Attachment> }) => (
-  <Message from="user" animateIn>
+/**
+ * Lighter than virtualizing (the message rail reads every turn's text from the DOM):
+ * the turns stay in the document but cost nothing while scrolled away.
+ */
+const OFFSCREEN_SKIP = "[content-visibility:auto] [contain-intrinsic-size:auto_240px]";
+const KEEP_RENDERED = "[contain-intrinsic-size:auto_240px]";
+
+const UserTurn = memo(({ text, attachments, className }: { text: string; attachments: ReadonlyArray<Attachment>; className: string }) => (
+  <Message from="user" animateIn className={className}>
     <MessageContent className="gap-1.5">
       {attachments.length ? <AttachmentList attachments={attachments} /> : null}
       {text ? (
@@ -488,15 +512,16 @@ interface AssistantTurnProps {
   busy: boolean;
   /** The newest turn: its last block is the one streaming. */
   last: boolean;
+  className: string;
 }
 
 const AssistantTurn = memo(
-  ({ items, provider, threadId, busy, last }: AssistantTurnProps) => {
+  ({ items, provider, threadId, busy, last, className }: AssistantTurnProps) => {
     const ProviderLogo = PROVIDER_LOGO[provider];
     const blocks = useMemo(() => toBlocks(items), [items]);
     const lastItem = items.at(-1);
     return (
-      <Message from="assistant">
+      <Message from="assistant" className={className}>
         <MessageAvatar className={PROVIDER_AVATAR_CLASS[provider]}>
           <ProviderLogo />
         </MessageAvatar>
@@ -513,7 +538,12 @@ const AssistantTurn = memo(
   },
   // `toTurns` rebuilds the turn arrays each time; the items inside keep their identity.
   (a, b) =>
-    a.provider === b.provider && a.threadId === b.threadId && a.busy === b.busy && a.last === b.last && sameItems(a.items, b.items),
+    a.provider === b.provider &&
+    a.threadId === b.threadId &&
+    a.busy === b.busy &&
+    a.last === b.last &&
+    a.className === b.className &&
+    sameItems(a.items, b.items),
 );
 
 interface AgentBlockProps {

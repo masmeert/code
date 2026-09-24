@@ -9,6 +9,7 @@ import type {
   ProviderKind,
   ProviderStatus,
   RuntimeEvent,
+  SearchHit,
   Settings,
   StoredEvent,
   ThreadInfo,
@@ -22,9 +23,30 @@ import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { mkdir, writeFile } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { basename, extname, join, relative } from "node:path";
 import { generateCommitMessage } from "./commitMessage.ts";
-import { checkoutBranch, commitAll, createBranch, listBranches, pushBranch, readBranch, readDiff, readRecentSubjects, readStatus } from "./git.ts";
+import {
+  addWorktree,
+  captureCheckpoint,
+  checkoutBranch,
+  checkpointRef,
+  commitAll,
+  createBranch,
+  deleteCheckpoints,
+  deleteThreadCheckpoints,
+  hasCheckpoint,
+  listBranches,
+  pushBranch,
+  readBranch,
+  readCheckpointDiff,
+  readCheckpointStats,
+  readDiff,
+  readRecentSubjects,
+  readStatus,
+  removeWorktreeIfClean,
+  repoRoot,
+  restoreCheckpoint,
+} from "./git.ts";
 import { ClaudeAdapter } from "./providers/ClaudeAdapter.ts";
 import { CodexAdapter } from "./providers/CodexAdapter.ts";
 import { ProviderError, type ProviderAdapter, type ProviderSession } from "./providers/ProviderAdapter.ts";
@@ -64,14 +86,64 @@ export type ThreadRead =
 
 /** A client further behind than this gets a fresh snapshot instead of a replay. */
 const MAX_REPLAY = 2000;
+/** Same, by size: a replay this big costs more than the snapshot (t3code's budget is 8MB too). */
+const MAX_REPLAY_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Streamed text is merged into one delta per message per window before it goes out,
+ * instead of a frame (and a client re-render) per token. Any other event flushes first,
+ * so order is kept.
+ */
+const DELTA_FLUSH_MS = 40;
+
+/** An agent process idle this long is stopped; the next message resumes it (t3code reaps at 30 min too). */
+const SESSION_IDLE_MS = 30 * 60 * 1000;
+const REAP_INTERVAL_MS = 5 * 60 * 1000;
+
+type AssistantDelta = Extract<RuntimeEvent, { _tag: "assistant.delta" }>;
 
 interface ThreadEntry {
   info: ThreadInfo;
   /** Null until the first message after creation or restart; agent processes start lazily. */
   session: ProviderSession | null;
   resumeToken: string | null;
+  /** Last time the thread's agent did or was asked anything; the reaper stops long-idle sessions. */
+  activeAt: number;
+  /** The user message that started the turn in progress; its snapshots bracket the turn. */
+  currentTurn: string | null;
   readonly lock: Semaphore.Semaphore;
 }
+
+/**
+ * Runs `load` for a key one at a time. Calls made while it runs share a single
+ * follow-up run, so a burst of refreshes costs at most two, and no caller gets a
+ * result that started before it asked.
+ */
+const coalesced = <A>(load: (key: string) => Promise<A>) => {
+  const inFlight = new Map<string, Promise<A>>();
+  const queued = new Map<string, Promise<A>>();
+  const run = (key: string): Promise<A> => {
+    const promise: Promise<A> = load(key).finally(() => {
+      if (inFlight.get(key) === promise) inFlight.delete(key);
+    });
+    inFlight.set(key, promise);
+    return promise;
+  };
+  return (key: string): Promise<A> => {
+    const current = inFlight.get(key);
+    if (!current) return run(key);
+    const next = queued.get(key);
+    if (next) return next;
+    const follow = current
+      .catch(() => undefined)
+      .then(() => {
+        queued.delete(key);
+        return run(key);
+      });
+    queued.set(key, follow);
+    return follow;
+  };
+};
 
 export class SessionManager extends Context.Service<
   SessionManager,
@@ -100,6 +172,8 @@ export class SessionManager extends Context.Service<
       before: number,
       turnLimit: number,
     ) => { readonly events: ReadonlyArray<StoredEvent>; readonly page: PageInfo } | null;
+    /** Messages matching `query`, newest first, in threads that still exist. */
+    readonly search: (query: string) => ReadonlyArray<SearchHit>;
     readonly shutdown: Effect.Effect<void>;
   }
 >()("apcode/SessionManager") {}
@@ -115,6 +189,7 @@ const titleFrom = (text: string, fallback: string) => {
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 const ATTACHMENTS_DIR = join(DATA_DIR, "attachments");
+const WORKTREES_DIR = join(DATA_DIR, "worktrees");
 
 /** Puts every attachment on disk: paths pass through, pasted bytes are written under the data dir. */
 const resolveAttachments = (inputs: ReadonlyArray<AttachmentInput>) =>
@@ -142,13 +217,16 @@ const make = Effect.gen(function* () {
   const registry = yield* ProviderRegistry;
   const pubsub = yield* PubSub.unbounded<SequencedEvent>();
   const threads = new Map<string, ThreadEntry>();
-  /** Deltas of messages still streaming, keyed by message id; dropped once the message completes. */
-  const streaming = new Map<string, Array<RuntimeEvent>>();
+  /** Text published so far of messages still streaming, keyed by message id; dropped once the message completes. */
+  const streaming = new Map<string, { readonly threadId: string; readonly text: string }>();
+  /** Deltas waiting for the next flush, merged per message. */
+  const pendingDeltas = new Map<string, AssistantDelta>();
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let seq = 0;
 
   // --- restore -------------------------------------------------------------
   for (const { info, resumeToken } of yield* store.load) {
-    threads.set(info.id, { info, session: null, resumeToken, lock: yield* Semaphore.make(1) });
+    threads.set(info.id, { info, session: null, resumeToken, activeAt: Date.now(), currentTurn: null, lock: yield* Semaphore.make(1) });
   }
   // Approvals pending when the daemon stopped died with their agent process.
   for (const [requestId, threadId] of store.unresolvedApprovals()) {
@@ -188,12 +266,33 @@ const make = Effect.gen(function* () {
     refreshMeta(entry);
   };
 
+  const flushDeltas = () => {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    if (pendingDeltas.size === 0) return;
+    const batch = [...pendingDeltas.values()];
+    pendingDeltas.clear();
+    for (const event of batch) emit(event);
+  };
+
   const publish = (event: RuntimeEvent) => {
+    if (event._tag === "assistant.delta") {
+      const pending = pendingDeltas.get(event.messageId);
+      pendingDeltas.set(event.messageId, pending ? { ...pending, delta: pending.delta + event.delta } : event);
+      flushTimer ??= setTimeout(flushDeltas, DELTA_FLUSH_MS);
+      return;
+    }
+    flushDeltas();
+    emit(event);
+  };
+
+  const emit = (event: RuntimeEvent) => {
     let id: number | null = null;
     if (event._tag === "assistant.delta") {
-      const list = streaming.get(event.messageId) ?? [];
-      list.push(event);
-      streaming.set(event.messageId, list);
+      const text = streaming.get(event.messageId)?.text ?? "";
+      streaming.set(event.messageId, { threadId: event.threadId, text: text + event.delta });
     } else if (isPersisted(event)) {
       if (event._tag === "assistant.completed") streaming.delete(event.messageId);
       id = store.appendEvent((event as { threadId: string }).threadId, event);
@@ -201,6 +300,10 @@ const make = Effect.gen(function* () {
     if (event._tag === "thread.status") {
       const entry = threads.get(event.threadId);
       if (entry) entry.info = { ...entry.info, status: event.status };
+    }
+    if ("threadId" in event && event.threadId) {
+      const entry = threads.get(event.threadId);
+      if (entry) entry.activeAt = Date.now();
     }
     PubSub.publishUnsafe(pubsub, { seq: ++seq, id, event });
     if (event._tag === "user.message" || event._tag === "turn.completed") touch(event.threadId);
@@ -239,11 +342,29 @@ const make = Effect.gen(function* () {
                 return;
               }
               publish({ ...event, threadId } as RuntimeEvent);
+              if (event._tag === "turn.completed") endTurn(entry);
             },
           }),
         ).pipe(Effect.tap((session) => Effect.sync(() => (entry.session = session))));
       }),
     );
+
+  /**
+   * Snapshots the folder after a turn and announces what the turn changed. Runs in the
+   * background: the turn is over either way.
+   */
+  const endTurn = (entry: ThreadEntry) => {
+    const messageId = entry.currentTurn;
+    entry.currentTurn = null;
+    if (!messageId) return;
+    const { id: threadId, cwd } = entry.info;
+    void (async () => {
+      if (!(await captureCheckpoint(cwd, checkpointRef(threadId, messageId, "end")))) return;
+      const stats = await readCheckpointStats(cwd, threadId, messageId);
+      if (!stats || stats.files === 0 || threads.get(threadId) !== entry) return;
+      publish({ _tag: "turn.checkpoint", threadId, messageId, ...stats });
+    })();
+  };
 
   /** Runs `f` against the thread's live session, if it has one. */
   const withLiveSession = (threadId: string, f: (session: ProviderSession) => Effect.Effect<void, ProviderError>) =>
@@ -256,9 +377,17 @@ const make = Effect.gen(function* () {
       threads.delete(threadId);
       if (entry.session) yield* entry.session.close;
       store.deleteThread(threadId);
-      for (const [messageId, deltas] of streaming) {
-        if ((deltas[0] as { threadId: string } | undefined)?.threadId === threadId) streaming.delete(messageId);
-      }
+      const { cwd, worktree } = entry.info;
+      void (async () => {
+        await deleteThreadCheckpoints(cwd, threadId);
+        // A worktree with work left in it stays for the user to deal with; its branch always stays.
+        if (worktree) {
+          const root = await repoRoot(cwd);
+          if (root) await removeWorktreeIfClean(root);
+        }
+      })();
+      for (const [messageId, message] of streaming) if (message.threadId === threadId) streaming.delete(messageId);
+      for (const [messageId, delta] of pendingDeltas) if (delta.threadId === threadId) pendingDeltas.delete(messageId);
       publish({ _tag: "thread.removed", threadId });
     });
 
@@ -283,19 +412,101 @@ const make = Effect.gen(function* () {
       // Writing in an archived thread brings it back.
       yield* setArchived(entry, false);
       const attachments = yield* resolveAttachments(options.attachments);
-      publish({
-        _tag: "user.message",
-        threadId,
-        messageId: crypto.randomUUID(),
-        text,
-        ...(attachments.length ? { attachments } : {}),
-      });
+      const messageId = crypto.randomUUID();
+      const turn = { messageId, text, attachments, effort: options.effort, permission: options.permission };
+      // A turn is running: the message joins it.
+      const { status } = entry.info;
+      if (entry.session && (status === "running" || status === "awaiting-approval")) {
+        publish({ _tag: "user.message", threadId, messageId, text, ...(attachments.length ? { attachments } : {}), steer: true });
+        return yield* entry.session.steer(turn);
+      }
+      publish({ _tag: "user.message", threadId, messageId, text, ...(attachments.length ? { attachments } : {}) });
       publish({ _tag: "thread.status", threadId, status: "running" });
+      // Snapshot the folder before the agent touches it, so the turn's changes can be shown and undone.
+      entry.currentTurn = messageId;
+      yield* Effect.promise(() => captureCheckpoint(entry.info.cwd, checkpointRef(threadId, messageId, "start")));
       const session = yield* ensureSession(entry, options).pipe(
         Effect.tapError(() => Effect.sync(() => publish({ _tag: "thread.status", threadId, status: "error" }))),
       );
-      yield* session.send({ text, attachments, effort: options.effort, permission: options.permission });
+      yield* session.send(turn);
     });
+
+  const isBusy = (entry: ThreadEntry) => entry.info.status === "running" || entry.info.status === "awaiting-approval";
+
+  /**
+   * Rewinds to before a user message: the provider's conversation first (the step that
+   * can refuse), then the transcript, then, if asked, the files.
+   */
+  const rewind = (command: Extract<ClientCommand, { _tag: "thread.rewind" }>) =>
+    Effect.gen(function* () {
+      const entry = yield* getEntry(command.threadId);
+      const { id: threadId, cwd, provider } = entry.info;
+      if (isBusy(entry)) return yield* Effect.fail(fail("Stop the agent before rewinding"));
+      const found = store.findUserMessage(threadId, command.messageId);
+      if (!found) return yield* Effect.fail(fail("That message is gone"));
+      if (found.event.steer) return yield* Effect.fail(fail("A message sent mid-turn can't be rewound to"));
+      if (command.restoreFiles) {
+        if ([...threads.values()].some((other) => other !== entry && other.info.cwd === cwd && isBusy(other))) {
+          return yield* Effect.fail(fail("Another thread is working in this folder; restoring files would undo its changes too"));
+        }
+        if (!(yield* Effect.promise(() => hasCheckpoint(cwd, threadId, command.messageId)))) {
+          return yield* Effect.fail(fail("There's no snapshot of the files from that point"));
+        }
+      }
+      if (entry.session) {
+        const session = entry.session;
+        entry.session = null;
+        yield* session.close;
+      }
+      if (entry.resumeToken) {
+        const token = yield* ADAPTERS[provider].rewind({
+          cwd,
+          resumeToken: entry.resumeToken,
+          messageId: command.messageId,
+          keep: found.before,
+          dropTurns: found.from.filter((message) => !message.steer).length,
+        });
+        entry.resumeToken = token;
+        store.setResumeToken(threadId, token);
+      }
+      store.truncate(threadId, found.seq);
+      publish({ _tag: "thread.rewound", threadId, messageId: command.messageId });
+      touch(threadId);
+      const error = command.restoreFiles ? yield* Effect.promise(() => restoreCheckpoint(cwd, threadId, command.messageId)) : null;
+      void deleteCheckpoints(cwd, threadId, found.from.map((message) => message.messageId));
+      if (error) return yield* Effect.fail(fail(`Rewound the conversation, but couldn't restore the files: ${error}`));
+    });
+
+  const compact = (threadId: string) =>
+    Effect.gen(function* () {
+      const entry = yield* getEntry(threadId);
+      if (isBusy(entry)) return yield* Effect.fail(fail("Wait for the agent to finish before compacting"));
+      if (!entry.resumeToken && !entry.session) return;
+      const session = yield* ensureSession(entry, { effort: null, permission: "ask", attachments: [] });
+      yield* session.compact;
+    });
+
+  const listCommands = (threadId: string) =>
+    Effect.gen(function* () {
+      const entry = yield* getEntry(threadId);
+      const commands = entry.session ? yield* entry.session.commands.pipe(Effect.orElseSucceed(() => [])) : [];
+      publish({ _tag: "thread.commands", threadId, commands: [...commands] });
+    });
+
+  /** Stops agent processes nobody has used in a while; they resume from their token on the next message. */
+  const reapIdleSessions = Effect.gen(function* () {
+    const now = Date.now();
+    for (const entry of threads.values()) {
+      const { status } = entry.info;
+      if (!entry.session || status === "running" || status === "awaiting-approval") continue;
+      if (now - entry.activeAt < SESSION_IDLE_MS) continue;
+      const session = entry.session;
+      entry.session = null;
+      yield* session.close;
+    }
+  });
+  const reaper = setInterval(() => Effect.runFork(reapIdleSessions), REAP_INTERVAL_MS);
+  yield* Effect.addFinalizer(() => Effect.sync(() => clearInterval(reaper)));
 
   /** Announces the branches at `path`; `error` reports a failed checkout alongside them. */
   const publishBranches = (path: string, error: string | null = null) =>
@@ -308,6 +519,10 @@ const make = Effect.gen(function* () {
     Effect.promise(() => readStatus(path)).pipe(
       Effect.map((status) => publish({ _tag: "git.status", path, status, action, error })),
     );
+
+  // Plain refreshes (every window, every finished tool call) coalesce per repo.
+  const refreshStatus = coalesced((path) => readStatus(path).then((status) => publish({ _tag: "git.status", path, status, action: null, error: null })));
+  const refreshDiff = coalesced((path) => readDiff(path).then((diff) => publish({ _tag: "git.diff", path, ...diff })));
 
   /** A message for everything uncommitted at `path`, from the commit model in settings. */
   const writeCommitMessage = (path: string) =>
@@ -340,26 +555,45 @@ const make = Effect.gen(function* () {
       return yield* lock.withPermit(effect);
     });
 
+  /**
+   * A worktree of the project's repo on a new branch named after the thread, under the
+   * data dir. Resolves to the thread's folder in it (the project may be a repo subfolder).
+   */
+  const makeWorktree = (projectPath: string, title: string, threadId: string) =>
+    Effect.gen(function* () {
+      const root = yield* Effect.promise(() => repoRoot(projectPath));
+      if (!root) return yield* Effect.fail(fail("New worktrees need the project to be a git repo"));
+      const slug = `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "thread"}-${threadId.slice(0, 6)}`;
+      const path = join(WORKTREES_DIR, basename(root), slug);
+      const error = yield* Effect.promise(() => addWorktree(projectPath, path, `apcode/${slug}`));
+      if (error) return yield* Effect.fail(fail(`Couldn't create a worktree: ${error}`));
+      return join(path, relative(root, projectPath));
+    });
+
   const create = (command: Extract<ClientCommand, { _tag: "thread.create" }>) =>
     Effect.gen(function* () {
       const { project, created } = yield* projectsStore.ensure(command.path).pipe(Effect.mapError((e) => fail(e.message)));
       if (created) publish({ _tag: "project.added", project });
 
       const now = Date.now();
+      const id = crypto.randomUUID();
+      const title = titleFrom(command.text, project.name);
+      const cwd = command.workspace === "worktree" ? yield* makeWorktree(project.path, title, id) : project.path;
       const info: ThreadInfo = {
-        id: crypto.randomUUID(),
+        id,
         projectId: project.id,
         provider: command.provider,
         model: command.model,
-        cwd: project.path,
-        title: titleFrom(command.text, project.name),
+        cwd,
+        title,
         status: "idle",
         createdAt: now,
         updatedAt: now,
-        branch: yield* Effect.promise(() => readBranch(project.path)),
+        branch: yield* Effect.promise(() => readBranch(cwd)),
         archivedAt: null,
+        worktree: command.workspace === "worktree",
       };
-      const entry: ThreadEntry = { info, session: null, resumeToken: null, lock: yield* Semaphore.make(1) };
+      const entry: ThreadEntry = { info, session: null, resumeToken: null, activeAt: now, currentTurn: null, lock: yield* Semaphore.make(1) };
       threads.set(info.id, entry);
       store.insertThread(info);
       publish({ _tag: "thread.created", thread: info, requestId: command.requestId });
@@ -379,12 +613,22 @@ const make = Effect.gen(function* () {
         return create(command);
       case "thread.send":
         return Effect.flatMap(getEntry(command.threadId), (entry) => send(entry, command.text, command.options));
+      case "thread.rewind":
+        return rewind(command);
+      case "thread.compact":
+        return compact(command.threadId);
+      case "thread.listCommands":
+        return listCommands(command.threadId);
+      case "checkpoint.diff":
+        return Effect.gen(function* () {
+          const entry = yield* getEntry(command.threadId);
+          const diff = yield* Effect.promise(() => readCheckpointDiff(entry.info.cwd, command.threadId, command.messageId));
+          publish({ _tag: "checkpoint.diff", threadId: command.threadId, messageId: command.messageId, ...diff });
+        });
       case "git.listBranches":
         return publishBranches(command.path);
       case "git.diff":
-        return Effect.promise(() => readDiff(command.path)).pipe(
-          Effect.map((diff) => publish({ _tag: "git.diff", path: command.path, ...diff })),
-        );
+        return Effect.promise(() => refreshDiff(command.path));
       case "git.checkout":
       case "git.createBranch":
         return Effect.gen(function* () {
@@ -394,7 +638,7 @@ const make = Effect.gen(function* () {
           for (const entry of threads.values()) if (entry.info.cwd === command.path) refreshMeta(entry);
         });
       case "git.status":
-        return publishStatus(command.path);
+        return Effect.promise(() => refreshStatus(command.path));
       case "git.commit":
       case "git.push": {
         const { path } = command;
@@ -458,6 +702,7 @@ const make = Effect.gen(function* () {
       case "thread.subscribe":
       case "thread.unsubscribe":
       case "thread.loadOlder":
+      case "search":
         return Effect.void;
       case "settings.update":
         return settingsStore
@@ -486,12 +731,19 @@ const make = Effect.gen(function* () {
     ),
     readThread: (threadId, after, turnLimit) => {
       if (!threads.has(threadId)) return null;
-      const live = [...streaming.values()].flat().filter((e) => (e as { threadId: string }).threadId === threadId);
+      // Each streaming message's text so far, as one delta.
+      const live: Array<RuntimeEvent> = [];
+      for (const [messageId, message] of streaming) {
+        if (message.threadId === threadId) live.push({ _tag: "assistant.delta", threadId, messageId, delta: message.text });
+      }
       const cursor = store.cursor(threadId);
       // A cursor past the end means the cache is from another database: start over.
+      // Sized before anything is decoded, so a huge gap never gets read.
       if (after !== null && after <= cursor) {
-        const events = store.readAfter(threadId, after);
-        if (events.length <= MAX_REPLAY) return { _tag: "thread.replay", events, streaming: live, cursor, seq };
+        const { count, bytes } = store.measureAfter(threadId, after);
+        if (count <= MAX_REPLAY && bytes <= MAX_REPLAY_BYTES) {
+          return { _tag: "thread.replay", events: store.readAfter(threadId, after), streaming: live, cursor, seq };
+        }
       }
       const { events, page } = store.readTurns(threadId, turnLimit);
       return { _tag: "thread.snapshot", events, streaming: live, cursor, page, seq };
@@ -501,7 +753,11 @@ const make = Effect.gen(function* () {
       const { events, page } = store.readTurns(threadId, turnLimit, before);
       return { events, page: page ?? { before, hasMore: false } };
     },
-    shutdown: Effect.forEach([...threads.values()], (t) => t.session?.close ?? Effect.void, { discard: true }),
+    search: (query) => store.search(query, 50).filter((hit) => threads.has(hit.threadId)),
+    shutdown: Effect.suspend(() => {
+      flushDeltas();
+      return Effect.forEach([...threads.values()], (t) => t.session?.close ?? Effect.void, { discard: true });
+    }),
   });
 });
 

@@ -86,8 +86,9 @@ export const Sidebar = (props: {
   const projectOf = (info: ThreadInfo) =>
     projects.find((p) => p.id === info.projectId) ?? { id: info.projectId, name: info.cwd.split("/").at(-1) ?? info.cwd, path: info.cwd, addedAt: 0 };
 
-  const renderCards = (infos: Array<ThreadInfo>) =>
-    infos.map((info) => (
+  const renderCards = (infos: Array<ThreadInfo>) => (
+    <div className="flex flex-col gap-1">
+      {infos.map((info) => (
           <ThreadCard
             key={info.id}
             info={info}
@@ -98,11 +99,13 @@ export const Sidebar = (props: {
             now={now}
             onSelect={() => props.onSelect(info.id)}
           />
-    ));
+      ))}
+    </div>
+  );
 
   const renderList = (label: string, infos: Array<ThreadInfo>) =>
     infos.length === 0 ? null : (
-      <section className="flex flex-col gap-0.5">
+      <section className="flex flex-col">
         <h3 className="px-3 pt-2 pb-1 text-[11px] font-medium text-muted-foreground">{label}</h3>
         {renderCards(infos)}
       </section>
@@ -113,7 +116,7 @@ export const Sidebar = (props: {
     if (infos.length === 0) return null;
     const expanded = open || Boolean(query);
     return (
-      <section className="flex flex-col gap-0.5">
+      <section className="flex flex-col">
         <button
           type="button"
           aria-expanded={expanded}
@@ -249,24 +252,43 @@ const ProjectFilter = (props: {
   );
 };
 
-/** What a thread is doing, right of its title. */
-const StatusMark = ({ info, unread }: { info: ThreadInfo; unread: boolean }) => {
-  if (info.status === "running") {
-    const Logo = PROVIDER_LOGO[info.provider];
-    return (
-      <Logo
-        aria-label="Working"
-        className={cn(
-          "size-3.5 shrink-0 animate-spin [animation-duration:2.4s]",
-          info.provider === "claude" ? "text-[#D97757]" : "text-foreground",
-        )}
-      />
-    );
-  }
-  if (info.status === "awaiting-approval") return <span className="shrink-0 text-[11px] font-medium text-warning">Needs approval</span>;
-  if (info.status === "error") return <span className="shrink-0 text-[11px] font-medium text-destructive">Error</span>;
-  if (unread) return <span aria-label="New activity" className="size-2 shrink-0 rounded-full bg-foreground" />;
-  return null;
+/** Leading dot on the meta row: hue only when the thread needs you, solid while there's something new. */
+const StatusDot = ({ info, unread, settled }: { info: ThreadInfo; unread: boolean; settled: boolean }) => {
+  const [label, tone] =
+    info.status === "awaiting-approval"
+      ? ["Needs approval", "bg-warning"]
+      : info.status === "error"
+        ? ["Error", "bg-destructive"]
+        : info.status === "running"
+          ? ["Working", "bg-foreground animate-pulse"]
+          : unread
+            ? ["New activity", "bg-foreground"]
+            : settled
+              ? ["Settled", "bg-muted-foreground/25"]
+              : ["Idle", "bg-muted-foreground/60"];
+  return <span role="img" aria-label={label} className={cn("size-2 shrink-0 rounded-full", tone)} />;
+};
+
+/** Provider mark; spins while the agent works. */
+const ProviderMark = ({ info }: { info: ThreadInfo }) => {
+  const Logo = PROVIDER_LOGO[info.provider];
+  const running = info.status === "running";
+  return (
+    <Logo
+      className={cn(
+        "size-3.5 shrink-0",
+        running && "animate-spin [animation-duration:2.4s]",
+        running && info.provider === "claude" ? "text-[#D97757]" : "text-muted-foreground",
+      )}
+    />
+  );
+};
+
+/** Right end of the meta row: why the thread needs you, else its age. */
+const TrailingLabel = ({ info, now }: { info: ThreadInfo; now: number }) => {
+  if (info.status === "awaiting-approval") return <span className="font-medium text-warning">Needs approval</span>;
+  if (info.status === "error") return <span className="font-medium text-destructive">Error</span>;
+  return <span className="tabular-nums">{ago(info.updatedAt, now)}</span>;
 };
 
 interface CardAction {
@@ -372,44 +394,70 @@ const ThreadCard = (props: {
             props.onSelect();
           }}
           className={cn(
-            "group/card cursor-default rounded-xl px-3 py-2 outline-none transition-colors focus-visible:ring-4 focus-visible:ring-ring",
-            props.active ? "bg-muted" : "hover:bg-muted/50",
+            "group/card relative cursor-default rounded-xl px-3 py-2.5 outline-none transition-colors focus-visible:ring-4 focus-visible:ring-ring",
+            // Hairline centred in the gap above each row; hidden next to a filled (hovered or current) row.
+            "before:pointer-events-none before:absolute before:inset-x-3 before:-top-[2.5px] before:h-px before:bg-border/60",
+            "first:before:hidden [:hover+&]:before:hidden [[aria-current=page]+&]:before:hidden",
+            props.active ? "bg-muted before:hidden" : "hover:bg-muted/50 hover:before:hidden",
           )}
         >
-          <div className="flex h-5 items-center gap-2 text-xs text-muted-foreground">
-            <ProjectBadge project={project} />
-            <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+          <p className={cn("truncate text-sm text-foreground", props.unread ? "font-semibold" : "font-medium", props.settled && !props.active && "text-foreground/75")}>
+            {info.title}
+          </p>
+          <div className="mt-1 flex h-5 items-center gap-2 text-xs text-muted-foreground">
+            <StatusDot info={info} unread={props.unread} settled={props.settled} />
+            <ProviderMark info={info} />
+            <span className="flex min-w-0 flex-1 items-center gap-2">
               <span className="shrink-0">{project.name}</span>
-              {info.branch ? <span className="min-w-0 truncate text-muted-foreground/60">{info.branch}</span> : null}
+              {info.branch ? (
+                <>
+                  <span aria-hidden="true" className="h-3 w-px shrink-0 bg-border" />
+                  <span className="min-w-0 truncate text-muted-foreground/70">{info.branch}</span>
+                </>
+              ) : null}
             </span>
-            <span className={cn("shrink-0 tabular-nums", menuOpen ? "hidden" : "group-hover/card:hidden")}>{ago(info.updatedAt, props.now)}</span>
-            <MorphPopover open={menuOpen} onOpenChange={setMenuOpen}>
-              <MorphPopoverTrigger>
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  aria-label={`Actions for ${info.title}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className={cn(
-                    "-my-1 -mr-1.5 size-6 shrink-0 place-items-center rounded-md hover:bg-foreground/5",
-                    menuOpen ? "grid" : "hidden group-hover/card:grid",
-                  )}
-                >
-                  <MoreHorizontal className="size-4" />
-                </button>
-              </MorphPopoverTrigger>
-              <MorphPopoverContent side="bottom" align="end" sideOffset={8} radius={12} className="w-48 p-1.5">
-                <MorphPopoverMenu onClick={(e) => e.stopPropagation()}>
-                  {actions.map((action) => (
-                    <MenuRow key={action.key} action={action} onDone={() => setMenuOpen(false)} />
-                  ))}
-                </MorphPopoverMenu>
-              </MorphPopoverContent>
-            </MorphPopover>
-          </div>
-          <div className="mt-0.5 flex h-5 items-center gap-2">
-            <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{info.title}</p>
-            <StatusMark info={info} unread={props.unread} />
+            <span className={cn("shrink-0", menuOpen ? "hidden" : "group-hover/card:hidden")}>
+              <TrailingLabel info={info} now={props.now} />
+            </span>
+            <span className={cn("-my-1 -mr-1 shrink-0 items-center gap-0.5", menuOpen ? "flex" : "hidden group-hover/card:flex")}>
+              {info.archivedAt === null ? (
+                <Tooltip content={props.settled ? "Unsettle" : "Settle"} side="bottom">
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    disabled={!canSettle(info)}
+                    aria-label={props.settled ? "Unsettle" : "Settle"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSettled(info.id, !props.settled);
+                    }}
+                    className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
+                  >
+                    {props.settled ? <CircleDot className="size-3.5" /> : <CircleCheck className="size-3.5" />}
+                  </button>
+                </Tooltip>
+              ) : null}
+              <MorphPopover open={menuOpen} onOpenChange={setMenuOpen}>
+                <MorphPopoverTrigger>
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label={`Actions for ${info.title}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground"
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </button>
+                </MorphPopoverTrigger>
+                <MorphPopoverContent side="bottom" align="end" sideOffset={8} radius={12} className="w-48 p-1.5">
+                  <MorphPopoverMenu onClick={(e) => e.stopPropagation()}>
+                    {actions.map((action) => (
+                      <MenuRow key={action.key} action={action} onDone={() => setMenuOpen(false)} />
+                    ))}
+                  </MorphPopoverMenu>
+                </MorphPopoverContent>
+              </MorphPopover>
+            </span>
           </div>
         </div>
       </ContextMenuTrigger>

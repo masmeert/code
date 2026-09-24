@@ -13,7 +13,9 @@ import {
   type PageInfo,
   type RepoStatus,
   type RuntimeEvent,
+  type SearchHit,
   type ServerFrame,
+  type SlashCommand,
   type StoredEvent,
   type ThreadInfo,
   type TurnOptions,
@@ -23,7 +25,23 @@ import { useEffect, useSyncExternalStore } from "react";
 import { loadShell, loadTranscript, removeTranscript, saveShell, saveTranscript } from "./cache.ts";
 
 export type TranscriptItem =
-  | { readonly kind: "user"; readonly id: string; readonly text: string; readonly attachments: ReadonlyArray<Attachment> }
+  | {
+      readonly kind: "user";
+      readonly id: string;
+      readonly text: string;
+      readonly attachments: ReadonlyArray<Attachment>;
+      /** Sent into a running turn; those can't be rewound to. */
+      readonly steer: boolean;
+    }
+  /** What a turn changed on disk; `id` is `checkpoint:<messageId>` of the message that started it. */
+  | {
+      readonly kind: "checkpoint";
+      readonly id: string;
+      readonly messageId: string;
+      readonly files: number;
+      readonly additions: number;
+      readonly deletions: number;
+    }
   | { readonly kind: "assistant"; readonly id: string; readonly text: string }
   | {
       readonly kind: "tool";
@@ -85,6 +103,18 @@ export interface State {
   readonly diffs: Readonly<Record<string, RepoDiff>>;
   /** Working-tree/upstream state per repo path, fetched on demand by the git menu. */
   readonly repos: Readonly<Record<string, RepoState>>;
+  /** Slash commands per thread, fetched when the command menu opens. */
+  readonly commands: Readonly<Record<string, ReadonlyArray<SlashCommand>>>;
+  /** One turn's changes, keyed `<threadId>:<messageId>`, fetched by the changes panel. */
+  readonly turnDiffs: Readonly<Record<string, RepoDiff>>;
+  /** Messages written while the agent worked, held here until its turn ends. Per window. */
+  readonly followUps: Readonly<Record<string, ReadonlyArray<FollowUp>>>;
+}
+
+export interface FollowUp {
+  readonly id: string;
+  readonly text: string;
+  readonly options: TurnOptions;
 }
 
 export interface RepoState {
@@ -157,6 +187,9 @@ const initial: State = {
   branches: {},
   diffs: {},
   repos: {},
+  commands: {},
+  turnDiffs: {},
+  followUps: {},
 };
 
 /** Request ids of `thread.create` commands sent from this window. */
@@ -179,7 +212,21 @@ const upsert = (items: ReadonlyArray<TranscriptItem>, id: string, next: (prev: T
 const reduceItems = (items: ReadonlyArray<TranscriptItem>, event: RuntimeEvent, id: number | null): ReadonlyArray<TranscriptItem> => {
   switch (event._tag) {
     case "user.message":
-      return upsert(items, event.messageId, () => ({ kind: "user", id: event.messageId, text: event.text, attachments: event.attachments ?? [] }));
+      return upsert(items, event.messageId, () => ({
+        kind: "user",
+        id: event.messageId,
+        text: event.text,
+        attachments: event.attachments ?? [],
+        steer: event.steer === true,
+      }));
+    case "turn.checkpoint": {
+      const { messageId, files, additions, deletions } = event;
+      return upsert(items, `checkpoint:${messageId}`, () => ({ kind: "checkpoint", id: `checkpoint:${messageId}`, messageId, files, additions, deletions }));
+    }
+    case "thread.rewound": {
+      const index = items.findIndex((item) => item.id === event.messageId);
+      return index === -1 ? items : items.slice(0, index);
+    }
     case "assistant.delta":
       return upsert(items, event.messageId, (prev) => ({
         kind: "assistant",
@@ -254,6 +301,12 @@ const reduceShell = (state: State, event: RuntimeEvent): State => {
     case "git.diff": {
       const { patch, truncated, error } = event;
       return { ...state, diffs: { ...state.diffs, [event.path]: { patch, truncated, error } } };
+    }
+    case "thread.commands":
+      return { ...state, commands: { ...state.commands, [event.threadId]: event.commands } };
+    case "checkpoint.diff": {
+      const { patch, truncated, error } = event;
+      return { ...state, turnDiffs: { ...state.turnDiffs, [`${event.threadId}:${event.messageId}`]: { patch, truncated, error } } };
     }
     case "git.status": {
       const { status, action, error } = event;
@@ -394,6 +447,7 @@ const subscribe = (threadId: string) => {
 };
 
 const onShell = (frame: Extract<ServerFrame, { _tag: "shell" }>) => {
+  attempt = 0;
   const sameData = frame.dataId === state.dataId;
   const threads = Object.fromEntries(frame.threads.map((info) => [info.id, info]));
   // Keep transcripts of threads that still exist; they resume from their cursor.
@@ -449,9 +503,21 @@ const onFrame = (frame: ServerFrame) => {
       const older = foldStored([], frame.events, 0).filter((item) => !known.has(item.id));
       return setState(setTranscript(state, frame.threadId, { ...prev, items: [...older, ...prev.items], page: frame.page, loadingOlder: false }));
     }
+    case "search.results":
+      searches.get(frame.requestId)?.(frame.hits);
+      searches.delete(frame.requestId);
+      return;
     case "event": {
       const { event, id } = frame;
-      if (!isTranscriptEvent(event)) return setState(reduceShell(state, event));
+      if (!isTranscriptEvent(event)) {
+        // The guard's false branch over-narrows: thread events that aren't transcript ones land here too.
+        const shellEvent = event as RuntimeEvent;
+        const before = shellEvent._tag === "thread.status" ? state.threads[shellEvent.threadId]?.status : undefined;
+        setState(reduceShell(state, shellEvent));
+        // The turn ended: the next held message goes out.
+        if (shellEvent._tag === "thread.status" && shellEvent.status === "idle" && before !== "idle") sendNextFollowUp(shellEvent.threadId);
+        return;
+      }
       const transcript = state.transcripts[event.threadId];
       // Not following this thread, or already have it (a replay can overlap live events).
       if (!transcript || (id !== null && id <= transcript.cursor)) return;
@@ -461,8 +527,24 @@ const onFrame = (frame: ServerFrame) => {
   }
 };
 
-const connect = () => {
-  const ws = new WebSocket(`ws://127.0.0.1:${DEFAULT_DAEMON_PORT}`);
+/**
+ * The daemon's per-launch secret, from the desktop shell. Null in dev, where the daemon
+ * runs on its own and only checks origins, and outside Tauri.
+ */
+const daemonToken: Promise<string | null> = import("@tauri-apps/api/core")
+  .then(({ invoke }) => invoke<string | null>("daemon_token"))
+  .catch(() => null);
+
+/**
+ * Waits between reconnect attempts, growing while the daemon stays away. Starts short:
+ * at launch the sidecar is still booting. Reset once a connection gets its shell.
+ */
+const RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000, 8000];
+let attempt = 0;
+
+const connect = async () => {
+  const token = await daemonToken;
+  const ws = new WebSocket(`ws://127.0.0.1:${DEFAULT_DAEMON_PORT}`, token ? [`apcode.${token}`] : undefined);
   socket = ws;
   ws.onopen = () => {
     for (const command of queued.splice(0)) ws.send(JSON.stringify(command));
@@ -474,10 +556,10 @@ const connect = () => {
       Object.entries(state.transcripts).map(([id, t]) => [id, t.status === "cached" && !t.loadingOlder ? t : { ...t, status: "cached" as const, loadingOlder: false }]),
     );
     setState({ ...state, connected: false, transcripts });
-    setTimeout(connect, 1000);
+    setTimeout(() => void connect(), RETRY_DELAYS_MS[Math.min(attempt++, RETRY_DELAYS_MS.length - 1)]);
   };
 };
-connect();
+void connect();
 
 /** Follows a thread's transcript while a view shows it. */
 const openThread = (threadId: string) => {
@@ -529,12 +611,74 @@ export const updateSettings = (settings: Settings) => {
   send({ _tag: "settings.update", settings });
 };
 
-/** Creates a thread from a draft by sending its first message. */
-export const createThread = (input: { path: string; provider: ProviderKind; model: string | null; text: string; options: TurnOptions }) => {
+/**
+ * Creates a thread from a draft by sending its first message. With `open`, this window
+ * switches to it once it exists.
+ */
+export const createThread = (input: {
+  path: string;
+  provider: ProviderKind;
+  model: string | null;
+  text: string;
+  options: TurnOptions;
+  workspace: "local" | "worktree";
+  open?: boolean;
+}) => {
+  const { open = true, ...command } = input;
   const requestId = crypto.randomUUID();
-  ownRequests.add(requestId);
-  send({ _tag: "thread.create", requestId, ...input });
+  if (open) ownRequests.add(requestId);
+  send({ _tag: "thread.create", requestId, ...command });
 };
+
+// --- follow-ups ----------------------------------------------------------------
+// A message written while the agent works waits here (t3code's "queue"), then goes
+// out on its own when the turn ends. Sending it now steers the running turn instead.
+
+const setFollowUps = (threadId: string, list: ReadonlyArray<FollowUp>) =>
+  setState({ ...state, followUps: { ...state.followUps, [threadId]: list } });
+
+export const queueFollowUp = (threadId: string, text: string, options: TurnOptions) =>
+  setFollowUps(threadId, [...(state.followUps[threadId] ?? []), { id: crypto.randomUUID(), text, options }]);
+
+/** Sends a held message right away, into the running turn. */
+export const sendFollowUpNow = (threadId: string, id: string) => {
+  const followUp = state.followUps[threadId]?.find((f) => f.id === id);
+  if (!followUp) return;
+  setFollowUps(threadId, (state.followUps[threadId] ?? []).filter((f) => f.id !== id));
+  send({ _tag: "thread.send", threadId, text: followUp.text, options: followUp.options });
+};
+
+/** Takes held messages back out of the queue (all of them without `id`), for the composer. */
+export const takeFollowUps = (threadId: string, id?: string): ReadonlyArray<FollowUp> => {
+  const list = state.followUps[threadId] ?? [];
+  const taken = id ? list.filter((f) => f.id === id) : list;
+  setFollowUps(threadId, id ? list.filter((f) => f.id !== id) : []);
+  return taken;
+};
+
+const sendNextFollowUp = (threadId: string) => {
+  const [next, ...rest] = state.followUps[threadId] ?? [];
+  if (!next) return;
+  setFollowUps(threadId, rest);
+  send({ _tag: "thread.send", threadId, text: next.text, options: next.options });
+};
+
+// --- search --------------------------------------------------------------------
+
+const searches = new Map<string, (hits: ReadonlyArray<SearchHit>) => void>();
+
+/** Full-text search over every thread's messages, newest first. */
+export const searchMessages = (query: string) =>
+  new Promise<ReadonlyArray<SearchHit>>((resolve) => {
+    if (!socketOpen()) return resolve([]);
+    const requestId = crypto.randomUUID();
+    searches.set(requestId, resolve);
+    send({ _tag: "search", query, requestId });
+    // An answer that never comes (the connection dropped) shouldn't hold a caller forever.
+    setTimeout(() => {
+      if (searches.delete(requestId)) resolve([]);
+    }, 5000);
+  });
 
 /** Marks a thread's latest activity as seen; it settles once idle and the settle delay has passed. */
 export const markSeen = (threadId: string) => {

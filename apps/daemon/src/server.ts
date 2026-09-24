@@ -86,6 +86,9 @@ export const serve = (port: number) =>
             send(ws, { ...frame, threadId: command.threadId });
             return Effect.void;
           }
+          case "search":
+            send(ws, { _tag: "search.results", requestId: command.requestId, hits: [...manager.search(command.query)] });
+            return Effect.void;
           case "thread.unsubscribe":
             ws.data.threads.delete(command.threadId);
             return Effect.void;
@@ -110,8 +113,11 @@ export const serve = (port: number) =>
             const protocol = tokenProtocol(req);
             if (TOKEN && !protocol) return new Response("Unauthorized", { status: 401 });
             // The accepted subprotocol must be echoed back, or the browser drops the connection.
-            const headers = protocol ? { "Sec-WebSocket-Protocol": protocol } : undefined;
-            if (server.upgrade(req, { data: { threads: new Map() }, headers })) return undefined;
+            const data: ConnectionData = { threads: new Map() };
+            const upgraded = protocol
+              ? server.upgrade(req, { data, headers: { "Sec-WebSocket-Protocol": protocol } })
+              : server.upgrade(req, { data });
+            if (upgraded) return undefined;
             return new Response("APCode daemon", { status: 426 });
           },
           websocket: {
