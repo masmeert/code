@@ -1,0 +1,13 @@
+{
+  "name": "apcode",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "scripts": {
+    "dev": "pnpm --filter @apcode/daemon build:sidecar && pnpm --parallel --filter @apcode/daemon --filter @apcode/desktop dev:tauri",
+    "dev:daemon": "pnpm --filter @apcode/daemon dev",
+    "dev:web": "pnpm --filter @apcode/desktop dev",
+    "build": "pnpm --filter @apcode/desktop tauri build",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

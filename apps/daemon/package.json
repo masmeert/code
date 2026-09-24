@@ -1,0 +1,22 @@
+{
+  "name": "@apcode/daemon",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/main.ts",
+    "dev:tauri": "bun --watch src/main.ts",
+    "build": "bun build src/main.ts --compile --minify --outfile dist/apcode-daemon",
+    "build:sidecar": "pnpm build && mkdir -p ../desktop/src-tauri/binaries && cp dist/apcode-daemon ../desktop/src-tauri/binaries/apcode-daemon-$(rustc --print host-tuple)",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.281",
+    "@effect/platform-bun": "catalog:",
+    "@apcode/contracts": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "catalog:"
+  }
+}
