@@ -328,26 +328,6 @@ const AttachmentList = ({ attachments }: { attachments: ReadonlyArray<Attachment
   </div>
 );
 
-const DIFF_OPEN_KEY = "apcode.diffOpen";
-
-/** Whether the changes panel is open; one choice for every thread in this window, kept across restarts. */
-const useDiffOpen = () => {
-  const [open, setOpen] = useState(() => {
-    try {
-      return localStorage.getItem(DIFF_OPEN_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const set = (next: boolean) => {
-    setOpen(next);
-    try {
-      localStorage.setItem(DIFF_OPEN_KEY, next ? "1" : "0");
-    } catch {}
-  };
-  return [open, set] as const;
-};
-
 export const ThreadView = ({ threadId }: { threadId: string }) => {
   const thread = useStore((s) => s.threads[threadId]) as ThreadState;
   const providers = useStore((s) => s.providers);
@@ -361,7 +341,8 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   const lastItem = thread.items.at(-1);
   const ProviderLogo = PROVIDER_LOGO[provider];
   const project = useStore((s) => s.projects.find((p) => p.id === thread.info.projectId));
-  const [diffOpen, setDiffOpen] = useDiffOpen();
+  // Per thread: switching threads remounts this view, so the panel starts closed.
+  const [diffOpen, setDiffOpen] = useState(false);
   // Re-read the diff whenever a tool finishes or a turn ends: either may have changed files.
   const finishedTools = thread.items.reduce((n, item) => (item.kind === "tool" && item.output !== null ? n + 1 : n), 0);
   const diffKey = `${status}:${thread.info.updatedAt}:${finishedTools}`;
