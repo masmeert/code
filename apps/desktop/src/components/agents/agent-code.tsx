@@ -3,15 +3,18 @@
 import {
   type CSSProperties,
   Fragment,
+  memo,
   useEffect,
+  useMemo,
+  useRef,
   useState,
 } from "react";
 import {
   type BundledLanguage,
   bundledLanguages,
   createHighlighter,
+  type GrammarState,
   type Highlighter,
-  type SpecialLanguage,
 } from "shiki";
 import { cn } from "@/lib/utils";
 
@@ -48,94 +51,183 @@ export interface AgentCodeLineProps {
 
 const LIGHT_THEME = "github-light-high-contrast";
 const DARK_THEME = "github-dark-high-contrast";
-let agentCodeHighlighter: Promise<Highlighter> | null = null;
-const tokenCache = new Map<string, AgentCodeTokenLines>();
+const THEMES = { light: LIGHT_THEME, dark: DARK_THEME } as const;
+/** Past this, a block renders plain: tokenizing it would stall the main thread. */
+const MAX_HIGHLIGHT_CHARS = 200_000;
+
+let highlighterPromise: Promise<Highlighter> | null = null;
+/** Set once the highlighter has loaded, so later blocks can tokenize synchronously. */
+let highlighter: Highlighter | null = null;
 
 function getAgentCodeHighlighter() {
-  if (!agentCodeHighlighter) {
-    agentCodeHighlighter = createHighlighter({
-      themes: [LIGHT_THEME, DARK_THEME],
-      langs: ["bash", "diff", "json", "tsx", "typescript"],
-    });
-  }
-  return agentCodeHighlighter;
+  highlighterPromise ??= createHighlighter({
+    themes: [LIGHT_THEME, DARK_THEME],
+    langs: ["bash", "diff", "json", "tsx", "typescript"],
+  }).then((h) => (highlighter = h));
+  return highlighterPromise;
 }
 
-/** Loads grammars beyond the preloaded set on first use. */
-async function ensureLanguage(
-  highlighter: Highlighter,
-  language: string,
-): Promise<BundledLanguage | SpecialLanguage> {
+/** The grammar to use for `language` if it's ready now: null while loading, "text" if there is none. */
+function readyLanguage(language: string): BundledLanguage | "text" | null {
   if (language === "text" || !(language in bundledLanguages)) return "text";
-  const lang = language as BundledLanguage;
-  if (!highlighter.getLoadedLanguages().includes(lang)) {
-    await highlighter.loadLanguage(lang);
+  if (!highlighter) return null;
+  return highlighter.getLoadedLanguages().includes(language) ? (language as BundledLanguage) : null;
+}
+
+/** Loads the highlighter and the grammar for `language`. */
+async function prepareLanguage(language: string) {
+  const h = await getAgentCodeHighlighter();
+  if (readyLanguage(language) !== null) return;
+  await h.loadLanguage(language as BundledLanguage).catch(() => undefined);
+}
+
+/**
+ * Finished blocks' tokens, least recently used first. Bounded by entries and by
+ * source size, like t3code's highlight cache (500 entries / 50MB there).
+ */
+const MAX_CACHE_ENTRIES = 500;
+const MAX_CACHE_CHARS = 8_000_000;
+const tokenCache = new Map<string, { lines: AgentCodeTokenLines; size: number }>();
+let tokenCacheChars = 0;
+
+function cacheGet(key: string) {
+  const entry = tokenCache.get(key);
+  if (!entry) return undefined;
+  tokenCache.delete(key);
+  tokenCache.set(key, entry);
+  return entry.lines;
+}
+
+function cacheSet(key: string, lines: AgentCodeTokenLines) {
+  const previous = tokenCache.get(key);
+  if (previous) {
+    tokenCacheChars -= previous.size;
+    tokenCache.delete(key);
   }
-  return lang;
+  tokenCache.set(key, { lines, size: key.length });
+  tokenCacheChars += key.length;
+  for (const [oldest, entry] of tokenCache) {
+    if (tokenCache.size <= MAX_CACHE_ENTRIES && tokenCacheChars <= MAX_CACHE_CHARS) break;
+    tokenCache.delete(oldest);
+    tokenCacheChars -= entry.size;
+  }
 }
 
 function tokenCacheKey(code: string, language: AgentCodeLanguage) {
   return `${language}\u0000${code}`;
 }
 
+/**
+ * Where tokenizing got to: every complete line (up to the last newline) with the
+ * grammar state after it. Streaming code only grows, so each update tokenizes just
+ * the new lines plus the partial last one, like t3code's incremental highlighting.
+ */
+interface Progress {
+  readonly lang: BundledLanguage;
+  /** Source up to and including its last newline. */
+  readonly stable: string;
+  /** Tokens of `stable`'s lines; they keep their identity, so memoized lines skip re-rendering. */
+  readonly lines: AgentCodeTokenLines;
+  readonly state: GrammarState | undefined;
+}
+
+function tokenizeChunk(
+  h: Highlighter,
+  code: string,
+  lang: BundledLanguage,
+  state: GrammarState | undefined,
+  offset: number,
+) {
+  const raw = h.codeToTokensWithThemes(code, {
+    lang,
+    themes: THEMES,
+    grammarState: state,
+    tokenizeMaxLineLength: 1_000,
+  });
+  const lines = raw.map((line) =>
+    line.map((token) => ({
+      content: token.content,
+      offset: token.offset + offset,
+      light: token.variants.light?.color,
+      dark: token.variants.dark?.color,
+    })),
+  );
+  return { lines, state: h.getLastGrammarState(raw) };
+}
+
+/** Tokenizes `code`, continuing from `from` when `code` extends what it covered. */
+function tokenize(h: Highlighter, code: string, lang: BundledLanguage, from: Progress | null) {
+  let progress: Progress =
+    from && from.lang === lang && code.startsWith(from.stable)
+      ? from
+      : { lang, stable: "", lines: [], state: undefined };
+  const stableEnd = code.lastIndexOf("\n") + 1;
+  if (stableEnd > progress.stable.length) {
+    // The new complete lines, without their final newline.
+    const chunk = tokenizeChunk(h, code.slice(progress.stable.length, stableEnd - 1), lang, progress.state, progress.stable.length);
+    progress = { lang, stable: code.slice(0, stableEnd), lines: [...progress.lines, ...chunk.lines], state: chunk.state };
+  }
+  // The partial last line is tokenized from the saved state each time, and not kept.
+  const tail = tokenizeChunk(h, code.slice(stableEnd), lang, progress.state, stableEnd).lines[0] ?? [];
+  return { lines: [...progress.lines, tail], progress };
+}
+
+/**
+ * Syntax tokens for `code`, or null while they aren't ready (render it plain).
+ * Pass `streaming` while `code` is still being written: updates then tokenize only
+ * what was added, and the result isn't cached until it's final.
+ */
 export function useAgentCodeTokens(
   code: string,
   language: AgentCodeLanguage,
-) {
+  streaming = false,
+): AgentCodeTokenLines | null {
+  const lang = code.length > MAX_HIGHLIGHT_CHARS ? "text" : readyLanguage(language);
   const key = tokenCacheKey(code, language);
-  const cached = tokenCache.get(key);
-  const [result, setResult] = useState<{
-    key: string;
-    code: string;
-    language: AgentCodeLanguage;
-    lines: AgentCodeTokenLines;
-  } | null>(cached ? { key, code, language, lines: cached } : null);
+  const progress = useRef<Progress | null>(null);
+  const [, setLoaded] = useState(0);
+  // Tokens computed after paint for a finished block seen for the first time.
+  const [deferred, setDeferred] = useState<{ key: string; lines: AgentCodeTokenLines } | null>(null);
+
+  const cached = lang === null || lang === "text" ? undefined : cacheGet(key);
+  // Growing code picks up where the last update stopped; a finished block completes the same way.
+  const continues =
+    lang !== null && lang !== "text" && progress.current?.lang === lang && code.startsWith(progress.current.stable);
+
+  const lines = useMemo(() => {
+    if (lang === null || lang === "text" || !highlighter) return null;
+    if (cached) return cached;
+    if (!streaming && !continues) return null;
+    const result = tokenize(highlighter, code, lang, progress.current);
+    progress.current = result.progress;
+    if (!streaming) cacheSet(key, result.lines);
+    return result.lines;
+  }, [cached, code, continues, key, lang, streaming]);
 
   useEffect(() => {
-    const current = tokenCache.get(key);
-    if (current) {
-      setResult({ key, code, language, lines: current });
-      return;
+    if (lang === null) {
+      let cancelled = false;
+      void prepareLanguage(language).then(() => !cancelled && setLoaded((n) => n + 1));
+      return () => {
+        cancelled = true;
+      };
     }
+    if (lines || lang === "text" || !highlighter) return;
+    // A finished block not seen before: tokenize after paint so opening a thread isn't held up.
+    const h = highlighter;
+    const timer = setTimeout(() => {
+      const result = tokenize(h, code, lang, null);
+      cacheSet(key, result.lines);
+      setDeferred({ key, lines: result.lines });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [code, key, lang, language, lines]);
 
-    let cancelled = false;
-    getAgentCodeHighlighter().then(async (highlighter) => {
-      const lang = await ensureLanguage(highlighter, language).catch(
-        () => "text" as const,
-      );
-      if (cancelled) return;
-      const lines = highlighter
-        .codeToTokensWithThemes(code, {
-          lang,
-          themes: {
-            light: LIGHT_THEME,
-            dark: DARK_THEME,
-          },
-        })
-        .map((line) =>
-          line.map((token) => ({
-            content: token.content,
-            offset: token.offset,
-            light: token.variants.light?.color,
-            dark: token.variants.dark?.color,
-          })),
-      );
-      tokenCache.set(key, lines);
-      setResult({ key, code, language, lines });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [code, key, language]);
-
-  if (result?.key === key) return result.lines;
-  if (result?.language === language && code.startsWith(result.code)) {
-    return result.lines;
-  }
-  return null;
+  if (lines) return lines;
+  return deferred?.key === key ? deferred.lines : null;
 }
 
-export function AgentCodeLine({
+export const AgentCodeLine = memo(function AgentCodeLine({
   code,
   tokens,
   className,
@@ -160,7 +252,7 @@ export function AgentCodeLine({
         : code}
     </span>
   );
-}
+});
 
 export function AgentCode({
   code,

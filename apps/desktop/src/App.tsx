@@ -27,6 +27,14 @@ export const App = () => {
   const order = useStore((s) => s.order);
   const threads = useStore((s) => s.threads);
   const connected = useStore((s) => s.connected);
+  const source = useStore((s) => s.source);
+  // A cold start takes a moment and the cached threads are already on screen, so
+  // only speak up if it's slow. Losing a live daemon is worth saying right away.
+  const [slowStart, setSlowStart] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlowStart(true), 2500);
+    return () => clearTimeout(timer);
+  }, []);
   const theme = useStore((s) => s.settings.theme);
   const createdHere = useStore((s) => s.createdHere);
   const [chosen, setView] = useState<View | null>(initialView);
@@ -47,7 +55,7 @@ export const App = () => {
   }, [createdHere]);
 
   const draft = (path: string | null) => setView({ kind: "draft", path });
-  const currentPath = view.kind === "thread" ? (threads[view.id]?.info.cwd ?? null) : view.kind === "draft" ? view.path : null;
+  const currentPath = view.kind === "thread" ? (threads[view.id]?.cwd ?? null) : view.kind === "draft" ? view.path : null;
 
   // Like Claude Code: a new thread starts in the project on screen, if any.
   useShortcut("n", () => draft(currentPath));
@@ -74,9 +82,9 @@ export const App = () => {
           onDraft={draft}
         />
         <AnimatedSidebarInset className="relative min-h-0 bg-background">
-          {connected ? null : (
+          {connected || (source !== "daemon" && !slowStart) ? null : (
             <div className="absolute top-16 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1 text-[11px] text-muted-foreground shadow-panel">
-              Reconnecting to daemon…
+              {source === "daemon" ? "Reconnecting to daemon…" : "Starting daemon…"}
             </div>
           )}
           {view.kind === "thread" ? (

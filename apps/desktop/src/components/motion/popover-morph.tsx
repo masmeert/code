@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion, useSpring } from "motion/react";
 import {
   cloneElement,
   createContext,
@@ -13,13 +13,14 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
 import { usePopoverPortalPosition } from "@/components/motion/popover-position";
-import { EASE_OUT, SPRING_PANEL } from "@/lib/ease";
+import { EASE_OUT, SPRING_LAYOUT, SPRING_PANEL } from "@/lib/ease";
 import { cn } from "@/lib/utils";
 
 type Side = "top" | "bottom";
@@ -234,31 +235,72 @@ export function MorphPopoverContent({
   const ctx = useMorphContext("MorphPopoverContent");
   const reduce = useReducedMotion() ?? false;
   const [portalReady, setPortalReady] = useState(false);
+  // Measures the content at its natural size; the panel box springs to it, so
+  // swapping what's inside (a menu for a form, say) resizes smoothly.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
   const layout = usePopoverPortalPosition(
     ctx.triggerRef,
-    ctx.contentRef,
+    bodyRef,
     portalReady && ctx.open,
   );
 
   useEffect(() => setPortalReady(true), []);
-  // Keep the panel inside the viewport, so a trigger near the edge doesn't push it off-screen.
+
+  const width = useSpring(0, SPRING_LAYOUT);
+  const height = useSpring(0, SPRING_LAYOUT);
+  // Sizes measured before the panel's first frame are its opening size, not a
+  // change to animate — the layout from a previous open is still around then.
+  const settled = useRef(false);
+  useLayoutEffect(() => {
+    if (!ctx.open) return;
+    settled.current = false;
+    const frame = requestAnimationFrame(() => (settled.current = true));
+    return () => cancelAnimationFrame(frame);
+  }, [ctx.open]);
+  useLayoutEffect(() => {
+    if (!layout || !ctx.open) return;
+    const animate = settled.current && !reduce;
+    for (const [value, target] of [
+      [width, layout.content.width],
+      [height, layout.content.height],
+    ] as const)
+      animate ? value.set(target) : value.jump(target);
+  }, [layout, ctx.open, reduce, width, height]);
+
+  // Anchor the edges nearest the trigger (right for "end", bottom for "top"),
+  // so a size change grows away from it instead of needing a re-measure to
+  // stay put. Keep the panel inside the viewport, so a trigger near the edge
+  // doesn't push it off-screen.
   const VIEWPORT_MARGIN = 8;
-  const left = layout
-    ? Math.max(
-        VIEWPORT_MARGIN,
-        Math.min(
-          align === "end"
-            ? layout.trigger.left + layout.trigger.width - layout.content.width
-            : layout.trigger.left,
-          window.innerWidth - layout.content.width - VIEWPORT_MARGIN,
-        ),
-      )
-    : 0;
-  const top = layout
-    ? side === "bottom"
-      ? layout.trigger.top + layout.trigger.height + sideOffset
-      : layout.trigger.top - layout.content.height - sideOffset
-    : 0;
+  const viewport = document.documentElement;
+  // The measured body sits inside the panel's 1px border.
+  const panelWidth = layout ? layout.content.width + 2 : 0;
+  const horizontal = !layout
+    ? { left: 0 }
+    : align === "end"
+      ? {
+          right: Math.min(
+            viewport.clientWidth - panelWidth - VIEWPORT_MARGIN,
+            Math.max(
+              VIEWPORT_MARGIN,
+              viewport.clientWidth - layout.trigger.left - layout.trigger.width,
+            ),
+          ),
+        }
+      : {
+          left: Math.max(
+            VIEWPORT_MARGIN,
+            Math.min(
+              layout.trigger.left,
+              viewport.clientWidth - panelWidth - VIEWPORT_MARGIN,
+            ),
+          ),
+        };
+  const vertical = !layout
+    ? { top: 0 }
+    : side === "bottom"
+      ? { top: layout.trigger.top + layout.trigger.height + sideOffset }
+      : { bottom: viewport.clientHeight - layout.trigger.top + sideOffset };
 
   // Both directions travel between the exact same hidden/show states. Exit
   // targets "hidden" directly instead of introducing separate choreography.
@@ -297,8 +339,8 @@ export function MorphPopoverContent({
           exit={reduce ? { opacity: 0 } : "hidden"}
           transition={reduce ? { duration: 0.12 } : undefined}
           style={{
-            left,
-            top,
+            ...horizontal,
+            ...vertical,
             visibility: layout ? "visible" : "hidden",
             transformOrigin: originFor(side, align),
           }}
@@ -310,13 +352,16 @@ export function MorphPopoverContent({
             role="dialog"
             aria-labelledby={ctx.triggerId}
             variants={clip}
-            style={{ borderRadius: radius }}
-            className={cn(
-              "overflow-hidden border border-border bg-popover",
-              className,
-            )}
+            style={{
+              borderRadius: radius,
+              width: layout ? width : undefined,
+              height: layout ? height : undefined,
+            }}
+            className="box-content overflow-hidden border border-border bg-popover"
           >
-            {children}
+            <div ref={bodyRef} className={cn("w-max", className)}>
+              {children}
+            </div>
           </motion.div>
         </motion.div>
       ) : null}

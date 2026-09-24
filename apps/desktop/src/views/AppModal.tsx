@@ -7,8 +7,8 @@ import { cn } from "@/lib/utils";
 import { DEFAULT_SETTLE_DELAY_MINUTES, type ProviderKind, type ProviderStatus, type Theme } from "@apcode/contracts";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
-import { defaultModel, PROVIDER_LABEL, recommendedBadge } from "../lib/models.ts";
-import { send, useStore } from "../lib/store.ts";
+import { defaultModel, encodeChoice, PROVIDER_LABEL, recommendedBadge } from "../lib/models.ts";
+import { send, updateSettings, useStore } from "../lib/store.ts";
 
 export type ModalView = "settings";
 
@@ -85,7 +85,7 @@ const SettingsView = () => {
           <SettingsRow label="Theme">
             <Tabs
               value={settings.theme}
-              onValueChange={(v) => send({ _tag: "settings.update", settings: { ...settings, theme: v as Theme } })}
+              onValueChange={(v) => updateSettings({ ...settings, theme: v as Theme })}
             >
               <TabsList>
                 {THEMES.map(({ value, label, icon: Icon }) => (
@@ -113,7 +113,7 @@ const SettingsView = () => {
           >
             <Select
               value={String(settings.settleDelayMinutes ?? DEFAULT_SETTLE_DELAY_MINUTES)}
-              onValueChange={(v) => send({ _tag: "settings.update", settings: { ...settings, settleDelayMinutes: Number(v) } })}
+              onValueChange={(v) => updateSettings({ ...settings, settleDelayMinutes: Number(v) })}
               className="w-44"
             >
               <SelectTrigger className="py-1.5 text-[13px] whitespace-nowrap">
@@ -135,9 +135,58 @@ const SettingsView = () => {
           {(["claude", "codex"] as const).map((kind) => (
             <ProviderCard key={kind} kind={kind} status={providers.find((p) => p.kind === kind)} />
           ))}
+          <CommitModelRow />
         </div>
       </Section>
     </>
+  );
+};
+
+/** Picks the model that writes commit messages left empty; "auto" follows the last harness's default model. */
+const CommitModelRow = () => {
+  const settings = useStore((s) => s.settings);
+  const providers = useStore((s) => s.providers);
+  const linked = providers.filter((p) => p.linked && p.models.length);
+  if (!linked.length) return null;
+  const saved = settings.commitModel;
+  const listed = saved && linked.some((p) => p.models.some((m) => encodeChoice(p.kind, m.id) === saved));
+  return (
+    <SettingsGroup>
+      <SettingsRow
+        label={
+          <>
+            <p>Commit messages</p>
+            <p className="text-xs text-muted-foreground">Writes the message when you commit without one</p>
+          </>
+        }
+      >
+        <Select
+          value={listed ? saved : "auto"}
+          onValueChange={(v) => updateSettings({ ...settings, commitModel: v === "auto" ? null : v })}
+          className="w-52"
+        >
+          <SelectTrigger className="py-1.5 text-[13px] whitespace-nowrap">
+            <SelectValue className="min-w-0 truncate" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto" className="text-[13px]">
+              Default model
+            </SelectItem>
+            {linked.flatMap((p) => {
+              const Logo = PROVIDER_LOGO[p.kind];
+              return p.models.map((m) => (
+                <SelectItem key={encodeChoice(p.kind, m.id)} value={encodeChoice(p.kind, m.id)} label={m.label} className="text-[13px]">
+                  <span className="flex items-center gap-1.5">
+                    <Logo aria-label={PROVIDER_LABEL[p.kind]} className="size-3.5 shrink-0" />
+                    {m.label}
+                  </span>
+                </SelectItem>
+              ));
+            })}
+          </SelectContent>
+        </Select>
+      </SettingsRow>
+    </SettingsGroup>
   );
 };
 
@@ -290,7 +339,7 @@ const ProviderCard = ({ kind, status }: { kind: ProviderKind; status: ProviderSt
             </SelectTrigger>
             <SelectContent>
               {status.models.map((m) => (
-                <SelectItem key={m.id} value={m.id} className="text-[13px]">
+                <SelectItem key={m.id} value={m.id} label={m.label} className="text-[13px]">
                   <span className="flex items-center gap-1.5">
                     {m.label}
                     {m.recommended ? recommendedBadge() : null}

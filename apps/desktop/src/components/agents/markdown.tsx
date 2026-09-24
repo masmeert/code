@@ -1,4 +1,4 @@
-import { isValidElement, memo, type ReactElement } from "react";
+import { createContext, isValidElement, memo, type ReactElement, use } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "@/components/agents/code-block";
@@ -15,8 +15,16 @@ type CodeElement = ReactElement<{ className?: string; children?: unknown }>;
 
 const languageOf = (className?: string) => /language-([\w+#.-]+)/.exec(className ?? "")?.[1]?.toLowerCase() ?? "text";
 
-const components = (text: string, streaming: boolean): Components => ({
-  pre: ({ node, children }) => {
+/** The source a markdown root renders, for renderers that need more than their node. */
+const SourceContext = createContext<{ readonly text: string; readonly streaming: boolean }>({ text: "", streaming: false });
+
+/**
+ * Module-level, so element types stay the same between renders: a new object each
+ * render would remount every paragraph and code block on every streamed token.
+ */
+const components: Components = {
+  pre: function Pre({ node, children }) {
+    const { text, streaming } = use(SourceContext);
     const code = isValidElement(children) ? (children as CodeElement) : null;
     const source = String(code?.props.children ?? "").replace(/\n$/, "");
     const open = streaming && node?.position?.end.offset === text.length;
@@ -56,17 +64,65 @@ const components = (text: string, streaming: boolean): Components => ({
   ),
   th: ({ children }) => <th className="border-b border-border bg-muted/60 px-3 py-1.5 font-medium">{children}</th>,
   td: ({ children }) => <td className="border-b border-border/60 px-3 py-1.5 align-top">{children}</td>,
-});
+};
 
 const plugins = [remarkGfm];
 
-/** Agent markdown, with fenced code rendered by the beUI code viewer. */
+const FENCE = /^(`{3,}|~{3,})/;
+/** Link reference definitions apply across the whole text, so text using them can't be split. */
+const DEFINITION = /^ {0,3}\[[^\]]+\]:/m;
+
+/**
+ * Where the text can be cut into two independently parsed parts: after the last
+ * closed top-level code fence that's followed by a blank line (t3code's boundary for
+ * incremental parsing). Everything before it can no longer change as text streams in.
+ */
+const stableEnd = (text: string) => {
+  if (!text.includes("```") && !text.includes("~~~")) return 0;
+  if (DEFINITION.test(text)) return 0;
+  let end = 0;
+  let open: string | null = null;
+  let closedAt = -1;
+  let offset = 0;
+  for (const line of text.split("\n")) {
+    const next = offset + line.length + 1;
+    if (closedAt >= 0) {
+      if (line.trim() === "") end = next;
+      closedAt = -1;
+    }
+    const fence = FENCE.exec(line)?.[1];
+    if (fence) {
+      if (open === null) open = fence;
+      else if (fence[0] === open[0] && fence.length >= open.length && line.slice(fence.length).trim() === "") {
+        open = null;
+        closedAt = offset;
+      }
+    }
+    offset = next;
+  }
+  return Math.min(end, text.length);
+};
+
+const MarkdownPart = memo(function MarkdownPart({ text, streaming }: { text: string; streaming: boolean }) {
+  return (
+    <SourceContext value={{ text, streaming }}>
+      <ReactMarkdown remarkPlugins={plugins} components={components}>
+        {text}
+      </ReactMarkdown>
+    </SourceContext>
+  );
+});
+
+/**
+ * Agent markdown, with fenced code rendered by the beUI code viewer. Text before the
+ * last finished code block is its own part, so streaming only re-parses the rest.
+ */
 export const Markdown = memo(function Markdown({ children, streaming = false, className }: MarkdownProps) {
+  const cut = stableEnd(children);
   return (
     <div className={cn("min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}>
-      <ReactMarkdown remarkPlugins={plugins} components={components(children, streaming)}>
-        {children}
-      </ReactMarkdown>
+      {cut > 0 ? <MarkdownPart text={children.slice(0, cut)} streaming={false} /> : null}
+      {cut < children.length ? <MarkdownPart text={children.slice(cut)} streaming={streaming} /> : null}
     </div>
   );
 });

@@ -66,7 +66,6 @@ export const Sidebar = (props: {
     const needle = query.trim().toLowerCase();
     const byId = new Map(projects.map((p) => [p.id, p]));
     const infos = Object.values(threads)
-      .map((t) => t.info)
       .filter((info) => projectFilter.size === 0 || projectFilter.has(info.projectId))
       .filter(
         (info) =>

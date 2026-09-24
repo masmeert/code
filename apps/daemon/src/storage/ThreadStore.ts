@@ -1,4 +1,4 @@
-import { RuntimeEvent, type ProviderKind, type ThreadInfo } from "@apcode/contracts";
+import { RuntimeEvent, type PageInfo, type ProviderKind, type StoredEvent, type ThreadInfo } from "@apcode/contracts";
 import { Database } from "bun:sqlite";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -20,20 +20,40 @@ export const isPersisted = (event: RuntimeEvent) =>
   event._tag !== "thread.model" &&
   event._tag !== "thread.meta" &&
   event._tag !== "thread.archived" &&
+  event._tag !== "thread.removed" &&
   "threadId" in event &&
   event.threadId !== null;
 
 export class ThreadStore extends Context.Service<
   ThreadStore,
   {
-    /** All threads (oldest first) plus their persisted events in order. */
-    readonly load: Effect.Effect<{ readonly threads: ReadonlyArray<StoredThread>; readonly events: ReadonlyArray<RuntimeEvent> }>;
+    /** Identifies this database; clients key their caches by it. */
+    readonly dataId: string;
+    /** All threads, oldest first. Transcripts stay on disk until a client asks for one. */
+    readonly load: Effect.Effect<ReadonlyArray<StoredThread>>;
+    /** Approvals requested but never resolved, as `[requestId, threadId]`. */
+    readonly unresolvedApprovals: () => ReadonlyArray<readonly [string, string]>;
+    readonly firstUserMessage: (threadId: string) => string | null;
+    /** Newest stored event id of a thread; 0 if none. */
+    readonly cursor: (threadId: string) => number;
+    /** Events after id `after`, oldest first. */
+    readonly readAfter: (threadId: string, after: number) => ReadonlyArray<StoredEvent>;
+    /**
+     * The last `turnLimit` turns before id `before` (a turn starts at a user message),
+     * with where they start so older ones can be fetched later.
+     */
+    readonly readTurns: (
+      threadId: string,
+      turnLimit: number,
+      before?: number,
+    ) => { readonly events: ReadonlyArray<StoredEvent>; readonly page: PageInfo | null };
     readonly insertThread: (info: ThreadInfo) => void;
     readonly setResumeToken: (threadId: string, token: string) => void;
     readonly setModel: (threadId: string, model: string | null) => void;
     readonly setArchived: (threadId: string, archivedAt: number | null) => void;
     readonly setMeta: (threadId: string, meta: { readonly title: string; readonly updatedAt: number }) => void;
-    readonly appendEvent: (threadId: string, event: RuntimeEvent) => void;
+    /** Returns the new event's id. */
+    readonly appendEvent: (threadId: string, event: RuntimeEvent) => number;
     readonly deleteThread: (threadId: string) => void;
   }
 >()("apcode/ThreadStore") {}
@@ -61,6 +81,19 @@ const make = Effect.acquireRelease(
       json TEXT NOT NULL
     )`);
     db.run("CREATE INDEX IF NOT EXISTS events_thread ON events(thread_id)");
+    // The event's tag as a column, so turns and approvals are found without decoding every row.
+    const eventColumns = new Set(db.query<{ name: string }, []>("PRAGMA table_info(events)").all().map((c) => c.name));
+    if (!eventColumns.has("kind")) db.run("ALTER TABLE events ADD COLUMN kind TEXT");
+    const untagged = db.query<{ seq: number; json: string }, []>("SELECT seq, json FROM events WHERE kind IS NULL").all();
+    if (untagged.length) {
+      const setKind = db.prepare("UPDATE events SET kind = $kind WHERE seq = $seq");
+      db.transaction(() => {
+        for (const row of untagged) setKind.run({ seq: row.seq, kind: (JSON.parse(row.json) as { _tag?: string })._tag ?? "" });
+      })();
+    }
+    db.run("CREATE INDEX IF NOT EXISTS events_thread_kind ON events(thread_id, kind, seq)");
+    db.run("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('data_id', $id)").run({ id: crypto.randomUUID() });
     // Migrations for databases created before a column existed.
     const columns = new Set(db.query<{ name: string }, []>("PRAGMA table_info(threads)").all().map((c) => c.name));
     if (!columns.has("model")) db.run("ALTER TABLE threads ADD COLUMN model TEXT");
@@ -81,42 +114,85 @@ const make = Effect.acquireRelease(
     const setModel = db.prepare("UPDATE threads SET model = $model WHERE id = $id");
     const setArchived = db.prepare("UPDATE threads SET archived_at = $archivedAt WHERE id = $id");
     const setResumeToken = db.prepare("UPDATE threads SET resume_token = $token WHERE id = $id");
-    const appendEvent = db.prepare("INSERT INTO events (thread_id, json) VALUES ($threadId, $json)");
+    const appendEvent = db.prepare("INSERT INTO events (thread_id, kind, json) VALUES ($threadId, $kind, $json)");
+    const dataId = db.query<{ value: string }, []>("SELECT value FROM meta WHERE key = 'data_id'").get()!.value;
+    const toStored = (rows: ReadonlyArray<{ seq: number; json: string }>): Array<StoredEvent> =>
+      rows.flatMap((row) => {
+        const decoded = decodeEvent(row.json);
+        return decoded._tag === "Some" ? [{ id: row.seq, event: decoded.value }] : [];
+      });
+    const selectAfter = db.prepare<{ seq: number; json: string }, { threadId: string; after: number }>(
+      "SELECT seq, json FROM events WHERE thread_id = $threadId AND seq > $after ORDER BY seq",
+    );
+    const selectRange = db.prepare<{ seq: number; json: string }, { threadId: string; from: number; before: number }>(
+      "SELECT seq, json FROM events WHERE thread_id = $threadId AND seq >= $from AND seq < $before ORDER BY seq",
+    );
+    const selectTurnStart = db.prepare<{ seq: number }, { threadId: string; before: number; offset: number }>(
+      "SELECT seq FROM events WHERE thread_id = $threadId AND kind = 'user.message' AND seq < $before ORDER BY seq DESC LIMIT 1 OFFSET $offset",
+    );
+    const selectOlder = db.prepare<{ seq: number }, { threadId: string; before: number }>(
+      "SELECT seq FROM events WHERE thread_id = $threadId AND seq < $before LIMIT 1",
+    );
+    const selectCursor = db.prepare<{ seq: number | null }, { threadId: string }>(
+      "SELECT MAX(seq) AS seq FROM events WHERE thread_id = $threadId",
+    );
+    const selectApprovals = db.prepare<{ thread_id: string; kind: string; json: string }, []>(
+      "SELECT thread_id, kind, json FROM events WHERE kind IN ('approval.requested', 'approval.resolved') ORDER BY seq",
+    );
+    const selectFirstUser = db.prepare<{ json: string }, { threadId: string }>(
+      "SELECT json FROM events WHERE thread_id = $threadId AND kind = 'user.message' ORDER BY seq LIMIT 1",
+    );
     const deleteThread = db.prepare("DELETE FROM threads WHERE id = $id");
 
     return ThreadStore.of({
-      load: Effect.sync(() => {
-        const rows = db
+      dataId,
+      load: Effect.sync(() =>
+        db
           .query<
             { id: string; project_id: string; provider: ProviderKind; model: string | null; cwd: string; title: string; created_at: number; updated_at: number; archived_at: number | null; resume_token: string | null },
             []
           >("SELECT * FROM threads ORDER BY created_at")
-          .all();
-        const threads = rows.map((row) => ({
-          info: {
-            id: row.id,
-            projectId: row.project_id,
-            provider: row.provider,
-            model: row.model,
-            cwd: row.cwd,
-            title: row.title,
-            status: "idle" as const,
-            createdAt: row.created_at,
-            updatedAt: row.updated_at,
-            branch: null,
-            archivedAt: row.archived_at,
-          },
-          resumeToken: row.resume_token,
-        }));
-        const events = db
-          .query<{ json: string }, []>("SELECT json FROM events ORDER BY seq")
           .all()
-          .flatMap((row) => {
-            const decoded = decodeEvent(row.json);
-            return decoded._tag === "Some" ? [decoded.value] : [];
-          });
-        return { threads, events };
-      }),
+          .map((row) => ({
+            info: {
+              id: row.id,
+              projectId: row.project_id,
+              provider: row.provider,
+              model: row.model,
+              cwd: row.cwd,
+              title: row.title,
+              status: "idle" as const,
+              createdAt: row.created_at,
+              updatedAt: row.updated_at,
+              branch: null,
+              archivedAt: row.archived_at,
+            },
+            resumeToken: row.resume_token,
+          })),
+      ),
+      unresolvedApprovals: () => {
+        const pending = new Map<string, string>();
+        for (const row of selectApprovals.all()) {
+          const { requestId } = JSON.parse(row.json) as { requestId: string };
+          if (row.kind === "approval.requested") pending.set(requestId, row.thread_id);
+          else pending.delete(requestId);
+        }
+        return [...pending];
+      },
+      firstUserMessage: (threadId) => {
+        const row = selectFirstUser.get({ threadId });
+        return row ? (JSON.parse(row.json) as { text: string }).text : null;
+      },
+      cursor: (threadId) => selectCursor.get({ threadId })?.seq ?? 0,
+      readAfter: (threadId, after) => toStored(selectAfter.all({ threadId, after })),
+      readTurns: (threadId, turnLimit, before = Number.MAX_SAFE_INTEGER) => {
+        const start = selectTurnStart.get({ threadId, before, offset: Math.max(0, turnLimit - 1) });
+        const from = start?.seq ?? 0;
+        const events = toStored(selectRange.all({ threadId, from, before }));
+        if (events.length === 0) return { events, page: null };
+        const hasMore = start !== null && selectOlder.get({ threadId, before: from }) !== null;
+        return { events, page: { before: events[0]!.id, hasMore } };
+      },
       insertThread: (info) => {
         insertThread.run({
           id: info.id,
@@ -141,9 +217,8 @@ const make = Effect.acquireRelease(
       setMeta: (id, meta) => {
         setMeta.run({ id, ...meta });
       },
-      appendEvent: (threadId, event) => {
-        appendEvent.run({ threadId, json: JSON.stringify(event) });
-      },
+      appendEvent: (threadId, event) =>
+        Number(appendEvent.run({ threadId, kind: event._tag, json: JSON.stringify(event) }).lastInsertRowid),
       deleteThread: (id) => {
         deleteThread.run({ id });
       },

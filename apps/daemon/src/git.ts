@@ -104,3 +104,91 @@ export const readDiff = async (cwd: string): Promise<{ patch: string; truncated:
   }
   return { patch, truncated, error: null };
 };
+
+/** Never wait on a credential prompt nobody can answer. */
+const NO_PROMPT = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "", SSH_ASKPASS: "" };
+
+const gitLong = (cwd: string, args: ReadonlyArray<string>, timeout = 60000) =>
+  new Promise<{ ok: boolean; stdout: string; stderr: string }>((resolve) => {
+    execFile("git", ["-C", cwd, ...args], { timeout, env: NO_PROMPT, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) =>
+      resolve({ ok: !error, stdout: stdout.trim(), stderr: stderr.trim() || stdout.trim() || (error?.message ?? "") }),
+    );
+  });
+
+export interface RepoStatus {
+  /** Changed files, untracked included. */
+  readonly changes: number;
+  readonly upstream: string | null;
+  /** Commits not yet on the upstream; with no upstream, every commit on the branch. */
+  readonly ahead: number;
+  readonly behind: number;
+  readonly hasRemote: boolean;
+  readonly detached: boolean;
+}
+
+/** Working-tree and upstream state of `cwd`, null outside a repo. */
+export const readStatus = async (cwd: string): Promise<RepoStatus | null> => {
+  const [status, remotes] = await Promise.all([
+    git(cwd, ["status", "--porcelain=v2", "--branch", "--untracked-files=all"]),
+    git(cwd, ["remote"]),
+  ]);
+  if (!status.ok) return null;
+  let changes = 0;
+  let upstream: string | null = null;
+  let ahead = 0;
+  let behind = 0;
+  let detached = false;
+  let oid: string | null = null;
+  for (const line of status.stdout.split("\n")) {
+    if (!line) continue;
+    if (!line.startsWith("#")) {
+      changes++;
+      continue;
+    }
+    const [, key, ...rest] = line.split(" ");
+    if (key === "branch.head") detached = rest[0] === "(detached)";
+    else if (key === "branch.oid") oid = rest[0] === "(initial)" ? null : (rest[0] ?? null);
+    else if (key === "branch.upstream") upstream = rest[0] ?? null;
+    else if (key === "branch.ab") {
+      ahead = Math.abs(Number(rest[0]) || 0);
+      behind = Math.abs(Number(rest[1]) || 0);
+    }
+  }
+  if (!upstream && oid && !detached) {
+    const count = await git(cwd, ["rev-list", "--count", "HEAD"]);
+    ahead = count.ok ? Number(count.stdout) || 0 : 0;
+  }
+  return { changes, upstream, ahead, behind, hasRemote: remotes.ok && remotes.stdout.length > 0, detached };
+};
+
+/** Subjects of the last few commits, newest first; empty before the first commit. */
+export const readRecentSubjects = async (cwd: string, count = 8) => {
+  const log = await git(cwd, ["log", `-${count}`, "--format=%s"]);
+  return log.ok ? log.stdout.split("\n").filter(Boolean) : [];
+};
+
+/** Stages everything and commits it; resolves to an error message on failure. */
+export const commitAll = async (cwd: string, message: string) => {
+  const text = message.trim();
+  if (!text) return "Write a commit message first";
+  const add = await gitLong(cwd, ["add", "-A"]);
+  if (!add.ok) return firstLines(add.stderr);
+  const commit = await gitLong(cwd, ["commit", "-m", text]);
+  return commit.ok ? null : firstLines(commit.stderr);
+};
+
+/** Pushes the current branch, setting its upstream on the first push; resolves to an error message on failure. */
+export const pushBranch = async (cwd: string) => {
+  const status = await readStatus(cwd);
+  if (!status) return "Not a git repo";
+  if (status.detached) return "Can't push a detached HEAD";
+  if (!status.hasRemote) return "No remote to push to";
+  let args = ["push"];
+  if (!status.upstream) {
+    const remotes = (await git(cwd, ["remote"])).stdout.split("\n").filter(Boolean);
+    const remote = remotes.includes("origin") ? "origin" : remotes[0]!;
+    args = ["push", "-u", remote, "HEAD"];
+  }
+  const result = await gitLong(cwd, args, 120000);
+  return result.ok ? null : firstLines(result.stderr);
+};

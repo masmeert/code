@@ -19,7 +19,7 @@ import { PROVIDER_AVATAR_CLASS, PROVIDER_LOGO } from "@/components/provider-logo
 import type { Attachment, PermissionLevel, Project, ProviderKind, TurnOptions } from "@apcode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@/components/motion/animated-sidebar";
 import { FilePen, FileText, Folder, FolderPlus, GitBranch, ImageIcon, LockOpen, PanelLeft, PanelRight, ShieldCheck } from "lucide-react";
-import { lazy, type ReactNode, Suspense, useEffect, useState } from "react";
+import { lazy, memo, type ReactNode, Suspense, useEffect, useMemo, useState } from "react";
 import {
   EFFORT_LABEL,
   EFFORTS,
@@ -30,9 +30,10 @@ import {
   useTurnPrefs,
 } from "../lib/composer.ts";
 import { decodeChoice, defaultEffort, defaultModel, encodeChoice, modelChoices, PROVIDER_LABEL, recommendedBadge } from "../lib/models.ts";
-import { createThread, markSeen, respondApproval, send, useStore, type ThreadState, type TranscriptItem } from "../lib/store.ts";
+import { createThread, loadOlder, markSeen, respondApproval, send, useStore, useTranscript, type TranscriptItem } from "../lib/store.ts";
 import { readWidth } from "../lib/useResizable.ts";
 import { addProject } from "../lib/projects.ts";
+import { GitMenu } from "./GitMenu.tsx";
 
 /** Same key the panel saves its dragged width under. */
 const PANEL_WIDTH_KEY = "apcode.diffPanelWidth";
@@ -328,27 +329,30 @@ const AttachmentList = ({ attachments }: { attachments: ReadonlyArray<Attachment
   </div>
 );
 
+const NO_ITEMS: ReadonlyArray<TranscriptItem> = [];
+
 export const ThreadView = ({ threadId }: { threadId: string }) => {
-  const thread = useStore((s) => s.threads[threadId]) as ThreadState;
+  const info = useStore((s) => s.threads[threadId])!;
+  // Loaded on open: from the local cache first, then caught up by the daemon.
+  const transcript = useTranscript(threadId);
+  const items = transcript?.items ?? NO_ITEMS;
   const providers = useStore((s) => s.providers);
   const settings = useStore((s) => s.settings);
-  const { status, provider } = thread.info;
+  const { status, provider } = info;
   // The harness is fixed per thread; only its model can change.
   const choices = modelChoices(providers, provider);
-  const current = thread.info.model ?? defaultModel(providers, settings, provider);
+  const current = info.model ?? defaultModel(providers, settings, provider);
   const busy = status === "running" || status === "awaiting-approval";
-  const turns = toTurns(thread.items);
-  const lastItem = thread.items.at(-1);
-  const ProviderLogo = PROVIDER_LOGO[provider];
-  const project = useStore((s) => s.projects.find((p) => p.id === thread.info.projectId));
+  const lastItem = items.at(-1);
+  const project = useStore((s) => s.projects.find((p) => p.id === info.projectId));
   // Per thread: switching threads remounts this view, so the panel starts closed.
   const [diffOpen, setDiffOpen] = useState(false);
   // Re-read the diff whenever a tool finishes or a turn ends: either may have changed files.
-  const finishedTools = thread.items.reduce((n, item) => (item.kind === "tool" && item.output !== null ? n + 1 : n), 0);
-  const diffKey = `${status}:${thread.info.updatedAt}:${finishedTools}`;
+  const finishedTools = items.reduce((n, item) => (item.kind === "tool" && item.output !== null ? n + 1 : n), 0);
+  const diffKey = `${status}:${info.updatedAt}:${finishedTools}`;
 
   // Looking at a thread settles whatever it did since you last saw it.
-  const { updatedAt } = thread.info;
+  const { updatedAt } = info;
   useEffect(() => {
     const mark = () => document.hasFocus() && markSeen(threadId);
     mark();
@@ -359,19 +363,22 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   return (
     <>
       <Header
-        project={project ?? { id: thread.info.projectId, name: thread.info.cwd.split("/").at(-1) ?? thread.info.cwd }}
-        title={thread.info.title}
+        project={project ?? { id: info.projectId, name: info.cwd.split("/").at(-1) ?? info.cwd }}
+        title={info.title}
         actions={
-          <button
-            type="button"
-            title={diffOpen ? "Hide changes" : "Show changes"}
-            aria-label={diffOpen ? "Hide changes" : "Show changes"}
-            aria-pressed={diffOpen}
-            onClick={() => setDiffOpen(!diffOpen)}
-            className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${diffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
-          >
-            <PanelRight className="size-4" />
-          </button>
+          <>
+            <GitMenu cwd={info.cwd} refreshKey={diffKey} />
+            <button
+              type="button"
+              title={diffOpen ? "Hide changes" : "Show changes"}
+              aria-label={diffOpen ? "Hide changes" : "Show changes"}
+              aria-pressed={diffOpen}
+              onClick={() => setDiffOpen(!diffOpen)}
+              className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${diffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+            >
+              <PanelRight className="size-4" />
+            </button>
+          </>
         }
       />
 
@@ -385,34 +392,17 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             contentClassName="mx-auto min-h-full w-full max-w-3xl"
           >
             <MessageGroup spacing="default">
-              {turns.map((turn) =>
-                turn.from === "user" ? (
-                  <Message key={turn.id} from="user" animateIn>
-                    <MessageContent className="gap-1.5">
-                      {turn.attachments.length ? <AttachmentList attachments={turn.attachments} /> : null}
-                      {turn.text ? (
-                        <MessageBubble variant="soft">
-                          <MessageBubbleContent className="selectable whitespace-pre-wrap">{turn.text}</MessageBubbleContent>
-                        </MessageBubble>
-                      ) : null}
-                    </MessageContent>
-                  </Message>
-                ) : (
-                  <Message key={turn.id} from="assistant">
-                    <MessageAvatar className={PROVIDER_AVATAR_CLASS[provider]}>
-                      <ProviderLogo />
-                    </MessageAvatar>
-                    <MessageContent className="gap-3">
-                      <MessageHeader>
-                        <span>{PROVIDER_LABEL[provider]}</span>
-                      </MessageHeader>
-                      {toBlocks(turn.items).map((block) => (
-                        <AgentBlock key={block.id} block={block} threadId={threadId} live={busy} streaming={busy && block === lastItem} />
-                      ))}
-                    </MessageContent>
-                  </Message>
-                ),
-              )}
+              {transcript?.page?.hasMore ? (
+                <button
+                  type="button"
+                  onClick={() => loadOlder(threadId)}
+                  disabled={transcript.loadingOlder}
+                  className="mx-auto rounded-lg px-3 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                >
+                  {transcript.loadingOlder ? "Loading…" : "Load earlier messages"}
+                </button>
+              ) : null}
+              <TurnList items={items} provider={provider} threadId={threadId} busy={busy} />
 
               {status === "running" && lastItem?.kind !== "assistant" && !(lastItem?.kind === "tool" && lastItem.output === null) ? (
                 <Message from="assistant" animateIn>
@@ -430,7 +420,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
           <Composer
             prefsKey={threadId}
             provider={provider}
-            cwd={thread.info.cwd}
+            cwd={info.cwd}
             busy={busy}
             models={choices}
             model={current ? encodeChoice(provider, current) : undefined}
@@ -442,7 +432,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
         </div>
         {diffOpen ? (
           <Suspense fallback={<div style={{ width: readWidth(PANEL_WIDTH_KEY, Math.min(960, Math.round(window.innerWidth * 0.45))) }} className="shrink-0 border-l border-border" />}>
-            <DiffPanel cwd={thread.info.cwd} refreshKey={diffKey} onClose={() => setDiffOpen(false)} />
+            <DiffPanel cwd={info.cwd} refreshKey={diffKey} onClose={() => setDiffOpen(false)} />
           </Suspense>
         ) : null}
       </div>
@@ -450,7 +440,100 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   );
 };
 
-const AgentBlock = ({ block: item, threadId, live, streaming }: { block: Block; threadId: string; live: boolean; streaming: boolean }) => {
+/** Same items, by identity: the store only replaces the item that changed. */
+const sameItems = (a: ReadonlyArray<unknown>, b: ReadonlyArray<unknown>) => a.length === b.length && a.every((item, i) => item === b[i]);
+
+/**
+ * The transcript. Every delta re-renders this, but turns and blocks whose items are
+ * unchanged bail out, so only the message actually streaming does any work.
+ */
+export const TurnList = ({
+  items,
+  provider,
+  threadId,
+  busy,
+}: {
+  items: ReadonlyArray<TranscriptItem>;
+  provider: ProviderKind;
+  threadId: string;
+  busy: boolean;
+}) => {
+  const turns = useMemo(() => toTurns(items), [items]);
+  return turns.map((turn, index) =>
+    turn.from === "user" ? (
+      <UserTurn key={turn.id} text={turn.text} attachments={turn.attachments} />
+    ) : (
+      <AssistantTurn key={turn.id} items={turn.items} provider={provider} threadId={threadId} busy={busy} last={index === turns.length - 1} />
+    ),
+  );
+};
+
+const UserTurn = memo(({ text, attachments }: { text: string; attachments: ReadonlyArray<Attachment> }) => (
+  <Message from="user" animateIn>
+    <MessageContent className="gap-1.5">
+      {attachments.length ? <AttachmentList attachments={attachments} /> : null}
+      {text ? (
+        <MessageBubble variant="soft">
+          <MessageBubbleContent className="selectable whitespace-pre-wrap">{text}</MessageBubbleContent>
+        </MessageBubble>
+      ) : null}
+    </MessageContent>
+  </Message>
+));
+
+interface AssistantTurnProps {
+  items: ReadonlyArray<TranscriptItem>;
+  provider: ProviderKind;
+  threadId: string;
+  busy: boolean;
+  /** The newest turn: its last block is the one streaming. */
+  last: boolean;
+}
+
+const AssistantTurn = memo(
+  ({ items, provider, threadId, busy, last }: AssistantTurnProps) => {
+    const ProviderLogo = PROVIDER_LOGO[provider];
+    const blocks = useMemo(() => toBlocks(items), [items]);
+    const lastItem = items.at(-1);
+    return (
+      <Message from="assistant">
+        <MessageAvatar className={PROVIDER_AVATAR_CLASS[provider]}>
+          <ProviderLogo />
+        </MessageAvatar>
+        <MessageContent className="gap-3">
+          <MessageHeader>
+            <span>{PROVIDER_LABEL[provider]}</span>
+          </MessageHeader>
+          {blocks.map((block) => (
+            <AgentBlock key={block.id} block={block} threadId={threadId} live={busy} streaming={busy && last && block === lastItem} />
+          ))}
+        </MessageContent>
+      </Message>
+    );
+  },
+  // `toTurns` rebuilds the turn arrays each time; the items inside keep their identity.
+  (a, b) =>
+    a.provider === b.provider && a.threadId === b.threadId && a.busy === b.busy && a.last === b.last && sameItems(a.items, b.items),
+);
+
+interface AgentBlockProps {
+  block: Block;
+  threadId: string;
+  live: boolean;
+  streaming: boolean;
+}
+
+const AgentBlock = memo(
+  (props: AgentBlockProps) => <AgentBlockContent {...props} />,
+  // Tool groups are rebuilt by `toBlocks`; compare the calls they hold instead.
+  (a, b) =>
+    a.threadId === b.threadId &&
+    a.live === b.live &&
+    a.streaming === b.streaming &&
+    (a.block === b.block || (a.block.kind === "tools" && b.block.kind === "tools" && sameItems(a.block.calls, b.block.calls))),
+);
+
+const AgentBlockContent = ({ block: item, threadId, live, streaming }: AgentBlockProps) => {
   switch (item.kind) {
     case "user":
       return null;

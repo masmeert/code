@@ -9,12 +9,18 @@ import {
   type ApprovalDecision,
   type Attachment,
   type ClientCommand,
+  type GitAction,
+  type PageInfo,
+  type RepoStatus,
   type RuntimeEvent,
   type ServerFrame,
+  type StoredEvent,
   type ThreadInfo,
   type TurnOptions,
+  isTranscriptEvent,
 } from "@apcode/contracts";
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+import { loadShell, loadTranscript, removeTranscript, saveShell, saveTranscript } from "./cache.ts";
 
 export type TranscriptItem =
   | { readonly kind: "user"; readonly id: string; readonly text: string; readonly attachments: ReadonlyArray<Attachment> }
@@ -37,13 +43,30 @@ export type TranscriptItem =
     }
   | { readonly kind: "error"; readonly id: string; readonly text: string };
 
-export interface ThreadState {
-  readonly info: ThreadInfo;
+/**
+ * One thread's messages, loaded when it's opened (the thread list never needs them).
+ * Same lifecycle as t3code's thread state: `cached` from the last run, `loading` while
+ * the daemon sends it, `live` once caught up and following new events.
+ */
+export interface Transcript {
   readonly items: ReadonlyArray<TranscriptItem>;
+  /** Id of the newest stored event applied; the daemon replays whatever came after it. */
+  readonly cursor: number;
+  /** Set when only the latest turns are loaded. */
+  readonly page: PageInfo | null;
+  readonly status: "cached" | "loading" | "live";
+  readonly loadingOlder: boolean;
 }
 
 export interface State {
   readonly connected: boolean;
+  /**
+   * Where the data on screen came from: nothing yet, the local cache from the last
+   * run (shown while the daemon starts), or the daemon itself.
+   */
+  readonly source: "none" | "cache" | "daemon";
+  /** The daemon database the data on screen belongs to. */
+  readonly dataId: string | null;
   readonly settings: Settings;
   readonly projects: ReadonlyArray<Project>;
   readonly providers: ReadonlyArray<ProviderStatus>;
@@ -51,13 +74,25 @@ export interface State {
   /** Set when a thread this window asked for appears, so the window can open it. */
   readonly createdHere: { readonly threadId: string } | null;
   readonly order: ReadonlyArray<string>;
-  readonly threads: Readonly<Record<string, ThreadState>>;
+  /** The thread list. Transcripts live apart, so streaming text doesn't re-render the sidebar. */
+  readonly threads: Readonly<Record<string, ThreadInfo>>;
+  readonly transcripts: Readonly<Record<string, Transcript>>;
   /** When each thread was last looked at (its `updatedAt` then); shared across windows via localStorage. */
   readonly seen: Readonly<Record<string, SeenMark>>;
   /** Local branches per repo path, fetched on demand by the branch picker. */
   readonly branches: Readonly<Record<string, BranchList>>;
   /** Uncommitted changes per repo path, fetched on demand by the diff panel. */
   readonly diffs: Readonly<Record<string, RepoDiff>>;
+  /** Working-tree/upstream state per repo path, fetched on demand by the git menu. */
+  readonly repos: Readonly<Record<string, RepoState>>;
+}
+
+export interface RepoState {
+  /** Null outside a repo. */
+  readonly status: RepoStatus | null;
+  /** The commit/push the last update answered, and why it failed. */
+  readonly action: GitAction | null;
+  readonly error: string | null;
 }
 
 export interface RepoDiff {
@@ -108,6 +143,8 @@ const readSeen = (): Record<string, SeenMark> => {
 
 const initial: State = {
   connected: false,
+  source: "none",
+  dataId: null,
   settings: DEFAULT_SETTINGS,
   projects: [],
   providers: [],
@@ -115,86 +152,44 @@ const initial: State = {
   createdHere: null,
   order: [],
   threads: {},
+  transcripts: {},
   seen: readSeen(),
   branches: {},
   diffs: {},
+  repos: {},
 };
 
 /** Request ids of `thread.create` commands sent from this window. */
 const ownRequests = new Set<string>();
 
+/** Latest turns loaded when a thread opens, and per "load earlier" (t3code uses the same window). */
+const TURN_LIMIT = 10;
+
+/** Searches from the end: the item being updated is almost always the last one. */
 const upsert = (items: ReadonlyArray<TranscriptItem>, id: string, next: (prev: TranscriptItem | undefined) => TranscriptItem) => {
-  const index = items.findIndex((item) => item.id === id);
+  let index = items.length - 1;
+  while (index >= 0 && items[index]!.id !== id) index--;
   if (index === -1) return [...items, next(undefined)];
   const copy = items.slice();
   copy[index] = next(items[index]);
   return copy;
 };
 
-const reduce = (state: State, event: RuntimeEvent): State => {
-  if (event._tag === "settings.updated") return { ...state, settings: event.settings };
-  if (event._tag === "project.added") return { ...state, projects: [...state.projects, event.project] };
-  if (event._tag === "project.removed") {
-    return { ...state, projects: state.projects.filter((p) => p.id !== event.projectId) };
-  }
-  if (event._tag === "providers.updated") return { ...state, providers: event.providers };
-  if (event._tag === "git.branches") {
-    const { current, branches, error } = event;
-    return { ...state, branches: { ...state.branches, [event.path]: { current, branches, error } } };
-  }
-  if (event._tag === "git.diff") {
-    const { patch, truncated, error } = event;
-    return { ...state, diffs: { ...state.diffs, [event.path]: { patch, truncated, error } } };
-  }
-  if (event._tag === "auth.flow") return { ...state, authFlows: { ...state.authFlows, [event.flow.provider]: event.flow } };
-  if (event._tag === "thread.created") {
-    const mine = event.requestId !== null && ownRequests.delete(event.requestId);
-    return {
-      ...state,
-      createdHere: mine ? { threadId: event.thread.id } : state.createdHere,
-      order: [event.thread.id, ...state.order.filter((id) => id !== event.thread.id)],
-      threads: { ...state.threads, [event.thread.id]: { info: event.thread, items: [] } },
-    };
-  }
-  const threadId = event.threadId;
-  if (threadId === null) return state;
-  const thread = state.threads[threadId];
-  if (!thread) return state;
-
-  if (event._tag === "thread.removed") {
-    const { [threadId]: _closed, ...threads } = state.threads;
-    return { ...state, order: state.order.filter((id) => id !== threadId), threads };
-  }
-
-  let { info, items } = thread;
+/** Applies a transcript event. Unchanged items keep their identity, so rendering can skip them. */
+const reduceItems = (items: ReadonlyArray<TranscriptItem>, event: RuntimeEvent, id: number | null): ReadonlyArray<TranscriptItem> => {
   switch (event._tag) {
-    case "thread.status":
-      info = { ...info, status: event.status };
-      break;
-    case "thread.model":
-      info = { ...info, model: event.model };
-      break;
-    case "thread.archived":
-      info = { ...info, archivedAt: event.archivedAt };
-      break;
-    case "thread.meta":
-      info = { ...info, title: event.title, updatedAt: event.updatedAt, branch: event.branch };
-      break;
     case "user.message":
-      items = [...items, { kind: "user", id: event.messageId, text: event.text, attachments: event.attachments ?? [] }];
-      break;
+      return upsert(items, event.messageId, () => ({ kind: "user", id: event.messageId, text: event.text, attachments: event.attachments ?? [] }));
     case "assistant.delta":
-      items = upsert(items, event.messageId, (prev) => ({
+      return upsert(items, event.messageId, (prev) => ({
         kind: "assistant",
         id: event.messageId,
         text: (prev?.kind === "assistant" ? prev.text : "") + event.delta,
       }));
-      break;
     case "assistant.completed":
-      items = upsert(items, event.messageId, () => ({ kind: "assistant", id: event.messageId, text: event.text }));
-      break;
+      return upsert(items, event.messageId, () => ({ kind: "assistant", id: event.messageId, text: event.text }));
     case "tool.started":
-      items = upsert(items, event.toolId, () => ({
+      return upsert(items, event.toolId, () => ({
         kind: "tool",
         id: event.toolId,
         name: event.name,
@@ -202,79 +197,336 @@ const reduce = (state: State, event: RuntimeEvent): State => {
         output: null,
         isError: false,
       }));
-      break;
     case "tool.completed":
-      items = items.map((item) =>
+      return items.map((item) =>
         item.id === event.toolId && item.kind === "tool" ? { ...item, output: event.output, isError: event.isError } : item,
       );
-      break;
     case "approval.requested":
-      items = [...items, { kind: "approval", id: event.requestId, title: event.title, detail: event.detail, resolved: false, decision: null }];
-      break;
+      return upsert(items, event.requestId, () => ({
+        kind: "approval",
+        id: event.requestId,
+        title: event.title,
+        detail: event.detail,
+        resolved: false,
+        decision: null,
+      }));
     case "approval.resolved":
-      items = items.map((item) => (item.id === event.requestId && item.kind === "approval" ? { ...item, resolved: true } : item));
-      break;
-    case "error":
-      items = [...items, { kind: "error", id: crypto.randomUUID(), text: event.message }];
-      break;
-    case "turn.completed":
-      break;
+      return items.map((item) => (item.id === event.requestId && item.kind === "approval" ? { ...item, resolved: true } : item));
+    case "error": {
+      const key = id === null ? crypto.randomUUID() : `error:${id}`;
+      return upsert(items, key, () => ({ kind: "error", id: key, text: event.message }));
+    }
+    default:
+      return items;
   }
-  return { ...state, threads: { ...state.threads, [threadId]: { info, items } } };
 };
+
+const foldStored = (items: ReadonlyArray<TranscriptItem>, events: ReadonlyArray<StoredEvent>, after: number) => {
+  let next = items;
+  for (const { id, event } of events) if (id > after) next = reduceItems(next, event, id);
+  return next;
+};
+
+/** Text of messages still streaming, sent whole with a snapshot or replay: it replaces what the cache had. */
+const applyStreaming = (items: ReadonlyArray<TranscriptItem>, deltas: ReadonlyArray<RuntimeEvent>) => {
+  const texts = new Map<string, string>();
+  for (const event of deltas) if (event._tag === "assistant.delta") texts.set(event.messageId, (texts.get(event.messageId) ?? "") + event.delta);
+  let next = items;
+  for (const [messageId, text] of texts) next = upsert(next, messageId, () => ({ kind: "assistant", id: messageId, text }));
+  return next;
+};
+
+/** Everything but transcripts: the thread list, settings, projects, git state… */
+const reduceShell = (state: State, event: RuntimeEvent): State => {
+  switch (event._tag) {
+    case "settings.updated":
+      return { ...state, settings: event.settings };
+    case "project.added":
+      return { ...state, projects: [...state.projects.filter((p) => p.id !== event.project.id), event.project] };
+    case "project.removed":
+      return { ...state, projects: state.projects.filter((p) => p.id !== event.projectId) };
+    case "providers.updated":
+      return { ...state, providers: event.providers };
+    case "git.branches": {
+      const { current, branches, error } = event;
+      return { ...state, branches: { ...state.branches, [event.path]: { current, branches, error } } };
+    }
+    case "git.diff": {
+      const { patch, truncated, error } = event;
+      return { ...state, diffs: { ...state.diffs, [event.path]: { patch, truncated, error } } };
+    }
+    case "git.status": {
+      const { status, action, error } = event;
+      return { ...state, repos: { ...state.repos, [event.path]: { status, action, error } } };
+    }
+    case "auth.flow":
+      return { ...state, authFlows: { ...state.authFlows, [event.flow.provider]: event.flow } };
+    case "thread.created": {
+      const mine = event.requestId !== null && ownRequests.delete(event.requestId);
+      return {
+        ...state,
+        createdHere: mine ? { threadId: event.thread.id } : state.createdHere,
+        order: [event.thread.id, ...state.order.filter((id) => id !== event.thread.id)],
+        threads: { ...state.threads, [event.thread.id]: event.thread },
+        // Brand new: nothing to fetch, it's live from its first event.
+        transcripts: { ...state.transcripts, [event.thread.id]: { items: [], cursor: 0, page: null, status: "live", loadingOlder: false } },
+      };
+    }
+    case "thread.removed": {
+      const { [event.threadId]: _thread, ...threads } = state.threads;
+      const { [event.threadId]: _transcript, ...transcripts } = state.transcripts;
+      if (state.dataId) removeTranscript(state.dataId, event.threadId);
+      return { ...state, order: state.order.filter((id) => id !== event.threadId), threads, transcripts };
+    }
+    case "thread.status":
+    case "thread.model":
+    case "thread.archived":
+    case "thread.meta": {
+      const info = state.threads[event.threadId];
+      if (!info) return state;
+      const next: ThreadInfo =
+        event._tag === "thread.status"
+          ? { ...info, status: event.status }
+          : event._tag === "thread.model"
+            ? { ...info, model: event.model }
+            : event._tag === "thread.archived"
+              ? { ...info, archivedAt: event.archivedAt }
+              : { ...info, title: event.title, updatedAt: event.updatedAt, branch: event.branch };
+      return { ...state, threads: { ...state.threads, [event.threadId]: next } };
+    }
+    default:
+      return state;
+  }
+};
+
+const setTranscript = (state: State, threadId: string, transcript: Transcript): State => ({
+  ...state,
+  transcripts: { ...state.transcripts, [threadId]: transcript },
+});
 
 // ---------------------------------------------------------------------------
 
 let state = initial;
 const listeners = new Set<() => void>();
-const setState = (next: State) => {
-  state = next;
+let notifyScheduled = false;
+const notify = () => {
+  notifyScheduled = false;
   for (const listener of listeners) listener();
 };
 
+const setState = (next: State) => {
+  const prev = state;
+  state = next;
+  // Deltas can arrive faster than frames: re-render at most once per frame.
+  if (!notifyScheduled) {
+    notifyScheduled = true;
+    requestAnimationFrame(notify);
+  }
+  if (next.dataId === null) return;
+  if (
+    next.source === "daemon" &&
+    (prev.threads !== next.threads || prev.order !== next.order || prev.projects !== next.projects ||
+      prev.settings !== next.settings || prev.providers !== next.providers)
+  ) {
+    const { dataId, settings, projects, providers, order, threads } = next;
+    saveShell({ dataId, settings, projects, providers, order, threads });
+  }
+  if (prev.transcripts !== next.transcripts || prev.threads !== next.threads) {
+    for (const [threadId, transcript] of Object.entries(next.transcripts)) {
+      if (transcript.status !== "live") continue;
+      // Persist once a turn settles, not on every delta: encoding the whole transcript
+      // mid-stream is wasted work (t3code does the same). Saved when the turn ends.
+      const running = next.threads[threadId]?.status === "running";
+      if (running) continue;
+      const settled = prev.threads[threadId]?.status === "running";
+      if (transcript === prev.transcripts[threadId] && !settled) continue;
+      const { items, cursor, page } = transcript;
+      saveTranscript(next.dataId, threadId, { items, cursor, page });
+    }
+  }
+};
+
+/** Threads with an open view, counted (a thread can be open in several places). */
+const wanted = new Map<string, number>();
+/** Threads whose cached transcript is still being read; subscribing waits for it, to know the cursor. */
+const readingCache = new Set<string>();
+
+/** Puts a thread's cached transcript in memory, if it isn't there yet. */
+const loadCachedTranscript = async (threadId: string) => {
+  const dataId = state.dataId;
+  if (!dataId || state.transcripts[threadId] || readingCache.has(threadId)) return;
+  readingCache.add(threadId);
+  const cached = await loadTranscript(dataId, threadId);
+  readingCache.delete(threadId);
+  // The daemon may have answered meanwhile, or a new shell may be from another database.
+  if (!cached || state.dataId !== dataId || state.transcripts[threadId]) return;
+  const { items, cursor, page } = cached;
+  setState(setTranscript(state, threadId, { items, cursor, page, status: "cached", loadingOlder: false }));
+};
+
+/**
+ * Resolves once the last run's state is on screen (or there is none), so the first
+ * paint shows your threads, and the latest one's messages, rather than an empty app.
+ */
+export const ready: Promise<void> = loadShell().then(async (cached) => {
+  // The daemon beat the cache: its data is newer.
+  if (!cached || state.source !== "none") return;
+  const { dataId, settings, projects, providers, order, threads } = cached;
+  setState({ ...state, source: "cache", dataId, settings, projects, providers, order, threads });
+  if (order[0]) await loadCachedTranscript(order[0]);
+});
+
 let socket: WebSocket | null = null;
+
+const socketOpen = () => socket?.readyState === WebSocket.OPEN;
+
+/** Asks for a thread's transcript: a replay after the cursor when we have one, else the latest turns. */
+const subscribe = (threadId: string) => {
+  if (!socketOpen() || state.source !== "daemon" || readingCache.has(threadId)) return;
+  const transcript = state.transcripts[threadId];
+  if (transcript) {
+    if (transcript.status === "cached") setState(setTranscript(state, threadId, { ...transcript, status: "loading" }));
+  } else {
+    setState(setTranscript(state, threadId, { items: [], cursor: 0, page: null, status: "loading", loadingOlder: false }));
+  }
+  const after = transcript && transcript.items.length > 0 ? transcript.cursor : null;
+  socket!.send(JSON.stringify({ _tag: "thread.subscribe", threadId, after, turnLimit: TURN_LIMIT } satisfies ClientCommand));
+};
+
+const onShell = (frame: Extract<ServerFrame, { _tag: "shell" }>) => {
+  const sameData = frame.dataId === state.dataId;
+  const threads = Object.fromEntries(frame.threads.map((info) => [info.id, info]));
+  // Keep transcripts of threads that still exist; they resume from their cursor.
+  const transcripts: Record<string, Transcript> = {};
+  if (sameData) {
+    for (const [threadId, transcript] of Object.entries(state.transcripts)) {
+      if (threads[threadId]) transcripts[threadId] = transcript;
+      else removeTranscript(frame.dataId, threadId);
+    }
+  }
+  let next: State = {
+    ...state,
+    connected: true,
+    source: "daemon",
+    dataId: frame.dataId,
+    settings: frame.settings,
+    projects: frame.projects,
+    providers: frame.providers,
+    order: [...frame.threads].sort((a, b) => b.createdAt - a.createdAt).map((t) => t.id),
+    threads,
+    transcripts,
+  };
+  // First run with seen-tracking: everything that already exists counts as looked at.
+  if (!hasSeenKey()) next = { ...next, seen: Object.fromEntries(frame.threads.map((t) => [t.id, { rev: t.updatedAt, at: 0 }])) };
+  setState(next);
+  if (!hasSeenKey()) writeSeen(next.seen);
+  for (const threadId of wanted.keys()) {
+    if (transcripts[threadId] || !sameData) subscribe(threadId);
+    // Not in memory yet: read the cache first so the daemon only sends what's new.
+    else void loadCachedTranscript(threadId).then(() => wanted.has(threadId) && subscribe(threadId));
+  }
+};
+
+const onFrame = (frame: ServerFrame) => {
+  switch (frame._tag) {
+    case "shell":
+      return onShell(frame);
+    case "thread.snapshot": {
+      const items = applyStreaming(foldStored([], frame.events, 0), frame.streaming);
+      return setState(setTranscript(state, frame.threadId, { items, cursor: frame.cursor, page: frame.page, status: "live", loadingOlder: false }));
+    }
+    case "thread.replay": {
+      const prev = state.transcripts[frame.threadId];
+      const base = prev?.items ?? [];
+      const items = applyStreaming(foldStored(base, frame.events, prev?.cursor ?? 0), frame.streaming);
+      const cursor = Math.max(prev?.cursor ?? 0, frame.cursor);
+      return setState(setTranscript(state, frame.threadId, { items, cursor, page: prev?.page ?? null, status: "live", loadingOlder: false }));
+    }
+    case "thread.page": {
+      const prev = state.transcripts[frame.threadId];
+      if (!prev) return;
+      const known = new Set(prev.items.map((item) => item.id));
+      const older = foldStored([], frame.events, 0).filter((item) => !known.has(item.id));
+      return setState(setTranscript(state, frame.threadId, { ...prev, items: [...older, ...prev.items], page: frame.page, loadingOlder: false }));
+    }
+    case "event": {
+      const { event, id } = frame;
+      if (!isTranscriptEvent(event)) return setState(reduceShell(state, event));
+      const transcript = state.transcripts[event.threadId];
+      // Not following this thread, or already have it (a replay can overlap live events).
+      if (!transcript || (id !== null && id <= transcript.cursor)) return;
+      const items = reduceItems(transcript.items, event, id);
+      return setState(setTranscript(state, event.threadId, { ...transcript, items, cursor: id ?? transcript.cursor }));
+    }
+  }
+};
 
 const connect = () => {
   const ws = new WebSocket(`ws://127.0.0.1:${DEFAULT_DAEMON_PORT}`);
   socket = ws;
-  ws.onmessage = (message) => {
-    const frame = JSON.parse(message.data as string) as ServerFrame;
-    if (frame._tag === "snapshot") {
-      let next: State = {
-        ...initial,
-        connected: true,
-        settings: frame.settings,
-        projects: frame.projects,
-        providers: frame.providers,
-        seen: state.seen,
-        branches: state.branches,
-        diffs: state.diffs,
-      };
-      for (const info of frame.threads) {
-        next = {
-          ...next,
-          order: [info.id, ...next.order],
-          threads: { ...next.threads, [info.id]: { info, items: [] } },
-        };
-      }
-      for (const event of frame.events) if (event._tag !== "thread.created") next = reduce(next, event);
-      // First run with seen-tracking: everything that already exists counts as looked at.
-      if (!hasSeenKey()) next = { ...next, seen: Object.fromEntries(frame.threads.map((t) => [t.id, { rev: t.updatedAt, at: 0 }])) };
-      setState(next);
-      if (!hasSeenKey()) writeSeen(next.seen);
-    } else {
-      setState(reduce(state, frame.event));
-    }
+  ws.onopen = () => {
+    for (const command of queued.splice(0)) ws.send(JSON.stringify(command));
   };
+  ws.onmessage = (message) => onFrame(JSON.parse(message.data as string) as ServerFrame);
   ws.onclose = () => {
-    setState({ ...state, connected: false });
+    // Keep everything on screen; transcripts fall back to cached until the next connect catches them up.
+    const transcripts = Object.fromEntries(
+      Object.entries(state.transcripts).map(([id, t]) => [id, t.status === "cached" && !t.loadingOlder ? t : { ...t, status: "cached" as const, loadingOlder: false }]),
+    );
+    setState({ ...state, connected: false, transcripts });
     setTimeout(connect, 1000);
   };
 };
 connect();
 
+/** Follows a thread's transcript while a view shows it. */
+const openThread = (threadId: string) => {
+  const count = wanted.get(threadId) ?? 0;
+  wanted.set(threadId, count + 1);
+  if (count > 0) return;
+  if (state.transcripts[threadId]) subscribe(threadId);
+  else void loadCachedTranscript(threadId).then(() => wanted.has(threadId) && subscribe(threadId));
+};
+
+const closeThread = (threadId: string) => {
+  const count = (wanted.get(threadId) ?? 1) - 1;
+  if (count > 0) return void wanted.set(threadId, count);
+  wanted.delete(threadId);
+  // The transcript stays in memory; reopening replays only what it missed.
+  if (socketOpen()) socket!.send(JSON.stringify({ _tag: "thread.unsubscribe", threadId } satisfies ClientCommand));
+};
+
+/** A thread's transcript, followed live while the calling component is mounted. */
+export const useTranscript = (threadId: string): Transcript | null => {
+  useEffect(() => {
+    openThread(threadId);
+    return () => closeThread(threadId);
+  }, [threadId]);
+  return useStore((s) => s.transcripts[threadId] ?? null);
+};
+
+/** Fetches the turns before what's loaded. */
+export const loadOlder = (threadId: string) => {
+  const transcript = state.transcripts[threadId];
+  if (!transcript?.page?.hasMore || transcript.loadingOlder || !socketOpen()) return;
+  setState(setTranscript(state, threadId, { ...transcript, loadingOlder: true }));
+  socket!.send(
+    JSON.stringify({ _tag: "thread.loadOlder", threadId, before: transcript.page.before, turnLimit: TURN_LIMIT } satisfies ClientCommand),
+  );
+};
+
+/** Commands sent while the daemon is still starting (the UI is up from cache by then). */
+const queued: ClientCommand[] = [];
+
 export const send = (command: ClientCommand) => {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(command));
+  else queued.push(command);
+};
+
+/** Applies settings locally right away (theme etc. shouldn't wait on the daemon), then persists them. */
+export const updateSettings = (settings: Settings) => {
+  setState({ ...state, settings });
+  send({ _tag: "settings.update", settings });
 };
 
 /** Creates a thread from a draft by sending its first message. */
@@ -286,9 +538,9 @@ export const createThread = (input: { path: string; provider: ProviderKind; mode
 
 /** Marks a thread's latest activity as seen; it settles once idle and the settle delay has passed. */
 export const markSeen = (threadId: string) => {
-  const thread = state.threads[threadId];
-  if (!thread || state.seen[threadId]?.rev === thread.info.updatedAt) return;
-  setSeen(threadId, { rev: thread.info.updatedAt, at: Date.now() });
+  const info = state.threads[threadId];
+  if (!info || state.seen[threadId]?.rev === info.updatedAt) return;
+  setSeen(threadId, { rev: info.updatedAt, at: Date.now() });
 };
 
 /**
@@ -296,8 +548,8 @@ export const markSeen = (threadId: string) => {
  * unsettling brings it back as new activity, so it waits to be seen again.
  */
 export const setSettled = (threadId: string, settled: boolean) => {
-  const thread = state.threads[threadId];
-  if (thread) setSeen(threadId, { rev: settled ? thread.info.updatedAt : 0, at: Date.now(), manual: true });
+  const info = state.threads[threadId];
+  if (info) setSeen(threadId, { rev: settled ? info.updatedAt : 0, at: Date.now(), manual: true });
 };
 
 const setSeen = (threadId: string, mark: SeenMark) => {
@@ -328,12 +580,12 @@ export const isSettled = (info: ThreadInfo, seen: State["seen"], now: number, de
 export const canSettle = (info: ThreadInfo) => info.status !== "running" && info.status !== "awaiting-approval";
 
 export const respondApproval = (threadId: string, requestId: string, decision: ApprovalDecision) => {
-  const thread = state.threads[threadId];
-  if (thread) {
-    const items = thread.items.map((item) =>
+  const transcript = state.transcripts[threadId];
+  if (transcript) {
+    const items = transcript.items.map((item) =>
       item.id === requestId && item.kind === "approval" ? { ...item, decision } : item,
     );
-    setState({ ...state, threads: { ...state.threads, [threadId]: { ...thread, items } } });
+    setState(setTranscript(state, threadId, { ...transcript, items }));
   }
   send({ _tag: "approval.respond", threadId, requestId, decision });
 };

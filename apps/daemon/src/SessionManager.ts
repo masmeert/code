@@ -2,12 +2,15 @@ import type {
   Attachment,
   AttachmentInput,
   ClientCommand,
+  GitAction,
+  PageInfo,
   Project,
   ProviderEvent,
   ProviderKind,
   ProviderStatus,
   RuntimeEvent,
   Settings,
+  StoredEvent,
   ThreadInfo,
   TurnOptions,
 } from "@apcode/contracts";
@@ -20,7 +23,8 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
-import { checkoutBranch, createBranch, listBranches, readBranch, readDiff } from "./git.ts";
+import { generateCommitMessage } from "./commitMessage.ts";
+import { checkoutBranch, commitAll, createBranch, listBranches, pushBranch, readBranch, readDiff, readRecentSubjects, readStatus } from "./git.ts";
 import { ClaudeAdapter } from "./providers/ClaudeAdapter.ts";
 import { CodexAdapter } from "./providers/CodexAdapter.ts";
 import { ProviderError, type ProviderAdapter, type ProviderSession } from "./providers/ProviderAdapter.ts";
@@ -33,9 +37,33 @@ import { isPersisted, ThreadStore } from "./storage/ThreadStore.ts";
 const ADAPTERS: Record<ProviderKind, ProviderAdapter> = { claude: ClaudeAdapter, codex: CodexAdapter };
 
 export interface SequencedEvent {
+  /** Publish order, in memory only; lets a connection skip what a transcript read already covered. */
   readonly seq: number;
+  /** Stored events' id, the clients' resume cursor. */
+  readonly id: number | null;
   readonly event: RuntimeEvent;
 }
+
+/** A transcript read, taken at publish position `seq`. */
+export type ThreadRead =
+  | {
+      readonly _tag: "thread.snapshot";
+      readonly events: ReadonlyArray<StoredEvent>;
+      readonly streaming: ReadonlyArray<RuntimeEvent>;
+      readonly cursor: number;
+      readonly page: PageInfo | null;
+      readonly seq: number;
+    }
+  | {
+      readonly _tag: "thread.replay";
+      readonly events: ReadonlyArray<StoredEvent>;
+      readonly streaming: ReadonlyArray<RuntimeEvent>;
+      readonly cursor: number;
+      readonly seq: number;
+    };
+
+/** A client further behind than this gets a fresh snapshot instead of a replay. */
+const MAX_REPLAY = 2000;
 
 interface ThreadEntry {
   info: ThreadInfo;
@@ -49,19 +77,29 @@ export class SessionManager extends Context.Service<
   SessionManager,
   {
     readonly dispatch: (command: ClientCommand) => Effect.Effect<void, ProviderError>;
-    /** Subscribes, then snapshots synchronously, so the stream continues exactly where the snapshot ends. */
+    /** Subscribes, then snapshots the shell synchronously, so the stream continues exactly where it ends. */
     readonly subscribe: Effect.Effect<
       {
+        readonly dataId: string;
         readonly settings: Settings;
         readonly projects: ReadonlyArray<Project>;
         readonly providers: ReadonlyArray<ProviderStatus>;
         readonly threads: ReadonlyArray<ThreadInfo>;
-        readonly events: ReadonlyArray<RuntimeEvent>;
         readonly live: Stream.Stream<SequencedEvent>;
       },
       never,
       Scope.Scope
     >;
+    /**
+     * A thread's transcript: what was missed since `after`, or the latest `turnLimit` turns.
+     * Synchronous, so live events with a `seq` above the read's are exactly the ones it lacks.
+     */
+    readonly readThread: (threadId: string, after: number | null, turnLimit: number) => ThreadRead | null;
+    readonly readOlder: (
+      threadId: string,
+      before: number,
+      turnLimit: number,
+    ) => { readonly events: ReadonlyArray<StoredEvent>; readonly page: PageInfo } | null;
     readonly shutdown: Effect.Effect<void>;
   }
 >()("apcode/SessionManager") {}
@@ -104,37 +142,24 @@ const make = Effect.gen(function* () {
   const registry = yield* ProviderRegistry;
   const pubsub = yield* PubSub.unbounded<SequencedEvent>();
   const threads = new Map<string, ThreadEntry>();
-  /** Replayable history (persisted event kinds only). */
-  let log: Array<RuntimeEvent> = [];
   /** Deltas of messages still streaming, keyed by message id; dropped once the message completes. */
   const streaming = new Map<string, Array<RuntimeEvent>>();
   let seq = 0;
 
   // --- restore -------------------------------------------------------------
-  const restored = yield* store.load;
-  for (const { info, resumeToken } of restored.threads) {
+  for (const { info, resumeToken } of yield* store.load) {
     threads.set(info.id, { info, session: null, resumeToken, lock: yield* Semaphore.make(1) });
   }
-  log = [...restored.events];
   // Approvals pending when the daemon stopped died with their agent process.
-  const pending = new Map<string, string>();
-  for (const event of log) {
-    if (event._tag === "approval.requested") pending.set(event.requestId, event.threadId);
-    if (event._tag === "approval.resolved") pending.delete(event.requestId);
-  }
-  for (const [requestId, threadId] of pending) {
-    const event: RuntimeEvent = { _tag: "approval.resolved", threadId, requestId };
-    store.appendEvent(threadId, event);
-    log.push(event);
+  for (const [requestId, threadId] of store.unresolvedApprovals()) {
+    store.appendEvent(threadId, { _tag: "approval.resolved", threadId, requestId });
   }
   // Threads from before auto-titles are still named after their project folder.
-  const named = new Set<string>();
-  for (const event of log) {
-    if (event._tag !== "user.message" || named.has(event.threadId)) continue;
-    named.add(event.threadId);
-    const entry = threads.get(event.threadId);
-    if (!entry || entry.info.title !== basename(entry.info.cwd)) continue;
-    entry.info = { ...entry.info, title: titleFrom(event.text, entry.info.title) };
+  for (const entry of threads.values()) {
+    if (entry.info.title !== basename(entry.info.cwd)) continue;
+    const text = store.firstUserMessage(entry.info.id);
+    if (text === null) continue;
+    entry.info = { ...entry.info, title: titleFrom(text, entry.info.title) };
     store.setMeta(entry.info.id, { title: entry.info.title, updatedAt: entry.info.updatedAt });
   }
 
@@ -164,20 +189,20 @@ const make = Effect.gen(function* () {
   };
 
   const publish = (event: RuntimeEvent) => {
+    let id: number | null = null;
     if (event._tag === "assistant.delta") {
       const list = streaming.get(event.messageId) ?? [];
       list.push(event);
       streaming.set(event.messageId, list);
     } else if (isPersisted(event)) {
       if (event._tag === "assistant.completed") streaming.delete(event.messageId);
-      log.push(event);
-      store.appendEvent((event as { threadId: string }).threadId, event);
+      id = store.appendEvent((event as { threadId: string }).threadId, event);
     }
     if (event._tag === "thread.status") {
       const entry = threads.get(event.threadId);
       if (entry) entry.info = { ...entry.info, status: event.status };
     }
-    PubSub.publishUnsafe(pubsub, { seq: ++seq, event });
+    PubSub.publishUnsafe(pubsub, { seq: ++seq, id, event });
     if (event._tag === "user.message" || event._tag === "turn.completed") touch(event.threadId);
   };
 
@@ -231,7 +256,9 @@ const make = Effect.gen(function* () {
       threads.delete(threadId);
       if (entry.session) yield* entry.session.close;
       store.deleteThread(threadId);
-      log = log.filter((event) => !("threadId" in event) || event.threadId !== threadId);
+      for (const [messageId, deltas] of streaming) {
+        if ((deltas[0] as { threadId: string } | undefined)?.threadId === threadId) streaming.delete(messageId);
+      }
       publish({ _tag: "thread.removed", threadId });
     });
 
@@ -275,6 +302,43 @@ const make = Effect.gen(function* () {
     Effect.promise(() => listBranches(path)).pipe(
       Effect.map(({ current, branches }) => publish({ _tag: "git.branches", path, current, branches, error })),
     );
+
+  /** Announces the repo state at `path`; `action`/`error` report the commit or push it answers. */
+  const publishStatus = (path: string, action: GitAction | null = null, error: string | null = null) =>
+    Effect.promise(() => readStatus(path)).pipe(
+      Effect.map((status) => publish({ _tag: "git.status", path, status, action, error })),
+    );
+
+  /** A message for everything uncommitted at `path`, from the commit model in settings. */
+  const writeCommitMessage = (path: string) =>
+    Effect.gen(function* () {
+      const settings = yield* settingsStore.get;
+      const split = settings.commitModel?.indexOf(":") ?? -1;
+      const provider = split > 0 ? (settings.commitModel!.slice(0, split) as ProviderKind) : settings.lastProvider;
+      const model = split > 0 ? settings.commitModel!.slice(split + 1) : settings.providers[provider].defaultModel;
+      const [diff, recent] = yield* Effect.promise(() => Promise.all([readDiff(path), readRecentSubjects(path)]));
+      if (diff.error) return { error: diff.error };
+      if (!diff.patch) return { error: "Nothing to commit" };
+      return yield* Effect.tryPromise({
+        try: () => generateCommitMessage({ cwd: path, provider, model: model || undefined, patch: diff.patch, recent }),
+        catch: (e) => `Couldn't write a commit message: ${e instanceof Error ? e.message : String(e)}`,
+      }).pipe(
+        Effect.map((message) => ({ message })),
+        Effect.catch((error) => Effect.succeed({ error })),
+      );
+    });
+
+  /** Commits and pushes on one repo run one at a time. */
+  const gitLocks = new Map<string, Semaphore.Semaphore>();
+  const withRepoLock = <A, E>(path: string, effect: Effect.Effect<A, E>) =>
+    Effect.gen(function* () {
+      let lock = gitLocks.get(path);
+      if (!lock) {
+        lock = yield* Semaphore.make(1);
+        gitLocks.set(path, lock);
+      }
+      return yield* lock.withPermit(effect);
+    });
 
   const create = (command: Extract<ClientCommand, { _tag: "thread.create" }>) =>
     Effect.gen(function* () {
@@ -329,6 +393,29 @@ const make = Effect.gen(function* () {
           yield* publishBranches(command.path, error);
           for (const entry of threads.values()) if (entry.info.cwd === command.path) refreshMeta(entry);
         });
+      case "git.status":
+        return publishStatus(command.path);
+      case "git.commit":
+      case "git.push": {
+        const { path } = command;
+        const action: GitAction = command._tag === "git.push" ? "push" : command.push ? "commit-push" : "commit";
+        return withRepoLock(
+          path,
+          Effect.gen(function* () {
+            let error: string | null = null;
+            if (command._tag === "git.commit") {
+              const written = command.message.trim() ? { message: command.message } : yield* writeCommitMessage(path);
+              error = "error" in written ? written.error : yield* Effect.promise(() => commitAll(path, written.message));
+            }
+            if (!error && action !== "commit") error = yield* Effect.promise(() => pushBranch(path));
+            yield* publishStatus(path, action, error);
+            if (action !== "push") {
+              const diff = yield* Effect.promise(() => readDiff(path));
+              publish({ _tag: "git.diff", path, ...diff });
+            }
+          }),
+        );
+      }
       case "thread.setModel":
         return Effect.gen(function* () {
           const entry = yield* getEntry(command.threadId);
@@ -367,6 +454,11 @@ const make = Effect.gen(function* () {
           yield* Effect.forEach(owned, (t) => removeThread(t.info.id), { discard: true });
           publish({ _tag: "project.removed", projectId: command.projectId });
         });
+      // Per connection; the server answers these.
+      case "thread.subscribe":
+      case "thread.unsubscribe":
+      case "thread.loadOlder":
+        return Effect.void;
       case "settings.update":
         return settingsStore
           .update(command.settings)
@@ -384,14 +476,31 @@ const make = Effect.gen(function* () {
     subscribe: Effect.map(
       Effect.all([PubSub.subscribe(pubsub), settingsStore.get, projectsStore.list, registry.list]),
       ([subscription, settings, projects, providers]) => ({
+        dataId: store.dataId,
         settings,
         projects,
         providers,
         threads: [...threads.values()].map((t) => t.info),
-        events: [...log, ...[...streaming.values()].flat()],
         live: Stream.fromSubscription(subscription),
       }),
     ),
+    readThread: (threadId, after, turnLimit) => {
+      if (!threads.has(threadId)) return null;
+      const live = [...streaming.values()].flat().filter((e) => (e as { threadId: string }).threadId === threadId);
+      const cursor = store.cursor(threadId);
+      // A cursor past the end means the cache is from another database: start over.
+      if (after !== null && after <= cursor) {
+        const events = store.readAfter(threadId, after);
+        if (events.length <= MAX_REPLAY) return { _tag: "thread.replay", events, streaming: live, cursor, seq };
+      }
+      const { events, page } = store.readTurns(threadId, turnLimit);
+      return { _tag: "thread.snapshot", events, streaming: live, cursor, page, seq };
+    },
+    readOlder: (threadId, before, turnLimit) => {
+      if (!threads.has(threadId)) return null;
+      const { events, page } = store.readTurns(threadId, turnLimit, before);
+      return { events, page: page ?? { before, hasMore: false } };
+    },
     shutdown: Effect.forEach([...threads.values()], (t) => t.session?.close ?? Effect.void, { discard: true }),
   });
 });

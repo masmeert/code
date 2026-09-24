@@ -160,24 +160,11 @@
   }
 }
 
-/* Theme switch: the new theme wipes up from the bottom edge (see useTheme). */
-@keyframes theme-reveal {
-  from {
-    clip-path: inset(100% 0 0 0);
-  }
-  to {
-    clip-path: inset(0 0 0 0);
-  }
-}
-
-html[data-theme-reveal]::view-transition-old(root) {
-  animation: none;
-  mix-blend-mode: normal;
-}
-
-html[data-theme-reveal]::view-transition-new(root) {
-  mix-blend-mode: normal;
-  animation: theme-reveal 400ms var(--ease-out);
+/* Theme switch: freeze every transition for one frame so colours swap at once instead of fading piecemeal (see useTheme). */
+html[data-theme-switching] *,
+html[data-theme-switching] *::before,
+html[data-theme-switching] *::after {
+  transition: none !important;
 }
 
 html,

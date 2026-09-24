@@ -55,9 +55,11 @@ export const Settings = Schema.Struct({
   providers: Schema.Struct({ claude: ProviderSettings, codex: ProviderSettings }),
   /** Minutes a finished, seen thread stays in Active before it settles. Optional so older settings files still load. */
   settleDelayMinutes: Schema.optional(Schema.Number),
+  /** Writes commit messages left empty, as `provider:model`; null/absent uses the last harness's default model. */
+  commitModel: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export type Settings = typeof Settings.Type;
-export const DEFAULT_SETTLE_DELAY_MINUTES = 5;
+export const DEFAULT_SETTLE_DELAY_MINUTES = 15;
 export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   lastProvider: "claude",
@@ -129,6 +131,21 @@ export type ThreadInfo = typeof ThreadInfo.Type;
 // Runtime events: every provider adapter normalizes into this shape.
 // ---------------------------------------------------------------------------
 
+export const GitAction = Schema.Literals(["commit", "commit-push", "push"]);
+export type GitAction = typeof GitAction.Type;
+
+export const RepoStatus = Schema.Struct({
+  /** Changed files, untracked included. */
+  changes: Schema.Number,
+  upstream: Schema.NullOr(Schema.String),
+  /** Commits not on the upstream yet; with no upstream, every commit on the branch. */
+  ahead: Schema.Number,
+  behind: Schema.Number,
+  hasRemote: Schema.Boolean,
+  detached: Schema.Boolean,
+});
+export type RepoStatus = typeof RepoStatus.Type;
+
 export const RuntimeEvent = Schema.Union([
   /** `requestId` echoes the creating command, so only that window selects the new thread. */
   Schema.TaggedStruct("thread.created", { thread: ThreadInfo, requestId: Schema.NullOr(Schema.String) }),
@@ -193,6 +210,13 @@ export const RuntimeEvent = Schema.Union([
     truncated: Schema.Boolean,
     error: Schema.NullOr(Schema.String),
   }),
+  /** Working-tree and upstream state of the repo at `path`; `action` names the commit/push this answers, if any. */
+  Schema.TaggedStruct("git.status", {
+    path: Schema.String,
+    status: Schema.NullOr(RepoStatus),
+    action: Schema.NullOr(GitAction),
+    error: Schema.NullOr(Schema.String),
+  }),
   Schema.TaggedStruct("auth.flow", { flow: AuthFlow }),
 ]);
 export type RuntimeEvent = typeof RuntimeEvent.Type;
@@ -225,6 +249,12 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("git.checkout", { path: Schema.String, branch: Schema.String }),
   /** Creates a branch from HEAD and switches to it. */
   Schema.TaggedStruct("git.createBranch", { path: Schema.String, branch: Schema.String }),
+  /** Answered with a `git.status` event. */
+  Schema.TaggedStruct("git.status", { path: Schema.String }),
+  /** Stages everything and commits it, then pushes if `push`; answered with a `git.status` event. An empty `message` is written by the commit model. */
+  Schema.TaggedStruct("git.commit", { path: Schema.String, message: Schema.String, push: Schema.Boolean }),
+  /** Answered with a `git.status` event. */
+  Schema.TaggedStruct("git.push", { path: Schema.String }),
   Schema.TaggedStruct("thread.interrupt", { threadId: Schema.String }),
   Schema.TaggedStruct("thread.close", { threadId: Schema.String }),
   /** Archiving also stops the thread's agent process; it resumes on the next message. */
@@ -242,6 +272,19 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("provider.linkCode", { provider: ProviderKind, code: Schema.String }),
   Schema.TaggedStruct("provider.linkCancel", { provider: ProviderKind }),
   Schema.TaggedStruct("provider.unlink", { provider: ProviderKind }),
+  /**
+   * Start receiving a thread's transcript. With `after` (the last event id this client
+   * has), only what it missed is replayed; otherwise the latest `turnLimit` turns arrive
+   * as a `thread.snapshot`. Answered with `thread.snapshot` or `thread.replay`.
+   */
+  Schema.TaggedStruct("thread.subscribe", {
+    threadId: Schema.String,
+    after: Schema.NullOr(Schema.Number),
+    turnLimit: Schema.Number,
+  }),
+  Schema.TaggedStruct("thread.unsubscribe", { threadId: Schema.String }),
+  /** Older turns, before event id `before`. Answered with `thread.page`. */
+  Schema.TaggedStruct("thread.loadOlder", { threadId: Schema.String, before: Schema.Number, turnLimit: Schema.Number }),
 ]);
 export type ClientCommand = typeof ClientCommand.Type;
 
@@ -249,14 +292,71 @@ export type ClientCommand = typeof ClientCommand.Type;
 // Daemon -> client frames
 // ---------------------------------------------------------------------------
 
+/** A stored event with its id: ids only grow, so they work as a resume cursor across restarts. */
+export const StoredEvent = Schema.Struct({ id: Schema.Number, event: RuntimeEvent });
+export type StoredEvent = typeof StoredEvent.Type;
+
+/** Where a windowed transcript starts: `before` is the first loaded event id, `hasMore` if older ones exist. */
+export const PageInfo = Schema.Struct({ before: Schema.Number, hasMore: Schema.Boolean });
+export type PageInfo = typeof PageInfo.Type;
+
+/**
+ * Transcript events: they only reach clients subscribed to that thread. Everything else
+ * (thread list, status, settings, projects…) goes to every client.
+ */
+export const isTranscriptEvent = (event: RuntimeEvent): event is Extract<RuntimeEvent, { threadId: string }> => {
+  switch (event._tag) {
+    case "user.message":
+    case "assistant.delta":
+    case "assistant.completed":
+    case "tool.started":
+    case "tool.completed":
+    case "approval.requested":
+    case "approval.resolved":
+    case "turn.completed":
+      return true;
+    case "error":
+      return event.threadId !== null;
+    default:
+      return false;
+  }
+};
+
 export const ServerFrame = Schema.Union([
-  Schema.TaggedStruct("snapshot", {
+  /**
+   * Sent on connect: everything but transcripts, which load per thread. `dataId`
+   * identifies the daemon's database, so a client never resumes against another one.
+   */
+  Schema.TaggedStruct("shell", {
+    dataId: Schema.String,
     settings: Settings,
     projects: Schema.Array(Project),
     providers: Schema.Array(ProviderStatus),
     threads: Schema.Array(ThreadInfo),
-    events: Schema.Array(RuntimeEvent),
   }),
-  Schema.TaggedStruct("event", { seq: Schema.Number, event: RuntimeEvent }),
+  /** A transcript from scratch: the latest turns, plus the text of any message still streaming. */
+  Schema.TaggedStruct("thread.snapshot", {
+    threadId: Schema.String,
+    events: Schema.Array(StoredEvent),
+    streaming: Schema.Array(RuntimeEvent),
+    /** Id of the newest stored event (the resume cursor); 0 if none. */
+    cursor: Schema.Number,
+    page: Schema.NullOr(PageInfo),
+  }),
+  /** What a subscriber missed since its cursor. */
+  Schema.TaggedStruct("thread.replay", {
+    threadId: Schema.String,
+    events: Schema.Array(StoredEvent),
+    streaming: Schema.Array(RuntimeEvent),
+    cursor: Schema.Number,
+  }),
+  /** Older turns for "load earlier". */
+  Schema.TaggedStruct("thread.page", {
+    threadId: Schema.String,
+    events: Schema.Array(StoredEvent),
+    page: PageInfo,
+  }),
+  /** A live event; `id` is set on stored (transcript) events and advances the thread's cursor. */
+  Schema.TaggedStruct("event", { id: Schema.NullOr(Schema.Number), event: RuntimeEvent }),
 ]);
 export type ServerFrame = typeof ServerFrame.Type;

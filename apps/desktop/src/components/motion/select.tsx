@@ -407,6 +407,8 @@ export interface SelectItemProps {
   value: string;
   disabled?: boolean;
   className?: string;
+  /** Text the trigger shows when this item is picked; needed when `children` isn't a plain string. */
+  label?: string;
   children: ReactNode;
 }
 
@@ -414,11 +416,12 @@ export function SelectItem({
   value,
   disabled = false,
   className,
+  label: labelProp,
   children,
 }: SelectItemProps) {
   const ctx = useSelectContext("SelectItem");
   const selected = ctx.value === value;
-  const label = typeof children === "string" ? children : value;
+  const label = labelProp ?? (typeof children === "string" ? children : value);
 
   useLayoutEffect(() => {
     ctx.register(value, label);

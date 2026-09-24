@@ -99,7 +99,7 @@ export function FileDiff({
   const deletions = lines.filter((line) => line.type === "removed").length;
   const canCopy = Boolean(copyText || onCopy);
   const code = lines.map((line) => line.content).join("\n");
-  const tokens = useAgentCodeTokens(code, language);
+  const tokens = useAgentCodeTokens(code, language, streaming);
 
   const setOpen = useCallback(
     (next: boolean) => {

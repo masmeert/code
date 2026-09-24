@@ -57,7 +57,7 @@ export function CodeBlock({
   const copyTimer = useRef<number | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const streaming = status === "streaming";
-  const tokens = useAgentCodeTokens(code, language);
+  const tokens = useAgentCodeTokens(code, language, streaming);
   const highlighted = useMemo(() => new Set(highlightLines), [highlightLines]);
   let offset = 0;
   const lines = code.split("\n").map((content) => {
