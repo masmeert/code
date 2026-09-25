@@ -13,6 +13,10 @@ Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unrel
 - Pull requests from the git menu: create one with a written title and body, view it, and merge it, through `gh` or `glab`.
 - Git settings: auto-pull of the default branch, a default merge method, GitHub and GitLab status, and a writing style for commit messages and pull requests.
 
+### Changed
+
+- The changes and browser panels run to the top of the window, beside the thread header.
+
 ### Fixed
 
 - The title bar only insets for traffic lights on macOS.

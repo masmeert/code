@@ -463,66 +463,67 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
 
   return (
     <>
-      <Header
-        project={project ?? { id: info.projectId, name: info.cwd.split("/").at(-1) ?? info.cwd }}
-        title={info.title}
-        badge={
-          info.worktree ? (
-            <span
-              title={`Worktree: ${info.cwd}`}
-              className="flex shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground [-webkit-app-region:no-drag]"
-            >
-              <FolderTree className="size-3" />
-              {info.branch ?? "worktree"}
-            </span>
-          ) : null
-        }
-        actions={
-          <>
-            <GitMenu cwd={info.cwd} refreshKey={diffKey} />
-            <span className="flex items-center gap-0.5">
-              <button
-                type="button"
-                title={`${activeTerminal ? "Hide" : "Show"} terminal (${describe("terminal.toggle")})`}
-                aria-label={activeTerminal ? "Hide terminal" : "Show terminal"}
-                aria-pressed={activeTerminal !== undefined}
-                onClick={() => toggleTerminalPanel(threadId)}
-                className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${activeTerminal ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
-              >
-                <SquareTerminal className="size-4" />
-              </button>
-              <button
-                type="button"
-                title={diffOpen ? "Hide changes" : "Show changes"}
-                aria-label={diffOpen ? "Hide changes" : "Show changes"}
-                aria-pressed={diffOpen}
-                onClick={() => {
-                  setDiffOpen(!diffOpen);
-                  setDiffTurn(null);
-                }}
-                className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${diffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
-              >
-                <FileDiff className="size-4" />
-              </button>
-              {window.desktop ? (
-                <button
-                  type="button"
-                  title={`${browserOpen ? "Hide" : "Show"} browser (${describe("browser.toggle")})`}
-                  aria-label={browserOpen ? "Hide browser" : "Show browser"}
-                  aria-pressed={browserOpen}
-                  onClick={() => toggleBrowser(threadId)}
-                  className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${browserOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
-                >
-                  <Globe className="size-4" />
-                </button>
-              ) : null}
-            </span>
-          </>
-        }
-      />
-
       <div className="flex min-h-0 flex-1">
         <div ref={scrollArea} className="relative flex min-h-0 min-w-95 flex-1 flex-col">
+          <Header
+            project={
+              project ?? { id: info.projectId, name: info.cwd.split("/").at(-1) ?? info.cwd }
+            }
+            title={info.title}
+            badge={
+              info.worktree ? (
+                <span
+                  title={`Worktree: ${info.cwd}`}
+                  className="flex shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground [-webkit-app-region:no-drag]"
+                >
+                  <FolderTree className="size-3" />
+                  {info.branch ?? "worktree"}
+                </span>
+              ) : null
+            }
+            actions={
+              <>
+                <GitMenu cwd={info.cwd} refreshKey={diffKey} />
+                <span className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    title={`${activeTerminal ? "Hide" : "Show"} terminal (${describe("terminal.toggle")})`}
+                    aria-label={activeTerminal ? "Hide terminal" : "Show terminal"}
+                    aria-pressed={activeTerminal !== undefined}
+                    onClick={() => toggleTerminalPanel(threadId)}
+                    className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${activeTerminal ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+                  >
+                    <SquareTerminal className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    title={diffOpen ? "Hide changes" : "Show changes"}
+                    aria-label={diffOpen ? "Hide changes" : "Show changes"}
+                    aria-pressed={diffOpen}
+                    onClick={() => {
+                      setDiffOpen(!diffOpen);
+                      setDiffTurn(null);
+                    }}
+                    className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${diffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+                  >
+                    <FileDiff className="size-4" />
+                  </button>
+                  {window.desktop ? (
+                    <button
+                      type="button"
+                      title={`${browserOpen ? "Hide" : "Show"} browser (${describe("browser.toggle")})`}
+                      aria-label={browserOpen ? "Hide browser" : "Show browser"}
+                      aria-pressed={browserOpen}
+                      onClick={() => toggleBrowser(threadId)}
+                      className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${browserOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+                    >
+                      <Globe className="size-4" />
+                    </button>
+                  ) : null}
+                </span>
+              </>
+            }
+          />
           <QuoteSelection container={scrollArea} threadId={threadId} />
           <MessageScroller
             busy={busy}
