@@ -508,12 +508,15 @@ export const TurnList = ({
 }) => {
   const turns = useMemo(() => toTurns(items), [items]);
   // Older turns skip layout and paint while off screen. Switched on after the first
-  // frame, so every turn has been laid out once and its real height is remembered.
+  // frame with turns in it (the transcript can arrive after the view opens), so every
+  // turn has been laid out once and its real height is remembered.
   const [settled, setSettled] = useState(false);
+  const hasTurns = turns.length > 0;
   useEffect(() => {
+    if (!hasTurns) return;
     const frame = requestAnimationFrame(() => setSettled(true));
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [hasTurns]);
   return turns.map((turn, index) => {
     // The latest exchange stays fully rendered: it's what streams and what the scroller follows.
     const className = settled && index < turns.length - 2 ? OFFSCREEN_SKIP : KEEP_RENDERED;

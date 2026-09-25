@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { useResizable } from "../lib/useResizable.ts";
 import { send, useStore } from "../lib/store.ts";
 import { ChangedFilesTree } from "./ChangedFilesTree.tsx";
-import { THEMES } from "./DiffWorkers.tsx";
+import { HIGHLIGHT, THEMES, useDiffWorkersReady, useResolvedTheme } from "./DiffWorkers.tsx";
 
 type DiffStyle = "unified" | "split";
 
@@ -108,7 +108,8 @@ export const DiffPanel = ({
     () => send(turn ? { _tag: "checkpoint.diff", threadId: turn.threadId, messageId: turn.messageId } : { _tag: "git.diff", path: cwd }),
     [cwd, turn?.threadId, turn?.messageId],
   );
-  const theme = useStore((s) => s.settings.theme);
+  const theme = useResolvedTheme();
+  const workersReady = useDiffWorkersReady();
   const [style, setStyle] = useState<DiffStyle>(readStyle);
   const [showTree, setShowTree] = useState(readTree);
   const viewer = useRef<CodeViewHandle<undefined, undefined>>(null);
@@ -147,8 +148,17 @@ export const DiffPanel = ({
       }),
     [files],
   );
+  // One theme, matching the worker pool's (see DiffWorkers), so its cached highlighting is used as is.
   const options = useMemo(
-    () => ({ diffStyle: style, themeType: theme, theme: THEMES, overflow: "scroll" as const, lineDiffType: "word" as const, stickyHeaders: true }),
+    () => ({
+      ...HIGHLIGHT,
+      diffStyle: style,
+      themeType: theme,
+      theme: THEMES[theme],
+      overflow: "scroll" as const,
+      stickyHeaders: true,
+      layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
+    }),
     [style, theme],
   );
   const truncated = diff?.truncated ?? false;
@@ -156,7 +166,22 @@ export const DiffPanel = ({
     () => (truncated ? <p className="p-3 text-center text-xs text-muted-foreground">Some files were left out to keep the diff small.</p> : null),
     [truncated],
   );
-  const { additions, deletions } = countLines(files);
+  const { additions, deletions } = useMemo(() => countLines(files), [files]);
+  // The thread view re-renders on every streamed delta; these subtrees only change with the diff.
+  const fileTree = useMemo(() => <ChangedFilesTree files={files} onPick={jumpTo} />, [files, jumpTo]);
+  const codeView = useMemo(
+    () => (
+      // Virtualized: only the files and lines on screen are in the DOM.
+      <CodeView
+        ref={viewer}
+        items={items}
+        className="h-full min-w-0 flex-1 overflow-auto overscroll-contain"
+        options={options}
+        renderCodeViewFooter={renderFooter}
+      />
+    ),
+    [items, options, renderFooter],
+  );
 
   const toggleTree = () => {
     setShowTree(!showTree);
@@ -217,7 +242,7 @@ export const DiffPanel = ({
       </div>
 
       <div className="selectable flex min-h-0 flex-1">
-        {!diff ? (
+        {!diff || !workersReady ? (
           <Empty>Loading changes…</Empty>
         ) : diff.error ? (
           <Empty>{diff.error}</Empty>
@@ -230,18 +255,11 @@ export const DiffPanel = ({
                 style={{ width: tree.width, maxWidth: `calc(100% - ${MIN_DIFF}px)` }}
                 className="relative shrink-0 border-r border-border"
               >
-                <ChangedFilesTree files={files} onPick={jumpTo} />
+                {fileTree}
                 <ResizeHandle side="end" label="Resize file tree" value={tree.width} dragging={tree.dragging} {...tree.handleProps} />
               </div>
             ) : null}
-            {/* Virtualized: only the files and lines on screen are in the DOM. */}
-            <CodeView
-              ref={viewer}
-              items={items}
-              className="h-full min-w-0 flex-1 overflow-auto overscroll-contain"
-              options={options}
-              renderCodeViewFooter={renderFooter}
-            />
+            {codeView}
           </>
         )}
       </div>

@@ -519,8 +519,10 @@ function PickerTrigger({
 
 /**
  * Label that turns like a dial when `value` changes: rolls up for a higher value,
- * down for a lower one. Same spring and blur as beui's ActionSwapRollText.
+ * down for a lower one. Styled after beui's ActionSwapRollText, but quicker.
  */
+const DIAL_SPRING = { type: "spring", stiffness: 1000, damping: 48, mass: 0.5 } as const;
+
 function DialText({ value, className, children }: { value: number; className?: string; children: ReactNode }) {
   const reduce = useReducedMotion();
   const previous = useRef(value);
@@ -528,15 +530,15 @@ function DialText({ value, className, children }: { value: number; className?: s
   useEffect(() => {
     previous.current = value;
   }, [value]);
+  // Tighter than SPRING_SWAP: the label has to keep up with a thumb being dragged.
   const variants = {
-    enter: (dir: number) => ({ opacity: 0, y: `${dir * 80}%`, rotateX: dir * -70, filter: "blur(3px)" }),
-    center: { opacity: 1, y: "0%", rotateX: 0, filter: "blur(0px)", transition: SPRING_SWAP },
+    enter: (dir: number) => ({ opacity: 0, y: `${dir * 55}%`, rotateX: dir * -50 }),
+    center: { opacity: 1, y: "0%", rotateX: 0, transition: DIAL_SPRING },
     exit: (dir: number) => ({
       opacity: 0,
-      y: `${dir * -80}%`,
-      rotateX: dir * 70,
-      filter: "blur(3px)",
-      transition: { duration: 0.14, ease: EASE_OUT },
+      y: `${dir * -55}%`,
+      rotateX: dir * 50,
+      transition: { duration: 0.08, ease: EASE_OUT },
     }),
   };
   return (
