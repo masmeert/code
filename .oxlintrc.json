@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react", "react-perf", "import"],
+  "categories": {
+    "correctness": "error"
+  },
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": ["**/dist/**", "**/release/**"],
+  "rules": {
+    "react/refs": "off",
+    "react/immutability": "off",
+    "react/set-state-in-effect": "off",
+    "react/preserve-manual-memoization": "off",
+    "react/incompatible-library": "off"
+  }
+}

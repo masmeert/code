@@ -2,13 +2,30 @@
   "name": "apcode",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.22.0",
   "scripts": {
     "dev": "pnpm --parallel --filter @apcode/daemon --filter @apcode/web --filter @apcode/desktop dev",
     "dev:daemon": "pnpm --filter @apcode/daemon dev",
     "dev:web": "pnpm --filter @apcode/web dev",
     "build": "pnpm --filter @apcode/daemon build && pnpm --filter @apcode/web build && pnpm --filter @apcode/desktop dist",
     "release": "pnpm --filter @apcode/daemon build && pnpm --filter @apcode/web build && pnpm --filter @apcode/desktop release",
-    "typecheck": "pnpm -r typecheck"
-  }
+    "typecheck": "pnpm -r typecheck",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "prepare": "git config core.hooksPath .githooks"
+  },
+  "devDependencies": {
+    "lint-staged": "^17.5.1",
+    "oxfmt": "^0.70.0",
+    "oxlint": "^1.85.0"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}": [
+      "oxlint --fix",
+      "oxfmt --no-error-on-unmatched-pattern"
+    ],
+    "*.{json,jsonc,md,css,yaml,yml,html}": "oxfmt --no-error-on-unmatched-pattern"
+  },
+  "packageManager": "pnpm@11.22.0"
 }

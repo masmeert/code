@@ -1,0 +1,8 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "sortTailwindcss": {
+    "stylesheet": "./apps/web/src/styles.css",
+    "functions": ["cn", "cva", "clsx", "twMerge"]
+  },
+  "ignorePatterns": ["**/dist/**", "**/release/**", "pnpm-lock.yaml"]
+}
