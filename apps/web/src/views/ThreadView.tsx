@@ -583,8 +583,8 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             placeholder={
               busy
                 ? followUpMode === "queue"
-                  ? "Working… messages wait for the turn to end (⌘↩ to send now)"
-                  : "Working… messages go in right away (⌘↩ to queue)"
+                  ? "Queue a follow-up · ⌘↩ to send now"
+                  : `Steer ${harnessLabel(settings, provider)} · ⌘↩ to queue`
                 : `Ask ${harnessLabel(settings, provider)}…`
             }
             onSubmit={(text, options, how) => {
