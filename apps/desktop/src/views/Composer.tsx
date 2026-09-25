@@ -1,6 +1,6 @@
-import { PromptInput, PromptSelect, PromptSlider } from "@/components/agents/prompt-input";
+import { PromptInput, PromptSelect, PromptSlider } from "@apcode/ui/agents/prompt-input";
 import { ProjectBadge } from "@/components/project-badge";
-import { cn } from "@/lib/utils";
+import { cn } from "@apcode/ui/lib/utils";
 import type { PermissionLevel, ProviderKind, TurnOptions } from "@apcode/contracts";
 import { Archive, FilePen, Folder, FolderPlus, FolderTree, GitBranch, LockOpen, ShieldCheck } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
@@ -16,7 +16,7 @@ import {
   useTurnPrefs,
 } from "../lib/composer.ts";
 import { restoreStash, setDraft, stashDraft, useDraft, useStashes } from "../lib/drafts.ts";
-import { describe, useKeybinding } from "../lib/keybindings.ts";
+import { describe, KEYBINDINGS, useKeybinding } from "../lib/keybindings.ts";
 import { defaultEffort, type modelChoices, recommendedBadge } from "../lib/models.ts";
 import { addProject } from "../lib/projects.ts";
 import { send, updateSettings, useStore } from "../lib/store.ts";
@@ -195,6 +195,7 @@ export const Composer = (props: ComposerProps) => {
           onModelChange={props.onModelChange}
           {...(props.extraModels ? { extraModels: props.extraModels } : {})}
           {...(props.onToggleModel ? { onToggleModel: props.onToggleModel } : {})}
+          modelShortcut={KEYBINDINGS["picker.model"]}
           controls={[
             <PromptSlider
               key="effort"
@@ -206,7 +207,7 @@ export const Composer = (props: ComposerProps) => {
               onChange={(value) => setPrefs({ effort: value === fallbackEffort ? null : (value as NonNullable<typeof prefs.effort>) })}
               placeholder="Default effort"
               disabled={props.disabled}
-              shortcut="picker.effort"
+              shortcut={KEYBINDINGS["picker.effort"]}
             />,
             <PromptSelect
               key="permission"
@@ -215,7 +216,7 @@ export const Composer = (props: ComposerProps) => {
               value={prefs.permission}
               onChange={(value) => setPrefs({ permission: value as PermissionLevel })}
               disabled={props.disabled}
-              shortcut="picker.permission"
+              shortcut={KEYBINDINGS["picker.permission"]}
               showOptionIcon
               width="w-72"
               className={prefs.permission === "full-access" ? "text-warning hover:text-warning" : undefined}
@@ -324,7 +325,7 @@ const WorkspaceSelect = ({ value, onChange }: { value: "local" | "worktree"; onC
     options={WORKSPACE_OPTIONS}
     value={value}
     onChange={(next) => onChange(next as "local" | "worktree")}
-    shortcut="picker.workspace"
+    shortcut={KEYBINDINGS["picker.workspace"]}
     showOptionIcon
     width="w-72"
     className="h-6 text-[11px]"
@@ -387,7 +388,7 @@ const BranchPicker = ({ cwd, disabled }: { cwd: string; disabled: boolean }) => 
       onChange={(branch) => branch !== list.current && send({ _tag: "git.checkout", path: cwd, branch })}
       onOpenChange={(open) => open && send({ _tag: "git.listBranches", path: cwd })}
       disabled={disabled}
-      shortcut="picker.branch"
+      shortcut={KEYBINDINGS["picker.branch"]}
       note={list.error ? <span className="whitespace-pre-wrap text-destructive">{list.error}</span> : undefined}
       align="end"
       width="w-72"

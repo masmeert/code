@@ -1,4 +1,4 @@
-import type { PromptModel } from "@/components/agents/prompt-input";
+import type { PromptModel } from "@apcode/ui/agents/prompt-input";
 import { PROVIDER_LOGO } from "@/components/provider-logo";
 import { Star } from "lucide-react";
 import { createElement } from "react";

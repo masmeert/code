@@ -1,6 +1,6 @@
 import type { AttachmentInput } from "@apcode/contracts";
 import { useSyncExternalStore } from "react";
-import type { PromptAttachment } from "@/components/agents/prompt-input";
+import type { PromptAttachment } from "@apcode/ui/agents/prompt-input";
 
 /**
  * What's typed in each composer, keyed like the composer's prefs (a thread id, or

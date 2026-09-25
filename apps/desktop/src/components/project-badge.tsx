@@ -1,5 +1,5 @@
 import type { Project } from "@apcode/contracts";
-import { cn } from "@/lib/utils";
+import { cn } from "@apcode/ui/lib/utils";
 
 const TINTS = [
   "bg-blue-500/15 text-blue-600 dark:text-blue-400",

@@ -1,9 +1,9 @@
-import { Button } from "@/components/motion/button/base";
-import { MorphingModal } from "@/components/motion/morphing-modal";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/motion/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs";
+import { Button } from "@apcode/ui/motion/button/base";
+import { MorphingModal } from "@apcode/ui/motion/morphing-modal";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@apcode/ui/motion/select";
+import { Tabs, TabsList, TabsTrigger } from "@apcode/ui/motion/tabs";
 import { PROVIDER_AVATAR_CLASS, PROVIDER_LOGO } from "@/components/provider-logo";
-import { cn } from "@/lib/utils";
+import { cn } from "@apcode/ui/lib/utils";
 import { DEFAULT_SETTLE_DELAY_MINUTES, type ProviderKind, type ProviderStatus, type Theme } from "@apcode/contracts";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";

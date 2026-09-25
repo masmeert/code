@@ -1,16 +1,16 @@
-import { AnimatedSidebar, AnimatedSidebarRail, AnimatedSidebarTrigger } from "@/components/motion/animated-sidebar";
-import { Button } from "@/components/motion/button";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/motion/context-menu";
-import { Input } from "@/components/motion/input";
-import { Tooltip } from "@/components/motion/tooltip";
-import { MorphPopover, MorphPopoverContent, MorphPopoverMenu, MorphPopoverTrigger } from "@/components/motion/popover-morph";
-import { EASE_OUT } from "@/lib/ease";
-import { NumberTicker } from "@/components/motion/number-ticker";
-import { SharedLayoutBg } from "@/components/motion/shared-layout-bg";
-import { Separator } from "@/components/ui/separator";
+import { AnimatedSidebar, AnimatedSidebarRail, AnimatedSidebarTrigger } from "@apcode/ui/motion/animated-sidebar";
+import { Button } from "@apcode/ui/motion/button";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@apcode/ui/motion/context-menu";
+import { Input } from "@apcode/ui/motion/input";
+import { Tooltip } from "@apcode/ui/motion/tooltip";
+import { MorphPopover, MorphPopoverContent, MorphPopoverMenu, MorphPopoverTrigger } from "@apcode/ui/motion/popover-morph";
+import { EASE_OUT } from "@apcode/ui/lib/ease";
+import { NumberTicker } from "@apcode/ui/motion/number-ticker";
+import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
+import { Separator } from "@apcode/ui/components/separator";
 import { ProjectBadge } from "@/components/project-badge";
 import { PROVIDER_LOGO } from "@/components/provider-logo";
-import { cn } from "@/lib/utils";
+import { cn } from "@apcode/ui/lib/utils";
 import { DEFAULT_SETTLE_DELAY_MINUTES, type Project, type ThreadInfo } from "@apcode/contracts";
 import {
   Archive,
@@ -37,7 +37,7 @@ import { ago, useNow } from "../lib/time.ts";
 import { usePersistedFlag } from "../lib/usePersistedFlag.ts";
 import type { ModalView } from "./AppModal.tsx";
 
-// Fold springs, borrowed from beUI's bouncy accordion.
+// Fold springs, borrowed from BouncyAccordion (@apcode/ui/motion/bouncy-accordion).
 const FOLD_OPEN: Transition = { type: "spring", duration: 0.58, bounce: 0.32 };
 // Closing is a plain ease: a bouncy spring overshoots past zero height, which clamps and stutters.
 const FOLD_CLOSE: Transition = { duration: 0.24, ease: EASE_OUT, opacity: { duration: 0.12, ease: EASE_OUT } };

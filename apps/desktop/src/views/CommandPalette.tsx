@@ -1,5 +1,5 @@
 import { ProjectBadge } from "@/components/project-badge";
-import { cn } from "@/lib/utils";
+import { cn } from "@apcode/ui/lib/utils";
 import type { SearchHit } from "@apcode/contracts";
 import { MessageSquare, Search } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";

@@ -1,5 +1,5 @@
-import { ChatApp } from "@/components/agents/chat-app";
-import { AnimatedSidebarInset } from "@/components/motion/animated-sidebar";
+import { ChatApp } from "@apcode/ui/agents/chat-app";
+import { AnimatedSidebarInset } from "@apcode/ui/motion/animated-sidebar";
 import { AppWindow, Settings as SettingsIcon, SquarePen } from "lucide-react";
 import { useEffect, useState } from "react";
 import { describe, useKeybinding } from "./lib/keybindings.ts";

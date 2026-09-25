@@ -13,6 +13,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@apcode/ui/*": [
+        "../../packages/ui/src/*"
       ]
     },
     "exactOptionalPropertyTypes": false,

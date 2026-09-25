@@ -5,19 +5,16 @@
   "tsx": true,
   "tailwind": {
     "config": "",
-    "css": "src/styles.css",
+    "css": "../../packages/ui/src/styles/globals.css",
     "baseColor": "neutral",
     "cssVariables": true
   },
+  "iconLibrary": "lucide",
   "aliases": {
     "components": "@/components",
-    "ui": "@/components/ui",
-    "utils": "@/lib/utils",
+    "hooks": "@/hooks",
     "lib": "@/lib",
-    "hooks": "@/hooks"
-  },
-  "iconLibrary": "lucide",
-  "registries": {
-    "@beui": "https://beui.dev/r/{name}.json"
+    "utils": "@apcode/ui/lib/utils",
+    "ui": "@apcode/ui/components"
   }
 }

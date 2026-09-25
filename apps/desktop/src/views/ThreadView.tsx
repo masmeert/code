@@ -7,18 +7,18 @@ import {
   MessageGroup,
   MessageHeader,
   MessageScroller,
-} from "@/components/agents/message";
-import { Markdown } from "@/components/agents/markdown";
-import { ThinkingShimmer } from "@/components/agents/loading-states/thinking-shimmer";
-import { PromptSelect } from "@/components/agents/prompt-input";
-import { StreamingResponse } from "@/components/agents/streaming-response";
-import { ToolApproval, ToolApprovalCode } from "@/components/agents/tool-approval";
-import { ToolGroup, type ToolCall } from "@/components/agents/tool-group";
+} from "@apcode/ui/agents/message";
+import { Markdown } from "@apcode/ui/agents/markdown";
+import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
+import { PromptSelect } from "@apcode/ui/agents/prompt-input";
+import { StreamingResponse } from "@apcode/ui/agents/streaming-response";
+import { ToolApproval, ToolApprovalCode } from "@apcode/ui/agents/tool-approval";
+import { ToolGroup, type ToolCall } from "@apcode/ui/agents/tool-group";
 import { ProjectBadge } from "@/components/project-badge";
-import { cn } from "@/lib/utils";
+import { cn } from "@apcode/ui/lib/utils";
 import { PROVIDER_AVATAR_CLASS, PROVIDER_LOGO } from "@/components/provider-logo";
 import type { Attachment, Project, ProviderKind, TurnOptions } from "@apcode/contracts";
-import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@/components/motion/animated-sidebar";
+import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
 import { ArrowUp, FileDiff, FileText, FolderTree, ImageIcon, PanelLeft, PanelRight, Quote, Undo2, X } from "lucide-react";
 import { createContext, lazy, memo, type ReactNode, type RefObject, Suspense, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fromSent } from "../lib/composer.ts";
@@ -38,7 +38,7 @@ import {
   useTranscript,
   type TranscriptItem,
 } from "../lib/store.ts";
-import { readWidth } from "../lib/useResizable.ts";
+import { readWidth } from "@apcode/ui/hooks/use-resizable";
 import { Composer, useWorkspaceChoice } from "./Composer.tsx";
 import { GitMenu } from "./GitMenu.tsx";
 
