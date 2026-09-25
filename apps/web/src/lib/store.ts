@@ -6,6 +6,7 @@ import {
   type ProviderKind,
   type ProviderSettings,
   type ProviderStatus,
+  type SourceControlStatus,
   type Settings,
   type ApprovalDecision,
   type Attachment,
@@ -92,6 +93,8 @@ export interface State {
   readonly settings: Settings;
   readonly projects: ReadonlyArray<Project>;
   readonly providers: ReadonlyArray<ProviderStatus>;
+  /** GitHub and GitLab CLI status; null until Settings asks for it. */
+  readonly sourceControl: ReadonlyArray<SourceControlStatus> | null;
   readonly authFlows: Partial<Record<ProviderKind, AuthFlow>>;
   /** Set when a thread this window asked for appears, so the window can open it. */
   readonly createdHere: { readonly threadId: string } | null;
@@ -192,6 +195,7 @@ const initial: State = {
   settings: DEFAULT_SETTINGS,
   projects: [],
   providers: [],
+  sourceControl: null,
   authFlows: {},
   createdHere: null,
   order: [],
@@ -365,7 +369,10 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
       ...state,
       projects: state.projects.filter((p) => p.id !== projectId),
     })),
-    Match.tag("providers.updated", ({ providers }) => ({ ...state, providers })),
+    Match.tags({
+      "providers.updated": ({ providers }) => ({ ...state, providers }),
+      "sourceControl.updated": ({ statuses }) => ({ ...state, sourceControl: statuses }),
+    }),
     Match.tag("git.branches", ({ path, current, branches, error }) => ({
       ...state,
       branches: { ...state.branches, [path]: { current, branches, error } },

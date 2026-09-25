@@ -130,6 +130,13 @@ export const HarnessColor = Schema.Literals([
 ]);
 export type HarnessColor = typeof HarnessColor.Type;
 
+export const MergeMethod = Schema.Literals(["merge", "squash", "rebase"]);
+export type MergeMethod = typeof MergeMethod.Type;
+
+/** How commit messages and pull requests get written: like the repo's history, as Conventional Commits, or by the user's own rules. */
+export const WritingStyle = Schema.Literals(["repo_conventions", "conventional_commits", "custom"]);
+export type WritingStyle = typeof WritingStyle.Type;
+
 export const ProviderSettings = Schema.Struct({
   /** Model for new threads; null uses the harness's own default. */
   defaultModel: Schema.NullOr(Schema.String),
@@ -175,8 +182,17 @@ export const Settings = Schema.Struct({
   addProjectFolder: Schema.optional(Schema.String),
   confirmArchive: Schema.optional(Schema.Boolean),
   confirmDelete: Schema.optional(Schema.Boolean),
-  /** Writes commit messages left empty, as `provider:model`; null/absent uses the last harness's default model. */
+  /** Writes commit messages left empty and pull request text, as `provider:model`; null/absent uses the last harness's default model. */
   commitModel: Schema.optional(Schema.NullOr(Schema.String)),
+  /** Fast-forwards a checkout on its default branch when it has no changes or commits of its own. */
+  autoPull: Schema.optional(Schema.Boolean),
+  /** Method pull requests merge with first; null/absent reuses the last one picked on this device. */
+  mergeMethod: Schema.optional(Schema.NullOr(MergeMethod)),
+  writingStyle: Schema.optional(WritingStyle),
+  /** Used when `writingStyle` is "custom". */
+  writingInstructions: Schema.optional(Schema.String),
+  /** Pull request bodies follow the repo's template when it has one. Absent counts as on. */
+  followTemplates: Schema.optional(Schema.Boolean),
 });
 export type Settings = typeof Settings.Type;
 export const DEFAULT_SETTLE_DELAY_MINUTES = 15;
@@ -278,12 +294,54 @@ const TerminalRows = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50
 // Runtime events: every provider adapter normalizes into this shape.
 // ---------------------------------------------------------------------------
 
-export const GitAction = Schema.Literals(["commit", "commit-push", "push"]);
+export const GitAction = Schema.Literals([
+  "commit",
+  "commit-push",
+  "push",
+  "pull-request",
+  "merge",
+]);
 export type GitAction = typeof GitAction.Type;
+
+/** Hosts we can open pull requests on, through their CLIs (gh, glab). */
+export const SourceControlKind = Schema.Literals(["github", "gitlab"]);
+export type SourceControlKind = typeof SourceControlKind.Type;
+
+/** What the daemon knows about one host's CLI on this machine. */
+export const SourceControlStatus = Schema.Struct({
+  kind: SourceControlKind,
+  installed: Schema.Boolean,
+  version: Schema.NullOr(Schema.String),
+  /** Null when sign-in couldn't be checked. */
+  authenticated: Schema.NullOr(Schema.Boolean),
+  account: Schema.NullOr(Schema.String),
+  /** Why it can't be used yet, and how to fix it. */
+  detail: Schema.NullOr(Schema.String),
+});
+export type SourceControlStatus = typeof SourceControlStatus.Type;
+
+/** The pull request (merge request on GitLab) for a branch. */
+export const PullRequest = Schema.Struct({
+  number: Schema.Number,
+  url: Schema.String,
+  title: Schema.String,
+  state: Schema.Literals(["open", "draft", "merged", "closed"]),
+  base: Schema.String,
+});
+export type PullRequest = typeof PullRequest.Type;
 
 export const RepoStatus = Schema.Struct({
   /** Changed files, untracked included. */
   changes: Schema.Number,
+  /** Null when detached. */
+  branch: Schema.NullOr(Schema.String),
+  defaultBranch: Schema.NullOr(Schema.String),
+  /** Commits on the branch that the default branch doesn't have. */
+  aheadOfDefault: Schema.Number,
+  /** Host of the main remote, when it's one pull requests can be opened on. */
+  sourceControl: Schema.NullOr(SourceControlKind),
+  /** The branch's open pull request, else its latest one. */
+  pullRequest: Schema.NullOr(PullRequest),
   upstream: Schema.NullOr(Schema.String),
   /** Commits not on the upstream yet; with no upstream, every commit on the branch. */
   ahead: Schema.Number,
@@ -410,6 +468,7 @@ export const RuntimeEvent = Schema.Union([
     error: Schema.NullOr(Schema.String),
   }),
   Schema.TaggedStruct("auth.flow", { flow: AuthFlow }),
+  Schema.TaggedStruct("sourceControl.updated", { statuses: Schema.Array(SourceControlStatus) }),
   Schema.TaggedStruct("terminal.opened", { threadId: Schema.String, terminalId: Schema.String }),
   Schema.TaggedStruct("terminal.closed", { threadId: Schema.String, terminalId: Schema.String }),
 ]).pipe(Schema.toTaggedUnion("_tag"));
@@ -477,6 +536,12 @@ export const ClientCommand = Schema.Union([
   }),
   /** Answered with a `git.status` event. */
   Schema.TaggedStruct("git.push", { path: Schema.String }),
+  /** Pushes if needed, writes the title and body with the commit model, and opens it; answered with a `git.status` event. */
+  Schema.TaggedStruct("git.createPullRequest", { path: Schema.String }),
+  /** Merges the branch's open pull request on its host; answered with a `git.status` event. */
+  Schema.TaggedStruct("git.mergePullRequest", { path: Schema.String, method: MergeMethod }),
+  /** Answered with a `sourceControl.updated` event. */
+  Schema.TaggedStruct("sourceControl.refresh", {}),
   Schema.TaggedStruct("thread.interrupt", { threadId: Schema.String }),
   Schema.TaggedStruct("thread.close", { threadId: Schema.String }),
   /** Archiving also stops the thread's agent process; it resumes on the next message. */

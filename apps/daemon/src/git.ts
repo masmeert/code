@@ -192,6 +192,11 @@ const gitLong = async (cwd: string, args: ReadonlyArray<string>, timeout = 60000
 export interface RepoStatus {
   /** Changed files, untracked included. */
   readonly changes: number;
+  /** Null when detached. */
+  readonly branch: string | null;
+  readonly defaultBranch: string | null;
+  /** Commits on the branch that the default branch doesn't have. */
+  readonly aheadOfDefault: number;
   readonly upstream: string | null;
   /** Commits not yet on the upstream; with no upstream, every commit on the branch. */
   readonly ahead: number;
@@ -212,6 +217,7 @@ export const readStatus = async (cwd: string): Promise<RepoStatus | null> => {
   let ahead = 0;
   let behind = 0;
   let detached = false;
+  let branch: string | null = null;
   let oid: string | null = null;
   for (const line of status.stdout.split("\n")) {
     if (!line) continue;
@@ -220,8 +226,10 @@ export const readStatus = async (cwd: string): Promise<RepoStatus | null> => {
       continue;
     }
     const [, key, ...rest] = line.split(" ");
-    if (key === "branch.head") detached = rest[0] === "(detached)";
-    else if (key === "branch.oid") oid = rest[0] === "(initial)" ? null : (rest[0] ?? null);
+    if (key === "branch.head") {
+      detached = rest[0] === "(detached)";
+      branch = detached ? null : (rest[0] ?? null);
+    } else if (key === "branch.oid") oid = rest[0] === "(initial)" ? null : (rest[0] ?? null);
     else if (key === "branch.upstream") upstream = rest[0] ?? null;
     else if (key === "branch.ab") {
       ahead = Math.abs(Number(rest[0]) || 0);
@@ -232,13 +240,106 @@ export const readStatus = async (cwd: string): Promise<RepoStatus | null> => {
     const count = await git(cwd, ["rev-list", "--count", "HEAD"]);
     ahead = count.ok ? Number(count.stdout) || 0 : 0;
   }
+  const defaultBranch = await readDefaultBranch(cwd);
+  const base = defaultBranch && (await baseRef(cwd, defaultBranch));
+  const aheadOfDefault =
+    base && oid && branch !== defaultBranch
+      ? Number((await git(cwd, ["rev-list", "--count", `${base}..HEAD`])).stdout) || 0
+      : 0;
   return {
     changes,
+    branch,
+    defaultBranch,
+    aheadOfDefault,
     upstream,
     ahead,
     behind,
     hasRemote: remotes.ok && remotes.stdout.length > 0,
     detached,
+  };
+};
+
+/** The remote pull requests go to: origin, else the first one. */
+export const mainRemote = async (cwd: string) => {
+  const remotes = (await git(cwd, ["remote"])).stdout.split("\n").filter(Boolean);
+  return remotes.includes("origin") ? "origin" : (remotes[0] ?? null);
+};
+
+/** What the main remote's HEAD points at, else main or master if one exists. */
+export const readDefaultBranch = async (cwd: string) => {
+  const remote = await mainRemote(cwd);
+  if (remote) {
+    const head = await git(cwd, ["symbolic-ref", "--short", `refs/remotes/${remote}/HEAD`]);
+    if (head.ok && head.stdout.startsWith(`${remote}/`))
+      return head.stdout.slice(remote.length + 1);
+  }
+  for (const name of ["main", "master"]) {
+    const found = await git(cwd, ["rev-parse", "--verify", "--quiet", `refs/heads/${name}`]);
+    if (found.ok) return name;
+  }
+  return null;
+};
+
+/** The remote-tracking ref of `branch` when there is one, since the local copy may be stale; else the branch itself. */
+const baseRef = async (cwd: string, branch: string) => {
+  const remote = await mainRemote(cwd);
+  const tracking = remote ? `refs/remotes/${remote}/${branch}` : null;
+  if (tracking && (await git(cwd, ["rev-parse", "--verify", "--quiet", tracking])).ok)
+    return tracking;
+  return (await git(cwd, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).ok
+    ? branch
+    : null;
+};
+
+/** The main remote's URL, for telling which host it's on. */
+export const readRemoteUrl = async (cwd: string) => {
+  const remote = await mainRemote(cwd);
+  if (!remote) return null;
+  const url = await git(cwd, ["remote", "get-url", remote]);
+  return url.ok ? url.stdout : null;
+};
+
+/**
+ * Fast-forwards the default branch from its upstream when the checkout has nothing of its
+ * own: no changes and no commits the upstream lacks. Resolves to whether it pulled.
+ */
+export const autoPull = async (cwd: string) => {
+  const ready = (status: RepoStatus | null) =>
+    status?.upstream &&
+    status.branch !== null &&
+    status.branch === status.defaultBranch &&
+    status.changes === 0 &&
+    status.ahead === 0;
+  if (!ready(await readStatus(cwd))) return false;
+  if (!(await gitLong(cwd, ["fetch", "--quiet", "--no-tags"], 15000)).ok) return false;
+  const fetched = await readStatus(cwd);
+  if (!ready(fetched) || !fetched?.behind) return false;
+  return (await gitLong(cwd, ["pull", "--ff-only"], 30000)).ok;
+};
+
+const cap = (text: string, limit: number) =>
+  text.length > limit ? `${text.slice(0, limit)}\n[truncated]` : text;
+
+/**
+ * What a pull request from HEAD into `base` would contain, for writing its text. `base`
+ * is the branch the user set as merge base (gh's `branch.<name>.gh-merge-base`), else the default branch.
+ */
+export const readPullRequestRange = async (cwd: string, branch: string) => {
+  const configured = await git(cwd, ["config", `branch.${branch}.gh-merge-base`]);
+  const base =
+    configured.ok && configured.stdout ? configured.stdout : await readDefaultBranch(cwd);
+  if (!base) return null;
+  const ref = (await baseRef(cwd, base)) ?? base;
+  const [log, stat, patch] = await Promise.all([
+    git(cwd, ["log", "--oneline", `${ref}..HEAD`]),
+    git(cwd, ["diff", "--stat", `${ref}...HEAD`]),
+    gitRaw(cwd, ["diff", ...DIFF_FLAGS, "--patch", "--minimal", `${ref}...HEAD`]),
+  ]);
+  return {
+    base,
+    commits: cap(log.stdout, 12_000),
+    stat: cap(stat.stdout, 12_000),
+    patch: cap(patch.stdout, 40_000),
   };
 };
 

@@ -14,6 +14,7 @@ import { Textarea } from "@apcode/ui/components/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@apcode/ui/motion/tabs";
 import { IconButton } from "@/components/icon-button";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
+import { SOURCE_CONTROL_LABEL, SOURCE_CONTROL_LOGO } from "@/components/source-control-logo";
 import { cn } from "@apcode/ui/lib/utils";
 import {
   ClientCommand,
@@ -21,8 +22,11 @@ import {
   DEFAULT_SETTLE_DELAY_MINUTES,
   Effort,
   HarnessColor,
+  MergeMethod,
   PermissionLevel,
   ProviderKind,
+  SourceControlKind,
+  WritingStyle,
   type ProviderStatus,
   Theme,
   UpdateStatus,
@@ -38,6 +42,7 @@ import {
   Monitor,
   Moon,
   Palette,
+  RefreshCw,
   Rows2,
   Settings2,
   Star,
@@ -264,7 +269,7 @@ function SettingsView() {
             </SettingsGroup>
           )),
           Match.when("harnesses", () => <HarnessesPage />),
-          Match.when("git", () => <CommitModelRow />),
+          Match.when("git", () => <GitPage />),
           Match.exhaustive,
         )}
       </div>
@@ -597,17 +602,194 @@ function UpdatesSection() {
   );
 }
 
-/** Picks the model that writes commit messages left empty; "auto" follows the last harness's default model. */
-const CommitModelRow = () => {
+const MERGE_METHODS = [
+  { value: "last", label: "Last selected" },
+  { value: "merge", label: "Merge" },
+  { value: "squash", label: "Squash and merge" },
+  { value: "rebase", label: "Rebase and merge" },
+];
+
+const WRITING_STYLES: Array<{ value: WritingStyle; label: string }> = [
+  { value: "repo_conventions", label: "Repository conventions" },
+  { value: "conventional_commits", label: "Conventional Commits" },
+  { value: "custom", label: "Custom instructions" },
+];
+
+function GitPage() {
+  const settings = useStore((s) => s.settings);
+  const sourceControl = useStore((s) => s.sourceControl);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => send(ClientCommand.cases["sourceControl.refresh"].make({})), []);
+  useEffect(() => setChecking(false), [sourceControl]);
+
+  return (
+    <>
+      <Section title="Repositories">
+        <SettingsGroup>
+          <SettingsRow label="Pull the default branch automatically">
+            <Switch
+              size="sm"
+              checked={settings.autoPull ?? false}
+              onCheckedChange={(autoPull) => updateSettings({ ...settings, autoPull })}
+              ariaLabel="Pull the default branch automatically"
+            />
+          </SettingsRow>
+          <SettingsRow label="Default merge method">
+            <SettingsSelect
+              value={settings.mergeMethod ?? "last"}
+              onChange={(value) =>
+                updateSettings({
+                  ...settings,
+                  mergeMethod: Schema.is(MergeMethod)(value) ? value : null,
+                })
+              }
+              options={MERGE_METHODS}
+              className="w-52"
+            />
+          </SettingsRow>
+        </SettingsGroup>
+      </Section>
+      <Section title="Source control">
+        <SettingsGroup>
+          {SourceControlKind.literals.map((kind) => {
+            const status = sourceControl?.find((entry) => entry.kind === kind);
+            const Logo = SOURCE_CONTROL_LOGO[kind];
+            return (
+              <SettingsRow
+                key={kind}
+                label={
+                  <div className="flex items-center gap-3">
+                    <Logo className="size-5 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="font-medium">{SOURCE_CONTROL_LABEL[kind]}</span>
+                        {status?.version ? (
+                          <span className="truncate font-mono text-[11px] text-muted-foreground">
+                            {status.version}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {!status
+                          ? "Checking…"
+                          : status.authenticated
+                            ? status.account
+                              ? `Signed in as ${status.account}`
+                              : "Signed in"
+                            : status.detail}
+                      </p>
+                    </div>
+                  </div>
+                }
+              >
+                {status ? (
+                  <span
+                    className={cn(
+                      "rounded-md px-1.5 py-px text-[10px] font-medium",
+                      status.authenticated
+                        ? "bg-emerald-500/15 text-emerald-500"
+                        : status.installed
+                          ? "bg-warning/15 text-warning"
+                          : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {status.authenticated
+                      ? "Signed in"
+                      : status.installed
+                        ? status.authenticated === null
+                          ? "Unknown"
+                          : "Not signed in"
+                        : "Not installed"}
+                  </span>
+                ) : null}
+              </SettingsRow>
+            );
+          })}
+        </SettingsGroup>
+        <div className="mt-2 flex justify-end">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 rounded-lg text-xs"
+            disabled={checking}
+            onClick={() => {
+              setChecking(true);
+              send(ClientCommand.cases["sourceControl.refresh"].make({}));
+            }}
+          >
+            <RefreshCw className={cn("size-3.5", checking && "animate-spin")} />
+            {checking ? "Checking…" : "Check again"}
+          </Button>
+        </div>
+      </Section>
+      <Section title="Writing">
+        <SettingsGroup>
+          <SettingsRow label="Writing style">
+            <SettingsSelect
+              value={settings.writingStyle ?? "repo_conventions"}
+              onChange={(value) =>
+                Schema.is(WritingStyle)(value) &&
+                updateSettings({ ...settings, writingStyle: value })
+              }
+              options={WRITING_STYLES}
+              className="w-52"
+            />
+          </SettingsRow>
+          {settings.writingStyle === "custom" ? <WritingInstructionsField /> : null}
+          <SettingsRow label="Follow pull request templates">
+            <Switch
+              size="sm"
+              checked={settings.followTemplates ?? true}
+              onCheckedChange={(followTemplates) =>
+                updateSettings({ ...settings, followTemplates })
+              }
+              ariaLabel="Follow pull request templates"
+            />
+          </SettingsRow>
+          <SettingsRow label="Writer model">
+            <WriterModelSelect />
+          </SettingsRow>
+        </SettingsGroup>
+      </Section>
+    </>
+  );
+}
+
+/** Rules for commit messages and pull requests, saved on blur; Esc reverts an edit. */
+function WritingInstructionsField() {
+  const settings = useStore((s) => s.settings);
+  const saved = settings.writingInstructions ?? "";
+  const [draft, setDraft] = useState(saved);
+  return (
+    <div className="px-3 py-2">
+      <Textarea
+        aria-label="Writing instructions"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() =>
+          draft !== saved && updateSettings({ ...settings, writingInstructions: draft })
+        }
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && draft !== saved) {
+            e.stopPropagation();
+            setDraft(saved);
+          }
+        }}
+        placeholder="e.g. Subjects in lowercase. Mention the ticket from the branch name."
+        className="min-h-20 rounded-lg bg-background text-[13px] md:text-[13px]"
+      />
+    </div>
+  );
+}
+
+/** Model writing commit messages left empty and pull requests; "auto" follows the last harness's default model. */
+function WriterModelSelect() {
   const settings = useStore((s) => s.settings);
   const providers = useStore((s) => s.providers);
   const linked = providers.filter((p) => p.linked && p.models.length);
   if (!linked.length)
-    return (
-      <p className="px-1 text-sm text-muted-foreground">
-        Link Claude Code or Codex to pick the model that writes commit messages.
-      </p>
-    );
+    return <span className="text-[13px] text-muted-foreground">Link a harness first</span>;
   const saved = settings.commitModel;
   const listed =
     saved &&
@@ -617,34 +799,28 @@ const CommitModelRow = () => {
       ),
     );
   return (
-    <SettingsGroup>
-      <SettingsRow
-        label={<RowLabel title="Commit messages" description="Writes messages you leave empty" />}
-      >
-        <SettingsSelect
-          value={listed ? saved : "auto"}
-          onChange={(value) =>
-            updateSettings({ ...settings, commitModel: value === "auto" ? null : value })
-          }
-          options={[
-            { value: "auto", label: "Default model" },
-            ...linked.flatMap((p) => {
-              const Logo = PROVIDER_LOGO[p.kind];
-              return visibleModels(p.models, settings.providers[p.kind]).map((m) => ({
-                value: encodeChoice(p.kind, m.id),
-                label: m.label,
-                icon: (
-                  <Logo aria-label={harnessLabel(settings, p.kind)} className="size-3.5 shrink-0" />
-                ),
-              }));
-            }),
-          ]}
-          className="w-52"
-        />
-      </SettingsRow>
-    </SettingsGroup>
+    <SettingsSelect
+      value={listed ? saved : "auto"}
+      onChange={(value) =>
+        updateSettings({ ...settings, commitModel: value === "auto" ? null : value })
+      }
+      options={[
+        { value: "auto", label: "Default model" },
+        ...linked.flatMap((p) => {
+          const Logo = PROVIDER_LOGO[p.kind];
+          return visibleModels(p.models, settings.providers[p.kind]).map((m) => ({
+            value: encodeChoice(p.kind, m.id),
+            label: m.label,
+            icon: (
+              <Logo aria-label={harnessLabel(settings, p.kind)} className="size-3.5 shrink-0" />
+            ),
+          }));
+        }),
+      ]}
+      className="w-52"
+    />
   );
-};
+}
 
 const CONFIG_DIR: Record<ProviderKind, { env: string; placeholder: string }> = {
   claude: { env: "CLAUDE_CONFIG_DIR", placeholder: "~/.claude" },

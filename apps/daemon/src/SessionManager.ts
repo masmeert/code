@@ -7,6 +7,9 @@ import {
   type Attachment,
   type GitAction,
   type PageInfo,
+  type PullRequest,
+  type RepoStatus,
+  type SourceControlKind,
   type Project,
   type ProviderStatus,
   type SearchHit,
@@ -26,9 +29,9 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, extname, join, relative } from "node:path";
-import { generateCommitMessage } from "./commitMessage.ts";
 import {
   addWorktree,
+  autoPull,
   captureCheckpoint,
   checkoutBranch,
   checkpointRef,
@@ -43,13 +46,24 @@ import {
   readCheckpointDiff,
   readCheckpointStats,
   readDiff,
+  readPullRequestRange,
   readRecentSubjects,
+  readRemoteUrl,
   readStatus,
   removeWorktreeIfClean,
   repoRoot,
   restoreCheckpoint,
 } from "./git.ts";
 import { ClaudeAdapter } from "./providers/ClaudeAdapter.ts";
+import {
+  detectSourceControl,
+  mergePullRequest,
+  openPullRequest,
+  probeSourceControl,
+  readPullRequest,
+  readPullRequestTemplate,
+} from "./sourceControl.ts";
+import { generateCommitMessage, generatePullRequest } from "./writer.ts";
 import { CodexAdapter } from "./providers/CodexAdapter.ts";
 import {
   ProviderError,
@@ -613,54 +627,99 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  /** Announces the repo state at `path`; `action`/`error` report the commit or push it answers. */
+  // Asking the host means a network call, so answers are kept a while (t3code keeps them 60 s).
+  const PULL_REQUEST_TTL_MS = 60_000;
+  const hosts = new Map<string, Promise<SourceControlKind | null>>();
+  const pullRequests = new Map<string, { at: number; pr: Promise<PullRequest | null> }>();
+
+  /** The repo state at `path`, with its host and the branch's pull request. */
+  const readRepo = async (path: string): Promise<RepoStatus | null> => {
+    const status = await readStatus(path);
+    if (!status) return null;
+    const url = await readRemoteUrl(path);
+    let host = hosts.get(url ?? "");
+    if (!host) {
+      host = detectSourceControl(url);
+      hosts.set(url ?? "", host);
+    }
+    const sourceControl = await host;
+    const key = `${path}\0${status.branch}`;
+    let cached = pullRequests.get(key);
+    if (
+      sourceControl &&
+      status.branch &&
+      (!cached || Date.now() - cached.at > PULL_REQUEST_TTL_MS)
+    ) {
+      cached = { at: Date.now(), pr: readPullRequest(path, sourceControl, status.branch) };
+      pullRequests.set(key, cached);
+    }
+    return { ...status, sourceControl, pullRequest: (sourceControl && (await cached?.pr)) || null };
+  };
+  const forgetPullRequest = (path: string) => {
+    for (const key of pullRequests.keys())
+      if (key.startsWith(`${path}\0`)) pullRequests.delete(key);
+  };
+
+  /** Announces the repo state at `path`; `action`/`error` report the git action it answers. */
   const publishStatus = (
     path: string,
     action: GitAction | null = null,
     error: string | null = null,
   ) =>
-    Effect.promise(() => readStatus(path)).pipe(
+    Effect.promise(() => readRepo(path)).pipe(
       Effect.map((status) =>
         publish(RuntimeEvent.cases["git.status"].make({ path, status, action, error })),
       ),
     );
 
+  // At most one fetch per repo this often, however many windows ask (t3code fetches every 30 s).
+  const AUTO_PULL_INTERVAL_MS = 30_000;
+  const pulledAt = new Map<string, number>();
   // Plain refreshes (every window, every finished tool call) coalesce per repo.
-  const refreshStatus = coalesced((path) =>
-    readStatus(path).then((status) =>
-      publish(RuntimeEvent.cases["git.status"].make({ path, status, action: null, error: null })),
-    ),
-  );
+  const refreshStatus = coalesced(async (path) => {
+    const { autoPull: enabled } = await Effect.runPromise(settingsStore.get);
+    if (enabled && Date.now() - (pulledAt.get(path) ?? 0) > AUTO_PULL_INTERVAL_MS) {
+      pulledAt.set(path, Date.now());
+      await autoPull(path);
+    }
+    const status = await readRepo(path);
+    publish(RuntimeEvent.cases["git.status"].make({ path, status, action: null, error: null }));
+  });
   const refreshDiff = coalesced((path) =>
     readDiff(path).then((diff) => publish(RuntimeEvent.cases["git.diff"].make({ path, ...diff }))),
   );
+
+  /** Who writes source control text at `path`: the commit model in settings, else the last harness's default. */
+  const writerFor = (path: string, settings: Settings, recent: ReadonlyArray<string>) => {
+    const split = settings.commitModel?.indexOf(":") ?? -1;
+    const commitProvider = settings.commitModel?.slice(0, split);
+    const pinned = split > 0 && Schema.is(ProviderKind)(commitProvider);
+    const provider = pinned ? commitProvider : settings.lastProvider;
+    const model = pinned
+      ? settings.commitModel!.slice(split + 1)
+      : settings.providers[provider].defaultModel;
+    return {
+      cwd: path,
+      provider,
+      harness: settings.providers[provider],
+      model: model || undefined,
+      settings,
+      recent,
+    };
+  };
 
   /** A message for everything uncommitted at `path`, from the commit model in settings. */
   const writeCommitMessage = (path: string) =>
     Effect.gen(function* () {
       const settings = yield* settingsStore.get;
-      const split = settings.commitModel?.indexOf(":") ?? -1;
-      const commitProvider = settings.commitModel?.slice(0, split);
-      const pinned = split > 0 && Schema.is(ProviderKind)(commitProvider);
-      const provider = pinned ? commitProvider : settings.lastProvider;
-      const model = pinned
-        ? settings.commitModel!.slice(split + 1)
-        : settings.providers[provider].defaultModel;
       const [diff, recent] = yield* Effect.promise(() =>
-        Promise.all([readDiff(path), readRecentSubjects(path)]),
+        Promise.all([readDiff(path), readRecentSubjects(path, 20)]),
       );
       if (diff.error) return { error: diff.error };
       if (!diff.patch) return { error: "Nothing to commit" };
       return yield* Effect.tryPromise({
         try: () =>
-          generateCommitMessage({
-            cwd: path,
-            provider,
-            harness: settings.providers[provider],
-            model: model || undefined,
-            patch: diff.patch,
-            recent,
-          }),
+          generateCommitMessage({ ...writerFor(path, settings, recent), patch: diff.patch }),
         catch: (e) =>
           `Couldn't write a commit message: ${e instanceof Error ? e.message : String(e)}`,
       }).pipe(
@@ -668,6 +727,53 @@ const make = Effect.gen(function* () {
         Effect.catch((error) => Effect.succeed({ error })),
       );
     });
+
+  /**
+   * Pushes the branch if the host doesn't have all of it, writes the title and body with the
+   * commit model, and opens the pull request. Resolves to an error message on failure.
+   */
+  const createPullRequest = async (path: string) => {
+    const status = await readRepo(path);
+    if (!status?.sourceControl) return "This repo's remote isn't on GitHub or GitLab";
+    if (!status.branch) return "Check out a branch first";
+    if (status.branch === status.defaultBranch)
+      return `You're on ${status.branch}; create a branch for the pull request first`;
+    if (status.changes) return "Commit your changes before opening a pull request";
+    const open = status.pullRequest?.state === "open" || status.pullRequest?.state === "draft";
+    if (open) return `#${status.pullRequest!.number} is already open for this branch`;
+    if (!status.upstream || status.ahead) {
+      const pushed = await pushBranch(path);
+      if (pushed) return pushed;
+    }
+    const [settings, range, recent, root] = await Promise.all([
+      Effect.runPromise(settingsStore.get),
+      readPullRequestRange(path, status.branch),
+      readRecentSubjects(path, 20),
+      repoRoot(path),
+    ]);
+    if (!range) return "Couldn't find the branch to open the pull request against";
+    if (!range.commits) return `This branch has no commits that ${range.base} doesn't have`;
+    // t3code only follows templates on GitHub; GitLab keeps its own in .gitlab/.
+    const template =
+      settings.followTemplates !== false && status.sourceControl === "github" && root
+        ? await readPullRequestTemplate(root)
+        : null;
+    try {
+      const text = await generatePullRequest({
+        ...writerFor(path, settings, recent),
+        ...range,
+        head: status.branch,
+        template,
+      });
+      return await openPullRequest(path, status.sourceControl, {
+        base: range.base,
+        head: status.branch,
+        ...text,
+      });
+    } catch (e) {
+      return `Couldn't write the pull request: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  };
 
   /** Commits and pushes on one repo run one at a time. */
   const gitLocks = new Map<string, Semaphore.Semaphore>();
@@ -823,6 +929,40 @@ const make = Effect.gen(function* () {
             yield* publishStatus(path, "push", error);
           }),
         ),
+      "git.createPullRequest": ({ path }) =>
+        withRepoLock(
+          path,
+          Effect.gen(function* () {
+            const error = yield* Effect.promise(() => createPullRequest(path));
+            forgetPullRequest(path);
+            yield* publishStatus(path, "pull-request", error);
+          }),
+        ),
+      "git.mergePullRequest": ({ path, method }) =>
+        withRepoLock(
+          path,
+          Effect.gen(function* () {
+            const status = yield* Effect.promise(() => readRepo(path));
+            const pr = status?.pullRequest;
+            const error =
+              !status?.sourceControl || !pr || (pr.state !== "open" && pr.state !== "draft")
+                ? "This branch has no open pull request"
+                : yield* Effect.promise(() =>
+                    mergePullRequest(path, status.sourceControl!, pr.number, method),
+                  );
+            forgetPullRequest(path);
+            yield* publishStatus(path, "merge", error);
+          }),
+        ),
+      "sourceControl.refresh": () =>
+        Effect.promise(async () => {
+          hosts.clear();
+          publish(
+            RuntimeEvent.cases["sourceControl.updated"].make({
+              statuses: await probeSourceControl(),
+            }),
+          );
+        }),
       "thread.setModel": (command) =>
         Effect.gen(function* () {
           const entry = yield* getEntry(command.threadId);
