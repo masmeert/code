@@ -15,7 +15,7 @@ export interface ToolCall {
   readonly isError: boolean;
 }
 
-type Category = "run" | "read" | "edit" | "search" | "web" | "agent" | "todo" | "other";
+type Category = "run" | "read" | "edit" | "search" | "web" | "agent" | "todo" | "browser" | "other";
 
 const CATEGORY: Record<string, Category> = {
   Bash: "run",
@@ -35,7 +35,7 @@ const CATEGORY: Record<string, Category> = {
   TodoWrite: "todo",
 };
 
-const categoryOf = (name: string): Category => CATEGORY[name] ?? "other";
+const categoryOf = (name: string): Category => (name.startsWith("mcp__browser__") ? "browser" : (CATEGORY[name] ?? "other"));
 
 const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
@@ -58,6 +58,8 @@ const phrase = (category: Category, calls: ReadonlyArray<ToolCall>): string => {
       return one ? "ran a subagent" : `ran ${n} subagents`;
     case "todo":
       return "updated the todo list";
+    case "browser":
+      return one ? "used the browser" : `took ${n} browser actions`;
     case "other":
       return one ? `used ${calls[0]!.name}` : `used ${n} tools`;
   }
@@ -80,6 +82,8 @@ const livePhrase = (call: ToolCall): string => {
       return "Running a subagent…";
     case "todo":
       return "Updating the todo list…";
+    case "browser":
+      return "Using the browser…";
     case "other":
       return `Using ${call.name}…`;
   }
@@ -93,6 +97,7 @@ const VERB: Record<Category, string> = {
   web: "Fetched",
   agent: "Agent",
   todo: "Todos",
+  browser: "Browser",
   other: "Used",
 };
 
@@ -140,7 +145,7 @@ function ToolCallRow({ call, live }: { call: ToolCall; live: boolean }) {
         className="group flex h-7 w-full min-w-0 items-center gap-2 rounded-md text-left outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:cursor-default"
       >
         <span className={cn("shrink-0", call.isError ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground")}>
-          {category === "other" ? call.name : VERB[category]}
+          {category === "other" ? call.name : category === "browser" ? capitalize(call.name.slice("mcp__browser__".length)) : VERB[category]}
         </span>
         <span
           className={cn(

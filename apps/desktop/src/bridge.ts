@@ -1,6 +1,7 @@
-import { Theme } from "@apcode/contracts";
+import { BrowserAction, Theme } from "@apcode/contracts";
 import { BrowserWindow, dialog, ipcMain, nativeTheme } from "electron";
 import * as Schema from "effect/Schema";
+import { automateBrowser } from "./browserAutomation.ts";
 import { APP_URL } from "./renderer.ts";
 
 function handle<S extends Schema.ConstraintDecoder<unknown>>(
@@ -32,4 +33,7 @@ export function registerBridge(daemonToken: string | null) {
   handle("set-theme", Theme, (_window, theme) => {
     nativeTheme.themeSource = theme;
   });
+  handle("automate-browser", Schema.Struct({ webContentsId: Schema.Number, action: BrowserAction }), (window, { webContentsId, action }) =>
+    automateBrowser(window, webContentsId, action),
+  );
 }

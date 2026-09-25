@@ -6,6 +6,7 @@ import * as Stream from "effect/Stream";
 import type { ServerWebSocket } from "bun";
 import { timingSafeEqual } from "node:crypto";
 import { SessionManager } from "./SessionManager.ts";
+import type { BrowserHost } from "./browsers.ts";
 import type { TerminalViewer } from "./terminals.ts";
 
 // Browsers don't apply CORS to WebSockets, so any page could connect to localhost.
@@ -47,6 +48,7 @@ interface ConnectionData {
    */
   threads: Map<string, number>;
   viewer?: TerminalViewer;
+  browserHost?: BrowserHost;
 }
 
 export const serve = (port: number) =>
@@ -108,6 +110,15 @@ export const serve = (port: number) =>
           case "terminal.acknowledge":
             if (ws.data.viewer) manager.terminals.acknowledge(command.threadId, command.terminalId, ws.data.viewer, command.characters);
             return Effect.void;
+          case "browser.host":
+            if (!ws.data.browserHost) {
+              ws.data.browserHost = { send: (frame) => send(ws, frame), shows: (threadId) => ws.data.threads.has(threadId) };
+              manager.browsers.attach(ws.data.browserHost);
+            }
+            return Effect.void;
+          case "browser.respond":
+            if (ws.data.browserHost) manager.browsers.respond(ws.data.browserHost, command.requestId, command.result, command.error);
+            return Effect.void;
           default:
             return manager.dispatch(command);
         }
@@ -146,6 +157,7 @@ export const serve = (port: number) =>
             },
             close(ws) {
               if (ws.data.viewer) manager.terminals.detachViewer(ws.data.viewer);
+              if (ws.data.browserHost) manager.browsers.detach(ws.data.browserHost);
               if (ws.data.fiber) Effect.runFork(Fiber.interrupt(ws.data.fiber));
             },
           },

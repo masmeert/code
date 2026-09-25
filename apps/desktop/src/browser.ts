@@ -1,5 +1,6 @@
 import { BROWSER_PARTITION, type DesktopBrowserEvent } from "@apcode/contracts";
 import { type BrowserWindow, clipboard, Menu, session, shell, type WebContents } from "electron";
+import { recordConsole } from "./browserAutomation.ts";
 
 function isWebUrl(url: string) {
   return url.startsWith("https://") || url.startsWith("http://");
@@ -30,6 +31,7 @@ function tabShortcut(input: Electron.Input): "new-tab" | "close-tab" | "focus-ad
 }
 
 function attachGuest(window: BrowserWindow, guest: WebContents) {
+  recordConsole(guest);
   guest.setWindowOpenHandler(({ url, disposition }) => {
     if (!isWebUrl(url)) return { action: "deny" };
     if (disposition === "new-window") {

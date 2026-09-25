@@ -48,6 +48,7 @@ export function BrowserHost() {
           threadId={threadId}
           tab={tab}
           rect={shown === tabId && !activity[tabId]?.error ? (surface?.rect ?? null) : null}
+          automating={(activity[tabId]?.automating ?? 0) > 0}
         />,
       ];
     }),
@@ -55,7 +56,7 @@ export function BrowserHost() {
   );
 }
 
-function HostedTab({ threadId, tab, rect }: { threadId: string; tab: BrowserTab; rect: SurfaceRect | null }) {
+function HostedTab({ threadId, tab, rect, automating }: { threadId: string; tab: BrowserTab; rect: SurfaceRect | null; automating: boolean }) {
   const [initialUrl] = useState(tab.url);
   const [generation, setGeneration] = useState(0);
   const [hiddenSize, setHiddenSize] = useState({ width: 1024, height: 768 });
@@ -120,7 +121,13 @@ function HostedTab({ threadId, tab, rect }: { threadId: string; tab: BrowserTab;
       {...({ allowpopups: "true" } as unknown as { allowpopups?: boolean })}
       aria-hidden={rect ? undefined : true}
       className="fixed z-10 bg-white"
-      style={rect ? { left: rect.x, top: rect.y, width: rect.width, height: rect.height } : { left: -100_000, top: 0, ...hiddenSize }}
+      style={
+        rect
+          ? { left: rect.x, top: rect.y, width: rect.width, height: rect.height }
+          : automating
+            ? { left: 0, top: 0, zIndex: -1, pointerEvents: "none", ...hiddenSize }
+            : { left: -100_000, top: 0, ...hiddenSize }
+      }
     />
   );
 }

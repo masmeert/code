@@ -56,6 +56,7 @@ import { DATA_DIR } from "./storage/jsonFile.ts";
 import { ProjectsStore } from "./storage/ProjectsStore.ts";
 import { SettingsStore } from "./storage/SettingsStore.ts";
 import { isPersisted, ThreadStore } from "./storage/ThreadStore.ts";
+import { type Browsers, createBrowsers } from "./browsers.ts";
 import { createTerminals, type Terminals } from "./terminals.ts";
 
 const ADAPTERS: Record<ProviderKind, ProviderAdapter> = { claude: ClaudeAdapter, codex: CodexAdapter };
@@ -166,6 +167,7 @@ export class SessionManager extends Context.Service<
       Scope.Scope
     >;
     readonly terminals: Terminals;
+    readonly browsers: Browsers;
     /**
      * A thread's transcript: what was missed since `after`, or the latest `turnLimit` turns.
      * Synchronous, so live events with a `seq` above the read's are exactly the ones it lacks.
@@ -320,6 +322,7 @@ const make = Effect.gen(function* () {
     opened: (terminal) => publish({ _tag: "terminal.opened", ...terminal }),
     closed: (terminal) => publish({ _tag: "terminal.closed", ...terminal }),
   });
+  const browsers = createBrowsers();
 
   const getEntry = (threadId: string) =>
     Effect.suspend(() => {
@@ -354,6 +357,7 @@ const make = Effect.gen(function* () {
               publish({ ...event, threadId } as RuntimeEvent);
               if (event._tag === "turn.completed") endTurn(entry);
             },
+            browser: (action) => browsers.request(threadId, action),
           }),
         ).pipe(Effect.tap((session) => Effect.sync(() => (entry.session = session))));
       }),
@@ -724,6 +728,8 @@ const make = Effect.gen(function* () {
       case "terminal.open":
       case "terminal.detach":
       case "terminal.acknowledge":
+      case "browser.host":
+      case "browser.respond":
         return Effect.void;
       case "settings.update":
         return settingsStore
@@ -752,6 +758,7 @@ const make = Effect.gen(function* () {
       }),
     ),
     terminals,
+    browsers,
     readThread: (threadId, after, turnLimit) => {
       if (!threads.has(threadId)) return null;
       // Each streaming message's text so far, as one delta.

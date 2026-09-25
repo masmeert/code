@@ -1,3 +1,4 @@
+import type { BrowserAction, BrowserResult } from "@apcode/contracts";
 import { useSyncExternalStore } from "react";
 
 export interface Webview extends HTMLElement {
@@ -29,6 +30,7 @@ export interface TabActivity {
   readonly loading: boolean;
   readonly favicon: string | null;
   readonly error: string | null;
+  readonly automating: number;
 }
 
 export interface SurfaceRect {
@@ -152,7 +154,16 @@ export function updateActivity(tabId: string, patch: Partial<TabActivity>) {
     ...state,
     activity: {
       ...state.activity,
-      [tabId]: { canGoBack: false, canGoForward: false, loading: false, favicon: null, error: null, ...state.activity[tabId], ...patch },
+      [tabId]: {
+        canGoBack: false,
+        canGoForward: false,
+        loading: false,
+        favicon: null,
+        error: null,
+        automating: 0,
+        ...state.activity[tabId],
+        ...patch,
+      },
     },
   });
 }
@@ -236,4 +247,46 @@ export function tabForWebContents(webContentsId: number) {
     return threadId ? { threadId, tabId } : null;
   }
   return null;
+}
+
+function activeTab(threadId: string) {
+  const browser = threadBrowser(threadId);
+  return browser.tabs.find((tab) => tab.id === browser.activeTabId);
+}
+
+async function attachedWebview(tabId: string) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const webview = webviews.get(tabId);
+    try {
+      if (webview && webview.getWebContentsId() > 0) return webview;
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("The browser tab didn't start");
+}
+
+export async function performBrowserAction(threadId: string, action: BrowserAction): Promise<BrowserResult> {
+  const desktop = window.desktop;
+  if (!desktop) throw new Error("The browser is only available in the APCode desktop app");
+  const url = action._tag === "navigate" ? normalizeUrl(action.url) : null;
+  if (action._tag === "navigate" && !url) throw new Error(`Not a web address: ${action.url}`);
+  const current = activeTab(threadId);
+  if (!current?.url && !url) throw new Error("No page is open in the browser; navigate to one first");
+  if (!current) openTab(threadId, url!);
+  else if (!current.url) updateTab(threadId, current.id, { url: url! });
+  if (!threadBrowser(threadId).open) updateThread(threadId, (browser) => ({ ...browser, open: true }));
+  const tab = activeTab(threadId)!;
+  showTab(threadId, tab.id);
+  updateActivity(tab.id, { automating: (state.activity[tab.id]?.automating ?? 0) + 1 });
+  try {
+    const webview = await attachedWebview(tab.id);
+    return await desktop.automateBrowser(
+      webview.getWebContentsId(),
+      !current?.url ? { _tag: "status" } : url ? { _tag: "navigate", url } : action,
+    );
+  } catch (error) {
+    throw new Error(String(error instanceof Error ? error.message : error).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
+  } finally {
+    updateActivity(tab.id, { automating: Math.max(0, (state.activity[tab.id]?.automating ?? 1) - 1) });
+  }
 }

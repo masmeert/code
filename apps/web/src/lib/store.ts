@@ -22,6 +22,7 @@ import {
   isTranscriptEvent,
 } from "@apcode/contracts";
 import { useEffect, useSyncExternalStore } from "react";
+import { performBrowserAction } from "./browser.ts";
 import { loadShell, loadTranscript, removeTranscript, saveShell, saveTranscript } from "./cache.ts";
 
 export type TranscriptItem =
@@ -556,6 +557,13 @@ const onFrame = (frame: ServerFrame) => {
       return screens.get(screenKey(frame.threadId, frame.terminalId))?.write(frame.data);
     case "terminal.error":
       return screens.get(screenKey(frame.threadId, frame.terminalId))?.fail(frame.message);
+    case "browser.request":
+      performBrowserAction(frame.threadId, frame.action).then(
+        (result) => send({ _tag: "browser.respond", requestId: frame.requestId, result, error: null }),
+        (error: unknown) =>
+          send({ _tag: "browser.respond", requestId: frame.requestId, result: null, error: error instanceof Error ? error.message : String(error) }),
+      );
+      return;
     case "event": {
       const { event, id } = frame;
       if (!isTranscriptEvent(event)) {
@@ -594,6 +602,7 @@ const connect = async () => {
   const ws = new WebSocket(`ws://127.0.0.1:${DEFAULT_DAEMON_PORT}`, token ? [`apcode.${token}`] : undefined);
   socket = ws;
   ws.onopen = () => {
+    if (window.desktop) ws.send(JSON.stringify({ _tag: "browser.host" } satisfies ClientCommand));
     for (const command of queued.splice(0)) ws.send(JSON.stringify(command));
   };
   ws.onmessage = (message) => onFrame(JSON.parse(message.data as string) as ServerFrame);

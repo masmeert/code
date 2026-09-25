@@ -1,4 +1,14 @@
-import type { ApprovalDecision, Attachment, Effort, PermissionLevel, ProviderEvent, ProviderKind, SlashCommand } from "@apcode/contracts";
+import type {
+  ApprovalDecision,
+  Attachment,
+  BrowserAction,
+  BrowserResult,
+  Effort,
+  PermissionLevel,
+  ProviderEvent,
+  ProviderKind,
+  SlashCommand,
+} from "@apcode/contracts";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -19,6 +29,7 @@ export interface StartSessionInput {
   readonly onResumeToken: (token: string) => void;
   /** Adapters push normalized events here; the session manager stamps the thread id. */
   readonly emit: (event: ProviderEvent) => void;
+  readonly browser: (action: BrowserAction) => Promise<BrowserResult>;
 }
 
 /** One user message plus the composer settings it was sent with. */
@@ -75,7 +86,8 @@ export interface ProviderAdapter {
 export const summarizeToolInput = (input: unknown): string => {
   if (input === null || typeof input !== "object") return String(input ?? "");
   const record = input as Record<string, unknown>;
-  for (const key of ["command", "file_path", "path", "pattern", "url", "query", "description"]) {
+  if (Object.keys(record).length === 0) return "";
+  for (const key of ["command", "file_path", "path", "pattern", "url", "query", "description", "target", "key", "expression"]) {
     const value = record[key];
     if (typeof value === "string") return value;
   }

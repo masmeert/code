@@ -16,6 +16,26 @@ export type Theme = typeof Theme.Type;
 
 export const BROWSER_PARTITION = "persist:apcode-browser";
 
+export const BrowserAction = Schema.Union([
+  Schema.TaggedStruct("navigate", { url: Schema.String }),
+  Schema.TaggedStruct("status", {}),
+  Schema.TaggedStruct("snapshot", {}),
+  Schema.TaggedStruct("click", { target: Schema.String }),
+  Schema.TaggedStruct("type", { target: Schema.String, text: Schema.String, submit: Schema.Boolean }),
+  Schema.TaggedStruct("press", { key: Schema.String }),
+  Schema.TaggedStruct("evaluate", { expression: Schema.String }),
+  Schema.TaggedStruct("console", {}),
+]);
+export type BrowserAction = typeof BrowserAction.Type;
+
+export const BrowserResult = Schema.Struct({
+  url: Schema.String,
+  title: Schema.String,
+  text: Schema.String,
+  screenshot: Schema.NullOr(Schema.String),
+});
+export type BrowserResult = typeof BrowserResult.Type;
+
 export type DesktopBrowserEvent =
   | { readonly _tag: "open-tab"; readonly webContentsId: number; readonly url: string }
   | { readonly _tag: "new-tab" | "close-tab" | "focus-address"; readonly webContentsId: number };
@@ -27,6 +47,7 @@ export interface DesktopBridge {
   readonly setTheme: (theme: Theme) => Promise<void>;
   readonly onFileDrop: (listener: (paths: ReadonlyArray<string>) => void) => () => void;
   readonly onBrowserEvent: (listener: (event: DesktopBrowserEvent) => void) => () => void;
+  readonly automateBrowser: (webContentsId: number, action: BrowserAction) => Promise<BrowserResult>;
 }
 
 /** Reasoning effort. Each harness takes a subset: Claude low…max, Codex minimal…xhigh. */
@@ -386,6 +407,12 @@ export const ClientCommand = Schema.Union([
   }),
   Schema.TaggedStruct("terminal.acknowledge", { threadId: Schema.String, terminalId: Schema.String, characters: Schema.Number }),
   Schema.TaggedStruct("terminal.close", { threadId: Schema.String, terminalId: Schema.String }),
+  Schema.TaggedStruct("browser.host", {}),
+  Schema.TaggedStruct("browser.respond", {
+    requestId: Schema.String,
+    result: Schema.NullOr(BrowserResult),
+    error: Schema.NullOr(Schema.String),
+  }),
 ]);
 export type ClientCommand = typeof ClientCommand.Type;
 
@@ -467,5 +494,6 @@ export const ServerFrame = Schema.Union([
   Schema.TaggedStruct("terminal.snapshot", { threadId: Schema.String, terminalId: Schema.String, data: Schema.String }),
   Schema.TaggedStruct("terminal.output", { threadId: Schema.String, terminalId: Schema.String, data: Schema.String }),
   Schema.TaggedStruct("terminal.error", { threadId: Schema.String, terminalId: Schema.String, message: Schema.String }),
+  Schema.TaggedStruct("browser.request", { requestId: Schema.String, threadId: Schema.String, action: BrowserAction }),
 ]);
 export type ServerFrame = typeof ServerFrame.Type;

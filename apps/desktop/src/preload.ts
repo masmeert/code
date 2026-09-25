@@ -30,4 +30,5 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.on("browser-event", forward);
     return () => ipcRenderer.removeListener("browser-event", forward);
   },
+  automateBrowser: (webContentsId, action) => ipcRenderer.invoke("automate-browser", { webContentsId, action }),
 } satisfies DesktopBridge);

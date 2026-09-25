@@ -173,6 +173,9 @@ function AddressBar({ threadId, tab, activity }: { threadId: string; tab: Browse
           <RotateCw className="size-3.5" />
         </IconButton>
       )}
+      {activity?.automating ? (
+        <span className="ml-1 shrink-0 rounded-md bg-primary/15 px-1.5 py-0.5 text-[11px] font-medium text-primary">Agent</span>
+      ) : null}
       <Input
         ref={input}
         value={draft}
