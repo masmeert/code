@@ -15,12 +15,10 @@ import { DEFAULT_SETTLE_DELAY_MINUTES, type Project, type ThreadInfo } from "@ap
 import {
   Archive,
   ArchiveRestore,
-  Check,
   ChevronRight,
   CircleCheck,
   CircleDot,
   FolderPlus,
-  ListFilter,
   type LucideIcon,
   MoreHorizontal,
   PanelLeft,
@@ -30,12 +28,14 @@ import {
   Trash2,
 } from "lucide-react";
 import { AnimatePresence, motion, type Transition, useReducedMotion } from "motion/react";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { canSettle, isSeen, isSettled, send, setSettled, useStore } from "../lib/store.ts";
 import { addProject } from "../lib/projects.ts";
+import { useThreadListView } from "../lib/threadListView.ts";
 import { ago, useNow } from "../lib/time.ts";
 import { usePersistedFlag } from "../lib/usePersistedFlag.ts";
 import type { ModalView } from "./AppModal.tsx";
+import { ThreadListMenu } from "./ThreadListMenu.tsx";
 
 // Fold springs, borrowed from BouncyAccordion (@apcode/ui/motion/bouncy-accordion).
 const FOLD_OPEN: Transition = { type: "spring", duration: 0.58, bounce: 0.32 };
@@ -65,34 +65,39 @@ export const Sidebar = (props: {
   const seen = useStore((s) => s.seen);
   const settleDelayMs = useStore((s) => s.settings.settleDelayMinutes ?? DEFAULT_SETTLE_DELAY_MINUTES) * 60_000;
   const [query, setQuery] = useState("");
-  // Projects to show; empty means all.
-  const [projectFilter, setProjectFilter] = useState<ReadonlySet<string>>(new Set());
+  const [view, setView] = useThreadListView();
   const now = useNow();
   const reduce = useReducedMotion();
 
-  // One flat list across projects: whatever still needs you on top, then settled threads; newest activity first in each.
+  // Grouped by state: whatever still needs you on top, then settled threads, then archived ones.
   const [showArchived, setShowArchived] = useState(false);
   const [showSettled, setShowSettled] = usePersistedFlag("apcode.sidebar.settledOpen", true);
-  const { active, settled, archived } = useMemo(() => {
+  const [collapsedProjects, setCollapsedProjects] = useState<ReadonlyArray<string>>([]);
+  const { infos, active, settled, archived, projectGroups } = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const byId = new Map(projects.map((p) => [p.id, p]));
     const infos = Object.values(threads)
-      .filter((info) => projectFilter.size === 0 || projectFilter.has(info.projectId))
+      .filter((info) => view.status === "all" || (info.archivedAt !== null) === (view.status === "archived"))
+      .filter((info) => view.projects.length === 0 || view.projects.includes(info.projectId))
+      .filter((info) => view.provider === "all" || info.provider === view.provider)
+      .filter((info) => view.activity === "any" || now - info.updatedAt <= { day: 1, week: 7, month: 30 }[view.activity] * 86_400_000)
       .filter(
         (info) =>
           !needle ||
           [info.title, byId.get(info.projectId)?.name, info.branch].some((s) => s?.toLowerCase().includes(needle)),
       )
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+      .sort((a, b) => (view.sortBy === "created" ? b.createdAt - a.createdAt : b.updatedAt - a.updatedAt));
     const current = infos.filter((info) => info.archivedAt === null);
     return {
+      infos,
       active: current.filter((info) => !isSettled(info, seen, now, settleDelayMs)),
       settled: current.filter((info) => isSettled(info, seen, now, settleDelayMs)),
       archived: infos.filter((info) => info.archivedAt !== null),
+      projectGroups: [...new Set(infos.map((info) => info.projectId))].map((projectId) =>
+        infos.filter((info) => info.projectId === projectId),
+      ),
     };
-  }, [projects, threads, seen, query, projectFilter, now, settleDelayMs]);
-
-  const filtering = projectFilter.size > 0 || query.trim() !== "";
+  }, [projects, threads, seen, query, view, now, settleDelayMs]);
 
   const projectOf = (info: ThreadInfo) =>
     projects.find((p) => p.id === info.projectId) ?? { id: info.projectId, name: info.cwd.split("/").at(-1) ?? info.cwd, path: info.cwd, addedAt: 0 };
@@ -134,12 +139,11 @@ export const Sidebar = (props: {
 
   // Foldable sections open themselves while searching, so matches are never hidden.
   // The header is a full-width row, sticky while open so it can be folded from anywhere in the list.
-  const renderFolding = (label: string, icon: LucideIcon, infos: Array<ThreadInfo>, open: boolean, toggle: () => void) => {
+  const renderFolding = (key: string, label: string, icon: ReactNode, infos: Array<ThreadInfo>, open: boolean, toggle: () => void) => {
     if (infos.length === 0) return null;
     const expanded = open || Boolean(query);
-    const Icon = icon;
     return (
-      <section className="flex flex-col gap-1">
+      <section key={key} className="flex flex-col gap-1">
         <button
           type="button"
           aria-expanded={expanded}
@@ -149,8 +153,10 @@ export const Sidebar = (props: {
             expanded && "sticky top-0 z-20 bg-sidebar hover:bg-sidebar",
           )}
         >
-          <Icon aria-hidden="true" className="size-3.5 shrink-0" />
-          <span className="font-medium">{label}</span>
+          <span aria-hidden="true" className="grid shrink-0 place-items-center [&>svg]:size-3.5">
+            {icon}
+          </span>
+          <span className="min-w-0 truncate font-medium">{label}</span>
           <NumberTicker
             value={infos.length}
             startOnView={false}
@@ -185,8 +191,6 @@ export const Sidebar = (props: {
     );
   };
 
-  const empty = active.length === 0 && settled.length === 0 && archived.length === 0;
-
   return (
     <AnimatedSidebar ariaLabel="Threads" collapsible="offcanvas" className="min-h-0" panelClassName="h-full bg-sidebar">
       {/* Title bar. The traffic lights (trafficLightPosition 16,20) are centred 18.5px down and end at 76px;
@@ -215,7 +219,7 @@ export const Sidebar = (props: {
             input: "selectable pl-8 text-sm placeholder:text-muted-foreground",
           }}
         />
-        <ProjectFilter projects={projects} selected={projectFilter} onChange={setProjectFilter} />
+        <ThreadListMenu view={view} projects={projects} onChange={setView} />
         <IconButton label="Add project" onClick={() => void addProject().then((path) => path && props.onDraft(path))}>
           <FolderPlus className="size-4" />
         </IconButton>
@@ -228,17 +232,35 @@ export const Sidebar = (props: {
 
       <div className="relative min-h-0 flex-1">
         <div className="h-full overflow-y-auto overscroll-contain px-2 pb-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {empty ? (
+          {infos.length === 0 ? (
             <p className="px-3 pt-2 text-xs text-muted-foreground">
-              {filtering ? "No matching threads." : "No threads yet. Start one with the pen above."}
+              {Object.keys(threads).length > 0 ? "No matching threads." : "No threads yet. Start one with the pen above."}
             </p>
+          ) : view.groupBy === "none" ? (
+            renderCards(infos)
+          ) : view.groupBy === "project" ? (
+            <div className="flex flex-col gap-0.5">
+              {projectGroups.map((group) => {
+                const project = projectOf(group[0]);
+                return renderFolding(
+                  project.id,
+                  project.name,
+                  <ProjectBadge project={project} />,
+                  group,
+                  !collapsedProjects.includes(project.id),
+                  () => setCollapsedProjects((current) => (current.includes(project.id) ? current.filter((id) => id !== project.id) : [...current, project.id])),
+                );
+              })}
+            </div>
           ) : (
             <>
               {renderList("Active", active)}
               {settled.length + archived.length > 0 ? (
                 <div className={cn("flex flex-col gap-0.5", active.length > 0 && "mt-2 border-t border-border/60 pt-2")}>
-                  {renderFolding("Settled", CircleCheck, settled, showSettled, () => setShowSettled(!showSettled))}
-                  {renderFolding("Archived", Archive, archived, showArchived, () => setShowArchived((open) => !open))}
+                  {renderFolding("settled", "Settled", <CircleCheck />, settled, showSettled, () => setShowSettled(!showSettled))}
+                  {view.status === "archived"
+                    ? renderList("Archived", archived)
+                    : renderFolding("archived", "Archived", <Archive />, archived, showArchived, () => setShowArchived((open) => !open))}
                 </div>
               ) : null}
             </>
@@ -259,53 +281,6 @@ export const Sidebar = (props: {
       </div>
       <AnimatedSidebarRail />
     </AnimatedSidebar>
-  );
-};
-
-/** Header button that narrows the thread list to chosen projects. */
-const ProjectFilter = (props: {
-  projects: ReadonlyArray<Project>;
-  selected: ReadonlySet<string>;
-  onChange: (next: ReadonlySet<string>) => void;
-}) => {
-  const [open, setOpen] = useState(false);
-  const toggle = (id: string) => {
-    const next = new Set(props.selected);
-    if (!next.delete(id)) next.add(id);
-    props.onChange(next);
-  };
-  const row =
-    "flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs text-foreground outline-none transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:ring-4 focus-visible:ring-ring";
-  const active = props.selected.size > 0;
-
-  return (
-    // Keep the label out of the way while the menu is open.
-    <Tooltip content="Filter" side="bottom" open={open ? false : undefined}>
-      <MorphPopover open={open} onOpenChange={setOpen}>
-        <MorphPopoverTrigger>
-          <Button variant="ghost" size="icon" aria-label="Filter threads" className="relative size-7">
-            <ListFilter className={cn("size-4", active && "text-foreground")} />
-            {active ? <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-foreground" /> : null}
-          </Button>
-        </MorphPopoverTrigger>
-        <MorphPopoverContent side="bottom" align="end" sideOffset={8} radius={12} className="w-52 p-1.5">
-          <MorphPopoverMenu>
-            <p className="px-2.5 pt-1 pb-1.5 text-[11px] font-medium text-muted-foreground">Projects</p>
-            <button type="button" onClick={() => props.onChange(new Set())} className={row}>
-              <Check aria-hidden="true" className={cn("size-3.5 shrink-0", active && "invisible")} />
-              <span className="min-w-0 truncate">All projects</span>
-            </button>
-            {props.projects.map((project) => (
-              <button key={project.id} type="button" aria-pressed={props.selected.has(project.id)} onClick={() => toggle(project.id)} className={row}>
-                <Check aria-hidden="true" className={cn("size-3.5 shrink-0", !props.selected.has(project.id) && "invisible")} />
-                <ProjectBadge project={project} />
-                <span className="min-w-0 truncate">{project.name}</span>
-              </button>
-            ))}
-          </MorphPopoverMenu>
-        </MorphPopoverContent>
-      </MorphPopover>
-    </Tooltip>
   );
 };
 

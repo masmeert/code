@@ -225,7 +225,7 @@ export function Tooltip({
           onPointerLeave={(event: PointerEvent) => {
             if (hover.leave(event)) hide();
           }}
-          onFocus={show}
+          onFocus={(event) => event.target.matches(":focus-visible") && show()}
           onBlur={hide}
           onPointerDown={(event: PointerEvent) => tap.start(event, open)}
           // A gesture the platform took away sends no click, and a key press
