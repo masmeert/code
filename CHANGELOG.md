@@ -10,6 +10,8 @@ Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unrel
 - New-thread defaults and more options in General settings.
 - Update status in Settings, with a restart button once an update is downloaded.
 - The app version is shown on the update button alongside its state.
+- Pull requests from the git menu: create one with a written title and body, view it, and merge it, through `gh` or `glab`.
+- Git settings: auto-pull of the default branch, a default merge method, GitHub and GitLab status, and a writing style for commit messages and pull requests.
 
 ### Fixed
 
