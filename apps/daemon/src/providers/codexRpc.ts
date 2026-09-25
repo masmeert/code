@@ -31,9 +31,13 @@ export interface CodexRpc {
 }
 
 /** Spawns `codex app-server` and completes the initialize handshake. */
-export const connectCodex = async (cwd: string | undefined, handlers: CodexRpcHandlers = {}): Promise<CodexRpc> => {
+export const connectCodex = async (
+  cwd: string | undefined,
+  handlers: CodexRpcHandlers = {},
+  launch: { readonly args?: ReadonlyArray<string>; readonly env?: Readonly<Record<string, string>> } = {},
+): Promise<CodexRpc> => {
   const bin = resolveExecutable("codex", "APCODE_CODEX_PATH");
-  const child = spawn(bin, ["app-server"], { cwd, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(bin, ["app-server", ...(launch.args ?? [])], { cwd, env: { ...process.env, ...launch.env }, stdio: ["pipe", "pipe", "pipe"] });
 
   let nextId = 0;
   const inflight = new Map<RpcId, { resolve: (v: any) => void; reject: (e: Error) => void }>();

@@ -1,8 +1,6 @@
 import type {
   ApprovalDecision,
   Attachment,
-  BrowserAction,
-  BrowserResult,
   Effort,
   PermissionLevel,
   ProviderEvent,
@@ -11,6 +9,7 @@ import type {
 } from "@apcode/contracts";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import type { McpServerAccess } from "../mcp.ts";
 
 export class ProviderError extends Schema.TaggedError<ProviderError>()("ProviderError", {
   provider: Schema.String,
@@ -29,7 +28,7 @@ export interface StartSessionInput {
   readonly onResumeToken: (token: string) => void;
   /** Adapters push normalized events here; the session manager stamps the thread id. */
   readonly emit: (event: ProviderEvent) => void;
-  readonly browser: (action: BrowserAction) => Promise<BrowserResult>;
+  readonly mcpServer: McpServerAccess;
 }
 
 /** One user message plus the composer settings it was sent with. */

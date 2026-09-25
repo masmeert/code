@@ -31,6 +31,9 @@ importers:
       '@effect/platform-bun':
         specifier: 'catalog:'
         version: 4.0.0-rc.117(effect@4.0.0-rc.117)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(supports-color@7.2.0)(zod@4.6.5)
       '@xterm/addon-serialize':
         specifier: ^0.14.0
         version: 0.14.0

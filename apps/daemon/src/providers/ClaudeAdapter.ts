@@ -19,7 +19,6 @@ import type { Effort, PermissionLevel } from "@apcode/contracts";
 import * as Effect from "effect/Effect";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
-import { browserTools } from "./browserTools.ts";
 import {
   ProviderError,
   summarizeToolInput,
@@ -101,7 +100,7 @@ const toContent = async (turn: TurnInput): Promise<SDKUserMessage["message"]["co
   return [...blocks, ...(text ? [{ type: "text" as const, text }] : [])];
 };
 
-const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: initialPermission, onResumeToken, emit, browser }: StartSessionInput) =>
+const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: initialPermission, onResumeToken, emit, mcpServer }: StartSessionInput) =>
   Effect.try({
     try: () => {
       const inbox = makeInbox<SDKUserMessage>();
@@ -136,7 +135,8 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
           settingSources: ["user", "project", "local"],
           includePartialMessages: true,
           canUseTool,
-          mcpServers: { browser: browserTools(browser) },
+          env: { ...process.env, APCODE_MCP_TOKEN: mcpServer.token },
+          mcpServers: { browser: { type: "http", url: mcpServer.url, headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" } } },
           allowedTools: ["mcp__browser__snapshot", "mcp__browser__console"],
         },
       });

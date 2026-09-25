@@ -57,6 +57,7 @@ import { ProjectsStore } from "./storage/ProjectsStore.ts";
 import { SettingsStore } from "./storage/SettingsStore.ts";
 import { isPersisted, ThreadStore } from "./storage/ThreadStore.ts";
 import { type Browsers, createBrowsers } from "./browsers.ts";
+import { createMcp, type Mcp } from "./mcp.ts";
 import { createTerminals, type Terminals } from "./terminals.ts";
 
 const ADAPTERS: Record<ProviderKind, ProviderAdapter> = { claude: ClaudeAdapter, codex: CodexAdapter };
@@ -168,6 +169,7 @@ export class SessionManager extends Context.Service<
     >;
     readonly terminals: Terminals;
     readonly browsers: Browsers;
+    readonly mcp: Mcp;
     /**
      * A thread's transcript: what was missed since `after`, or the latest `turnLimit` turns.
      * Synchronous, so live events with a `seq` above the read's are exactly the ones it lacks.
@@ -323,6 +325,7 @@ const make = Effect.gen(function* () {
     closed: (terminal) => publish({ _tag: "terminal.closed", ...terminal }),
   });
   const browsers = createBrowsers();
+  const mcp = createMcp((threadId, action) => browsers.request(threadId, action));
 
   const getEntry = (threadId: string) =>
     Effect.suspend(() => {
@@ -357,7 +360,7 @@ const make = Effect.gen(function* () {
               publish({ ...event, threadId } as RuntimeEvent);
               if (event._tag === "turn.completed") endTurn(entry);
             },
-            browser: (action) => browsers.request(threadId, action),
+            mcpServer: mcp.issue(threadId),
           }),
         ).pipe(Effect.tap((session) => Effect.sync(() => (entry.session = session))));
       }),
@@ -390,6 +393,7 @@ const make = Effect.gen(function* () {
       if (!entry) return;
       threads.delete(threadId);
       terminals.closeThread(threadId);
+      mcp.revoke(threadId);
       if (entry.session) yield* entry.session.close;
       store.deleteThread(threadId);
       const { cwd, worktree } = entry.info;
@@ -414,6 +418,7 @@ const make = Effect.gen(function* () {
       store.setArchived(entry.info.id, archivedAt);
       publish({ _tag: "thread.archived", threadId: entry.info.id, archivedAt });
       if (archived) terminals.closeThread(entry.info.id);
+      if (archived) mcp.revoke(entry.info.id);
       // An archived thread shouldn't keep an agent process around; the next message resumes it.
       if (archived && entry.session) {
         const session = entry.session;
@@ -759,6 +764,7 @@ const make = Effect.gen(function* () {
     ),
     terminals,
     browsers,
+    mcp,
     readThread: (threadId, after, turnLimit) => {
       if (!threads.has(threadId)) return null;
       // Each streaming message's text so far, as one delta.

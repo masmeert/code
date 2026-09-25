@@ -38,9 +38,25 @@ const toCodexEffort = (effort: Effort) => (effort === "max" ? "xhigh" : effort);
 const toCodexDecision = (decision: ApprovalDecision) =>
   decision === "allow" ? "accept" : decision === "allow-session" ? "acceptForSession" : "decline";
 
-const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: initialPermission, onResumeToken, emit }: StartSessionInput) =>
+function elicitationResponse(params: any, decision: ApprovalDecision) {
+  if (decision === "deny" || params.mode === "url") return { action: "decline" };
+  const content: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries<any>(params.requestedSchema?.properties ?? {})) {
+    const chosen = (field.enum ?? (field.oneOf ?? field.anyOf ?? []).map((option: any) => option.const)).find((value: string) =>
+      decision === "allow-session" ? /session/i.test(value) : /once|accept|approve|allow|yes/i.test(value) && !/session|always|persist/i.test(value),
+    );
+    if (chosen !== undefined) content[key] = chosen;
+    else if (field.type === "boolean") content[key] = /session|remember/i.test(`${key} ${field.title ?? ""}`) ? decision === "allow-session" : (field.default ?? true);
+    else if (field.default !== undefined && field.default !== null) content[key] = field.default;
+  }
+  return decision === "allow-session" && [params._meta?.persist].flat().includes("session")
+    ? { action: "accept", content, _meta: { persist: "session" } }
+    : { action: "accept", content };
+}
+
+const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: initialPermission, onResumeToken, emit, mcpServer }: StartSessionInput) =>
   Effect.gen(function* () {
-    const pendingApprovals = new Map<string, RpcId>();
+    const pendingApprovals = new Map<string, { readonly rpcId: RpcId; readonly elicitation: unknown }>();
     let threadId = "";
     let activeTurnId: string | null = null;
     let currentModel = model ?? null;
@@ -61,7 +77,7 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
           } else if (item.type === "fileChange") {
             emit({ _tag: "tool.started", toolId: item.id, name: "edit", summary: item.changes.map((c: any) => c.path).join(", ") });
           } else if (item.type === "mcpToolCall") {
-            emit({ _tag: "tool.started", toolId: item.id, name: `${item.server}/${item.tool}`, summary: summarizeToolInput(item.arguments) });
+            emit({ _tag: "tool.started", toolId: item.id, name: `mcp__${item.server}__${item.tool}`, summary: summarizeToolInput(item.arguments) });
           }
           return;
         }
@@ -74,7 +90,12 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
           } else if (item.type === "fileChange") {
             emit({ _tag: "tool.completed", toolId: item.id, output: item.changes.map((c: any) => c.diff).join("\n"), isError: item.status === "failed" });
           } else if (item.type === "mcpToolCall") {
-            emit({ _tag: "tool.completed", toolId: item.id, output: "", isError: item.status === "failed" });
+            emit({
+              _tag: "tool.completed",
+              toolId: item.id,
+              output: item.error?.message || (item.result?.content ?? []).map((part: any) => (part.type === "text" ? part.text : `[${part.type}]`)).join("\n"),
+              isError: item.status === "failed" || Boolean(item.error),
+            });
           }
           return;
         }
@@ -95,9 +116,22 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
     };
 
     const onServerRequest = (id: RpcId, method: string, params: any) => {
+      if (method === "mcpServer/elicitation/request") {
+        const requestId = `codex-${id}`;
+        pendingApprovals.set(requestId, { rpcId: id, elicitation: params });
+        emit({ _tag: "thread.status", status: "awaiting-approval" });
+        const tool = params._meta?.codex_approval_kind === "mcp_tool_call" ? params.message?.match(/run tool "(.+)"/)?.[1] : undefined;
+        emit({
+          _tag: "approval.requested",
+          requestId,
+          title: tool ? `mcp__${params.serverName}__${tool}` : params.serverName,
+          detail: summarizeToolInput(params._meta?.tool_params ?? {}) || (params.message ?? ""),
+        });
+        return true;
+      }
       if (!APPROVAL_METHODS.has(method)) return false;
       const requestId = `codex-${id}`;
-      pendingApprovals.set(requestId, id);
+      pendingApprovals.set(requestId, { rpcId: id, elicitation: null });
       const isCommand = method === "item/commandExecution/requestApproval";
       emit({ _tag: "thread.status", status: "awaiting-approval" });
       emit({
@@ -111,11 +145,18 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
 
     const rpc = yield* Effect.tryPromise({
       try: () =>
-        connectCodex(cwd, {
-          onNotification,
-          onServerRequest,
-          onExit: (code) => emit({ _tag: "thread.status", status: code === 0 || code === null ? "closed" : "error" }),
-        }),
+        connectCodex(
+          cwd,
+          {
+            onNotification,
+            onServerRequest,
+            onExit: (code) => emit({ _tag: "thread.status", status: code === 0 || code === null ? "closed" : "error" }),
+          },
+          {
+            args: ["-c", `mcp_servers.browser.url="${mcpServer.url}"`, "-c", 'mcp_servers.browser.bearer_token_env_var="APCODE_MCP_TOKEN"'],
+            env: { APCODE_MCP_TOKEN: mcpServer.token },
+          },
+        ),
       catch: (e) => fail(e instanceof Error ? e.message : String(e)),
     });
     const request = (method: string, params: unknown) =>
@@ -183,10 +224,10 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
       ),
       respondApproval: (requestId, decision) =>
         Effect.suspend(() => {
-          const rpcId = pendingApprovals.get(requestId);
-          if (rpcId === undefined) return Effect.fail(fail(`Unknown approval request ${requestId}`));
+          const pending = pendingApprovals.get(requestId);
+          if (pending === undefined) return Effect.fail(fail(`Unknown approval request ${requestId}`));
           pendingApprovals.delete(requestId);
-          rpc.respond(rpcId, { decision: toCodexDecision(decision) });
+          rpc.respond(pending.rpcId, pending.elicitation ? elicitationResponse(pending.elicitation, decision) : { decision: toCodexDecision(decision) });
           emit({ _tag: "approval.resolved", requestId });
           emit({ _tag: "thread.status", status: "running" });
           return Effect.void;

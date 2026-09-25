@@ -130,6 +130,7 @@ export const serve = (port: number) =>
           hostname: "127.0.0.1",
           port,
           fetch(req, server) {
+            if (new URL(req.url).pathname === "/mcp") return manager.mcp.handle(req);
             const origin = req.headers.get("origin");
             if (!origin || !ALLOWED_ORIGINS.has(origin)) return new Response("Forbidden origin", { status: 403 });
             const protocol = tokenProtocol(req);
