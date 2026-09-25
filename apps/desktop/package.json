@@ -1,40 +1,24 @@
 {
   "name": "@apcode/desktop",
+  "productName": "APCode",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
+  "main": "dist/main.cjs",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "tauri": "tauri",
-    "typecheck": "tsc -p .",
-    "dev:tauri": "tauri dev"
-  },
-  "dependencies": {
-    "@apcode/contracts": "workspace:*",
-    "@apcode/ui": "workspace:*",
-    "@pierre/diffs": "^1.4.3",
-    "@pierre/trees": "1.0.0-beta.6",
-    "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-dialog": "^2.7.3",
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/addon-unicode11": "^0.9.0",
-    "@xterm/addon-web-links": "^0.12.0",
-    "@xterm/addon-webgl": "^0.19.0",
-    "@xterm/xterm": "^6.0.0",
-    "effect": "catalog:",
-    "lucide-react": "^1.47.0",
-    "motion": "^13.4.1",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "build": "bun build src/main.ts src/preload.ts --target=node --format=cjs --external=electron --sourcemap=linked --outdir=dist --entry-naming='[name].cjs'",
+    "dev": "node scripts/dev.mjs",
+    "dist": "pnpm build && electron-builder",
+    "release": "pnpm build && electron-builder --publish always",
+    "typecheck": "tsc -p ."
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
-    "@tauri-apps/cli": "^2.11.5",
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
-    "@vitejs/plugin-react": "^6.1.1",
-    "tailwindcss": "^4.3.3",
-    "typescript": "catalog:",
-    "vite": "^8.3.0"
+    "@apcode/contracts": "workspace:*",
+    "@types/node": "^24.0.0",
+    "effect": "catalog:",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "electron-updater": "^6.8.9",
+    "typescript": "catalog:"
   }
 }

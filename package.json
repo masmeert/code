@@ -4,10 +4,11 @@
   "type": "module",
   "packageManager": "pnpm@11.22.0",
   "scripts": {
-    "dev": "pnpm --filter @apcode/daemon build:sidecar && pnpm --parallel --filter @apcode/daemon --filter @apcode/desktop dev:tauri",
+    "dev": "pnpm --parallel --filter @apcode/daemon --filter @apcode/web --filter @apcode/desktop dev",
     "dev:daemon": "pnpm --filter @apcode/daemon dev",
-    "dev:web": "pnpm --filter @apcode/desktop dev",
-    "build": "pnpm --filter @apcode/desktop tauri build",
+    "dev:web": "pnpm --filter @apcode/web dev",
+    "build": "pnpm --filter @apcode/daemon build && pnpm --filter @apcode/web build && pnpm --filter @apcode/desktop dist",
+    "release": "pnpm --filter @apcode/daemon build && pnpm --filter @apcode/web build && pnpm --filter @apcode/desktop release",
     "typecheck": "pnpm -r typecheck"
   }
 }

@@ -1,0 +1,23 @@
+appId: com.apkiosk.apcode
+directories:
+  output: release
+files:
+  - dist/**
+npmRebuild: false
+electronLanguages:
+  - en
+extraResources:
+  - from: ../web/dist
+    to: renderer
+  - from: ../daemon/dist/apcode-daemon
+    to: apcode-daemon
+publish:
+  provider: github
+  owner: masmeert
+  repo: code
+mac:
+  target:
+    - dmg
+    - zip
+  icon: resources/icon.icns
+  category: public.app-category.developer-tools

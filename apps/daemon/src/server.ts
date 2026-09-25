@@ -9,8 +9,8 @@ import { SessionManager } from "./SessionManager.ts";
 import type { TerminalViewer } from "./terminals.ts";
 
 // Browsers don't apply CORS to WebSockets, so any page could connect to localhost.
-// Only accept the Tauri webview and the Vite dev server.
-const ALLOWED_ORIGINS = new Set(["tauri://localhost", "http://tauri.localhost", "http://localhost:1420"]);
+// Only accept the desktop shell and the Vite dev server.
+const ALLOWED_ORIGINS = new Set(["app://apcode", "http://localhost:1420"]);
 
 /**
  * Per-launch secret from the desktop shell (release builds). Origin checks only stop

@@ -14,6 +14,14 @@ export type ApprovalDecision = typeof ApprovalDecision.Type;
 export const Theme = Schema.Literals(["system", "light", "dark"]);
 export type Theme = typeof Theme.Type;
 
+export interface DesktopBridge {
+  readonly daemonToken: () => Promise<string | null>;
+  readonly pickFolder: (title: string) => Promise<string | null>;
+  readonly pickFiles: (title: string) => Promise<ReadonlyArray<string>>;
+  readonly setTheme: (theme: Theme) => Promise<void>;
+  readonly onFileDrop: (listener: (paths: ReadonlyArray<string>) => void) => () => void;
+}
+
 /** Reasoning effort. Each harness takes a subset: Claude low…max, Codex minimal…xhigh. */
 export const Effort = Schema.Literals(["minimal", "low", "medium", "high", "xhigh", "max"]);
 export type Effort = typeof Effort.Type;
