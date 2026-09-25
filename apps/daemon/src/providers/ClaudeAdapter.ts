@@ -165,7 +165,11 @@ const start = ({
         settingSources: ["user", "project", "local"],
         includePartialMessages: true,
         canUseTool,
-        env: { ...launch.env, APCODE_MCP_TOKEN: mcpServer.token },
+        env: {
+          ...launch.env,
+          APCODE_MCP_TOKEN: mcpServer.token,
+          CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
+        },
         mcpServers: {
           browser: {
             type: "http",
@@ -185,6 +189,13 @@ const start = ({
       // Text accumulated per streamed block, flushed as `assistant.completed` when the block stops.
       const blocks = new Map<string, string>();
       let currentMessageId = "";
+      // Subagents launched in the background: their tool call returns a placeholder at once, and the
+      // real end comes later as a task notification, so the call stays running until then.
+      const agentTools = new Map<string, string>();
+      const backgroundAgents = new Set<string>();
+      // Claude Code's own running/idle, which covers turns it starts itself and waits out background
+      // agents. CLIs too old to send it get idle at the end of each turn instead.
+      let reportsSessionState = false;
       let sessionId = resumeToken;
       let permission = initialPermission;
       let effort = initialEffort;
@@ -224,9 +235,9 @@ const start = ({
             return;
           }
           case "assistant": {
-            if (msg.parent_tool_use_id) return;
+            const parentToolId = msg.parent_tool_use_id;
             for (const block of msg.message.content) {
-              if (block.type === "text" && !streamed.has(msg.message.id)) {
+              if (block.type === "text" && !parentToolId && !streamed.has(msg.message.id)) {
                 emit(
                   RuntimeEvent.cases["assistant.completed"].make({
                     threadId,
@@ -241,6 +252,7 @@ const start = ({
                     toolId: block.id,
                     name: block.name,
                     summary: summarizeToolInput(Option.getOrNull(decodeToolInput(block.input))),
+                    parentToolId: parentToolId ?? undefined,
                   }),
                 );
               }
@@ -248,9 +260,9 @@ const start = ({
             return;
           }
           case "user": {
-            if (msg.parent_tool_use_id || !Array.isArray(msg.message.content)) return;
+            if (!Array.isArray(msg.message.content)) return;
             for (const block of msg.message.content) {
-              if (block.type !== "tool_result") continue;
+              if (block.type !== "tool_result" || backgroundAgents.has(block.tool_use_id)) continue;
               emit(
                 RuntimeEvent.cases["tool.completed"].make({
                   threadId,
@@ -266,6 +278,38 @@ const start = ({
             }
             return;
           }
+          case "system": {
+            if (msg.subtype === "session_state_changed") {
+              reportsSessionState = true;
+              if (msg.state !== "requires_action")
+                emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: msg.state }));
+            } else if (
+              msg.subtype === "task_started" &&
+              msg.task_type === "local_agent" &&
+              msg.tool_use_id
+            ) {
+              agentTools.set(msg.task_id, msg.tool_use_id);
+              if (msg.is_backgrounded) backgroundAgents.add(msg.tool_use_id);
+            } else if (msg.subtype === "task_updated" && msg.patch.is_backgrounded) {
+              const toolId = agentTools.get(msg.task_id);
+              if (toolId) backgroundAgents.add(toolId);
+            } else if (
+              msg.subtype === "task_notification" &&
+              msg.tool_use_id &&
+              backgroundAgents.delete(msg.tool_use_id)
+            ) {
+              agentTools.delete(msg.task_id);
+              emit(
+                RuntimeEvent.cases["tool.completed"].make({
+                  threadId,
+                  toolId: msg.tool_use_id,
+                  output: msg.status === "stopped" ? "Stopped" : msg.summary,
+                  isError: msg.status === "failed",
+                }),
+              );
+            }
+            return;
+          }
           case "result": {
             if (msg.subtype !== "success")
               emit(
@@ -274,7 +318,8 @@ const start = ({
             emit(
               RuntimeEvent.cases["turn.completed"].make({ threadId, durationMs: msg.duration_ms }),
             );
-            emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
+            if (!reportsSessionState)
+              emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
             return;
           }
           default:
@@ -353,7 +398,13 @@ const start = ({
           catch: (e) => fail(String(e)),
         }),
         interrupt: Effect.tryPromise({
-          try: () => q.interrupt(),
+          try: () =>
+            Promise.all([
+              q.interrupt(),
+              ...[...agentTools].flatMap(([taskId, toolId]) =>
+                backgroundAgents.has(toolId) ? [q.stopTask(taskId)] : [],
+              ),
+            ]),
           catch: (e) => fail(String(e)),
         }).pipe(Effect.asVoid),
         respondApproval: (requestId, decision) =>

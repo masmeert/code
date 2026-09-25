@@ -400,6 +400,8 @@ export const RuntimeEvent = Schema.Union([
     toolId: Schema.String,
     name: Schema.String,
     summary: Schema.String,
+    /** The subagent call (Task/Agent) this one was made inside of. */
+    parentToolId: Schema.optional(Schema.String),
   }),
   Schema.TaggedStruct("tool.completed", {
     threadId: Schema.String,

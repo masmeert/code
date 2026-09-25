@@ -13,6 +13,8 @@ export interface ToolCall {
   /** `null` while the tool is still running. */
   readonly output: string | null;
   readonly isError: boolean;
+  /** Calls made by the subagent this call started. */
+  readonly children?: ReadonlyArray<ToolCall>;
 }
 
 type Category = "run" | "read" | "edit" | "search" | "web" | "agent" | "todo" | "browser" | "other";
@@ -66,8 +68,10 @@ const phrase = (category: Category, calls: ReadonlyArray<ToolCall>): string => {
   }
 };
 
-/** Present-tense label for the call that is currently running. */
+/** Present-tense label for the call that is currently running; for a subagent, what it's doing now. */
 const livePhrase = (call: ToolCall): string => {
+  const child = call.children?.findLast((child) => child.output === null);
+  if (child) return `${call.summary || "Subagent"}: ${livePhrase(child)}`;
   switch (categoryOf(call.name)) {
     case "run":
       return "Running a command…";
@@ -132,16 +136,17 @@ function ToolCallRow({ call, live }: { call: ToolCall; live: boolean }) {
   const [open, setOpen] = useState(false);
   const contentId = useId();
   const running = live && call.output === null;
-  const hasOutput = Boolean(call.output);
+  const children = call.children ?? [];
+  const expandable = Boolean(call.output) || children.length > 0;
   const category = categoryOf(call.name);
 
   return (
     <div>
       <button
         type="button"
-        disabled={!hasOutput}
-        aria-expanded={hasOutput ? open : undefined}
-        aria-controls={hasOutput ? contentId : undefined}
+        disabled={!expandable}
+        aria-expanded={expandable ? open : undefined}
+        aria-controls={expandable ? contentId : undefined}
         onClick={() => setOpen(!open)}
         className="group flex h-7 w-full min-w-0 items-center gap-2 rounded-md text-left outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:cursor-default"
       >
@@ -160,21 +165,35 @@ function ToolCallRow({ call, live }: { call: ToolCall; live: boolean }) {
         <span
           className={cn(
             "min-w-0 truncate font-mono text-xs text-muted-foreground/70 transition-colors",
-            hasOutput && "group-hover:text-foreground/80",
+            expandable && "group-hover:text-foreground/80",
             running && "animate-pulse",
           )}
         >
           {call.summary}
         </span>
-        {hasOutput ? <Chevron open={open} /> : null}
+        {children.length ? (
+          <span className="shrink-0 text-xs text-muted-foreground/50">
+            {children.length} {children.length === 1 ? "call" : "calls"}
+          </span>
+        ) : null}
+        {expandable ? <Chevron open={open} /> : null}
       </button>
-      {hasOutput ? (
+      {expandable ? (
         <AgentDisclosure id={contentId} open={open}>
-          <div className="mb-1.5 scrollbar-hide max-h-72 overflow-y-auto rounded-lg bg-muted/80 p-3">
-            <ToolResultOutput language={outputLanguage(call)} className="text-xs">
-              {call.output!}
-            </ToolResultOutput>
-          </div>
+          {children.length ? (
+            <div className="mb-1.5 ml-1.5 border-l border-border pl-3">
+              {children.map((child) => (
+                <ToolCallRow key={child.id} call={child} live={live} />
+              ))}
+            </div>
+          ) : null}
+          {call.output ? (
+            <div className="mb-1.5 scrollbar-hide max-h-72 overflow-y-auto rounded-lg bg-muted/80 p-3">
+              <ToolResultOutput language={outputLanguage(call)} className="text-xs">
+                {call.output}
+              </ToolResultOutput>
+            </div>
+          ) : null}
         </AgentDisclosure>
       ) : null}
     </div>

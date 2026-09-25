@@ -23,6 +23,7 @@ import {
   type TurnOptions,
   isTranscriptEvent,
 } from "@apcode/contracts";
+import type { ToolCall } from "@apcode/ui/agents/tool-group";
 import * as Match from "effect/Match";
 import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
@@ -55,6 +56,8 @@ export type TranscriptItem =
       readonly summary: string;
       readonly output: string | null;
       readonly isError: boolean;
+      /** Calls made by the subagent this call started. Missing on items cached before subagents showed. */
+      readonly children?: ReadonlyArray<ToolCall>;
     }
   | {
       readonly kind: "approval";
@@ -290,22 +293,36 @@ const reduceItems = (
         text: completed.text,
       })),
     ),
-    Match.tag("tool.started", (tool) =>
-      upsert(items, tool.toolId, () => ({
-        kind: "tool",
+    Match.tag("tool.started", (tool) => {
+      const call = {
         id: tool.toolId,
         name: tool.name,
         summary: tool.summary,
         output: null,
         isError: false,
-      })),
-    ),
+      };
+      const parent = items.findLast((item) => item.id === tool.parentToolId);
+      if (parent?.kind !== "tool")
+        return upsert(items, tool.toolId, () => ({ kind: "tool", ...call }));
+      return upsert(items, parent.id, () => ({
+        ...parent,
+        children: [...(parent.children ?? []).filter((child) => child.id !== call.id), call],
+      }));
+    }),
     Match.tag("tool.completed", (tool) =>
-      items.map((item) =>
-        item.id === tool.toolId && item.kind === "tool"
-          ? { ...item, output: tool.output, isError: tool.isError }
-          : item,
-      ),
+      items.map((item) => {
+        if (item.kind !== "tool") return item;
+        if (item.id === tool.toolId) return { ...item, output: tool.output, isError: tool.isError };
+        if (!item.children?.some((child) => child.id === tool.toolId)) return item;
+        return {
+          ...item,
+          children: item.children.map((child) =>
+            child.id === tool.toolId
+              ? { ...child, output: tool.output, isError: tool.isError }
+              : child,
+          ),
+        };
+      }),
     ),
     Match.tag("approval.requested", (approval) =>
       upsert(items, approval.requestId, () => ({
