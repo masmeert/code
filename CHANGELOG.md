@@ -2,6 +2,13 @@
 
 Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unreleased` to `X.Y.Z - YYYY-MM-DD`; the release workflow publishes that section as the GitHub release notes and fails if it is missing.
 
+## Unreleased
+
+### Fixed
+
+- The daemon no longer crashes a few seconds after launch, which disconnected the app over and over.
+- Each Claude model's default effort is read correctly.
+
 ## 0.0.2 - 2026-09-25
 
 ### Added

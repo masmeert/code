@@ -76,11 +76,14 @@ const probeClaude = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
           .setModel(m.value)
           .then(() =>
             "getSettings" in q && Predicate.isFunction(q.getSettings)
-              ? Schema.decodeUnknownPromise(
-                  Schema.Struct({
-                    applied: Schema.optional(Schema.Struct({ effort: Schema.optional(Effort) })),
-                  }),
-                )(q.getSettings())
+              ? // Awaited before decoding: a request left pending rejects unhandled on close() and kills the daemon.
+                Promise.resolve(q.getSettings()).then(
+                  Schema.decodeUnknownPromise(
+                    Schema.Struct({
+                      applied: Schema.optional(Schema.Struct({ effort: Schema.optional(Effort) })),
+                    }),
+                  ),
+                )
               : undefined,
           )
           .then((settings) => settings?.applied?.effort)
