@@ -22,6 +22,13 @@
 ## UI
 
 - Style with Tailwind classes only — never inline styles or CSS files.
+- Give timely feedback for every async action (loading, saving, progress).
+- Make actions escapable: cancel, undo, Esc.
+- Prevent errors over reporting them: constrain inputs, confirm destructive actions.
+- Keep needed info and options visible — don't make users remember things across screens.
+- Add keyboard shortcuts for frequent actions.
+- Show only what serves the user's goal — no decorative or redundant elements.
+- Error messages: plain language, the exact problem, and how to fix it.
 
 ## Testing
 
