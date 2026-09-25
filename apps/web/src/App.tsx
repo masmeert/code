@@ -1,14 +1,16 @@
 import { ChatApp } from "@apcode/ui/agents/chat-app";
 import { AnimatedSidebarInset } from "@apcode/ui/motion/animated-sidebar";
-import { AppWindow, Settings as SettingsIcon, SquarePen, SquareTerminal } from "lucide-react";
+import { AppWindow, Globe, Settings as SettingsIcon, SquarePen, SquareTerminal } from "lucide-react";
 import { MotionConfig } from "motion/react";
 import { useEffect, useState } from "react";
+import { toggleBrowser } from "./lib/browser.ts";
 import { describe, useKeybinding } from "./lib/keybindings.ts";
 import { toggleTerminalPanel, useStore } from "./lib/store.ts";
 import { useShortcut } from "./lib/useShortcut.ts";
 import { useTheme } from "./lib/useTheme.ts";
 import { openWindow } from "./lib/windows.ts";
 import { AppModal, type ModalView } from "./views/AppModal.tsx";
+import { BrowserHost } from "./views/BrowserHost.tsx";
 import { CommandPalette } from "./views/CommandPalette.tsx";
 import { DiffWorkers } from "./views/DiffWorkers.tsx";
 import { Sidebar } from "./views/Sidebar.tsx";
@@ -102,6 +104,7 @@ export const App = () => {
             )}
           </AnimatedSidebarInset>
           <AppModal view={modal} onView={setModal} />
+          <BrowserHost />
           <CommandPalette
             open={palette}
             onClose={() => setPalette(false)}
@@ -117,6 +120,17 @@ export const App = () => {
                       hint: describe("terminal.toggle"),
                       icon: <SquareTerminal />,
                       run: () => toggleTerminalPanel(view.id),
+                    },
+                  ]
+                : []),
+              ...(view.kind === "thread" && window.desktop
+                ? [
+                    {
+                      id: "browser.toggle",
+                      label: "Toggle browser",
+                      hint: describe("browser.toggle"),
+                      icon: <Globe />,
+                      run: () => toggleBrowser(view.id),
                     },
                   ]
                 : []),

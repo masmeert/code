@@ -14,12 +14,19 @@ export type ApprovalDecision = typeof ApprovalDecision.Type;
 export const Theme = Schema.Literals(["system", "light", "dark"]);
 export type Theme = typeof Theme.Type;
 
+export const BROWSER_PARTITION = "persist:apcode-browser";
+
+export type DesktopBrowserEvent =
+  | { readonly _tag: "open-tab"; readonly webContentsId: number; readonly url: string }
+  | { readonly _tag: "new-tab" | "close-tab" | "focus-address"; readonly webContentsId: number };
+
 export interface DesktopBridge {
   readonly daemonToken: () => Promise<string | null>;
   readonly pickFolder: (title: string) => Promise<string | null>;
   readonly pickFiles: (title: string) => Promise<ReadonlyArray<string>>;
   readonly setTheme: (theme: Theme) => Promise<void>;
   readonly onFileDrop: (listener: (paths: ReadonlyArray<string>) => void) => () => void;
+  readonly onBrowserEvent: (listener: (event: DesktopBrowserEvent) => void) => () => void;
 }
 
 /** Reasoning effort. Each harness takes a subset: Claude low…max, Codex minimal…xhigh. */

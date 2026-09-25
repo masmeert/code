@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { app, BrowserWindow, Menu, nativeTheme, type Rectangle, screen, shell } from "electron";
+import { hostBrowser } from "./browser.ts";
 import { APP_URL } from "./renderer.ts";
 
 const BOUNDS_PATH = join(app.getPath("userData"), "window-bounds.json");
@@ -54,8 +55,10 @@ export function createWindow(url: string, bounds = restoredBounds()) {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
     },
   });
+  hostBrowser(window);
   window.once("ready-to-show", () => window.show());
   window.on("close", () => {
     try {

@@ -19,8 +19,9 @@ import { cn } from "@apcode/ui/lib/utils";
 import { PROVIDER_AVATAR_CLASS, PROVIDER_LOGO } from "@/components/provider-logo";
 import type { Attachment, Project, ProviderKind, TurnOptions } from "@apcode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
-import { ArrowUp, FileDiff, FileText, FolderTree, ImageIcon, PanelLeft, Quote, SquareTerminal, Undo2, X } from "lucide-react";
+import { ArrowUp, FileDiff, FileText, FolderTree, Globe, ImageIcon, PanelLeft, Quote, SquareTerminal, Undo2, X } from "lucide-react";
 import { createContext, lazy, memo, type ReactNode, type RefObject, Suspense, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toggleBrowser, useBrowser } from "../lib/browser.ts";
 import { fromSent } from "../lib/composer.ts";
 import { appendToDraft, focusComposer, setDraft } from "../lib/drafts.ts";
 import { describe, useKeybinding } from "../lib/keybindings.ts";
@@ -41,6 +42,7 @@ import {
   type TranscriptItem,
 } from "../lib/store.ts";
 import { readWidth } from "@apcode/ui/hooks/use-resizable";
+import { BrowserPanel } from "./BrowserPanel.tsx";
 import { Composer, useWorkspaceChoice } from "./Composer.tsx";
 import { GitMenu } from "./GitMenu.tsx";
 
@@ -341,6 +343,8 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
     toggleTerminalPanel(threadId);
     if (activeTerminal) focusComposer();
   });
+  const browserOpen = useBrowser((state) => state.threads[threadId]?.open ?? false);
+  useKeybinding(window.desktop ? "browser.toggle" : undefined, () => toggleBrowser(threadId));
 
   // Looking at a thread settles whatever it did since you last saw it.
   const { updatedAt } = info;
@@ -394,13 +398,25 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
               >
                 <FileDiff className="size-4" />
               </button>
+              {window.desktop ? (
+                <button
+                  type="button"
+                  title={`${browserOpen ? "Hide" : "Show"} browser (${describe("browser.toggle")})`}
+                  aria-label={browserOpen ? "Hide browser" : "Show browser"}
+                  aria-pressed={browserOpen}
+                  onClick={() => toggleBrowser(threadId)}
+                  className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${browserOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+                >
+                  <Globe className="size-4" />
+                </button>
+              ) : null}
             </span>
           </>
         }
       />
 
       <div className="flex min-h-0 flex-1">
-        <div ref={scrollArea} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <div ref={scrollArea} className="relative flex min-h-0 min-w-95 flex-1 flex-col">
           <QuoteSelection container={scrollArea} threadId={threadId} />
           <MessageScroller
             busy={busy}
@@ -480,6 +496,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             />
           </Suspense>
         ) : null}
+        {browserOpen && window.desktop ? <BrowserPanel threadId={threadId} /> : null}
       </div>
       {activeTerminal ? (
         <Suspense fallback={null}>

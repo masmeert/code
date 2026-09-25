@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ResizeHandle } from "@apcode/ui/components/resize-handle";
 import { cn } from "@apcode/ui/lib/utils";
 import { useResizable } from "@apcode/ui/hooks/use-resizable";
+import { IconButton } from "../components/icon-button.tsx";
 import { send, useStore } from "../lib/store.ts";
 import { ChangedFilesTree } from "./ChangedFilesTree.tsx";
 import { HIGHLIGHT, THEMES, useDiffWorkersReady, useResolvedTheme } from "./DiffWorkers.tsx";
@@ -67,22 +68,6 @@ const countLines = (files: ReadonlyArray<FileDiffMetadata>) => {
   }
   return { additions, deletions };
 };
-
-const IconButton = (props: { label: string; onClick: () => void; active?: boolean; children: React.ReactNode }) => (
-  <button
-    type="button"
-    title={props.label}
-    aria-label={props.label}
-    aria-pressed={props.active}
-    onClick={props.onClick}
-    className={cn(
-      "grid size-7 place-items-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-      props.active && "bg-muted/60 text-foreground",
-    )}
-  >
-    {props.children}
-  </button>
-);
 
 /**
  * Uncommitted changes in the thread's folder (vs HEAD, untracked files included), or with
@@ -203,7 +188,7 @@ export const DiffPanel = ({
       aria-label="Changes"
       // Never wider than the room left for the chat, even if the window shrank since the last drag.
       style={{ width: panel.width, maxWidth: `calc(100% - ${MIN_CHAT}px)` }}
-      className="relative flex min-h-0 shrink-0 flex-col border-l border-border bg-background"
+      className="relative flex min-h-0 min-w-80 shrink flex-col border-l border-border bg-background"
     >
       <ResizeHandle side="start" label="Resize changes panel" value={panel.width} dragging={panel.dragging} {...panel.handleProps} />
       <div className={cn("flex h-10 shrink-0 items-center gap-2 border-b border-border pr-2", turn ? "pl-2" : "pl-4")}>

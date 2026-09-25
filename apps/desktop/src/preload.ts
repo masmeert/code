@@ -1,5 +1,5 @@
-import type { DesktopBridge } from "@apcode/contracts";
-import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { DesktopBridge, DesktopBrowserEvent } from "@apcode/contracts";
+import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
 
 const dropListeners = new Set<(paths: ReadonlyArray<string>) => void>();
 
@@ -22,5 +22,12 @@ contextBridge.exposeInMainWorld("desktop", {
   onFileDrop: (listener) => {
     dropListeners.add(listener);
     return () => dropListeners.delete(listener);
+  },
+  onBrowserEvent: (listener) => {
+    function forward(_event: IpcRendererEvent, browserEvent: DesktopBrowserEvent) {
+      listener(browserEvent);
+    }
+    ipcRenderer.on("browser-event", forward);
+    return () => ipcRenderer.removeListener("browser-event", forward);
   },
 } satisfies DesktopBridge);

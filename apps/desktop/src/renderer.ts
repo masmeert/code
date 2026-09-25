@@ -9,7 +9,8 @@ const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   `script-src 'self' 'wasm-unsafe-eval'${app.isPackaged ? "" : " 'unsafe-inline'"}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' blob: data:",
+  "img-src 'self' blob: data: http: https:",
+  "frame-src http: https:",
   `connect-src 'self' ws://127.0.0.1:${DEFAULT_DAEMON_PORT}${app.isPackaged ? "" : " ws://localhost:1420"}`,
 ].join("; ");
 

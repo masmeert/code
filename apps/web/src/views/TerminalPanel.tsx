@@ -7,8 +7,10 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { type ITheme, Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { ChevronDown, Plus, SquareTerminal, X } from "lucide-react";
-import { type ReactNode, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import symbolsFontUrl from "../assets/fonts/symbols-nerd-font-mono.woff2";
+import { IconButton } from "../components/icon-button.tsx";
+import { isLocalUrl, openTab } from "../lib/browser.ts";
 import { focusComposer } from "../lib/drafts.ts";
 import { attachTerminal, closeTerminal, newTerminal, sendIfConnected, showTerminal, toggleTerminalPanel, useStore } from "../lib/store.ts";
 import { useResizableSize } from "@apcode/ui/hooks/use-resizable";
@@ -146,23 +148,6 @@ export function TerminalPanel({ threadId, activeTerminal }: { threadId: string; 
   );
 }
 
-function IconButton({ label, onClick, className, children }: { label: string; onClick: () => void; className?: string; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      className={cn(
-        "grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-        className,
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
 function TerminalView({ threadId, terminalId }: { threadId: string; terminalId: string }) {
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -190,7 +175,9 @@ function TerminalView({ threadId, terminalId }: { threadId: string; terminalId: 
         terminal.unicode.activeVersion = "11";
         terminal.loadAddon(
           new WebLinksAddon((event, uri) => {
-            if (event.metaKey || event.ctrlKey) window.open(uri, "_blank");
+            if (!event.metaKey && !event.ctrlKey) return;
+            if (window.desktop && isLocalUrl(uri)) openTab(threadId, uri);
+            else window.open(uri, "_blank");
           }),
         );
         terminal.open(host.current);
