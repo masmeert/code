@@ -20,6 +20,7 @@ Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unrel
 ### Fixed
 
 - The title bar only insets for traffic lights on macOS.
+- The app no longer hangs on "Reconnecting to daemon" at launch: the daemon starts on a free port, restarts if it exits, and quits when the app does.
 
 ## 0.0.1 - 2026-09-25
 

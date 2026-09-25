@@ -751,8 +751,6 @@ function applyShellEvent(event: RuntimeEvent) {
  * The daemon's per-launch secret, from the desktop shell. Null in dev, where the daemon
  * runs on its own and only checks origins, and outside the desktop shell.
  */
-const daemonToken: Promise<string | null> = window.desktop?.daemonToken() ?? Promise.resolve(null);
-
 /**
  * Waits between reconnect attempts, growing while the daemon stays away. Starts short:
  * at launch the sidecar is still booting. Reset once a connection gets its shell.
@@ -761,10 +759,11 @@ const RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000, 8000];
 let attempt = 0;
 
 const connect = async () => {
-  const token = await daemonToken;
+  // Asked on every attempt: the desktop app respawns a daemon that dies, on a new port.
+  const daemon = (await window.desktop?.daemon()) ?? null;
   const ws = new WebSocket(
-    `ws://127.0.0.1:${DEFAULT_DAEMON_PORT}`,
-    token ? [`apcode.${token}`] : undefined,
+    `ws://127.0.0.1:${daemon?.port ?? DEFAULT_DAEMON_PORT}`,
+    daemon ? [`apcode.${daemon.token}`] : undefined,
   );
   socket = ws;
   ws.onopen = () => {

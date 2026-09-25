@@ -11,7 +11,7 @@ const CONTENT_SECURITY_POLICY = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' blob: data: http: https:",
   "frame-src http: https:",
-  `connect-src 'self' ws://127.0.0.1:${DEFAULT_DAEMON_PORT}${app.isPackaged ? "" : " ws://localhost:1420"}`,
+  `connect-src 'self' ${app.isPackaged ? "ws://127.0.0.1:*" : `ws://127.0.0.1:${DEFAULT_DAEMON_PORT} ws://localhost:1420`}`,
 ].join("; ");
 
 export function registerRendererScheme() {

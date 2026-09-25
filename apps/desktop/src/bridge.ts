@@ -19,8 +19,8 @@ function handle<S extends Schema.ConstraintDecoder<unknown>, Result>(
   });
 }
 
-export function registerBridge(daemonToken: string | null) {
-  handle("daemon-token", Schema.Undefined, () => daemonToken);
+export function registerBridge(daemon: () => Promise<{ port: number; token: string }> | null) {
+  handle("daemon", Schema.Undefined, () => daemon());
   handle(
     "pick-folder",
     Schema.Struct({ title: Schema.String, defaultPath: Schema.optional(Schema.String) }),

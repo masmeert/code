@@ -65,7 +65,8 @@ export const UpdateStatus = Schema.TaggedUnion({
 export type UpdateStatus = typeof UpdateStatus.Type;
 
 export interface DesktopBridge {
-  readonly daemonToken: () => Promise<string | null>;
+  /** Null in dev, where the daemon runs on its own at DEFAULT_DAEMON_PORT without a token. */
+  readonly daemon: () => Promise<{ readonly port: number; readonly token: string } | null>;
   readonly pickFolder: (title: string, defaultPath?: string) => Promise<string | null>;
   readonly pickFiles: (title: string) => Promise<ReadonlyArray<string>>;
   readonly setTheme: (theme: Theme) => Promise<void>;
