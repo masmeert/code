@@ -6,6 +6,7 @@ import * as Stream from "effect/Stream";
 import type { ServerWebSocket } from "bun";
 import { timingSafeEqual } from "node:crypto";
 import { SessionManager } from "./SessionManager.ts";
+import type { TerminalViewer } from "./terminals.ts";
 
 // Browsers don't apply CORS to WebSockets, so any page could connect to localhost.
 // Only accept the Tauri webview and the Vite dev server.
@@ -45,6 +46,7 @@ interface ConnectionData {
    * read was taken at: live events up to there are already in what it got.
    */
   threads: Map<string, number>;
+  viewer?: TerminalViewer;
 }
 
 export const serve = (port: number) =>
@@ -60,8 +62,8 @@ export const serve = (port: number) =>
     const connection = (ws: ServerWebSocket<ConnectionData>) =>
       Effect.scoped(
         Effect.gen(function* () {
-          const { dataId, settings, projects, providers, threads, live } = yield* manager.subscribe;
-          send(ws, { _tag: "shell", dataId, settings, projects, providers, threads });
+          const { dataId, settings, projects, providers, threads, terminals, live } = yield* manager.subscribe;
+          send(ws, { _tag: "shell", dataId, settings, projects, providers, threads, terminals });
           yield* Stream.runForEach(live, ({ seq, id, event }) =>
             Effect.sync(() => {
               if (isTranscriptEvent(event)) {
@@ -97,6 +99,15 @@ export const serve = (port: number) =>
             if (older) send(ws, { _tag: "thread.page", threadId: command.threadId, ...older });
             return Effect.void;
           }
+          case "terminal.open":
+            if (ws.data.viewer) manager.terminals.attach(command.threadId, command.terminalId, command.columns, command.rows, ws.data.viewer);
+            return Effect.void;
+          case "terminal.detach":
+            if (ws.data.viewer) manager.terminals.detach(command.threadId, command.terminalId, ws.data.viewer);
+            return Effect.void;
+          case "terminal.acknowledge":
+            if (ws.data.viewer) manager.terminals.acknowledge(command.threadId, command.terminalId, ws.data.viewer, command.characters);
+            return Effect.void;
           default:
             return manager.dispatch(command);
         }
@@ -122,6 +133,7 @@ export const serve = (port: number) =>
           },
           websocket: {
             open(ws) {
+              ws.data.viewer = { send: (frame) => send(ws, frame) };
               ws.data.fiber = Effect.runFork(connection(ws));
             },
             message(ws, raw) {
@@ -133,6 +145,7 @@ export const serve = (port: number) =>
               );
             },
             close(ws) {
+              if (ws.data.viewer) manager.terminals.detachViewer(ws.data.viewer);
               if (ws.data.fiber) Effect.runFork(Fiber.interrupt(ws.data.fiber));
             },
           },

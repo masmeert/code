@@ -151,6 +151,12 @@ export const SearchHit = Schema.Struct({
 });
 export type SearchHit = typeof SearchHit.Type;
 
+export const TerminalInfo = Schema.Struct({ threadId: Schema.String, terminalId: Schema.String });
+export type TerminalInfo = typeof TerminalInfo.Type;
+
+const TerminalColumns = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 }));
+const TerminalRows = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }));
+
 // ---------------------------------------------------------------------------
 // Runtime events: every provider adapter normalizes into this shape.
 // ---------------------------------------------------------------------------
@@ -264,6 +270,8 @@ export const RuntimeEvent = Schema.Union([
     error: Schema.NullOr(Schema.String),
   }),
   Schema.TaggedStruct("auth.flow", { flow: AuthFlow }),
+  Schema.TaggedStruct("terminal.opened", { threadId: Schema.String, terminalId: Schema.String }),
+  Schema.TaggedStruct("terminal.closed", { threadId: Schema.String, terminalId: Schema.String }),
 ]);
 export type RuntimeEvent = typeof RuntimeEvent.Type;
 
@@ -347,6 +355,22 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("thread.unsubscribe", { threadId: Schema.String }),
   /** Older turns, before event id `before`. Answered with `thread.page`. */
   Schema.TaggedStruct("thread.loadOlder", { threadId: Schema.String, before: Schema.Number, turnLimit: Schema.Number }),
+  Schema.TaggedStruct("terminal.open", {
+    threadId: Schema.String,
+    terminalId: Schema.String,
+    columns: TerminalColumns,
+    rows: TerminalRows,
+  }),
+  Schema.TaggedStruct("terminal.detach", { threadId: Schema.String, terminalId: Schema.String }),
+  Schema.TaggedStruct("terminal.write", { threadId: Schema.String, terminalId: Schema.String, data: Schema.String }),
+  Schema.TaggedStruct("terminal.resize", {
+    threadId: Schema.String,
+    terminalId: Schema.String,
+    columns: TerminalColumns,
+    rows: TerminalRows,
+  }),
+  Schema.TaggedStruct("terminal.acknowledge", { threadId: Schema.String, terminalId: Schema.String, characters: Schema.Number }),
+  Schema.TaggedStruct("terminal.close", { threadId: Schema.String, terminalId: Schema.String }),
 ]);
 export type ClientCommand = typeof ClientCommand.Type;
 
@@ -397,6 +421,7 @@ export const ServerFrame = Schema.Union([
     projects: Schema.Array(Project),
     providers: Schema.Array(ProviderStatus),
     threads: Schema.Array(ThreadInfo),
+    terminals: Schema.Array(TerminalInfo),
   }),
   /** A transcript from scratch: the latest turns, plus the text of any message still streaming. */
   Schema.TaggedStruct("thread.snapshot", {
@@ -424,5 +449,8 @@ export const ServerFrame = Schema.Union([
   Schema.TaggedStruct("search.results", { requestId: Schema.String, hits: Schema.Array(SearchHit) }),
   /** A live event; `id` is set on stored (transcript) events and advances the thread's cursor. */
   Schema.TaggedStruct("event", { id: Schema.NullOr(Schema.Number), event: RuntimeEvent }),
+  Schema.TaggedStruct("terminal.snapshot", { threadId: Schema.String, terminalId: Schema.String, data: Schema.String }),
+  Schema.TaggedStruct("terminal.output", { threadId: Schema.String, terminalId: Schema.String, data: Schema.String }),
+  Schema.TaggedStruct("terminal.error", { threadId: Schema.String, terminalId: Schema.String, message: Schema.String }),
 ]);
 export type ServerFrame = typeof ServerFrame.Type;

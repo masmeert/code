@@ -2,9 +2,10 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
 /**
  * Where the keyboard or the pointer last moved to: the row's id, stamped with
- * the query it was placed under.
+ * the query it was placed under, and whether the step there wrapped around an
+ * end of the list.
  */
-type RowCursor = { id: string; query: string };
+type RowCursor = { id: string; query: string; wrapped: boolean };
 
 /** The cursor's row, or -1 once the query has moved on or the row has left. */
 function indexOfCursor(
@@ -43,8 +44,21 @@ function indexOfCursor(
  * rows and the query through a ref to do it. A caller will put them in an
  * effect's dependencies — the exhaustive-deps rule makes it — and a `moveTo`
  * rebuilt on every keystroke would re-run that effect on every keystroke.
+ *
+ * With `loop`, stepping past either end lands on the other one; without it the
+ * ends hold.
+ *
+ * `continuous` says whether the highlight got to its row by a move within the
+ * list as it stands: the pointer, or a step to a neighbour. It is false when
+ * the list put the highlight there (a new query, a row that left) and after a
+ * step wrapped around an end, which is when a highlight that glides between
+ * rows should jump instead.
  */
-export function useRowCursor(rows: readonly { id: string }[], query: string) {
+export function useRowCursor(
+  rows: readonly { id: string }[],
+  query: string,
+  { loop = false }: { loop?: boolean } = {},
+) {
   const [cursor, setCursor] = useState<RowCursor | null>(null);
   // Written after commit, not during render: a render React discards or has not
   // finished still runs the component body, and an event handler that read this
@@ -63,7 +77,11 @@ export function useRowCursor(rows: readonly { id: string }[], query: string) {
 
   const moveTo = useCallback(
     (id: string | null) =>
-      setCursor(id === null ? null : { id, query: latest.current.query }),
+      setCursor(
+        id === null
+          ? null
+          : { id, query: latest.current.query, wrapped: false },
+      ),
     [],
   );
 
@@ -75,10 +93,19 @@ export function useRowCursor(rows: readonly { id: string }[], query: string) {
     // two keys landing in one batch move two rows rather than one.
     setCursor((current) => {
       const at = Math.max(indexOfCursor(live, liveQuery, current), 0);
-      const next = Math.min(Math.max(at + direction, 0), last);
-      return { id: live[next].id, query: liveQuery };
+      const stepped = at + direction;
+      const wrapped = loop && (stepped < 0 || stepped > last);
+      const next = wrapped
+        ? (stepped + live.length) % live.length
+        : Math.min(Math.max(stepped, 0), last);
+      return { id: live[next].id, query: liveQuery, wrapped };
     });
-  }, []);
+  }, [loop]);
 
-  return { activeIndex: cursorRow < 0 ? 0 : cursorRow, moveTo, moveActive };
+  return {
+    activeIndex: cursorRow < 0 ? 0 : cursorRow,
+    continuous: cursor !== null && cursorRow >= 0 && !cursor.wrapped,
+    moveTo,
+    moveActive,
+  };
 }

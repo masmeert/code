@@ -1,3 +1,8 @@
+import {
+  PreviewRail,
+  type PreviewRailItem,
+} from "@apcode/ui/motion/preview-rail";
+import { cn } from "@apcode/ui/lib/utils";
 import { useReducedMotion } from "motion/react";
 import {
   type ComponentPropsWithRef,
@@ -8,11 +13,6 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  PreviewRail,
-  type PreviewRailItem,
-} from "@apcode/ui/motion/preview-rail";
-import { cn } from "@apcode/ui/lib/utils";
 
 const PREVIEW_TITLE_LENGTH = 56;
 const PREVIEW_DESCRIPTION_LENGTH = 88;
@@ -125,6 +125,7 @@ export function MessageScroller({
   const viewportRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const followingRef = useRef(followOutput);
+  const landedRef = useRef(false);
   const programmaticScrollRef = useRef(false);
   const scrollTimerRef = useRef<number | undefined>(undefined);
   const frameRef = useRef<number | undefined>(undefined);
@@ -313,7 +314,14 @@ export function MessageScroller({
     const observer = new ResizeObserver(() => {
       scheduleRailSync();
       if (!followOutput || !followingRef.current) return;
-      scrollToEnd(reduce || !smooth ? "auto" : "smooth");
+      // The first content to overflow is a transcript opening (or arriving after
+      // mount), not output streaming in: jump to the end instead of gliding there.
+      const viewport = viewportRef.current;
+      const landing = !landedRef.current;
+      if (viewport && viewport.scrollHeight > viewport.clientHeight) {
+        landedRef.current = true;
+      }
+      scrollToEnd(landing || reduce || !smooth ? "auto" : "smooth");
     });
     observer.observe(content);
 

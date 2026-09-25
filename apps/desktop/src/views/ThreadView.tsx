@@ -19,10 +19,11 @@ import { cn } from "@apcode/ui/lib/utils";
 import { PROVIDER_AVATAR_CLASS, PROVIDER_LOGO } from "@/components/provider-logo";
 import type { Attachment, Project, ProviderKind, TurnOptions } from "@apcode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
-import { ArrowUp, FileDiff, FileText, FolderTree, ImageIcon, PanelLeft, PanelRight, Quote, Undo2, X } from "lucide-react";
+import { ArrowUp, FileDiff, FileText, FolderTree, ImageIcon, PanelLeft, Quote, SquareTerminal, Undo2, X } from "lucide-react";
 import { createContext, lazy, memo, type ReactNode, type RefObject, Suspense, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fromSent } from "../lib/composer.ts";
 import { appendToDraft, focusComposer, setDraft } from "../lib/drafts.ts";
+import { describe, useKeybinding } from "../lib/keybindings.ts";
 import { decodeChoice, defaultModel, encodeChoice, modelChoices, PROVIDER_LABEL } from "../lib/models.ts";
 import {
   createThread,
@@ -34,6 +35,7 @@ import {
   send,
   sendFollowUpNow,
   takeFollowUps,
+  toggleTerminalPanel,
   useStore,
   useTranscript,
   type TranscriptItem,
@@ -47,6 +49,7 @@ const PANEL_WIDTH_KEY = "apcode.diffPanelWidth";
 
 // Loaded on first open, keeping the diff renderer out of startup.
 const DiffPanel = lazy(() => import("./DiffPanel.tsx").then((m) => ({ default: m.DiffPanel })));
+const TerminalPanel = lazy(() => import("./TerminalPanel.tsx").then((m) => ({ default: m.TerminalPanel })));
 
 /** Consecutive agent items form one turn under a single avatar. */
 type UserItem = Extract<TranscriptItem, { kind: "user" }>;
@@ -116,7 +119,7 @@ const Header = ({
       ) : null}
       <span className="min-w-0 truncate text-sm font-medium text-foreground">{title}</span>
       {badge}
-      {actions ? <span className="ml-auto flex shrink-0 items-center gap-1 pl-2">{actions}</span> : null}
+      {actions ? <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">{actions}</span> : null}
     </header>
   );
 };
@@ -333,6 +336,11 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   // Re-read the diff whenever a tool finishes or a turn ends: either may have changed files.
   const finishedTools = items.reduce((n, item) => (item.kind === "tool" && item.output !== null ? n + 1 : n), 0);
   const diffKey = `${status}:${info.updatedAt}:${finishedTools}`;
+  const activeTerminal = useStore((s) => s.activeTerminals[threadId]);
+  useKeybinding("terminal.toggle", () => {
+    toggleTerminalPanel(threadId);
+    if (activeTerminal) focusComposer();
+  });
 
   // Looking at a thread settles whatever it did since you last saw it.
   const { updatedAt } = info;
@@ -362,19 +370,31 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
         actions={
           <>
             <GitMenu cwd={info.cwd} refreshKey={diffKey} />
-            <button
-              type="button"
-              title={diffOpen ? "Hide changes" : "Show changes"}
-              aria-label={diffOpen ? "Hide changes" : "Show changes"}
-              aria-pressed={diffOpen}
-              onClick={() => {
-                setDiffOpen(!diffOpen);
-                setDiffTurn(null);
-              }}
-              className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${diffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
-            >
-              <PanelRight className="size-4" />
-            </button>
+            <span className="flex items-center gap-0.5">
+              <button
+                type="button"
+                title={`${activeTerminal ? "Hide" : "Show"} terminal (${describe("terminal.toggle")})`}
+                aria-label={activeTerminal ? "Hide terminal" : "Show terminal"}
+                aria-pressed={activeTerminal !== undefined}
+                onClick={() => toggleTerminalPanel(threadId)}
+                className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${activeTerminal ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+              >
+                <SquareTerminal className="size-4" />
+              </button>
+              <button
+                type="button"
+                title={diffOpen ? "Hide changes" : "Show changes"}
+                aria-label={diffOpen ? "Hide changes" : "Show changes"}
+                aria-pressed={diffOpen}
+                onClick={() => {
+                  setDiffOpen(!diffOpen);
+                  setDiffTurn(null);
+                }}
+                className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${diffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+              >
+                <FileDiff className="size-4" />
+              </button>
+            </span>
           </>
         }
       />
@@ -461,6 +481,11 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
           </Suspense>
         ) : null}
       </div>
+      {activeTerminal ? (
+        <Suspense fallback={null}>
+          <TerminalPanel threadId={threadId} activeTerminal={activeTerminal} />
+        </Suspense>
+      ) : null}
     </>
   );
 };
@@ -485,12 +510,15 @@ export const TurnList = ({
 }) => {
   const turns = useMemo(() => toTurns(items), [items]);
   // Older turns skip layout and paint while off screen. Switched on after the first
-  // frame, so every turn has been laid out once and its real height is remembered.
+  // frame with turns in it (the transcript can arrive after the view opens), so every
+  // turn has been laid out once and its real height is remembered.
   const [settled, setSettled] = useState(false);
+  const hasTurns = turns.length > 0;
   useEffect(() => {
+    if (!hasTurns) return;
     const frame = requestAnimationFrame(() => setSettled(true));
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [hasTurns]);
   return turns.map((turn, index) => {
     // The latest exchange stays fully rendered: it's what streams and what the scroller follows.
     const className = settled && index < turns.length - 2 ? OFFSCREEN_SKIP : KEEP_RENDERED;
