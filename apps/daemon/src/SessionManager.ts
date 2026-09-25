@@ -12,6 +12,7 @@ import type {
   SearchHit,
   Settings,
   StoredEvent,
+  TerminalInfo,
   ThreadInfo,
   TurnOptions,
 } from "@apcode/contracts";
@@ -55,6 +56,7 @@ import { DATA_DIR } from "./storage/jsonFile.ts";
 import { ProjectsStore } from "./storage/ProjectsStore.ts";
 import { SettingsStore } from "./storage/SettingsStore.ts";
 import { isPersisted, ThreadStore } from "./storage/ThreadStore.ts";
+import { createTerminals, type Terminals } from "./terminals.ts";
 
 const ADAPTERS: Record<ProviderKind, ProviderAdapter> = { claude: ClaudeAdapter, codex: CodexAdapter };
 
@@ -157,11 +159,13 @@ export class SessionManager extends Context.Service<
         readonly projects: ReadonlyArray<Project>;
         readonly providers: ReadonlyArray<ProviderStatus>;
         readonly threads: ReadonlyArray<ThreadInfo>;
+        readonly terminals: ReadonlyArray<TerminalInfo>;
         readonly live: Stream.Stream<SequencedEvent>;
       },
       never,
       Scope.Scope
     >;
+    readonly terminals: Terminals;
     /**
      * A thread's transcript: what was missed since `after`, or the latest `turnLimit` turns.
      * Synchronous, so live events with a `seq` above the read's are exactly the ones it lacks.
@@ -311,6 +315,12 @@ const make = Effect.gen(function* () {
 
   for (const entry of threads.values()) refreshMeta(entry);
 
+  const terminals = createTerminals({
+    folderOf: (threadId) => threads.get(threadId)?.info.cwd ?? null,
+    opened: (terminal) => publish({ _tag: "terminal.opened", ...terminal }),
+    closed: (terminal) => publish({ _tag: "terminal.closed", ...terminal }),
+  });
+
   const getEntry = (threadId: string) =>
     Effect.suspend(() => {
       const entry = threads.get(threadId);
@@ -375,6 +385,7 @@ const make = Effect.gen(function* () {
       const entry = threads.get(threadId);
       if (!entry) return;
       threads.delete(threadId);
+      terminals.closeThread(threadId);
       if (entry.session) yield* entry.session.close;
       store.deleteThread(threadId);
       const { cwd, worktree } = entry.info;
@@ -398,6 +409,7 @@ const make = Effect.gen(function* () {
       entry.info = { ...entry.info, archivedAt };
       store.setArchived(entry.info.id, archivedAt);
       publish({ _tag: "thread.archived", threadId: entry.info.id, archivedAt });
+      if (archived) terminals.closeThread(entry.info.id);
       // An archived thread shouldn't keep an agent process around; the next message resumes it.
       if (archived && entry.session) {
         const session = entry.session;
@@ -698,11 +710,20 @@ const make = Effect.gen(function* () {
           yield* Effect.forEach(owned, (t) => removeThread(t.info.id), { discard: true });
           publish({ _tag: "project.removed", projectId: command.projectId });
         });
+      case "terminal.write":
+        return Effect.sync(() => terminals.write(command.threadId, command.terminalId, command.data));
+      case "terminal.resize":
+        return Effect.sync(() => terminals.resize(command.threadId, command.terminalId, command.columns, command.rows));
+      case "terminal.close":
+        return Effect.sync(() => terminals.close(command.threadId, command.terminalId));
       // Per connection; the server answers these.
       case "thread.subscribe":
       case "thread.unsubscribe":
       case "thread.loadOlder":
       case "search":
+      case "terminal.open":
+      case "terminal.detach":
+      case "terminal.acknowledge":
         return Effect.void;
       case "settings.update":
         return settingsStore
@@ -726,9 +747,11 @@ const make = Effect.gen(function* () {
         projects,
         providers,
         threads: [...threads.values()].map((t) => t.info),
+        terminals: terminals.list(),
         live: Stream.fromSubscription(subscription),
       }),
     ),
+    terminals,
     readThread: (threadId, after, turnLimit) => {
       if (!threads.has(threadId)) return null;
       // Each streaming message's text so far, as one delta.
@@ -756,6 +779,7 @@ const make = Effect.gen(function* () {
     search: (query) => store.search(query, 50).filter((hit) => threads.has(hit.threadId)),
     shutdown: Effect.suspend(() => {
       flushDeltas();
+      terminals.closeAll();
       return Effect.forEach([...threads.values()], (t) => t.session?.close ?? Effect.void, { discard: true });
     }),
   });

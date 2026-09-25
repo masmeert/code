@@ -23,6 +23,8 @@ export const isPersisted = (event: RuntimeEvent) =>
   event._tag !== "thread.removed" &&
   event._tag !== "thread.commands" &&
   event._tag !== "checkpoint.diff" &&
+  event._tag !== "terminal.opened" &&
+  event._tag !== "terminal.closed" &&
   "threadId" in event &&
   event.threadId !== null;
 

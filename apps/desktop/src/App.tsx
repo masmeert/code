@@ -1,9 +1,9 @@
 import { ChatApp } from "@/components/agents/chat-app";
 import { AnimatedSidebarInset } from "@/components/motion/animated-sidebar";
-import { AppWindow, Settings as SettingsIcon, SquarePen } from "lucide-react";
+import { AppWindow, Settings as SettingsIcon, SquarePen, SquareTerminal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { describe, useKeybinding } from "./lib/keybindings.ts";
-import { useStore } from "./lib/store.ts";
+import { toggleTerminalPanel, useStore } from "./lib/store.ts";
 import { useShortcut } from "./lib/useShortcut.ts";
 import { useTheme } from "./lib/useTheme.ts";
 import { openWindow } from "./lib/windows.ts";
@@ -107,6 +107,17 @@ export const App = () => {
             onNewThreadIn={(path) => draft(path)}
             actions={[
               { id: "thread.new", label: "New thread", hint: describe("thread.new"), icon: <SquarePen />, run: () => draft(currentPath) },
+              ...(view.kind === "thread"
+                ? [
+                    {
+                      id: "terminal.toggle",
+                      label: "Toggle terminal",
+                      hint: describe("terminal.toggle"),
+                      icon: <SquareTerminal />,
+                      run: () => toggleTerminalPanel(view.id),
+                    },
+                  ]
+                : []),
               { id: "window.new", label: "New window", icon: <AppWindow />, run: () => openWindow(currentPath) },
               { id: "settings.open", label: "Settings", hint: describe("settings.open"), icon: <SettingsIcon />, run: () => setModal("settings") },
             ]}

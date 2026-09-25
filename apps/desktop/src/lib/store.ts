@@ -109,6 +109,8 @@ export interface State {
   readonly turnDiffs: Readonly<Record<string, RepoDiff>>;
   /** Messages written while the agent worked, held here until its turn ends. Per window. */
   readonly followUps: Readonly<Record<string, ReadonlyArray<FollowUp>>>;
+  readonly terminals: Readonly<Record<string, ReadonlyArray<string>>>;
+  readonly activeTerminals: Readonly<Record<string, string>>;
 }
 
 export interface FollowUp {
@@ -190,6 +192,8 @@ const initial: State = {
   commands: {},
   turnDiffs: {},
   followUps: {},
+  terminals: {},
+  activeTerminals: {},
 };
 
 /** Request ids of `thread.create` commands sent from this window. */
@@ -334,9 +338,18 @@ const reduceShell = (state: State, event: RuntimeEvent): State => {
     case "thread.removed": {
       const { [event.threadId]: _thread, ...threads } = state.threads;
       const { [event.threadId]: _transcript, ...transcripts } = state.transcripts;
+      const { [event.threadId]: _terminals, ...terminals } = state.terminals;
+      const { [event.threadId]: _activeTerminal, ...activeTerminals } = state.activeTerminals;
       if (state.dataId) removeTranscript(state.dataId, event.threadId);
-      return { ...state, order: state.order.filter((id) => id !== event.threadId), threads, transcripts };
+      return { ...state, order: state.order.filter((id) => id !== event.threadId), threads, transcripts, terminals, activeTerminals };
     }
+    case "terminal.opened": {
+      const terminalIds = state.terminals[event.threadId] ?? [];
+      if (terminalIds.includes(event.terminalId)) return state;
+      return { ...state, terminals: { ...state.terminals, [event.threadId]: [...terminalIds, event.terminalId] } };
+    }
+    case "terminal.closed":
+      return withoutTerminal(state, event.threadId, event.terminalId);
     case "thread.status":
     case "thread.model":
     case "thread.archived":
@@ -362,6 +375,18 @@ const setTranscript = (state: State, threadId: string, transcript: Transcript): 
   ...state,
   transcripts: { ...state.transcripts, [threadId]: transcript },
 });
+
+function withoutTerminal(state: State, threadId: string, terminalId: string): State {
+  const terminalIds = state.terminals[threadId] ?? [];
+  const remaining = terminalIds.filter((id) => id !== terminalId);
+  const { [threadId]: active, ...activeTerminals } = state.activeTerminals;
+  const nextActive = active === terminalId ? (remaining[terminalIds.indexOf(terminalId)] ?? remaining.at(-1)) : active;
+  return {
+    ...state,
+    terminals: { ...state.terminals, [threadId]: remaining },
+    activeTerminals: nextActive ? { ...activeTerminals, [threadId]: nextActive } : activeTerminals,
+  };
+}
 
 // ---------------------------------------------------------------------------
 
@@ -464,6 +489,10 @@ const onShell = (frame: Extract<ServerFrame, { _tag: "shell" }>) => {
       else removeTranscript(frame.dataId, threadId);
     }
   }
+  const terminals: Record<string, Array<string>> = {};
+  for (const { threadId, terminalId } of [...frame.terminals, ...screens.values()]) {
+    if (!terminals[threadId]?.includes(terminalId)) (terminals[threadId] ??= []).push(terminalId);
+  }
   let next: State = {
     ...state,
     connected: true,
@@ -475,6 +504,13 @@ const onShell = (frame: Extract<ServerFrame, { _tag: "shell" }>) => {
     order: [...frame.threads].sort((a, b) => b.createdAt - a.createdAt).map((t) => t.id),
     threads,
     transcripts,
+    terminals,
+    activeTerminals: Object.fromEntries(
+      Object.entries(state.activeTerminals).flatMap(([threadId, terminalId]) => {
+        const active = terminals[threadId]?.includes(terminalId) ? terminalId : terminals[threadId]?.at(-1);
+        return active ? [[threadId, active]] : [];
+      }),
+    ),
   };
   // First run with seen-tracking: everything that already exists counts as looked at.
   if (!hasSeenKey()) next = { ...next, seen: Object.fromEntries(frame.threads.map((t) => [t.id, { rev: t.updatedAt, at: 0 }])) };
@@ -485,6 +521,7 @@ const onShell = (frame: Extract<ServerFrame, { _tag: "shell" }>) => {
     // Not in memory yet: read the cache first so the daemon only sends what's new.
     else void loadCachedTranscript(threadId).then(() => wanted.has(threadId) && subscribe(threadId));
   }
+  for (const screen of screens.values()) openScreen(screen);
 };
 
 const onFrame = (frame: ServerFrame) => {
@@ -513,6 +550,12 @@ const onFrame = (frame: ServerFrame) => {
       searches.get(frame.requestId)?.(frame.hits);
       searches.delete(frame.requestId);
       return;
+    case "terminal.snapshot":
+      return screens.get(screenKey(frame.threadId, frame.terminalId))?.reset(frame.data);
+    case "terminal.output":
+      return screens.get(screenKey(frame.threadId, frame.terminalId))?.write(frame.data);
+    case "terminal.error":
+      return screens.get(screenKey(frame.threadId, frame.terminalId))?.fail(frame.message);
     case "event": {
       const { event, id } = frame;
       if (!isTranscriptEvent(event)) {
@@ -685,6 +728,70 @@ export const searchMessages = (query: string) =>
       if (searches.delete(requestId)) resolve([]);
     }, 5000);
   });
+
+// --- terminals -------------------------------------------------------------------
+
+export interface TerminalScreen {
+  readonly threadId: string;
+  readonly terminalId: string;
+  readonly size: () => { readonly columns: number; readonly rows: number };
+  readonly reset: (data: string) => void;
+  readonly write: (data: string) => void;
+  readonly fail: (message: string) => void;
+}
+
+const screens = new Map<string, TerminalScreen>();
+
+function screenKey(threadId: string, terminalId: string) {
+  return `${threadId}:${terminalId}`;
+}
+
+function openScreen(screen: TerminalScreen) {
+  sendIfConnected({ _tag: "terminal.open", threadId: screen.threadId, terminalId: screen.terminalId, ...screen.size() });
+}
+
+export function sendIfConnected(command: ClientCommand) {
+  if (socketOpen()) socket!.send(JSON.stringify(command));
+}
+
+export function attachTerminal(screen: TerminalScreen) {
+  const key = screenKey(screen.threadId, screen.terminalId);
+  screens.set(key, screen);
+  openScreen(screen);
+  return () => {
+    if (screens.get(key) !== screen) return;
+    screens.delete(key);
+    sendIfConnected({ _tag: "terminal.detach", threadId: screen.threadId, terminalId: screen.terminalId });
+  };
+}
+
+export function toggleTerminalPanel(threadId: string) {
+  if (state.activeTerminals[threadId]) {
+    const { [threadId]: _hidden, ...activeTerminals } = state.activeTerminals;
+    return setState({ ...state, activeTerminals });
+  }
+  const latest = state.terminals[threadId]?.at(-1);
+  if (latest) showTerminal(threadId, latest);
+  else newTerminal(threadId);
+}
+
+export function newTerminal(threadId: string) {
+  const terminalId = crypto.randomUUID();
+  setState({
+    ...state,
+    terminals: { ...state.terminals, [threadId]: [...(state.terminals[threadId] ?? []), terminalId] },
+    activeTerminals: { ...state.activeTerminals, [threadId]: terminalId },
+  });
+}
+
+export function showTerminal(threadId: string, terminalId: string) {
+  setState({ ...state, activeTerminals: { ...state.activeTerminals, [threadId]: terminalId } });
+}
+
+export function closeTerminal(threadId: string, terminalId: string) {
+  send({ _tag: "terminal.close", threadId, terminalId });
+  setState(withoutTerminal(state, threadId, terminalId));
+}
 
 /** Marks a thread's latest activity as seen; it settles once idle and the settle delay has passed. */
 export const markSeen = (threadId: string) => {
