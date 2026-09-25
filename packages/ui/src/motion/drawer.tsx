@@ -84,9 +84,7 @@ export function Drawer({
               initial={reduce ? { opacity: 0 } : { x: offscreen }}
               animate={reduce ? { opacity: 1 } : { x: 0 }}
               exit={reduce ? { opacity: 0 } : { x: offscreen }}
-              transition={
-                reduce ? { duration: 0.2, ease: EASE_OUT } : SPRING_PANEL
-              }
+              transition={reduce ? { duration: 0.2, ease: EASE_OUT } : SPRING_PANEL}
               {...gate}
               className={cn(
                 "fixed inset-y-0 z-50 flex w-80 max-w-[85vw] flex-col bg-background shadow-panel",

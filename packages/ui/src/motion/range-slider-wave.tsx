@@ -48,9 +48,7 @@ export function WaveSlider({ bars = BARS, className, ...options }: WaveSliderPro
       className={cn(
         "relative flex h-20 w-full touch-none items-center justify-between gap-1",
         TOUCH_GESTURE_CLASS,
-        options.disabled
-          ? "pointer-events-none opacity-50"
-          : "cursor-grab active:cursor-grabbing",
+        options.disabled ? "pointer-events-none opacity-50" : "cursor-grab active:cursor-grabbing",
         className,
       )}
     >
@@ -77,7 +75,7 @@ export function WaveSlider({ bars = BARS, className, ...options }: WaveSliderPro
       <button
         type="button"
         {...sliderProps}
-        className="absolute inset-0 touch-none rounded-xl outline-none ring-ring focus-visible:ring-4"
+        className="absolute inset-0 touch-none rounded-xl ring-ring outline-none focus-visible:ring-4"
       />
     </div>
   );

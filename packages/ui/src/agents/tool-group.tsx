@@ -35,7 +35,8 @@ const CATEGORY: Record<string, Category> = {
   TodoWrite: "todo",
 };
 
-const categoryOf = (name: string): Category => (name.startsWith("mcp__browser__") ? "browser" : (CATEGORY[name] ?? "other"));
+const categoryOf = (name: string): Category =>
+  name.startsWith("mcp__browser__") ? "browser" : (CATEGORY[name] ?? "other");
 
 const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
@@ -144,8 +145,17 @@ function ToolCallRow({ call, live }: { call: ToolCall; live: boolean }) {
         onClick={() => setOpen(!open)}
         className="group flex h-7 w-full min-w-0 items-center gap-2 rounded-md text-left outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:cursor-default"
       >
-        <span className={cn("shrink-0", call.isError ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground")}>
-          {category === "other" ? call.name : category === "browser" ? capitalize(call.name.slice("mcp__browser__".length)) : VERB[category]}
+        <span
+          className={cn(
+            "shrink-0",
+            call.isError ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground",
+          )}
+        >
+          {category === "other"
+            ? call.name
+            : category === "browser"
+              ? capitalize(call.name.slice("mcp__browser__".length))
+              : VERB[category]}
         </span>
         <span
           className={cn(
@@ -160,7 +170,7 @@ function ToolCallRow({ call, live }: { call: ToolCall; live: boolean }) {
       </button>
       {hasOutput ? (
         <AgentDisclosure id={contentId} open={open}>
-          <div className="scrollbar-hide mb-1.5 max-h-72 overflow-y-auto rounded-lg bg-muted/80 p-3">
+          <div className="mb-1.5 scrollbar-hide max-h-72 overflow-y-auto rounded-lg bg-muted/80 p-3">
             <ToolResultOutput language={outputLanguage(call)} className="text-xs">
               {call.output!}
             </ToolResultOutput>
@@ -189,7 +199,7 @@ export function ToolGroup({ calls, live }: { calls: ReadonlyArray<ToolCall>; liv
         aria-expanded={open}
         aria-controls={contentId}
         onClick={() => setOpen(!open)}
-        className="group flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-md text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+        className="group flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-md text-left text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
       >
         {running ? (
           <ThinkingShimmer className="truncate font-normal">{livePhrase(running)}</ThinkingShimmer>
@@ -202,7 +212,7 @@ export function ToolGroup({ calls, live }: { calls: ReadonlyArray<ToolCall>; liv
         <Chevron open={open} />
       </button>
       <AgentDisclosure id={contentId} open={open}>
-        <div className="ml-1.5 mt-0.5 border-l border-border pl-3">
+        <div className="mt-0.5 ml-1.5 border-l border-border pl-3">
           {calls.map((call) => (
             <ToolCallRow key={call.id} call={call} live={live} />
           ))}

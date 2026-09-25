@@ -50,9 +50,7 @@ const PILL_HEIGHT = 37;
 /** Tracks the natural size of the content so the shell can spring to it. */
 function useContentSize() {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [size, setSize] = useState<{ width: number; height: number } | null>(
-    null,
-  );
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
 
   // Synchronous mount measure: the shell must own explicit dimensions before
   // the first interaction. ResizeObserver fires async after mount — a quick
@@ -136,12 +134,7 @@ export interface DynamicIslandProps {
   className?: string;
 }
 
-export function DynamicIsland({
-  view,
-  compact,
-  children,
-  className,
-}: DynamicIslandProps) {
+export function DynamicIsland({ view, compact, children, className }: DynamicIslandProps) {
   const reduce = useReducedMotion();
   const expanded = view !== null;
   const [sizerRef, size] = useContentSize();
@@ -197,14 +190,9 @@ export interface DynamicIslandViewProps {
   className?: string;
 }
 
-export function DynamicIslandView({
-  id,
-  children,
-  className,
-}: DynamicIslandViewProps) {
+export function DynamicIslandView({ id, children, className }: DynamicIslandViewProps) {
   const ctx = useContext(IslandContext);
-  if (!ctx)
-    throw new Error("DynamicIslandView must be used inside <DynamicIsland>");
+  if (!ctx) throw new Error("DynamicIslandView must be used inside <DynamicIsland>");
   const active = ctx.view === id;
 
   return (

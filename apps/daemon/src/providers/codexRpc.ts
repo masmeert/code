@@ -34,10 +34,17 @@ export interface CodexRpc {
 export const connectCodex = async (
   cwd: string | undefined,
   handlers: CodexRpcHandlers = {},
-  launch: { readonly args?: ReadonlyArray<string>; readonly env?: Readonly<Record<string, string>> } = {},
+  launch: {
+    readonly args?: ReadonlyArray<string>;
+    readonly env?: Readonly<Record<string, string>>;
+  } = {},
 ): Promise<CodexRpc> => {
   const bin = resolveExecutable("codex", "APCODE_CODEX_PATH");
-  const child = spawn(bin, ["app-server", ...(launch.args ?? [])], { cwd, env: { ...process.env, ...launch.env }, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(bin, ["app-server", ...(launch.args ?? [])], {
+    cwd,
+    env: { ...process.env, ...launch.env },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
 
   let nextId = 0;
   const inflight = new Map<RpcId, { resolve: (v: any) => void; reject: (e: Error) => void }>();
@@ -52,7 +59,11 @@ export const connectCodex = async (
     }
     if (msg.method !== undefined && msg.id !== undefined) {
       const handled = handlers.onServerRequest?.(msg.id, msg.method, msg.params) ?? false;
-      if (!handled) write({ id: msg.id, error: { code: -32601, message: `APCode does not handle ${msg.method}` } });
+      if (!handled)
+        write({
+          id: msg.id,
+          error: { code: -32601, message: `APCode does not handle ${msg.method}` },
+        });
       return;
     }
     if (msg.method !== undefined) return handlers.onNotification?.(msg.method, msg.params);
@@ -65,12 +76,14 @@ export const connectCodex = async (
   });
 
   let stderrTail = "";
-  child.stderr.on("data", (chunk: Buffer) => (stderrTail = (stderrTail + chunk.toString()).slice(-4000)));
-  const exited = new Promise<never>((_, reject) =>
-    child.on("error", (error) => reject(error)),
+  child.stderr.on(
+    "data",
+    (chunk: Buffer) => (stderrTail = (stderrTail + chunk.toString()).slice(-4000)),
   );
+  const exited = new Promise<never>((_, reject) => child.on("error", (error) => reject(error)));
   child.on("exit", (code) => {
-    for (const waiter of inflight.values()) waiter.reject(new Error(`codex exited (${code}): ${stderrTail}`));
+    for (const waiter of inflight.values())
+      waiter.reject(new Error(`codex exited (${code}): ${stderrTail}`));
     inflight.clear();
     handlers.onExit?.(code, stderrTail);
   });
@@ -93,7 +106,10 @@ export const connectCodex = async (
     },
   };
 
-  await rpc.request("initialize", { clientInfo: { name: "apcode", title: "APCode", version: "0.0.1" }, capabilities: null });
+  await rpc.request("initialize", {
+    clientInfo: { name: "apcode", title: "APCode", version: "0.0.1" },
+    capabilities: null,
+  });
   rpc.notify("initialized");
   return rpc;
 };

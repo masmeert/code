@@ -59,10 +59,7 @@ type ScrollSource = Window | HTMLElement;
 
 function readMetrics(target: ScrollSource) {
   if (target instanceof Window) {
-    const max = Math.max(
-      0,
-      document.documentElement.scrollHeight - window.innerHeight,
-    );
+    const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
     return { y: window.scrollY, max };
   }
   return {
@@ -71,20 +68,14 @@ function readMetrics(target: ScrollSource) {
   };
 }
 
-function resolveTop(
-  target: ScrollTarget,
-  source: ScrollSource,
-  offset = 0,
-): number {
+function resolveTop(target: ScrollTarget, source: ScrollSource, offset = 0): number {
   if (typeof target === "number") return target + offset;
   if (source instanceof Window) {
-    const el =
-      typeof target === "string" ? document.querySelector(target) : target;
+    const el = typeof target === "string" ? document.querySelector(target) : target;
     if (!el) return window.scrollY;
     return el.getBoundingClientRect().top + window.scrollY + offset;
   }
-  const el =
-    typeof target === "string" ? source.querySelector(target) : target;
+  const el = typeof target === "string" ? source.querySelector(target) : target;
   if (!(el instanceof HTMLElement)) return source.scrollTop;
   return el.offsetTop + offset;
 }

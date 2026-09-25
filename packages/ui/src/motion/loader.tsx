@@ -62,34 +62,23 @@ export function Loader({
     <span
       role="status"
       aria-label={label}
-      className={cn(
-        "inline-flex items-center justify-center text-foreground",
-        className,
-      )}
+      className={cn("inline-flex items-center justify-center text-foreground", className)}
     >
       {variant === "spinner" && <Spinner size={size} speed={speed} reduce={reduce} />}
       {variant === "dots" && <Dots size={size} speed={speed} reduce={reduce} />}
       {variant === "bars" && <Bars size={size} speed={speed} reduce={reduce} />}
-      {variant === "dot-matrix" && (
-        <DotMatrix size={size} speed={speed} reduce={reduce} />
-      )}
+      {variant === "dot-matrix" && <DotMatrix size={size} speed={speed} reduce={reduce} />}
       {variant === "dither" && <Dither size={size} speed={speed} reduce={reduce} />}
       {ASCII_SETS[variant] && (
         <Ascii frames={ASCII_SETS[variant]} size={size} speed={speed} reduce={reduce} />
       )}
       {variant === "morph" && <Morph size={size} speed={speed} reduce={reduce} />}
       {variant === "comet" && <Comet size={size} speed={speed} reduce={reduce} />}
-      {variant === "scramble" && (
-        <Scramble size={size} speed={speed} reduce={reduce} />
-      )}
-      {variant === "metaballs" && (
-        <Metaballs size={size} speed={speed} reduce={reduce} />
-      )}
+      {variant === "scramble" && <Scramble size={size} speed={speed} reduce={reduce} />}
+      {variant === "metaballs" && <Metaballs size={size} speed={speed} reduce={reduce} />}
       {variant === "newton" && <Newton size={size} speed={speed} reduce={reduce} />}
       {variant === "helix" && <Helix size={size} speed={speed} reduce={reduce} />}
-      {variant === "percent" && (
-        <Percent size={size} speed={speed} reduce={reduce} />
-      )}
+      {variant === "percent" && <Percent size={size} speed={speed} reduce={reduce} />}
       <span className="sr-only">{label}</span>
     </span>
   );
@@ -111,9 +100,7 @@ function Spinner({ size, speed, reduce }: PartProps) {
       viewBox={`0 0 ${size} ${size}`}
       animate={reduce ? REDUCED.animate : { rotate: 360 }}
       transition={
-        reduce
-          ? REDUCED.transition
-          : { duration: speed, ease: "linear", repeat: Infinity }
+        reduce ? REDUCED.transition : { duration: speed, ease: "linear", repeat: Infinity }
       }
     >
       <circle
@@ -146,9 +133,7 @@ function Dots({ size, speed, reduce }: PartProps) {
           className="rounded-full bg-current"
           style={{ width: dot, height: dot }}
           animate={
-            reduce
-              ? { opacity: [0.4, 1, 0.4] }
-              : { y: [0, -size * 0.3, 0], opacity: [0.5, 1, 0.5] }
+            reduce ? { opacity: [0.4, 1, 0.4] } : { y: [0, -size * 0.3, 0], opacity: [0.5, 1, 0.5] }
           }
           transition={{
             duration: speed,
@@ -162,29 +147,18 @@ function Dots({ size, speed, reduce }: PartProps) {
   );
 }
 
-function Ascii({
-  frames,
-  size,
-  speed,
-  reduce,
-}: PartProps & { frames: string[] }) {
+function Ascii({ frames, size, speed, reduce }: PartProps & { frames: string[] }) {
   const [frame, setFrame] = useState(0);
   useEffect(() => {
     // Reduced motion slows the cycle rather than stopping it — it's a glyph
     // swap, not on-screen movement.
     const step = ((reduce ? speed * 2.5 : speed) / frames.length) * 1000;
-    const id = setInterval(
-      () => setFrame((f) => (f + 1) % frames.length),
-      step,
-    );
+    const id = setInterval(() => setFrame((f) => (f + 1) % frames.length), step);
     return () => clearInterval(id);
   }, [frames.length, speed, reduce]);
 
   return (
-    <span
-      className="font-mono leading-none tabular-nums"
-      style={{ fontSize: size, lineHeight: 1 }}
-    >
+    <span className="font-mono leading-none tabular-nums" style={{ fontSize: size, lineHeight: 1 }}>
       {frames[frame % frames.length]}
     </span>
   );
@@ -238,11 +212,7 @@ function Morph({ size, speed, reduce }: PartProps) {
       height={size}
       viewBox="0 0 100 100"
       role="img"
-      animate={
-        reduce
-          ? { opacity: [1, 0.4, 1] }
-          : { rotate: MORPH_ROT, scale: MORPH_SCALE }
-      }
+      animate={reduce ? { opacity: [1, 0.4, 1] } : { rotate: MORPH_ROT, scale: MORPH_SCALE }}
       transition={
         reduce
           ? { duration: 1.4, ease: EASE_IN_OUT, repeat: Infinity }
@@ -255,9 +225,7 @@ function Morph({ size, speed, reduce }: PartProps) {
         d={MORPH_PATHS[0]}
         animate={reduce ? undefined : { d: MORPH_SEQ }}
         transition={
-          reduce
-            ? undefined
-            : { duration: speed * 5, ease: EASE_IN_OUT, repeat: Infinity }
+          reduce ? undefined : { duration: speed * 5, ease: EASE_IN_OUT, repeat: Infinity }
         }
       />
     </motion.svg>
@@ -275,9 +243,7 @@ function Comet({ size, speed, reduce }: PartProps) {
         className="absolute inset-0"
         animate={reduce ? REDUCED.animate : { rotate: 360 }}
         transition={
-          reduce
-            ? REDUCED.transition
-            : { duration: speed, ease: "linear", repeat: Infinity }
+          reduce ? REDUCED.transition : { duration: speed, ease: "linear", repeat: Infinity }
         }
       >
         {COMET_TRAIL.map((i) => {
@@ -323,9 +289,7 @@ function Scramble({ size, speed, reduce }: PartProps) {
           s +=
             i < reveal
               ? SCRAMBLE_TARGET[i]
-              : SCRAMBLE_GLYPHS[
-                  Math.floor(Math.random() * SCRAMBLE_GLYPHS.length)
-                ];
+              : SCRAMBLE_GLYPHS[Math.floor(Math.random() * SCRAMBLE_GLYPHS.length)];
         }
         setText(s);
         tick++;
@@ -353,10 +317,7 @@ function Metaballs({ size, speed, reduce }: PartProps) {
       <defs>
         <filter id={id}>
           <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="b" />
-          <feColorMatrix
-            in="b"
-            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -8"
-          />
+          <feColorMatrix in="b" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -8" />
         </filter>
       </defs>
       <g filter={`url(#${id})`} fill="currentColor">
@@ -491,10 +452,7 @@ function Percent({ size, speed, reduce }: PartProps) {
   }, [speed, reduce]);
 
   return (
-    <span
-      className="flex flex-col items-center"
-      style={{ gap: size * 0.14, width: size * 1.4 }}
-    >
+    <span className="flex flex-col items-center" style={{ gap: size * 0.14, width: size * 1.4 }}>
       <span
         className="font-mono font-medium tabular-nums"
         style={{ fontSize: size * 0.42, lineHeight: 1 }}
@@ -505,10 +463,7 @@ function Percent({ size, speed, reduce }: PartProps) {
         className="w-full overflow-hidden rounded-full bg-current/15"
         style={{ height: Math.max(3, size * 0.1) }}
       >
-        <span
-          className="block h-full rounded-full bg-current"
-          style={{ width: `${p}%` }}
-        />
+        <span className="block h-full rounded-full bg-current" style={{ width: `${p}%` }} />
       </span>
     </span>
   );
@@ -523,9 +478,7 @@ function Bars({ size, speed, reduce }: PartProps) {
           key={i}
           className="rounded-full bg-current"
           style={{ width: bar, height: size, originY: 1 }}
-          animate={
-            reduce ? { opacity: [0.4, 1, 0.4] } : { scaleY: [0.3, 1, 0.3] }
-          }
+          animate={reduce ? { opacity: [0.4, 1, 0.4] } : { scaleY: [0.3, 1, 0.3] }}
           transition={{
             duration: speed,
             ease: EASE_IN_OUT,
@@ -562,9 +515,7 @@ function DotMatrix({ size, speed, reduce }: PartProps) {
             className="rounded-full bg-current"
             style={{ width: dot, height: dot }}
             animate={
-              reduce
-                ? { opacity: [0.3, 1, 0.3] }
-                : { opacity: [0.2, 1, 0.2], scale: [0.7, 1, 0.7] }
+              reduce ? { opacity: [0.3, 1, 0.3] } : { opacity: [0.2, 1, 0.2], scale: [0.7, 1, 0.7] }
             }
             transition={{
               duration: speed,
@@ -581,19 +532,14 @@ function DotMatrix({ size, speed, reduce }: PartProps) {
 
 // Ordered Bayer 4x4 matrix — the classic dithering threshold pattern. Cells
 // light in this order, so the fill shimmers like a dissolving halftone.
-const BAYER_4 = [
-  0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5,
-];
+const BAYER_4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 
 function Dither({ size, speed, reduce }: PartProps) {
   const n = 4;
   const gap = Math.max(1, size * 0.05);
   const cell = (size - gap * (n - 1)) / n;
   return (
-    <span
-      className="grid"
-      style={{ gap, gridTemplateColumns: `repeat(${n}, ${cell}px)` }}
-    >
+    <span className="grid" style={{ gap, gridTemplateColumns: `repeat(${n}, ${cell}px)` }}>
       {BAYER_4.map((order, idx) => (
         <motion.span
           // biome-ignore lint/suspicious/noArrayIndexKey: fixed matrix cells, order never changes

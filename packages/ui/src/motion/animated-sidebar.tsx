@@ -23,12 +23,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
-import {
-  EASE_DRAWER,
-  EASE_OUT,
-  SPRING_LAYOUT,
-  SPRING_PRESS,
-} from "@apcode/ui/lib/ease";
+import { EASE_DRAWER, EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
 type SidebarState = "expanded" | "collapsed";
@@ -136,11 +131,7 @@ function getServerMobileSnapshot() {
 }
 
 function useIsMobile() {
-  return useSyncExternalStore(
-    subscribeToMobileQuery,
-    getMobileSnapshot,
-    getServerMobileSnapshot,
-  );
+  return useSyncExternalStore(subscribeToMobileQuery, getMobileSnapshot, getServerMobileSnapshot);
 }
 
 interface SidebarToggleOptions {
@@ -161,8 +152,7 @@ interface AnimatedSidebarContextValue {
   triggerRef: React.RefObject<HTMLButtonElement | null>;
 }
 
-const AnimatedSidebarContext =
-  createContext<AnimatedSidebarContextValue | null>(null);
+const AnimatedSidebarContext = createContext<AnimatedSidebarContextValue | null>(null);
 
 interface AnimatedSidebarPanelContextValue {
   collapsed: boolean;
@@ -170,15 +160,12 @@ interface AnimatedSidebarPanelContextValue {
   side: SidebarSide;
 }
 
-const AnimatedSidebarPanelContext =
-  createContext<AnimatedSidebarPanelContextValue | null>(null);
+const AnimatedSidebarPanelContext = createContext<AnimatedSidebarPanelContextValue | null>(null);
 
 export function useAnimatedSidebar() {
   const context = useContext(AnimatedSidebarContext);
   if (!context) {
-    throw new Error(
-      "useAnimatedSidebar must be used inside AnimatedSidebarProvider.",
-    );
+    throw new Error("useAnimatedSidebar must be used inside AnimatedSidebarProvider.");
   }
   return context;
 }
@@ -186,9 +173,7 @@ export function useAnimatedSidebar() {
 function useAnimatedSidebarPanel() {
   const context = useContext(AnimatedSidebarPanelContext);
   if (!context) {
-    throw new Error(
-      "Animated Sidebar parts must be used inside AnimatedSidebar.",
-    );
+    throw new Error("Animated Sidebar parts must be used inside AnimatedSidebar.");
   }
   return context;
 }
@@ -199,8 +184,7 @@ type SidebarProviderStyle = CSSProperties & {
   "--sidebar-width-mobile"?: string;
 };
 
-export interface AnimatedSidebarProviderProps
-  extends HTMLAttributes<HTMLDivElement> {
+export interface AnimatedSidebarProviderProps extends HTMLAttributes<HTMLDivElement> {
   open?: boolean;
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -223,8 +207,7 @@ export function AnimatedSidebarProvider({
   ...props
 }: AnimatedSidebarProviderProps) {
   const [internalOpen, setInternalOpen] = useState(defaultOpen);
-  const [internalOpenMobile, setInternalOpenMobile] =
-    useState(defaultOpenMobile);
+  const [internalOpenMobile, setInternalOpenMobile] = useState(defaultOpenMobile);
   const [instant, setInstant] = useState(false);
   const isMobile = useIsMobile();
   const reduce = useReducedMotion() ?? false;
@@ -299,10 +282,7 @@ export function AnimatedSidebarProvider({
           "--sidebar-width-mobile": "18rem",
           ...style,
         }}
-        className={cn(
-          "group/sidebar-wrapper flex min-h-svh w-full min-w-0",
-          className,
-        )}
+        className={cn("group/sidebar-wrapper flex min-h-svh w-full min-w-0", className)}
       >
         {children}
       </div>
@@ -362,8 +342,7 @@ function MobileSidebar({
     body.style.overflow = "hidden";
 
     const focusFrame = requestAnimationFrame(() => {
-      const firstFocusable =
-        panelRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      const firstFocusable = panelRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
       (firstFocusable ?? panelRef.current)?.focus({ preventScroll: true });
     });
 
@@ -389,7 +368,7 @@ function MobileSidebar({
   return createPortal(
     <div
       className={cn(
-        "pointer-events-none fixed left-0 top-0 z-50 size-0 md:hidden",
+        "pointer-events-none fixed top-0 left-0 z-50 size-0 md:hidden",
         hidden && !context.openMobile ? "invisible" : "visible",
       )}
     >
@@ -399,15 +378,11 @@ function MobileSidebar({
         tabIndex={context.openMobile ? 0 : -1}
         initial={false}
         animate={{ opacity: context.openMobile ? 1 : 0 }}
-        transition={
-          context.reduce ? REDUCED_TRANSITION : PANEL_TRANSITION
-        }
+        transition={context.reduce ? REDUCED_TRANSITION : PANEL_TRANSITION}
         onClick={() => context.setOpenMobile(false)}
         className={cn(
           "fixed inset-0 bg-black/40",
-          context.openMobile
-            ? "pointer-events-auto"
-            : "pointer-events-none",
+          context.openMobile ? "pointer-events-auto" : "pointer-events-none",
         )}
       />
 
@@ -424,22 +399,10 @@ function MobileSidebar({
         data-side={side}
         initial={false}
         animate={{
-          opacity: context.reduce
-            ? context.openMobile
-              ? 1
-              : 0
-            : 1,
-          x: context.reduce
-            ? 0
-            : context.openMobile
-              ? "0%"
-              : side === "left"
-                ? "-100%"
-                : "100%",
+          opacity: context.reduce ? (context.openMobile ? 1 : 0) : 1,
+          x: context.reduce ? 0 : context.openMobile ? "0%" : side === "left" ? "-100%" : "100%",
         }}
-        transition={
-          context.reduce ? REDUCED_TRANSITION : PANEL_TRANSITION
-        }
+        transition={context.reduce ? REDUCED_TRANSITION : PANEL_TRANSITION}
         onAnimationComplete={() => {
           if (!openMobileRef.current) setHidden(true);
         }}
@@ -452,11 +415,7 @@ function MobileSidebar({
 
           if (event.key !== "Tab") return;
           const focusable = panelRef.current
-            ? Array.from(
-                panelRef.current.querySelectorAll<HTMLElement>(
-                  FOCUSABLE_SELECTOR,
-                ),
-              )
+            ? Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
             : [];
 
           if (focusable.length === 0) {
@@ -494,8 +453,7 @@ function MobileSidebar({
   );
 }
 
-export interface AnimatedSidebarProps
-  extends Omit<HTMLMotionProps<"aside">, "children"> {
+export interface AnimatedSidebarProps extends Omit<HTMLMotionProps<"aside">, "children"> {
   children?: ReactNode;
   side?: SidebarSide;
   variant?: SidebarVariant;
@@ -530,11 +488,7 @@ export const AnimatedSidebar = forwardRef<HTMLElement, AnimatedSidebarProps>(
 
     if (context.isMobile) {
       return (
-        <MobileSidebar
-          ariaLabel={ariaLabel}
-          className={className}
-          side={side}
-        >
+        <MobileSidebar ariaLabel={ariaLabel} className={className} side={side}>
           {children}
         </MobileSidebar>
       );
@@ -586,16 +540,14 @@ export const AnimatedSidebar = forwardRef<HTMLElement, AnimatedSidebarProps>(
             "sticky top-0 z-10 flex h-svh w-full flex-col overflow-hidden bg-background",
             collapsible === "offcanvas" && "w-[var(--sidebar-width)]",
             variant === "sidebar" &&
-              (side === "left" ? "border-border border-r" : "border-border border-l"),
+              (side === "left" ? "border-r border-border" : "border-l border-border"),
             variant === "floating" &&
               "m-2 h-[calc(100svh-1rem)] rounded-2xl border border-border shadow-sm",
             variant === "inset" && "m-2 h-[calc(100svh-1rem)] rounded-2xl",
             panelClassName,
           )}
         >
-          <AnimatedSidebarPanelContext.Provider
-            value={{ collapsed, collapsible, side }}
-          >
+          <AnimatedSidebarPanelContext.Provider value={{ collapsed, collapsible, side }}>
             {children}
           </AnimatedSidebarPanelContext.Provider>
         </motion.div>
@@ -604,231 +556,202 @@ export const AnimatedSidebar = forwardRef<HTMLElement, AnimatedSidebarProps>(
   },
 );
 
-export interface AnimatedSidebarTriggerProps
-  extends ButtonHTMLAttributes<HTMLButtonElement> {}
+export interface AnimatedSidebarTriggerProps extends ButtonHTMLAttributes<HTMLButtonElement> {}
 
-export const AnimatedSidebarTrigger = forwardRef<
-  HTMLButtonElement,
-  AnimatedSidebarTriggerProps
->(function AnimatedSidebarTrigger(
-  { className, onClick, type = "button", ...props },
-  forwardedRef,
-) {
-  const context = useAnimatedSidebar();
-  const expanded = context.isMobile ? context.openMobile : context.open;
+export const AnimatedSidebarTrigger = forwardRef<HTMLButtonElement, AnimatedSidebarTriggerProps>(
+  function AnimatedSidebarTrigger({ className, onClick, type = "button", ...props }, forwardedRef) {
+    const context = useAnimatedSidebar();
+    const expanded = context.isMobile ? context.openMobile : context.open;
 
-  return (
-    <button
-      {...props}
-      ref={(node) => {
-        context.triggerRef.current = node;
-        if (typeof forwardedRef === "function") forwardedRef(node);
-        else if (forwardedRef) forwardedRef.current = node;
-      }}
-      type={type}
-      aria-label={props["aria-label"] ?? "Toggle sidebar"}
-      aria-expanded={expanded}
-      data-slot="sidebar-trigger"
-      data-state={expanded ? "expanded" : "collapsed"}
-      onClick={(event) => {
-        onClick?.(event);
-        if (!event.defaultPrevented)
-          context.toggleSidebar({ instant: event.detail === 0 });
-      }}
-      className={cn(
-        "inline-flex size-10 shrink-0 items-center justify-center rounded-xl outline-none",
-        "focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        className,
-      )}
-    />
-  );
-});
+    return (
+      <button
+        {...props}
+        ref={(node) => {
+          context.triggerRef.current = node;
+          if (typeof forwardedRef === "function") forwardedRef(node);
+          else if (forwardedRef) forwardedRef.current = node;
+        }}
+        type={type}
+        aria-label={props["aria-label"] ?? "Toggle sidebar"}
+        aria-expanded={expanded}
+        data-slot="sidebar-trigger"
+        data-state={expanded ? "expanded" : "collapsed"}
+        onClick={(event) => {
+          onClick?.(event);
+          if (!event.defaultPrevented) context.toggleSidebar({ instant: event.detail === 0 });
+        }}
+        className={cn(
+          "inline-flex size-10 shrink-0 items-center justify-center rounded-xl outline-none",
+          "focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          className,
+        )}
+      />
+    );
+  },
+);
 
-export interface AnimatedSidebarCloseProps
-  extends ButtonHTMLAttributes<HTMLButtonElement> {}
+export interface AnimatedSidebarCloseProps extends ButtonHTMLAttributes<HTMLButtonElement> {}
 
-export const AnimatedSidebarClose = forwardRef<
-  HTMLButtonElement,
-  AnimatedSidebarCloseProps
->(function AnimatedSidebarClose(
-  { className, onClick, type = "button", ...props },
-  forwardedRef,
-) {
-  const context = useAnimatedSidebar();
+export const AnimatedSidebarClose = forwardRef<HTMLButtonElement, AnimatedSidebarCloseProps>(
+  function AnimatedSidebarClose({ className, onClick, type = "button", ...props }, forwardedRef) {
+    const context = useAnimatedSidebar();
 
-  return (
-    <button
-      {...props}
-      ref={forwardedRef}
-      type={type}
-      aria-label={props["aria-label"] ?? "Close sidebar"}
-      onClick={(event) => {
-        onClick?.(event);
-        if (event.defaultPrevented) return;
-        if (context.isMobile) context.setOpenMobile(false);
-        else context.setOpen(false);
-      }}
-      className={cn(
-        "inline-flex size-10 shrink-0 items-center justify-center rounded-xl outline-none",
-        "focus-visible:ring-4 focus-visible:ring-ring",
-        className,
-      )}
-    />
-  );
-});
+    return (
+      <button
+        {...props}
+        ref={forwardedRef}
+        type={type}
+        aria-label={props["aria-label"] ?? "Close sidebar"}
+        onClick={(event) => {
+          onClick?.(event);
+          if (event.defaultPrevented) return;
+          if (context.isMobile) context.setOpenMobile(false);
+          else context.setOpen(false);
+        }}
+        className={cn(
+          "inline-flex size-10 shrink-0 items-center justify-center rounded-xl outline-none",
+          "focus-visible:ring-4 focus-visible:ring-ring",
+          className,
+        )}
+      />
+    );
+  },
+);
 
-export interface AnimatedSidebarRailProps
-  extends ButtonHTMLAttributes<HTMLButtonElement> {}
+export interface AnimatedSidebarRailProps extends ButtonHTMLAttributes<HTMLButtonElement> {}
 
-export const AnimatedSidebarRail = forwardRef<
-  HTMLButtonElement,
-  AnimatedSidebarRailProps
->(function AnimatedSidebarRail(
-  { className, onClick, type = "button", ...props },
-  forwardedRef,
-) {
-  const context = useAnimatedSidebar();
-  const panel = useAnimatedSidebarPanel();
+export const AnimatedSidebarRail = forwardRef<HTMLButtonElement, AnimatedSidebarRailProps>(
+  function AnimatedSidebarRail({ className, onClick, type = "button", ...props }, forwardedRef) {
+    const context = useAnimatedSidebar();
+    const panel = useAnimatedSidebarPanel();
 
-  return (
-    <button
-      {...props}
-      ref={forwardedRef}
-      type={type}
-      data-side={panel.side}
-      aria-label={props["aria-label"] ?? "Toggle sidebar"}
-      title="Toggle sidebar"
-      tabIndex={-1}
-      onClick={(event) => {
-        onClick?.(event);
-        if (!event.defaultPrevented) context.toggleSidebar();
-      }}
-      className={cn(
-        "absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 outline-none md:block",
-        "after:absolute after:inset-y-0 after:left-1/2 after:w-px after:bg-transparent after:transition-colors hover:after:bg-border",
-        "data-[side=right]:right-0 data-[side=right]:translate-x-1/2 data-[side=left]:left-full",
-        className,
-      )}
-    />
-  );
-});
+    return (
+      <button
+        {...props}
+        ref={forwardedRef}
+        type={type}
+        data-side={panel.side}
+        aria-label={props["aria-label"] ?? "Toggle sidebar"}
+        title="Toggle sidebar"
+        tabIndex={-1}
+        onClick={(event) => {
+          onClick?.(event);
+          if (!event.defaultPrevented) context.toggleSidebar();
+        }}
+        className={cn(
+          "absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 outline-none md:block",
+          "after:absolute after:inset-y-0 after:left-1/2 after:w-px after:bg-transparent after:transition-colors hover:after:bg-border",
+          "data-[side=left]:left-full data-[side=right]:right-0 data-[side=right]:translate-x-1/2",
+          className,
+        )}
+      />
+    );
+  },
+);
 
-export interface AnimatedSidebarInsetProps
-  extends HTMLMotionProps<"main"> {}
+export interface AnimatedSidebarInsetProps extends HTMLMotionProps<"main"> {}
 
-export const AnimatedSidebarInset = forwardRef<
-  HTMLElement,
-  AnimatedSidebarInsetProps
->(function AnimatedSidebarInset({ className, ...props }, forwardedRef) {
-  return (
-    <motion.main
-      {...props}
-      ref={forwardedRef}
-      data-slot="sidebar-inset"
-      className={cn(
-        "relative flex min-h-svh min-w-0 flex-1 flex-col bg-background",
-        "md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-2xl md:peer-data-[variant=inset]:shadow-sm",
-        className,
-      )}
-    />
-  );
-});
+export const AnimatedSidebarInset = forwardRef<HTMLElement, AnimatedSidebarInsetProps>(
+  function AnimatedSidebarInset({ className, ...props }, forwardedRef) {
+    return (
+      <motion.main
+        {...props}
+        ref={forwardedRef}
+        data-slot="sidebar-inset"
+        className={cn(
+          "relative flex min-h-svh min-w-0 flex-1 flex-col bg-background",
+          "md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-2xl md:peer-data-[variant=inset]:shadow-sm",
+          className,
+        )}
+      />
+    );
+  },
+);
 
-export const AnimatedSidebarHeader = forwardRef<
-  HTMLDivElement,
-  HTMLAttributes<HTMLDivElement>
->(function AnimatedSidebarHeader({ className, ...props }, forwardedRef) {
-  return (
-    <div
-      {...props}
-      ref={forwardedRef}
-      data-slot="sidebar-header"
-      className={cn("flex shrink-0 flex-col gap-2 p-3", className)}
-    />
-  );
-});
+export const AnimatedSidebarHeader = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  function AnimatedSidebarHeader({ className, ...props }, forwardedRef) {
+    return (
+      <div
+        {...props}
+        ref={forwardedRef}
+        data-slot="sidebar-header"
+        className={cn("flex shrink-0 flex-col gap-2 p-3", className)}
+      />
+    );
+  },
+);
 
-export const AnimatedSidebarContent = forwardRef<
-  HTMLDivElement,
-  HTMLAttributes<HTMLDivElement>
->(function AnimatedSidebarContent({ className, ...props }, forwardedRef) {
-  return (
-    <div
-      {...props}
-      ref={forwardedRef}
-      data-slot="sidebar-content"
-      className={cn(
-        "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden overscroll-contain px-2 py-2",
-        className,
-      )}
-    />
-  );
-});
+export const AnimatedSidebarContent = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  function AnimatedSidebarContent({ className, ...props }, forwardedRef) {
+    return (
+      <div
+        {...props}
+        ref={forwardedRef}
+        data-slot="sidebar-content"
+        className={cn(
+          "flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto overscroll-contain px-2 py-2",
+          className,
+        )}
+      />
+    );
+  },
+);
 
-export const AnimatedSidebarFooter = forwardRef<
-  HTMLDivElement,
-  HTMLAttributes<HTMLDivElement>
->(function AnimatedSidebarFooter({ className, ...props }, forwardedRef) {
-  return (
-    <div
-      {...props}
-      ref={forwardedRef}
-      data-slot="sidebar-footer"
-      className={cn(
-        "flex shrink-0 flex-col gap-2 border-border border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
-        className,
-      )}
-    />
-  );
-});
+export const AnimatedSidebarFooter = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  function AnimatedSidebarFooter({ className, ...props }, forwardedRef) {
+    return (
+      <div
+        {...props}
+        ref={forwardedRef}
+        data-slot="sidebar-footer"
+        className={cn(
+          "flex shrink-0 flex-col gap-2 border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+          className,
+        )}
+      />
+    );
+  },
+);
 
-export const AnimatedSidebarGroup = forwardRef<
-  HTMLDivElement,
-  HTMLAttributes<HTMLDivElement>
->(function AnimatedSidebarGroup({ className, ...props }, forwardedRef) {
-  return (
-    <div
-      {...props}
-      ref={forwardedRef}
-      data-slot="sidebar-group"
-      className={cn("flex w-full min-w-0 flex-col px-1 py-1.5", className)}
-    />
-  );
-});
+export const AnimatedSidebarGroup = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  function AnimatedSidebarGroup({ className, ...props }, forwardedRef) {
+    return (
+      <div
+        {...props}
+        ref={forwardedRef}
+        data-slot="sidebar-group"
+        className={cn("flex w-full min-w-0 flex-col px-1 py-1.5", className)}
+      />
+    );
+  },
+);
 
-export const AnimatedSidebarGroupLabel = forwardRef<
-  HTMLDivElement,
-  HTMLAttributes<HTMLDivElement>
->(function AnimatedSidebarGroupLabel(
-  { children, className, ...props },
-  forwardedRef,
-) {
-  const { collapsed } = useAnimatedSidebarPanel();
+export const AnimatedSidebarGroupLabel = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  function AnimatedSidebarGroupLabel({ children, className, ...props }, forwardedRef) {
+    const { collapsed } = useAnimatedSidebarPanel();
 
-  return (
-    <div
-      {...props}
-      ref={forwardedRef}
-      aria-hidden={collapsed}
-      data-slot="sidebar-group-label"
-      className={cn(
-        "mb-1 h-7 overflow-hidden px-2 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground transition-opacity",
-        collapsed ? "opacity-0" : "opacity-100",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
-});
+    return (
+      <div
+        {...props}
+        ref={forwardedRef}
+        aria-hidden={collapsed}
+        data-slot="sidebar-group-label"
+        className={cn(
+          "mb-1 h-7 overflow-hidden px-2 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase transition-opacity",
+          collapsed ? "opacity-0" : "opacity-100",
+          className,
+        )}
+      >
+        {children}
+      </div>
+    );
+  },
+);
 
 export const AnimatedSidebarGroupContent = forwardRef<
   HTMLDivElement,
   HTMLAttributes<HTMLDivElement>
->(function AnimatedSidebarGroupContent(
-  { className, ...props },
-  forwardedRef,
-) {
+>(function AnimatedSidebarGroupContent({ className, ...props }, forwardedRef) {
   return (
     <div
       {...props}
@@ -839,103 +762,89 @@ export const AnimatedSidebarGroupContent = forwardRef<
   );
 });
 
-export const AnimatedSidebarMenu = forwardRef<
-  HTMLUListElement,
-  HTMLAttributes<HTMLUListElement>
->(function AnimatedSidebarMenu(
-  { children, className, ...props },
-  forwardedRef,
-) {
-  return (
-    <SharedLayoutBg
-      {...props}
-      ref={forwardedRef as React.Ref<HTMLElement>}
-      as="ul"
-      inset={0}
-      pillClassName="rounded-xl bg-muted/70"
-      pillContainerClassName="inset-y-auto top-0 h-9"
-      data-slot="sidebar-menu"
-      className={cn("flex w-full min-w-0 list-none flex-col gap-0.5", className)}
-    >
-      {children}
-    </SharedLayoutBg>
-  );
-});
+export const AnimatedSidebarMenu = forwardRef<HTMLUListElement, HTMLAttributes<HTMLUListElement>>(
+  function AnimatedSidebarMenu({ children, className, ...props }, forwardedRef) {
+    return (
+      <SharedLayoutBg
+        {...props}
+        ref={forwardedRef as React.Ref<HTMLElement>}
+        as="ul"
+        inset={0}
+        pillClassName="rounded-xl bg-muted/70"
+        pillContainerClassName="inset-y-auto top-0 h-9"
+        data-slot="sidebar-menu"
+        className={cn("flex w-full min-w-0 list-none flex-col gap-0.5", className)}
+      >
+        {children}
+      </SharedLayoutBg>
+    );
+  },
+);
 
-export const AnimatedSidebarMenuItem = forwardRef<
-  HTMLLIElement,
-  HTMLMotionProps<"li">
->(function AnimatedSidebarMenuItem({ className, ...props }, forwardedRef) {
-  return (
-    <motion.li
-      {...props}
-      ref={forwardedRef}
-      layout="position"
-      transition={SPRING_LAYOUT}
-      data-slot="sidebar-menu-item"
-      className={cn("relative", className)}
-    />
-  );
-});
+export const AnimatedSidebarMenuItem = forwardRef<HTMLLIElement, HTMLMotionProps<"li">>(
+  function AnimatedSidebarMenuItem({ className, ...props }, forwardedRef) {
+    return (
+      <motion.li
+        {...props}
+        ref={forwardedRef}
+        layout="position"
+        transition={SPRING_LAYOUT}
+        data-slot="sidebar-menu-item"
+        className={cn("relative", className)}
+      />
+    );
+  },
+);
 
-export interface AnimatedSidebarMenuSubProps
-  extends Omit<HTMLMotionProps<"ul">, "children"> {
+export interface AnimatedSidebarMenuSubProps extends Omit<HTMLMotionProps<"ul">, "children"> {
   open: boolean;
   children?: ReactNode;
 }
 
-export const AnimatedSidebarMenuSub = forwardRef<
-  HTMLUListElement,
-  AnimatedSidebarMenuSubProps
->(function AnimatedSidebarMenuSub(
-  { open, children, className, ...props },
-  forwardedRef,
-) {
-  const context = useAnimatedSidebar();
-  const panel = useAnimatedSidebarPanel();
+export const AnimatedSidebarMenuSub = forwardRef<HTMLUListElement, AnimatedSidebarMenuSubProps>(
+  function AnimatedSidebarMenuSub({ open, children, className, ...props }, forwardedRef) {
+    const context = useAnimatedSidebar();
+    const panel = useAnimatedSidebarPanel();
 
-  return (
-    <AnimatePresence initial={false} mode="popLayout">
-      {open && !panel.collapsed ? (
-        <motion.ul
-          {...props}
-          ref={forwardedRef}
-          key="sidebar-submenu"
-          variants={context.reduce ? undefined : SUBMENU_VARIANTS}
-          initial={context.reduce ? false : "closed"}
-          animate={context.reduce ? { opacity: 1 } : "open"}
-          exit={context.reduce ? { opacity: 0 } : "closed"}
-          transition={context.reduce ? { duration: 0.12 } : undefined}
-          data-slot="sidebar-menu-sub"
-          className={cn(
-            "relative mt-1 ml-5 flex min-w-0 flex-col gap-0.5 border-border border-l pl-3",
-            className,
-          )}
-        >
-          {children}
-        </motion.ul>
-      ) : null}
-    </AnimatePresence>
-  );
-});
+    return (
+      <AnimatePresence initial={false} mode="popLayout">
+        {open && !panel.collapsed ? (
+          <motion.ul
+            {...props}
+            ref={forwardedRef}
+            key="sidebar-submenu"
+            variants={context.reduce ? undefined : SUBMENU_VARIANTS}
+            initial={context.reduce ? false : "closed"}
+            animate={context.reduce ? { opacity: 1 } : "open"}
+            exit={context.reduce ? { opacity: 0 } : "closed"}
+            transition={context.reduce ? { duration: 0.12 } : undefined}
+            data-slot="sidebar-menu-sub"
+            className={cn(
+              "relative mt-1 ml-5 flex min-w-0 flex-col gap-0.5 border-l border-border pl-3",
+              className,
+            )}
+          >
+            {children}
+          </motion.ul>
+        ) : null}
+      </AnimatePresence>
+    );
+  },
+);
 
-export const AnimatedSidebarMenuSubItem = forwardRef<
-  HTMLLIElement,
-  HTMLMotionProps<"li">
->(function AnimatedSidebarMenuSubItem(
-  { className, ...props },
-  forwardedRef,
-) {
-  return (
-    <motion.li
-      {...props}
-      ref={forwardedRef}
-      variants={SUBMENU_ITEM_VARIANTS}
-      data-slot="sidebar-menu-sub-item"
-      className={cn("relative min-w-0", className)}
-    />
-  );
-});
+export const AnimatedSidebarMenuSubItem = forwardRef<HTMLLIElement, HTMLMotionProps<"li">>(
+  function AnimatedSidebarMenuSubItem({ className, ...props }, forwardedRef) {
+    return (
+      <motion.li
+        {...props}
+        ref={forwardedRef}
+        variants={SUBMENU_ITEM_VARIANTS}
+        data-slot="sidebar-menu-sub-item"
+        className={cn("relative min-w-0", className)}
+      />
+    );
+  },
+);
 
 export interface AnimatedSidebarMenuSubButtonProps {
   children: ReactNode;
@@ -964,9 +873,7 @@ export function AnimatedSidebarMenuSubButton({
 }: AnimatedSidebarMenuSubButtonProps) {
   const context = useAnimatedSidebar();
 
-  const select = (
-    event: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>,
-  ) => {
+  const select = (event: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>) => {
     if (disabled) {
       event.preventDefault();
       return;
@@ -977,10 +884,7 @@ export function AnimatedSidebarMenuSubButton({
 
   const content = (
     <>
-      <span
-        aria-hidden="true"
-        className="grid size-4 shrink-0 place-items-center"
-      >
+      <span aria-hidden="true" className="grid size-4 shrink-0 place-items-center">
         {icon ?? <span className="size-1 rounded-full bg-current" />}
       </span>
       <span className="min-w-0 flex-1 truncate">{children}</span>
@@ -1000,10 +904,7 @@ export function AnimatedSidebarMenuSubButton({
     <motion.a
       href={href}
       target={target}
-      rel={
-        rel ??
-        (target === "_blank" ? "noreferrer noopener" : undefined)
-      }
+      rel={rel ?? (target === "_blank" ? "noreferrer noopener" : undefined)}
       aria-current={isActive ? "page" : undefined}
       aria-disabled={disabled || undefined}
       tabIndex={disabled ? -1 : undefined}
@@ -1062,16 +963,13 @@ export function AnimatedSidebarMenuButton({
   const panel = useAnimatedSidebarPanel();
   const textLabel = typeof children === "string" ? children : undefined;
 
-  const select = (
-    event: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>,
-  ) => {
+  const select = (event: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>) => {
     if (disabled) {
       event.preventDefault();
       return;
     }
     onSelect?.();
-    const shouldCloseOnSelect =
-      closeOnSelect ?? ariaExpanded === undefined;
+    const shouldCloseOnSelect = closeOnSelect ?? ariaExpanded === undefined;
     if (context.isMobile && shouldCloseOnSelect) {
       context.setOpenMobile(false);
     }
@@ -1094,10 +992,7 @@ export function AnimatedSidebarMenuButton({
         />
       ) : null}
       {icon ? (
-        <span
-          aria-hidden="true"
-          className="relative z-10 grid size-5 shrink-0 place-items-center"
-        >
+        <span aria-hidden="true" className="relative z-10 grid size-5 shrink-0 place-items-center">
           {icon}
         </span>
       ) : null}
@@ -1125,9 +1020,7 @@ export function AnimatedSidebarMenuButton({
         {children}
       </motion.span>
       {badge && !panel.collapsed ? (
-        <span className="relative z-10 shrink-0 text-xs text-muted-foreground">
-          {badge}
-        </span>
+        <span className="relative z-10 shrink-0 text-xs text-muted-foreground">{badge}</span>
       ) : null}
       {ariaExpanded !== undefined ? (
         <motion.span
@@ -1160,10 +1053,7 @@ export function AnimatedSidebarMenuButton({
     <motion.a
       href={href}
       target={target}
-      rel={
-        rel ??
-        (target === "_blank" ? "noreferrer noopener" : undefined)
-      }
+      rel={rel ?? (target === "_blank" ? "noreferrer noopener" : undefined)}
       aria-current={isActive ? "page" : undefined}
       aria-expanded={ariaExpanded}
       aria-disabled={disabled || undefined}

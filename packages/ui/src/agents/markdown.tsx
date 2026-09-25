@@ -13,10 +13,14 @@ export interface MarkdownProps {
 
 type CodeElement = ReactElement<{ className?: string; children?: unknown }>;
 
-const languageOf = (className?: string) => /language-([\w+#.-]+)/.exec(className ?? "")?.[1]?.toLowerCase() ?? "text";
+const languageOf = (className?: string) =>
+  /language-([\w+#.-]+)/.exec(className ?? "")?.[1]?.toLowerCase() ?? "text";
 
 /** The source a markdown root renders, for renderers that need more than their node. */
-const SourceContext = createContext<{ readonly text: string; readonly streaming: boolean }>({ text: "", streaming: false });
+const SourceContext = createContext<{ readonly text: string; readonly streaming: boolean }>({
+  text: "",
+  streaming: false,
+});
 
 /**
  * Module-level, so element types stay the same between renders: a new object each
@@ -40,21 +44,32 @@ const components: Components = {
     );
   },
   code: ({ className, children }) => (
-    <code className={cn("rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]", className)}>{children}</code>
+    <code className={cn("rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]", className)}>
+      {children}
+    </code>
   ),
   a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-4">
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="font-medium underline underline-offset-4"
+    >
       {children}
     </a>
   ),
-  h1: ({ children }) => <h1 className="mb-2 mt-5 text-lg font-semibold first:mt-0">{children}</h1>,
-  h2: ({ children }) => <h2 className="mb-2 mt-5 text-base font-semibold first:mt-0">{children}</h2>,
-  h3: ({ children }) => <h3 className="mb-1.5 mt-4 font-semibold first:mt-0">{children}</h3>,
+  h1: ({ children }) => <h1 className="mt-5 mb-2 text-lg font-semibold first:mt-0">{children}</h1>,
+  h2: ({ children }) => (
+    <h2 className="mt-5 mb-2 text-base font-semibold first:mt-0">{children}</h2>
+  ),
+  h3: ({ children }) => <h3 className="mt-4 mb-1.5 font-semibold first:mt-0">{children}</h3>,
   p: ({ children }) => <p className="[&+*]:mt-3">{children}</p>,
   ul: ({ children }) => <ul className="my-3 list-disc space-y-1 pl-5">{children}</ul>,
   ol: ({ children }) => <ol className="my-3 list-decimal space-y-1 pl-5">{children}</ol>,
   blockquote: ({ children }) => (
-    <blockquote className="my-3 border-l-2 border-border pl-3 text-muted-foreground">{children}</blockquote>
+    <blockquote className="my-3 border-l-2 border-border pl-3 text-muted-foreground">
+      {children}
+    </blockquote>
   ),
   hr: () => <hr className="my-4 border-border" />,
   table: ({ children }) => (
@@ -62,8 +77,12 @@ const components: Components = {
       <table className="w-full border-collapse text-left text-[13px]">{children}</table>
     </div>
   ),
-  th: ({ children }) => <th className="border-b border-border bg-muted/60 px-3 py-1.5 font-medium">{children}</th>,
-  td: ({ children }) => <td className="border-b border-border/60 px-3 py-1.5 align-top">{children}</td>,
+  th: ({ children }) => (
+    <th className="border-b border-border bg-muted/60 px-3 py-1.5 font-medium">{children}</th>
+  ),
+  td: ({ children }) => (
+    <td className="border-b border-border/60 px-3 py-1.5 align-top">{children}</td>
+  ),
 };
 
 const plugins = [remarkGfm];
@@ -93,7 +112,11 @@ const stableEnd = (text: string) => {
     const fence = FENCE.exec(line)?.[1];
     if (fence) {
       if (open === null) open = fence;
-      else if (fence[0] === open[0] && fence.length >= open.length && line.slice(fence.length).trim() === "") {
+      else if (
+        fence[0] === open[0] &&
+        fence.length >= open.length &&
+        line.slice(fence.length).trim() === ""
+      ) {
         open = null;
         closedAt = offset;
       }
@@ -103,7 +126,13 @@ const stableEnd = (text: string) => {
   return Math.min(end, text.length);
 };
 
-const MarkdownPart = memo(function MarkdownPart({ text, streaming }: { text: string; streaming: boolean }) {
+const MarkdownPart = memo(function MarkdownPart({
+  text,
+  streaming,
+}: {
+  text: string;
+  streaming: boolean;
+}) {
   return (
     <SourceContext value={{ text, streaming }}>
       <ReactMarkdown remarkPlugins={plugins} components={components}>
@@ -117,12 +146,18 @@ const MarkdownPart = memo(function MarkdownPart({ text, streaming }: { text: str
  * Agent markdown, with fenced code rendered by CodeBlock. Text before the
  * last finished code block is its own part, so streaming only re-parses the rest.
  */
-export const Markdown = memo(function Markdown({ children, streaming = false, className }: MarkdownProps) {
+export const Markdown = memo(function Markdown({
+  children,
+  streaming = false,
+  className,
+}: MarkdownProps) {
   const cut = stableEnd(children);
   return (
     <div className={cn("min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}>
       {cut > 0 ? <MarkdownPart text={children.slice(0, cut)} streaming={false} /> : null}
-      {cut < children.length ? <MarkdownPart text={children.slice(cut)} streaming={streaming} /> : null}
+      {cut < children.length ? (
+        <MarkdownPart text={children.slice(cut)} streaming={streaming} />
+      ) : null}
     </div>
   );
 });

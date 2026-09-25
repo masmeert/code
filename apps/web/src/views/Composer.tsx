@@ -2,7 +2,16 @@ import { PromptInput, PromptSelect, PromptSlider } from "@apcode/ui/agents/promp
 import { ProjectBadge } from "@/components/project-badge";
 import { cn } from "@apcode/ui/lib/utils";
 import type { PermissionLevel, ProviderKind, TurnOptions } from "@apcode/contracts";
-import { Archive, FilePen, Folder, FolderPlus, FolderTree, GitBranch, LockOpen, ShieldCheck } from "lucide-react";
+import {
+  Archive,
+  FilePen,
+  Folder,
+  FolderPlus,
+  FolderTree,
+  GitBranch,
+  LockOpen,
+  ShieldCheck,
+} from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import {
   EFFORT_LABEL,
@@ -28,10 +37,17 @@ const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {
   "full-access": LockOpen,
 };
 
-const PERMISSION_OPTIONS = (Object.keys(PERMISSION_LABEL) as Array<PermissionLevel>).map((level) => {
-  const Icon = PERMISSION_ICON[level];
-  return { value: level, label: PERMISSION_LABEL[level], description: PERMISSION_DESCRIPTION[level], icon: <Icon /> };
-});
+const PERMISSION_OPTIONS = (Object.keys(PERMISSION_LABEL) as Array<PermissionLevel>).map(
+  (level) => {
+    const Icon = PERMISSION_ICON[level];
+    return {
+      value: level,
+      label: PERMISSION_LABEL[level],
+      description: PERMISSION_DESCRIPTION[level],
+      icon: <Icon />,
+    };
+  },
+);
 
 export interface ComposerProps {
   /** Whose draft, and effort/permission picks, these are: a thread id, or "draft:new". */
@@ -46,7 +62,10 @@ export interface ComposerProps {
   /** Drafts only: turns the folder chip into a project picker. */
   onPickProject?: (path: string | null) => void;
   /** Drafts only: where the new thread will run. */
-  workspace?: { readonly value: "local" | "worktree"; readonly onChange: (value: "local" | "worktree") => void };
+  workspace?: {
+    readonly value: "local" | "worktree";
+    readonly onChange: (value: "local" | "worktree") => void;
+  };
   busy?: boolean;
   disabled?: boolean;
   /** Keeps the composer usable but blocks sending (e.g. no project picked yet). */
@@ -101,7 +120,8 @@ export const Composer = (props: ComposerProps) => {
 
   // --- slash commands: "/" at the start opens the menu.
   const commands = useStore((s) => (threadId ? s.commands[threadId] : undefined));
-  const slashQuery = threadId && /^\/\S*$/.test(draft.text) ? draft.text.slice(1).toLowerCase() : null;
+  const slashQuery =
+    threadId && /^\/\S*$/.test(draft.text) ? draft.text.slice(1).toLowerCase() : null;
   const [slashDismissed, setSlashDismissed] = useState<string | null>(null);
   const [slashIndex, setSlashIndex] = useState(0);
   const slashItems: Array<SlashItem> =
@@ -114,7 +134,9 @@ export const Composer = (props: ComposerProps) => {
             hint: "",
             run: () => threadId && send({ _tag: "thread.compact", threadId }),
           },
-          ...(commands ?? []).filter((c) => c.name !== "compact").map((c) => ({ name: c.name, description: c.description, hint: c.argumentHint })),
+          ...(commands ?? [])
+            .filter((c) => c.name !== "compact")
+            .map((c) => ({ name: c.name, description: c.description, hint: c.argumentHint })),
         ].filter((item) => item.name.toLowerCase().startsWith(slashQuery));
   const slashOpen = slashItems.length > 0;
   useEffect(() => {
@@ -151,12 +173,22 @@ export const Composer = (props: ComposerProps) => {
     const textarea = event.currentTarget;
     const text = textarea.value;
     const untouched = text === "" || text === recall.current?.text;
-    if (event.key === "ArrowUp" && untouched && history.length && !text.slice(0, textarea.selectionStart).includes("\n")) {
+    if (
+      event.key === "ArrowUp" &&
+      untouched &&
+      history.length &&
+      !text.slice(0, textarea.selectionStart).includes("\n")
+    ) {
       const index = recall.current ? recall.current.index - 1 : history.length - 1;
       if (index < 0) return;
       event.preventDefault();
       recallTo(index);
-    } else if (event.key === "ArrowDown" && recall.current && text === recall.current.text && !text.slice(textarea.selectionEnd).includes("\n")) {
+    } else if (
+      event.key === "ArrowDown" &&
+      recall.current &&
+      text === recall.current.text &&
+      !text.slice(textarea.selectionEnd).includes("\n")
+    ) {
       event.preventDefault();
       recallTo(recall.current.index + 1);
     }
@@ -204,7 +236,12 @@ export const Composer = (props: ComposerProps) => {
               maxLabel="Smarter"
               options={effortOptions}
               value={prefs.effort ?? fallbackEffort}
-              onChange={(value) => setPrefs({ effort: value === fallbackEffort ? null : (value as NonNullable<typeof prefs.effort>) })}
+              onChange={(value) =>
+                setPrefs({
+                  effort:
+                    value === fallbackEffort ? null : (value as NonNullable<typeof prefs.effort>),
+                })
+              }
               placeholder="Default effort"
               disabled={props.disabled}
               shortcut={KEYBINDINGS["picker.effort"]}
@@ -219,7 +256,9 @@ export const Composer = (props: ComposerProps) => {
               shortcut={KEYBINDINGS["picker.permission"]}
               showOptionIcon
               width="w-72"
-              className={prefs.permission === "full-access" ? "text-warning hover:text-warning" : undefined}
+              className={
+                prefs.permission === "full-access" ? "text-warning hover:text-warning" : undefined
+              }
             />,
           ]}
           attachments={[...files.attachments]}
@@ -251,8 +290,14 @@ export const Composer = (props: ComposerProps) => {
                 {props.workspace ? <WorkspaceSelect {...props.workspace} /> : null}
               </span>
               <span className="flex min-w-0 items-center gap-0.5">
-                {stashes.length ? <StashSelect prefsKey={prefsKey} openSignal={stashSignal} /> : null}
-                {props.cwd ? <BranchPicker cwd={props.cwd} disabled={props.busy ?? false} /> : <span />}
+                {stashes.length ? (
+                  <StashSelect prefsKey={prefsKey} openSignal={stashSignal} />
+                ) : null}
+                {props.cwd ? (
+                  <BranchPicker cwd={props.cwd} disabled={props.busy ?? false} />
+                ) : (
+                  <span />
+                )}
               </span>
             </>
           }
@@ -263,7 +308,15 @@ export const Composer = (props: ComposerProps) => {
   );
 };
 
-const SlashMenu = ({ items, active, onPick }: { items: ReadonlyArray<SlashItem>; active: number; onPick: (item: SlashItem) => void }) => (
+const SlashMenu = ({
+  items,
+  active,
+  onPick,
+}: {
+  items: ReadonlyArray<SlashItem>;
+  active: number;
+  onPick: (item: SlashItem) => void;
+}) => (
   <div
     role="listbox"
     aria-label="Commands"
@@ -284,7 +337,11 @@ const SlashMenu = ({ items, active, onPick }: { items: ReadonlyArray<SlashItem>;
         )}
       >
         <span className="shrink-0 font-mono text-foreground">/{item.name}</span>
-        {item.hint ? <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">{item.hint}</span> : null}
+        {item.hint ? (
+          <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">
+            {item.hint}
+          </span>
+        ) : null}
         <span className="min-w-0 truncate text-xs">{item.description}</span>
       </button>
     ))}
@@ -316,10 +373,21 @@ const StashSelect = ({ prefsKey, openSignal }: { prefsKey: string; openSignal: n
 
 const WORKSPACE_OPTIONS = [
   { value: "local", label: "Local", description: "Work in the project folder", icon: <Folder /> },
-  { value: "worktree", label: "New worktree", description: "A git worktree on its own branch, for parallel work", icon: <FolderTree /> },
+  {
+    value: "worktree",
+    label: "New worktree",
+    description: "A git worktree on its own branch, for parallel work",
+    icon: <FolderTree />,
+  },
 ];
 
-const WorkspaceSelect = ({ value, onChange }: { value: "local" | "worktree"; onChange: (value: "local" | "worktree") => void }) => (
+const WorkspaceSelect = ({
+  value,
+  onChange,
+}: {
+  value: "local" | "worktree";
+  onChange: (value: "local" | "worktree") => void;
+}) => (
   <PromptSelect
     title="Workspace"
     options={WORKSPACE_OPTIONS}
@@ -336,18 +404,31 @@ const WorkspaceSelect = ({ value, onChange }: { value: "local" | "worktree"; onC
 export const useWorkspaceChoice = () => {
   const settings = useStore((s) => s.settings);
   const value = settings.workspace ?? "local";
-  return { value, onChange: (workspace: "local" | "worktree") => updateSettings({ ...settings, workspace }) };
+  return {
+    value,
+    onChange: (workspace: "local" | "worktree") => updateSettings({ ...settings, workspace }),
+  };
 };
 
 const ADD_PROJECT = "\u0000add-project";
 
 /** Which project a draft starts in; also the way to add one. */
-const ProjectSelect = ({ cwd, onPick }: { cwd: string | null; onPick: (path: string | null) => void }) => {
+const ProjectSelect = ({
+  cwd,
+  onPick,
+}: {
+  cwd: string | null;
+  onPick: (path: string | null) => void;
+}) => {
   const projects = useStore((s) => s.projects);
   const options = [
     ...[...projects]
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map((project) => ({ value: project.path, label: project.name, icon: <ProjectBadge project={project} /> })),
+      .map((project) => ({
+        value: project.path,
+        label: project.name,
+        icon: <ProjectBadge project={project} />,
+      })),
     { value: ADD_PROJECT, label: "Add project…", icon: <FolderPlus /> },
   ];
   return (
@@ -357,7 +438,11 @@ const ProjectSelect = ({ cwd, onPick }: { cwd: string | null; onPick: (path: str
       options={options}
       value={cwd ?? undefined}
       placeholder="Pick a project"
-      onChange={(value) => (value === ADD_PROJECT ? void addProject().then((path) => path && onPick(path)) : onPick(value))}
+      onChange={(value) =>
+        value === ADD_PROJECT
+          ? void addProject().then((path) => path && onPick(path))
+          : onPick(value)
+      }
       width="w-64"
       className={cwd ? "h-6 text-[11px]" : "h-6 text-[11px] text-foreground"}
     />
@@ -370,7 +455,8 @@ const BranchPicker = ({ cwd, disabled }: { cwd: string; disabled: boolean }) => 
   useEffect(() => send({ _tag: "git.listBranches", path: cwd }), [cwd]);
 
   if (!list) return null;
-  if (!list.current && !list.branches.length) return <span className="px-1.5 text-muted-foreground/70">Not a git repo</span>;
+  if (!list.current && !list.branches.length)
+    return <span className="px-1.5 text-muted-foreground/70">Not a git repo</span>;
   return (
     <PromptSelect
       title="Switch branch"
@@ -385,11 +471,17 @@ const BranchPicker = ({ cwd, disabled }: { cwd: string; disabled: boolean }) => 
       options={list.branches.map((branch) => ({ value: branch, label: branch }))}
       value={list.current ?? undefined}
       placeholder="Detached"
-      onChange={(branch) => branch !== list.current && send({ _tag: "git.checkout", path: cwd, branch })}
+      onChange={(branch) =>
+        branch !== list.current && send({ _tag: "git.checkout", path: cwd, branch })
+      }
       onOpenChange={(open) => open && send({ _tag: "git.listBranches", path: cwd })}
       disabled={disabled}
       shortcut={KEYBINDINGS["picker.branch"]}
-      note={list.error ? <span className="whitespace-pre-wrap text-destructive">{list.error}</span> : undefined}
+      note={
+        list.error ? (
+          <span className="whitespace-pre-wrap text-destructive">{list.error}</span>
+        ) : undefined
+      }
       align="end"
       width="w-72"
       className="h-6 font-mono text-[11px]"

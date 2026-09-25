@@ -45,7 +45,7 @@ export function BumpChartLegend({ className }: { className?: string }) {
               {last == null ? "—" : `#${last}`}
             </span>
             <span
-              className="min-w-5 text-right font-mono text-[10px] tabular-nums text-muted-foreground"
+              className="min-w-5 text-right font-mono text-[10px] text-muted-foreground tabular-nums"
               title={
                 gain == null
                   ? "Change unavailable"

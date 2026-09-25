@@ -1,10 +1,4 @@
-import {
-  type MotionValue,
-  motion,
-  useReducedMotion,
-  useSpring,
-  useTransform,
-} from "motion/react";
+import { type MotionValue, motion, useReducedMotion, useSpring, useTransform } from "motion/react";
 
 import { useSmoothScroll } from "@apcode/ui/motion/smooth-scroll";
 import { cn } from "@apcode/ui/lib/utils";
@@ -38,9 +32,7 @@ export interface ScrollProgressCircleProps extends CommonProps {
   thickness?: number;
 }
 
-export type ScrollProgressProps =
-  | ScrollProgressBarProps
-  | ScrollProgressCircleProps;
+export type ScrollProgressProps = ScrollProgressBarProps | ScrollProgressCircleProps;
 
 function useProgressValue(source: MotionValue<number> | undefined, spring: boolean) {
   const reduce = useReducedMotion();
@@ -69,7 +61,7 @@ function ScrollProgressBar({
       aria-hidden
       style={{ height, scaleX: value }}
       className={cn(
-        "left-0 right-0 z-50 origin-left bg-foreground",
+        "right-0 left-0 z-50 origin-left bg-foreground",
         fixed ? "fixed" : "absolute",
         position === "top" ? "top-0" : "bottom-0",
         className,

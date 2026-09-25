@@ -37,7 +37,8 @@ export function BrowserHost() {
   );
 
   if (!window.desktop) return null;
-  const shown = surface && browsers[surface.threadId]?.open ? browsers[surface.threadId]?.activeTabId : null;
+  const shown =
+    surface && browsers[surface.threadId]?.open ? browsers[surface.threadId]?.activeTabId : null;
   return createPortal(
     alive.flatMap(({ threadId, tabId }) => {
       const tab = browsers[threadId]?.tabs.find((candidate) => candidate.id === tabId);
@@ -56,7 +57,17 @@ export function BrowserHost() {
   );
 }
 
-function HostedTab({ threadId, tab, rect, automating }: { threadId: string; tab: BrowserTab; rect: SurfaceRect | null; automating: boolean }) {
+function HostedTab({
+  threadId,
+  tab,
+  rect,
+  automating,
+}: {
+  threadId: string;
+  tab: BrowserTab;
+  rect: SurfaceRect | null;
+  automating: boolean;
+}) {
   const [initialUrl] = useState(tab.url);
   const [generation, setGeneration] = useState(0);
   const [hiddenSize, setHiddenSize] = useState({ width: 1024, height: 768 });
@@ -71,7 +82,10 @@ function HostedTab({ threadId, tab, rect, automating }: { threadId: string; tab:
     const element = webview.current!;
     function syncHistory() {
       try {
-        updateActivity(tab.id, { canGoBack: element.canGoBack(), canGoForward: element.canGoForward() });
+        updateActivity(tab.id, {
+          canGoBack: element.canGoBack(),
+          canGoForward: element.canGoForward(),
+        });
       } catch {}
     }
     const handlers: Record<string, (event: Event & Record<string, unknown>) => void> = {
@@ -91,23 +105,27 @@ function HostedTab({ threadId, tab, rect, automating }: { threadId: string; tab:
         syncHistory();
       },
       "page-title-updated": (event) => updateTab(threadId, tab.id, { title: String(event.title) }),
-      "page-favicon-updated": (event) => updateActivity(tab.id, { favicon: (event.favicons as ReadonlyArray<string>)[0] ?? null }),
+      "page-favicon-updated": (event) =>
+        updateActivity(tab.id, { favicon: (event.favicons as ReadonlyArray<string>)[0] ?? null }),
       "did-fail-load": (event) => {
         if (event.isMainFrame && event.errorDescription !== "ERR_ABORTED") {
           updateActivity(tab.id, { loading: false, error: String(event.errorDescription) });
         }
       },
       "render-process-gone": () => {
-        if (Date.now() - crashedAt.current < 10_000) return updateActivity(tab.id, { error: "The page crashed" });
+        if (Date.now() - crashedAt.current < 10_000)
+          return updateActivity(tab.id, { error: "The page crashed" });
         crashedAt.current = Date.now();
         setGeneration((value) => value + 1);
       },
       focus: () => element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })),
     };
-    for (const [name, handler] of Object.entries(handlers)) element.addEventListener(name, handler as EventListener);
+    for (const [name, handler] of Object.entries(handlers))
+      element.addEventListener(name, handler as EventListener);
     const unregister = registerWebview(tab.id, element);
     return () => {
-      for (const [name, handler] of Object.entries(handlers)) element.removeEventListener(name, handler as EventListener);
+      for (const [name, handler] of Object.entries(handlers))
+        element.removeEventListener(name, handler as EventListener);
       unregister();
     };
   }, [generation]);

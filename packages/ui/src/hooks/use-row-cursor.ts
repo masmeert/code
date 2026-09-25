@@ -7,11 +7,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 type RowCursor = { id: string; query: string; pointed: boolean };
 
 /** The cursor's row, or -1 once the query has moved on or the row has left. */
-function indexOfCursor(
-  rows: readonly { id: string }[],
-  query: string,
-  cursor: RowCursor | null,
-) {
+function indexOfCursor(rows: readonly { id: string }[], query: string, cursor: RowCursor | null) {
   if (cursor === null || cursor.query !== query) return -1;
   return rows.findIndex((row) => row.id === cursor.id);
 }
@@ -75,30 +71,29 @@ export function useRowCursor(
 
   const moveTo = useCallback(
     (id: string | null) =>
-      setCursor(
-        id === null
-          ? null
-          : { id, query: latest.current.query, pointed: true },
-      ),
+      setCursor(id === null ? null : { id, query: latest.current.query, pointed: true }),
     [],
   );
 
-  const moveActive = useCallback((direction: 1 | -1) => {
-    const { rows: live, query: liveQuery } = latest.current;
-    const last = live.length - 1;
-    if (last < 0) return;
-    // Steps from the row the cursor is really on, inside the update, so that
-    // two keys landing in one batch move two rows rather than one.
-    setCursor((current) => {
-      const at = Math.max(indexOfCursor(live, liveQuery, current), 0);
-      const stepped = at + direction;
-      const wrapped = loop && (stepped < 0 || stepped > last);
-      const next = wrapped
-        ? (stepped + live.length) % live.length
-        : Math.min(Math.max(stepped, 0), last);
-      return { id: live[next].id, query: liveQuery, pointed: false };
-    });
-  }, [loop]);
+  const moveActive = useCallback(
+    (direction: 1 | -1) => {
+      const { rows: live, query: liveQuery } = latest.current;
+      const last = live.length - 1;
+      if (last < 0) return;
+      // Steps from the row the cursor is really on, inside the update, so that
+      // two keys landing in one batch move two rows rather than one.
+      setCursor((current) => {
+        const at = Math.max(indexOfCursor(live, liveQuery, current), 0);
+        const stepped = at + direction;
+        const wrapped = loop && (stepped < 0 || stepped > last);
+        const next = wrapped
+          ? (stepped + live.length) % live.length
+          : Math.min(Math.max(stepped, 0), last);
+        return { id: live[next].id, query: liveQuery, pointed: false };
+      });
+    },
+    [loop],
+  );
 
   return {
     activeIndex: cursorRow < 0 ? 0 : cursorRow,

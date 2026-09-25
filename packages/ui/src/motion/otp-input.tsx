@@ -1,9 +1,4 @@
-import {
-  AnimatePresence,
-  animate,
-  motion,
-  useReducedMotion,
-} from "motion/react";
+import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useRef, useState } from "react";
 import { EASE_OUT } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
@@ -180,28 +175,17 @@ export function OTPInput({
   // Error shake — imperative so it replays on every transition into "error".
   useEffect(() => {
     if (status !== "error" || reduce || !slotsRef.current) return;
-    animate(
-      slotsRef.current,
-      { x: [0, -5, 5, -3, 3, -1, 0] },
-      { duration: 0.45, ease: EASE_OUT },
-    );
+    animate(slotsRef.current, { x: [0, -5, 5, -3, 3, -1, 0] }, { duration: 0.45, ease: EASE_OUT });
   }, [status, reduce]);
 
   const showSuccess = status === "success";
   const activeIndex = focused ? active : -1;
-  const message = showSuccess
-    ? successMessage
-    : status === "error"
-      ? errorMessage
-      : hint;
+  const message = showSuccess ? successMessage : status === "error" ? errorMessage : hint;
 
   return (
     <div className={cn("inline-flex flex-col gap-2", className)}>
       {label ? (
-        <label
-          htmlFor={`${uid}-input`}
-          className="text-sm font-medium text-foreground"
-        >
+        <label htmlFor={`${uid}-input`} className="text-sm font-medium text-foreground">
           {label}
         </label>
       ) : null}
@@ -289,26 +273,10 @@ export function OTPInput({
                   {char ? (
                     <motion.span
                       key={char}
-                      initial={
-                        reduce
-                          ? { opacity: 0 }
-                          : { y: 14, opacity: 0, filter: "blur(4px)" }
-                      }
-                      animate={
-                        reduce
-                          ? { opacity: 1 }
-                          : { y: 0, opacity: 1, filter: "blur(0px)" }
-                      }
-                      exit={
-                        reduce
-                          ? { opacity: 0 }
-                          : { y: -14, opacity: 0, filter: "blur(4px)" }
-                      }
-                      transition={
-                        reduce
-                          ? { duration: 0 }
-                          : { duration: 0.22, ease: EASE_OUT }
-                      }
+                      initial={reduce ? { opacity: 0 } : { y: 14, opacity: 0, filter: "blur(4px)" }}
+                      animate={reduce ? { opacity: 1 } : { y: 0, opacity: 1, filter: "blur(0px)" }}
+                      exit={reduce ? { opacity: 0 } : { y: -14, opacity: 0, filter: "blur(4px)" }}
+                      transition={reduce ? { duration: 0 } : { duration: 0.22, ease: EASE_OUT }}
                       className="absolute inset-0 grid place-items-center leading-none"
                     >
                       {mask ? "•" : char}
@@ -327,11 +295,9 @@ export function OTPInput({
               animate={reduce ? { opacity: 1 } : { scale: 1, opacity: 1 }}
               exit={reduce ? { opacity: 0 } : { scale: 0.6, opacity: 0 }}
               transition={
-                reduce
-                  ? { duration: 0 }
-                  : { type: "spring", stiffness: 500, damping: 28 }
+                reduce ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 28 }
               }
-              className="pointer-events-none absolute -right-7 top-1/2 -translate-y-1/2 text-emerald-500"
+              className="pointer-events-none absolute top-1/2 -right-7 -translate-y-1/2 text-emerald-500"
               aria-hidden
             >
               <svg
@@ -350,9 +316,7 @@ export function OTPInput({
                   initial={reduce ? { pathLength: 1 } : { pathLength: 0 }}
                   animate={{ pathLength: 1 }}
                   transition={
-                    reduce
-                      ? { duration: 0 }
-                      : { duration: 0.35, ease: EASE_OUT, delay: 0.1 }
+                    reduce ? { duration: 0 } : { duration: 0.35, ease: EASE_OUT, delay: 0.1 }
                   }
                 />
               </svg>

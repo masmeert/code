@@ -26,9 +26,7 @@ export function TableMenu({
 }) {
   const reduce = useReducedMotion();
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const [coords, setCoords] = useState<{ top: number; left: number } | null>(
-    null,
-  );
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const open = coords !== null;
 
   useEffect(() => {
@@ -81,20 +79,13 @@ export function TableMenu({
       {open && typeof document !== "undefined"
         ? createPortal(
             <>
-              <div
-                className="fixed inset-0 z-40"
-                onPointerDown={() => setCoords(null)}
-              />
+              <div className="fixed inset-0 z-40" onPointerDown={() => setCoords(null)} />
               <motion.div
                 role="menu"
                 className="fixed z-50 overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-panel"
                 style={{ top: coords.top, left: coords.left, width: MENU_WIDTH }}
-                initial={
-                  reduce ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: -4 }
-                }
-                animate={
-                  reduce ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }
-                }
+                initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: -4 }}
+                animate={reduce ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
                 transition={reduce ? { duration: 0 } : SPRING_PANEL}
               >
                 {items.map((item) => (

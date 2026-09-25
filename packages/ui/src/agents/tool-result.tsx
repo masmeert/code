@@ -21,14 +21,8 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  AgentCode,
-  type AgentCodeLanguage,
-} from "@apcode/ui/agents/agent-code";
-import {
-  ActionSwapRollIcon,
-  ActionSwapRollText,
-} from "@apcode/ui/motion/action-swap-roll";
+import { AgentCode, type AgentCodeLanguage } from "@apcode/ui/agents/agent-code";
+import { ActionSwapRollIcon, ActionSwapRollText } from "@apcode/ui/motion/action-swap-roll";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
 import { SPRING_PRESS } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
@@ -88,13 +82,7 @@ function KindIcon({ kind }: { kind: ToolResultKind }) {
   return <Wrench className="size-4" />;
 }
 
-function StatusIcon({
-  status,
-  reduce,
-}: {
-  status: ToolResultStatus;
-  reduce: boolean;
-}) {
+function StatusIcon({ status, reduce }: { status: ToolResultStatus; reduce: boolean }) {
   if (status === "running") {
     return <LoaderCircle className={cn("size-3", !reduce && "animate-spin")} />;
   }
@@ -122,7 +110,7 @@ function ToolResultAction({
       onClick={onClick}
       whileTap={reduce ? undefined : { scale: 0.95 }}
       transition={SPRING_PRESS}
-      className="grid size-7 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+      className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
     >
       {children}
     </motion.button>
@@ -138,10 +126,7 @@ export function ToolResultOutput({
     <AgentCode
       code={children}
       language={language}
-      className={cn(
-        "whitespace-pre-wrap break-words text-foreground/80",
-        className,
-      )}
+      className={cn("break-words whitespace-pre-wrap text-foreground/80", className)}
     />
   );
 }
@@ -191,11 +176,7 @@ export function ToolResult({
     if (previousStatus.current !== "running" && status === "running") {
       setOpen(true);
     }
-    if (
-      previousStatus.current === "running" &&
-      status !== "running" &&
-      collapseOnComplete
-    ) {
+    if (previousStatus.current === "running" && status !== "running" && collapseOnComplete) {
       setOpen(false);
     }
     previousStatus.current = status;
@@ -228,11 +209,7 @@ export function ToolResult({
   }, [copyText, onCopy]);
 
   return (
-    <div
-      data-state={status}
-      aria-busy={running}
-      className={cn("w-full text-sm", className)}
-    >
+    <div data-state={status} aria-busy={running} className={cn("w-full text-sm", className)}>
       <button
         id={triggerId}
         type="button"
@@ -248,14 +225,8 @@ export function ToolResult({
           {icon ?? <KindIcon kind={kind} />}
         </span>
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
-          <span className="min-w-0 truncate font-medium text-foreground/90">
-            {title}
-          </span>
-          {meta ? (
-            <span className="shrink-0 text-xs text-muted-foreground/60">
-              {meta}
-            </span>
-          ) : null}
+          <span className="min-w-0 truncate font-medium text-foreground/90">{title}</span>
+          {meta ? <span className="shrink-0 text-xs text-muted-foreground/60">{meta}</span> : null}
           <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground/55">
             {tool}
           </span>
@@ -278,48 +249,34 @@ export function ToolResult({
         />
       </button>
 
-      <AgentDisclosure
-        id={contentId}
-        role="region"
-        aria-labelledby={triggerId}
-        open={currentOpen}
-      >
-        <div className="pl-6 pt-1.5">
+      <AgentDisclosure id={contentId} role="region" aria-labelledby={triggerId} open={currentOpen}>
+        <div className="pt-1.5 pl-6">
           <div className="overflow-hidden rounded-xl bg-muted/80">
-          <div
-            ref={viewportRef}
-            role="log"
-            aria-live="polite"
-            className="scrollbar-hide overflow-y-auto"
-            style={{ maxHeight }}
-          >
-            <div className={cn("p-3", contentClassName)}>{children}</div>
-          </div>
+            <div
+              ref={viewportRef}
+              role="log"
+              aria-live="polite"
+              className="scrollbar-hide overflow-y-auto"
+              style={{ maxHeight }}
+            >
+              <div className={cn("p-3", contentClassName)}>{children}</div>
+            </div>
 
             {canCopy || onRetry ? (
               <div className="flex items-center gap-0.5 px-2 pb-1.5">
-              {canCopy ? (
-                <ToolResultAction
-                  label={copied ? "Copied" : "Copy result"}
-                  onClick={handleCopy}
-                >
-                  <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">
-                    {copied ? (
-                      <Check className="size-3.5" />
-                    ) : (
-                      <Copy className="size-3.5" />
-                    )}
-                  </ActionSwapRollIcon>
-                </ToolResultAction>
-              ) : null}
-              {onRetry ? (
-                <ToolResultAction label="Run again" onClick={onRetry}>
-                  <RotateCcw className="size-3.5" />
-                </ToolResultAction>
-              ) : null}
-              <span className="ml-auto text-[11px] text-muted-foreground/55">
-                {statusLabel}
-              </span>
+                {canCopy ? (
+                  <ToolResultAction label={copied ? "Copied" : "Copy result"} onClick={handleCopy}>
+                    <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">
+                      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                    </ActionSwapRollIcon>
+                  </ToolResultAction>
+                ) : null}
+                {onRetry ? (
+                  <ToolResultAction label="Run again" onClick={onRetry}>
+                    <RotateCcw className="size-3.5" />
+                  </ToolResultAction>
+                ) : null}
+                <span className="ml-auto text-[11px] text-muted-foreground/55">{statusLabel}</span>
               </div>
             ) : null}
           </div>

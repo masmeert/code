@@ -1,9 +1,4 @@
-export type {
-  ButtonLinkProps,
-  ButtonProps,
-  ButtonSize,
-  ButtonVariant,
-} from "./button/base";
+export type { ButtonLinkProps, ButtonProps, ButtonSize, ButtonVariant } from "./button/base";
 export { Button, ButtonLink, buttonVariants } from "./button/base";
 export type { MagneticButtonProps } from "./button/magnetic";
 export { MagneticButton } from "./button/magnetic";

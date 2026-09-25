@@ -20,7 +20,10 @@ export function OpenAILogo(props: LogoProps) {
   );
 }
 
-export const PROVIDER_LOGO: Record<ProviderKind, typeof ClaudeLogo> = { claude: ClaudeLogo, codex: OpenAILogo };
+export const PROVIDER_LOGO: Record<ProviderKind, typeof ClaudeLogo> = {
+  claude: ClaudeLogo,
+  codex: OpenAILogo,
+};
 
 /** Avatar tint per provider: Claude's coral on a warm wash, OpenAI in plain foreground. */
 export const PROVIDER_AVATAR_CLASS: Record<ProviderKind, string> = {

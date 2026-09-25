@@ -4,7 +4,13 @@
  * themselves; we only drive their own commands.
  */
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { Effort, type AuthFlow, type ModelOption, type ProviderKind, type ProviderStatus } from "@apcode/contracts";
+import {
+  Effort,
+  type AuthFlow,
+  type ModelOption,
+  type ProviderKind,
+  type ProviderStatus,
+} from "@apcode/contracts";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -42,7 +48,10 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const probeClaude = async (): Promise<ProviderStatus> => {
   const bin = resolveExecutable("claude", BINARIES.claude.env);
   const version = firstLine((await exec(bin, ["--version"])).stdout);
-  const status = JSON.parse((await exec(bin, ["auth", "status"]).catch((e) => ({ stdout: e.stdout ?? "{}" }))).stdout || "{}");
+  const status = JSON.parse(
+    (await exec(bin, ["auth", "status"]).catch((e) => ({ stdout: e.stdout ?? "{}" }))).stdout ||
+      "{}",
+  );
   const linked = status.loggedIn === true;
   let models: Array<ModelOption> = [];
   if (linked) {
@@ -61,7 +70,9 @@ const probeClaude = async (): Promise<ProviderStatus> => {
       const starred = rows.find((m) => fallback && m.resolvedModel === fallback);
       // The catalog doesn't carry default efforts; the session reports the one it would apply after each model switch.
       // `getSettings` is untyped in the SDK, so failures just leave the default unknown.
-      const settings = q as unknown as { getSettings: () => Promise<{ applied?: { effort?: unknown } }> };
+      const settings = q as unknown as {
+        getSettings: () => Promise<{ applied?: { effort?: unknown } }>;
+      };
       for (const m of rows) {
         const effort = await q
           .setModel(m.value)
@@ -105,7 +116,9 @@ const probeCodex = async (): Promise<ProviderStatus> => {
             id: m.id,
             label: m.displayName,
             ...(m.isDefault ? { recommended: true } : {}),
-            ...(isEffort(m.defaultReasoningEffort) ? { defaultEffort: m.defaultReasoningEffort } : {}),
+            ...(isEffort(m.defaultReasoningEffort)
+              ? { defaultEffort: m.defaultReasoningEffort }
+              : {}),
           }))
       : [];
     return {
@@ -154,8 +167,12 @@ const make = Effect.gen(function* () {
   /** In-flight sign-in per harness. */
   const flows = new Map<ProviderKind, { child?: ChildProcess; rpc?: CodexRpc; loginId?: string }>();
 
-  const flow = (provider: ProviderKind, stage: AuthFlow["stage"], url: string | null = null, text: string | null = null) =>
-    listener.flow({ provider, stage, url, message: text });
+  const flow = (
+    provider: ProviderKind,
+    stage: AuthFlow["stage"],
+    url: string | null = null,
+    text: string | null = null,
+  ) => listener.flow({ provider, stage, url, message: text });
 
   const refreshOne = async (kind: ProviderKind) => {
     const next = await probe(kind);
@@ -189,7 +206,11 @@ const make = Effect.gen(function* () {
     child.stderr.on("data", onData);
     child.on("exit", (code) => {
       if (flows.get("claude")?.child !== child) return;
-      void finish("claude", code === 0, code === 0 ? null : firstLine(output.slice(-500)) || `exited with ${code}`);
+      void finish(
+        "claude",
+        code === 0,
+        code === 0 ? null : firstLine(output.slice(-500)) || `exited with ${code}`,
+      );
     });
   };
 
@@ -198,7 +219,11 @@ const make = Effect.gen(function* () {
       onNotification: (method, params) => {
         if (method !== "account/login/completed") return;
         rpc.close();
-        void finish("codex", params.success === true, params.success ? null : (params.error ?? "Sign-in failed"));
+        void finish(
+          "codex",
+          params.success === true,
+          params.success ? null : (params.error ?? "Sign-in failed"),
+        );
       },
     });
     flows.set("codex", { rpc });
@@ -213,13 +238,16 @@ const make = Effect.gen(function* () {
     const active = flows.get(kind);
     flows.delete(kind);
     active?.child?.kill();
-    if (active?.rpc && active.loginId) void active.rpc.request("account/login/cancel", { loginId: active.loginId }).catch(() => {});
+    if (active?.rpc && active.loginId)
+      void active.rpc.request("account/login/cancel", { loginId: active.loginId }).catch(() => {});
     active?.rpc?.close();
   };
 
   const background = (run: () => Promise<unknown>) =>
     Effect.sync(() => {
-      void run().catch((e) => Effect.runFork(Effect.logWarning("provider task failed", message(e))));
+      void run().catch((e) =>
+        Effect.runFork(Effect.logWarning("provider task failed", message(e))),
+      );
     });
 
   // Initial status, without blocking startup.

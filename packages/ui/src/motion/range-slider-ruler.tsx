@@ -1,4 +1,10 @@
-import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion } from "motion/react";
+import {
+  animate,
+  motion,
+  useMotionValue,
+  useMotionValueEvent,
+  useReducedMotion,
+} from "motion/react";
 import { type KeyboardEvent, useEffect, useRef } from "react";
 
 import { type SliderOptions, snapSliderValue, useSlider } from "@apcode/ui/hooks/use-slider";
@@ -42,8 +48,7 @@ export function RulerSlider({
     ...options,
     // "72.5 kg" beats a bare "72.5" for a screen reader — but a caller who
     // formats the announcement itself outranks the unit.
-    formatValueText:
-      options.formatValueText ?? (unit ? (v) => `${readout(v)} ${unit}` : undefined),
+    formatValueText: options.formatValueText ?? (unit ? (v) => `${readout(v)} ${unit}` : undefined),
   });
 
   // The range need not divide by the step (0–10 by 4). Full ticks stop at the
@@ -125,15 +130,13 @@ export function RulerSlider({
       className={cn(
         "relative w-full touch-none overflow-hidden",
         TOUCH_GESTURE_CLASS,
-        options.disabled
-          ? "pointer-events-none opacity-50"
-          : "cursor-grab active:cursor-grabbing",
-        "rounded-2xl outline-none ring-ring focus-visible:ring-4",
+        options.disabled ? "pointer-events-none opacity-50" : "cursor-grab active:cursor-grabbing",
+        "rounded-2xl ring-ring outline-none focus-visible:ring-4",
         className,
       )}
     >
       <div className="pointer-events-none flex items-baseline justify-center gap-1 pt-1 pb-3">
-        <span className="text-3xl font-semibold tabular-nums text-foreground">
+        <span className="text-3xl font-semibold text-foreground tabular-nums">
           {readout(current)}
         </span>
         {unit ? <span className="text-sm text-muted-foreground">{unit}</span> : null}
@@ -183,7 +186,7 @@ export function RulerSlider({
                 )}
               />
               {tick.major ? (
-                <span className="absolute bottom-0 text-[10px] tabular-nums text-muted-foreground">
+                <span className="absolute bottom-0 text-[10px] text-muted-foreground tabular-nums">
                   {tick.value}
                 </span>
               ) : null}

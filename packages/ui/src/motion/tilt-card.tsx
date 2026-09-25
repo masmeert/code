@@ -1,4 +1,10 @@
-import { motion, useMotionTemplate, useMotionValue, useReducedMotion, useSpring } from "motion/react";
+import {
+  motion,
+  useMotionTemplate,
+  useMotionValue,
+  useReducedMotion,
+  useSpring,
+} from "motion/react";
 import { useRef, type ReactNode } from "react";
 import { SPRING_MOUSE } from "@apcode/ui/lib/ease";
 import { useHoverCapable } from "@apcode/ui/hooks/use-hover-capable";

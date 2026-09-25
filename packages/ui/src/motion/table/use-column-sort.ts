@@ -15,9 +15,7 @@ export function useColumnSort<T>({
   defaultSort?: SortState | null;
   onSortChange?: (sort: SortState | null) => void;
 }) {
-  const [internalSort, setInternalSort] = useState<SortState | null>(
-    defaultSort,
-  );
+  const [internalSort, setInternalSort] = useState<SortState | null>(defaultSort);
   const sort = sortProp !== undefined ? sortProp : internalSort;
 
   const commit = useCallback(

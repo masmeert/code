@@ -124,10 +124,7 @@ export function TextReveal({
               const groupCount = groupCounts.get(whole) ?? 0;
               groupCounts.set(whole, groupCount + 1);
               return (
-                <span
-                  key={`${whole}-${groupCount}`}
-                  className="inline-block whitespace-pre"
-                >
+                <span key={`${whole}-${groupCount}`} className="inline-block whitespace-pre">
                   {Array.from(whole).map((char) => renderUnit(char))}
                 </span>
               );

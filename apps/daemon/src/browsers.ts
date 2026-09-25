@@ -33,10 +33,16 @@ export function createBrowsers() {
     detach(host: BrowserHost) {
       hosts.delete(host);
       for (const [requestId, request] of pending) {
-        if (request.host === host) take(requestId)?.reject(new Error("The APCode window running the browser closed"));
+        if (request.host === host)
+          take(requestId)?.reject(new Error("The APCode window running the browser closed"));
       }
     },
-    respond(host: BrowserHost, requestId: string, result: BrowserResult | null, error: string | null) {
+    respond(
+      host: BrowserHost,
+      requestId: string,
+      result: BrowserResult | null,
+      error: string | null,
+    ) {
       if (pending.get(requestId)?.host !== host) return;
       const request = take(requestId)!;
       if (result) request.resolve(result);
@@ -44,11 +50,16 @@ export function createBrowsers() {
     },
     request(threadId: string, action: BrowserAction) {
       const candidates = [...hosts];
-      const host = candidates.findLast((candidate) => candidate.shows(threadId)) ?? candidates.at(-1);
-      if (!host) return Promise.reject(new Error("The browser needs the APCode desktop app to be open"));
+      const host =
+        candidates.findLast((candidate) => candidate.shows(threadId)) ?? candidates.at(-1);
+      if (!host)
+        return Promise.reject(new Error("The browser needs the APCode desktop app to be open"));
       const requestId = crypto.randomUUID();
       return new Promise<BrowserResult>((resolve, reject) => {
-        const timer = setTimeout(() => take(requestId)?.reject(new Error("The browser didn't answer in time")), 60_000);
+        const timer = setTimeout(
+          () => take(requestId)?.reject(new Error("The browser didn't answer in time")),
+          60_000,
+        );
         pending.set(requestId, { host, resolve, reject, timer });
         host.send({ _tag: "browser.request", requestId, threadId, action });
       });

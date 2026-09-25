@@ -5,7 +5,18 @@ import { cn } from "@apcode/ui/lib/utils";
 import type { SearchHit } from "@apcode/contracts";
 import { MessageSquare, Search } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
-import { Fragment, memo, type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  memo,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { searchMessages, useStore } from "../lib/store.ts";
 
@@ -90,7 +101,10 @@ const Palette = (props: PaletteProps) => {
   useEffect(() => {
     if (!messageQuery) return setHits(NO_HITS);
     let cancelled = false;
-    const timer = setTimeout(() => void searchMessages(messageQuery).then((found) => !cancelled && setHits(found)), SEARCH_DELAY_MS);
+    const timer = setTimeout(
+      () => void searchMessages(messageQuery).then((found) => !cancelled && setHits(found)),
+      SEARCH_DELAY_MS,
+    );
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -106,8 +120,14 @@ const Palette = (props: PaletteProps) => {
         .map((thread) => ({ label: thread.title, thread })),
     [threads],
   );
-  const projectEntries = useMemo(() => projects.map((project) => ({ label: project.name, project })), [projects]);
-  const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
+  const projectEntries = useMemo(
+    () => projects.map((project) => ({ label: project.name, project })),
+    [projects],
+  );
+  const projectById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
+    [projects],
+  );
 
   // One memo per section, so a message search landing rebuilds only the message rows.
   const threadRows = useMemo(
@@ -175,7 +195,12 @@ const Palette = (props: PaletteProps) => {
     [threadRows, actionRows, projectRows, messageRows],
   );
 
-  const { activeIndex: active, pointed, moveTo, moveActive } = useRowCursor(rows, query, { loop: true });
+  const {
+    activeIndex: active,
+    pointed,
+    moveTo,
+    moveActive,
+  } = useRowCursor(rows, query, { loop: true });
   // The highlight glides after the pointer. Arrow keys and a new list jump it: the keyboard wants each
   // step at once, and gliding from wherever the old row ended up reads as the list scrolling.
   const glide = pointed && !reduce;
@@ -258,15 +283,32 @@ const Palette = (props: PaletteProps) => {
             layoutScroll
             className="isolate min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5"
           >
-            {rows.length === 0 ? <div className="px-2 py-6 text-center text-sm text-muted-foreground">Nothing matches</div> : null}
+            {rows.length === 0 ? (
+              <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                Nothing matches
+              </div>
+            ) : null}
             {rows.map((row, index) => (
               <Fragment key={row.id}>
                 {row.section !== rows[index - 1]?.section ? (
-                  <div aria-hidden className={cn("px-2 pb-1 text-[11px] text-muted-foreground", index > 0 ? "pt-2.5" : "pt-1")}>
+                  <div
+                    aria-hidden
+                    className={cn(
+                      "px-2 pb-1 text-[11px] text-muted-foreground",
+                      index > 0 ? "pt-2.5" : "pt-1",
+                    )}
+                  >
                     {row.section}
                   </div>
                 ) : null}
-                <PaletteRow row={row} index={index} active={index === active} glide={index === active && glide} uid={uid} onPoint={moveTo} />
+                <PaletteRow
+                  row={row}
+                  index={index}
+                  active={index === active}
+                  glide={index === active && glide}
+                  uid={uid}
+                  onPoint={moveTo}
+                />
               </Fragment>
             ))}
           </motion.div>
@@ -306,14 +348,18 @@ const PaletteRow = memo(function PaletteRow(props: {
       {active ? (
         <motion.span
           layoutId={`${props.uid}-highlight`}
-          transition={props.glide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }}
+          transition={
+            props.glide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }
+          }
           className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-muted"
         />
       ) : null}
       <span className="grid size-4 shrink-0 place-items-center [&_svg]:size-3.5">{row.icon}</span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-foreground">{row.label}</span>
-        {row.detail ? <span className="block truncate text-[11px] text-muted-foreground">{row.detail}</span> : null}
+        {row.detail ? (
+          <span className="block truncate text-[11px] text-muted-foreground">{row.detail}</span>
+        ) : null}
       </span>
       {index < 9 ? (
         <span className="shrink-0 text-[11px] text-muted-foreground/60">⌘{index + 1}</span>

@@ -105,8 +105,7 @@ export function MorphPopover({
   const close = useCallback(() => {
     setOpen(false);
     const focused = document.activeElement;
-    const inPanel =
-      focused instanceof HTMLElement && contentRef.current?.contains(focused);
+    const inPanel = focused instanceof HTMLElement && contentRef.current?.contains(focused);
     if (!inPanel) return;
     const restore = trigger ?? (root && root.tabIndex >= 0 ? root : null);
     restore?.focus();
@@ -117,12 +116,7 @@ export function MorphPopover({
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
     const onPointer = (e: PointerEvent) => {
       const target = e.target as Node;
-      if (
-        root &&
-        !root.contains(target) &&
-        !contentRef.current?.contains(target)
-      )
-        close();
+      if (root && !root.contains(target) && !contentRef.current?.contains(target)) close();
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onPointer);
@@ -175,9 +169,7 @@ export function MorphPopoverTrigger({ children }: MorphPopoverTriggerProps) {
   if (!isValidElement(children)) return children;
 
   const child = children as ReactElement<Record<string, unknown>>;
-  const childOnClick = child.props.onClick as
-    | ((e: unknown) => void)
-    | undefined;
+  const childOnClick = child.props.onClick as ((e: unknown) => void) | undefined;
   const childRef = (child.props as { ref?: Ref<HTMLElement> }).ref;
 
   return cloneElement(child, {
@@ -236,11 +228,7 @@ export function MorphPopoverContent({
   // Measures the content at its natural size; the panel box springs to it, so
   // swapping what's inside (a menu for a form, say) resizes smoothly.
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  const layout = usePopoverPortalPosition(
-    ctx.triggerRef,
-    bodyRef,
-    portalReady && ctx.open,
-  );
+  const layout = usePopoverPortalPosition(ctx.triggerRef, bodyRef, portalReady && ctx.open);
 
   useEffect(() => setPortalReady(true), []);
 
@@ -288,10 +276,7 @@ export function MorphPopoverContent({
       : {
           left: Math.max(
             VIEWPORT_MARGIN,
-            Math.min(
-              layout.trigger.left,
-              viewport.clientWidth - panelWidth - VIEWPORT_MARGIN,
-            ),
+            Math.min(layout.trigger.left, viewport.clientWidth - panelWidth - VIEWPORT_MARGIN),
           ),
         };
   const vertical = !layout

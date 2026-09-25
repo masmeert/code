@@ -18,8 +18,7 @@ function getAudioContextCtor(): AudioContextCtor | undefined {
   if (typeof window === "undefined") return undefined;
   return (
     window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: AudioContextCtor })
-      .webkitAudioContext
+    (window as unknown as { webkitAudioContext?: AudioContextCtor }).webkitAudioContext
   );
 }
 
@@ -57,8 +56,7 @@ function buildClickBuffer(context: AudioContext): AudioBuffer {
     // Differencing consecutive noise samples removes the low, papery part of
     // white noise and leaves only a tiny impact at the front of the sound.
     const noise = Math.random() * 2 - 1;
-    const transient =
-      (noise - previousNoise) * Math.exp(-t / 0.00038) * 0.035;
+    const transient = (noise - previousNoise) * Math.exp(-t / 0.00038) * 0.035;
     previousNoise = noise;
 
     data[i] = (resonance + transient) * attack * fadeOut;

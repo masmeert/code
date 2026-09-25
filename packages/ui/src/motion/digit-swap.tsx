@@ -30,9 +30,7 @@ type GlyphMotionContext = {
 const GLYPH_VARIANTS = {
   enter: ({ direction, reduceMotion }: GlyphMotionContext) => ({
     opacity: 0,
-    transform: reduceMotion
-      ? "none"
-      : `translateY(${direction === "up" ? "45%" : "-45%"})`,
+    transform: reduceMotion ? "none" : `translateY(${direction === "up" ? "45%" : "-45%"})`,
   }),
   visible: {
     opacity: 1,
@@ -40,9 +38,7 @@ const GLYPH_VARIANTS = {
   },
   exit: ({ direction, reduceMotion }: GlyphMotionContext) => ({
     opacity: 0,
-    transform: reduceMotion
-      ? "none"
-      : `translateY(${direction === "up" ? "-45%" : "45%"})`,
+    transform: reduceMotion ? "none" : `translateY(${direction === "up" ? "-45%" : "45%"})`,
   }),
 };
 

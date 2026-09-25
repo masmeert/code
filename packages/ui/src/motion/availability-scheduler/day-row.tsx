@@ -54,14 +54,9 @@ export function DayRow({
   // Same rule one level down: ranges stack against each other inside the row.
   const [openRangeId, setOpenRangeId] = useState<string | null>(null);
 
-  const panelId = (rangeId: string, edge: "start" | "end") =>
-    panelKey(day, rangeId, edge);
+  const panelId = (rangeId: string, edge: "start" | "end") => panelKey(day, rangeId, edge);
 
-  const onRangePanelOpenChange = (
-    rangeId: string,
-    id: string,
-    open: boolean,
-  ) => {
+  const onRangePanelOpenChange = (rangeId: string, id: string, open: boolean) => {
     if (open) setOpenRangeId(rangeId);
     onPanelOpenChange(id, open);
   };
@@ -94,10 +89,7 @@ export function DayRow({
     const start = last ? Math.min(toMinutes(last.end) + 60, 24 * 60 - 60) : 540;
     onChange({
       enabled: true,
-      ranges: [
-        ...state.ranges,
-        { id: nextId(), start: toValue(start), end: toValue(start + 60) },
-      ],
+      ranges: [...state.ranges, { id: nextId(), start: toValue(start), end: toValue(start + 60) }],
     });
   };
 
@@ -110,11 +102,7 @@ export function DayRow({
   const actions = (
     <>
       <Tooltip content="Add time">
-        <IconButton
-          label={`Add time range to ${label}`}
-          reduce={reduce}
-          onClick={addRange}
-        >
+        <IconButton label={`Add time range to ${label}`} reduce={reduce} onClick={addRange}>
           <Plus className="h-4 w-4" />
         </IconButton>
       </Tooltip>
@@ -152,21 +140,9 @@ export function DayRow({
                 key={r.id}
                 layout={reduce ? false : "position"}
                 style={{ zIndex: openRangeId === r.id ? 1 : undefined }}
-                initial={
-                  reduce
-                    ? { opacity: 0 }
-                    : { opacity: 0, y: -6, filter: "blur(4px)" }
-                }
-                animate={
-                  reduce
-                    ? { opacity: 1 }
-                    : { opacity: 1, y: 0, filter: "blur(0px)" }
-                }
-                exit={
-                  reduce
-                    ? { opacity: 0 }
-                    : { opacity: 0, y: -4, filter: "blur(4px)" }
-                }
+                initial={reduce ? { opacity: 0 } : { opacity: 0, y: -6, filter: "blur(4px)" }}
+                animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: "blur(0px)" }}
+                exit={reduce ? { opacity: 0 } : { opacity: 0, y: -4, filter: "blur(4px)" }}
                 transition={SPRING_LAYOUT}
                 className="relative flex items-center gap-2"
               >
@@ -221,9 +197,7 @@ export function DayRow({
       </div>
 
       {/* actions (desktop) */}
-      <div className="hidden shrink-0 items-center gap-1 pt-0.5 sm:flex">
-        {actions}
-      </div>
+      <div className="hidden shrink-0 items-center gap-1 pt-0.5 sm:flex">{actions}</div>
     </motion.div>
   );
 }

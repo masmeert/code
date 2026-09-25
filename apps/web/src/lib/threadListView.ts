@@ -26,13 +26,19 @@ export function useThreadListView() {
   const projects = useStore((state) => state.projects);
   const [stored, setStored] = useState<ThreadListView>(() => {
     try {
-      return { ...DEFAULT_THREAD_LIST_VIEW, ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") };
+      return {
+        ...DEFAULT_THREAD_LIST_VIEW,
+        ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}"),
+      };
     } catch {
       return DEFAULT_THREAD_LIST_VIEW;
     }
   });
   const view = useMemo(
-    () => ({ ...stored, projects: stored.projects.filter((id) => projects.some((project) => project.id === id)) }),
+    () => ({
+      ...stored,
+      projects: stored.projects.filter((id) => projects.some((project) => project.id === id)),
+    }),
     [stored, projects],
   );
 

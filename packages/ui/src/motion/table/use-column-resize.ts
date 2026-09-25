@@ -1,9 +1,4 @@
-import {
-  type PointerEvent as ReactPointerEvent,
-  useCallback,
-  useRef,
-  useState,
-} from "react";
+import { type PointerEvent as ReactPointerEvent, useCallback, useRef, useState } from "react";
 import { capturePointer, releasePointer } from "@apcode/ui/lib/touch";
 import type { HeaderCellRefs, TableColumn } from "./types";
 
@@ -34,11 +29,8 @@ export function useColumnResize<T>({
       const snapshot = { ...widths };
       for (const column of orderedColumns) {
         if (snapshot[column.key] == null) {
-          const measured = thRefs.current[column.key]?.getBoundingClientRect()
-            .width;
-          snapshot[column.key] = measured
-            ? Math.round(measured)
-            : minColumnWidth;
+          const measured = thRefs.current[column.key]?.getBoundingClientRect().width;
+          snapshot[column.key] = measured ? Math.round(measured) : minColumnWidth;
         }
       }
       resizeRef.current = {
@@ -56,10 +48,7 @@ export function useColumnResize<T>({
     (e: ReactPointerEvent) => {
       const state = resizeRef.current;
       if (!state) return;
-      const width = Math.max(
-        minColumnWidth,
-        state.startWidth + (e.clientX - state.startX),
-      );
+      const width = Math.max(minColumnWidth, state.startWidth + (e.clientX - state.startX));
       setWidths((prev) => ({ ...prev, [state.key]: width }));
     },
     [minColumnWidth],

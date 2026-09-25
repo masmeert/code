@@ -34,14 +34,22 @@ export const ResizeHandle = ({
     className={cn(
       "group absolute z-20 touch-none outline-none",
       axis === "x" ? "inset-y-0 w-2 cursor-col-resize" : "inset-x-0 h-2 cursor-row-resize",
-      axis === "x" ? (side === "start" ? "-left-1" : "-right-1") : side === "start" ? "-top-1" : "-bottom-1",
+      axis === "x"
+        ? side === "start"
+          ? "-left-1"
+          : "-right-1"
+        : side === "start"
+          ? "-top-1"
+          : "-bottom-1",
       className,
     )}
   >
     <span
       className={cn(
         "absolute transition-colors duration-150",
-        axis === "x" ? "inset-y-0 left-1/2 w-px -translate-x-1/2" : "inset-x-0 top-1/2 h-px -translate-y-1/2",
+        axis === "x"
+          ? "inset-y-0 left-1/2 w-px -translate-x-1/2"
+          : "inset-x-0 top-1/2 h-px -translate-y-1/2",
         dragging ? "bg-ring" : "bg-transparent group-hover:bg-ring/70 group-focus-visible:bg-ring",
       )}
     />

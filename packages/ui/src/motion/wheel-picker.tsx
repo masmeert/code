@@ -9,11 +9,7 @@ import {
   useState,
 } from "react";
 import { createTickPlayer } from "@apcode/ui/lib/tick-sound";
-import {
-  capturePointer,
-  releasePointer,
-  TOUCH_GESTURE_CLASS,
-} from "@apcode/ui/lib/touch";
+import { capturePointer, releasePointer, TOUCH_GESTURE_CLASS } from "@apcode/ui/lib/touch";
 import { cn } from "@apcode/ui/lib/utils";
 
 export type WheelPickerOption = string | { label: string; value: string };
@@ -47,11 +43,9 @@ const easeOutCubic = (p: number) => 1 - (1 - p) ** 3;
 // Overshoots the target by a few percent then settles — the little spring
 // bounce as a row snaps home. `BACK` sets how far it drifts past.
 const BACK = 1.35;
-const easeOutBack = (p: number) =>
-  1 + (BACK + 1) * (p - 1) ** 3 + BACK * (p - 1) ** 2;
+const easeOutBack = (p: number) => 1 + (BACK + 1) * (p - 1) ** 3 + BACK * (p - 1) ** 2;
 
-const clamp = (v: number, lo: number, hi: number) =>
-  Math.max(lo, Math.min(v, hi));
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, hi));
 
 function optionValue(option: WheelPickerOption) {
   return typeof option === "string" ? option : option.value;
@@ -99,9 +93,7 @@ export function WheelPicker({
       itemAngle: angle,
       radius: r,
       hideBeyond: cutoff,
-      height: Math.round(
-        2 * r * Math.sin(rowsEachSide * angle * DEG) + itemHeight,
-      ),
+      height: Math.round(2 * r * Math.sin(rowsEachSide * angle * DEG) + itemHeight),
     };
   }, [visibleCount, itemHeight]);
 
@@ -190,11 +182,7 @@ export function WheelPicker({
   // Ease `scroll` from where it is to an integer detent over `duration`. The
   // easing may overshoot (spring bounce) before it resolves exactly on `to`.
   const glide = useCallback(
-    (
-      to: number,
-      duration: number,
-      ease: (p: number) => number = easeOutCubic,
-    ) => {
+    (to: number, duration: number, ease: (p: number) => number = easeOutCubic) => {
       stop();
       const from = scroll.current;
       const dist = to - from;
@@ -238,19 +226,14 @@ export function WheelPicker({
       const to = clamp(Math.round(from + coast), 0, last);
       // Long, spring-tipped settle so a hard flick reads as free momentum
       // coasting to rest with a gentle bounce, never a clipped stop.
-      const duration = clamp(
-        Math.sqrt(Math.abs(to - from)) * 300 + 240,
-        280,
-        1700,
-      );
+      const duration = clamp(Math.sqrt(Math.abs(to - from)) * 300 + 240, 280, 1700);
       glide(to, duration, easeOutBack);
     },
     [glide, last],
   );
 
   const step = useCallback(
-    (by: number) =>
-      glide(clamp(Math.round(scroll.current) + by, 0, last), 300, easeOutBack),
+    (by: number) => glide(clamp(Math.round(scroll.current) + by, 0, last), 300, easeOutBack),
     [glide, last],
   );
 
@@ -391,18 +374,7 @@ export function WheelPicker({
         glide(clamp(Math.round(scroll.current), 0, last), 240, easeOutBack);
       }, WHEEL_SETTLE);
     },
-    [
-      disabled,
-      reduce,
-      sound,
-      last,
-      paint,
-      emit,
-      stop,
-      glide,
-      maybeTick,
-      getPlayer,
-    ],
+    [disabled, reduce, sound, last, paint, emit, stop, glide, maybeTick, getPlayer],
   );
 
   const onKeyDown = useCallback(
@@ -494,12 +466,12 @@ export function WheelPicker({
         style={{ height }}
       >
         <div
-          className="pointer-events-none absolute inset-x-0 top-1/2 z-10 -translate-y-1/2 border-border border-y bg-foreground/[0.04]"
+          className="pointer-events-none absolute inset-x-0 top-1/2 z-10 -translate-y-1/2 border-y border-border bg-foreground/[0.04]"
           style={{ height: itemHeight }}
         />
         <ul
           className={cn(
-            "h-full snap-y snap-mandatory overflow-y-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+            "h-full snap-y snap-mandatory [scrollbar-width:none] overflow-y-auto scroll-smooth [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden",
             maskFade,
           )}
           style={{ paddingTop: pad, paddingBottom: pad }}
@@ -514,9 +486,7 @@ export function WheelPicker({
                   onClick={() => emit(options.indexOf(option))}
                   className={cn(
                     "flex w-full items-center justify-center font-medium",
-                    v === currentValue
-                      ? "text-foreground"
-                      : "text-muted-foreground",
+                    v === currentValue ? "text-foreground" : "text-muted-foreground",
                   )}
                   style={{ height: itemHeight }}
                 >
@@ -557,7 +527,7 @@ export function WheelPicker({
       <ul
         ref={drumRef}
         aria-hidden
-        className="absolute inset-x-0 top-1/2 m-0 h-0 list-none p-0 [backface-visibility:hidden] [transform-style:preserve-3d] [will-change:transform]"
+        className="absolute inset-x-0 top-1/2 m-0 h-0 list-none p-0 [will-change:transform] [backface-visibility:hidden] [transform-style:preserve-3d]"
       >
         {options.map((option, i) => (
           <li
@@ -585,7 +555,7 @@ export function WheelPicker({
         <ul
           ref={bandRef}
           aria-hidden
-          className="absolute inset-x-0 top-1/2 m-0 h-0 list-none p-0 [backface-visibility:hidden] [transform-style:preserve-3d] [will-change:transform]"
+          className="absolute inset-x-0 top-1/2 m-0 h-0 list-none p-0 [will-change:transform] [backface-visibility:hidden] [transform-style:preserve-3d]"
         >
           {options.map((option, i) => (
             <li

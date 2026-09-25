@@ -9,7 +9,13 @@ import { buildFunnel, funnelPath, type FunnelStage } from "./funnel-chart/model"
 const defaultFormat = (value: number) =>
   value.toLocaleString("en-US", { maximumFractionDigits: 2 });
 const percentage = (value: number | null) => (value === null ? "—" : `${value.toFixed(1)}%`);
-const colors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
+const colors = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+];
 export interface FunnelChartProps {
   /** Ordered stages with finite, nonnegative counts; duplicate IDs are omitted. */
   stages: readonly FunnelStage[];
@@ -137,7 +143,7 @@ export function FunnelChartPlot({ className }: { className?: string }) {
                 >
                   <button
                     type="button"
-                    className="flex h-full w-full items-center justify-center outline-none transition-colors hover:bg-foreground/5 focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-ring"
+                    className="flex h-full w-full items-center justify-center transition-colors outline-none hover:bg-foreground/5 focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-inset"
                     aria-label={`${stage.label}: ${formatValue(stage.value)} ${unit}, ${percentage(stage.conversion)} of starting total`}
                   >
                     <span className="rounded bg-background/85 px-2 py-1 font-mono text-xs font-medium tabular-nums">

@@ -1,17 +1,5 @@
-import {
-  AnimatePresence,
-  motion,
-  useReducedMotion,
-  type Variants,
-} from "motion/react";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { EASE_OUT } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
@@ -236,11 +224,7 @@ export function ExpandableTabs({
   }, [setActive, visualActiveId]);
 
   const closedSize = {
-    width:
-      items.length * TAB_W +
-      Math.max(0, items.length - 1) * BAR_GAP +
-      BAR_X +
-      ROOT_BORDER,
+    width: items.length * TAB_W + Math.max(0, items.length - 1) * BAR_GAP + BAR_X + ROOT_BORDER,
     height: BAR_H + ROOT_BORDER,
   };
   const openSize = size
@@ -255,11 +239,7 @@ export function ExpandableTabs({
     (item: ExpandableTabsItem) =>
       Math.max(
         TAB_W,
-        ACTIVE_LEFT_PAD +
-          ICON_W +
-          LABEL_GAP +
-          (labelWidths[item.id] ?? 0) +
-          ACTIVE_RIGHT_PAD,
+        ACTIVE_LEFT_PAD + ICON_W + LABEL_GAP + (labelWidths[item.id] ?? 0) + ACTIVE_RIGHT_PAD,
       ),
     [labelWidths],
   );
@@ -269,11 +249,7 @@ export function ExpandableTabs({
       <motion.div
         ref={rootRef}
         initial={false}
-        animate={
-          targetSize
-            ? { width: targetSize.width, height: targetSize.height }
-            : undefined
-        }
+        animate={targetSize ? { width: targetSize.width, height: targetSize.height } : undefined}
         transition={reduce ? { duration: 0 } : SHELL_SPRING}
         style={{ transformOrigin: "bottom center" }}
         className={cn(
@@ -286,7 +262,7 @@ export function ExpandableTabs({
           ref={sizerRef}
           aria-hidden
           className={cn(
-            "pointer-events-none invisible absolute left-0 top-0 grid w-max px-2 pt-2",
+            "pointer-events-none invisible absolute top-0 left-0 grid w-max px-2 pt-2",
             classNames?.panel,
           )}
           style={{ paddingBottom: BAR_H + PANEL_DOCK_GAP }}
@@ -300,7 +276,7 @@ export function ExpandableTabs({
 
         <div
           className={cn(
-            "absolute left-0 right-0 top-0 z-10 overflow-hidden px-2 pt-2",
+            "absolute top-0 right-0 left-0 z-10 overflow-hidden px-2 pt-2",
             classNames?.panel,
           )}
           style={{ bottom: BAR_H + PANEL_DOCK_GAP }}
@@ -313,9 +289,7 @@ export function ExpandableTabs({
                 initial="enter"
                 animate="center"
                 exit="exit"
-                transition={
-                  reduce ? { duration: 0.15, ease: EASE_OUT } : CONTENT_SPRING
-                }
+                transition={reduce ? { duration: 0.15, ease: EASE_OUT } : CONTENT_SPRING}
                 className="w-max"
                 style={{
                   transformOrigin: "top center",
@@ -359,10 +333,8 @@ export function ExpandableTabs({
                 className={cn(
                   "relative isolate flex h-9 min-w-8 shrink-0 items-center justify-center overflow-hidden rounded-[18px] px-2 text-sm font-medium outline-none",
                   "focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                  active && isActive && "min-w-0 justify-start pl-2.5 pr-4",
-                  isActive
-                    ? "text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
+                  active && isActive && "min-w-0 justify-start pr-4 pl-2.5",
+                  isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                   classNames?.tab,
                   isActive && classNames?.activeTab,
                 )}
@@ -375,12 +347,7 @@ export function ExpandableTabs({
                     )}
                   />
                 ) : null}
-                <span
-                  className={cn(
-                    "grid shrink-0 place-items-center",
-                    classNames?.icon,
-                  )}
-                >
+                <span className={cn("grid shrink-0 place-items-center", classNames?.icon)}>
                   {item.icon}
                 </span>
                 <motion.span
@@ -401,13 +368,7 @@ export function ExpandableTabs({
                           filter: isActive ? "blur(0px)" : "blur(3px)",
                         }
                   }
-                  transition={
-                    reduce
-                      ? { duration: 0 }
-                      : isActive
-                        ? LABEL_OPEN
-                        : LABEL_CLOSE
-                  }
+                  transition={reduce ? { duration: 0 } : isActive ? LABEL_OPEN : LABEL_CLOSE}
                   className={cn(
                     "inline-block overflow-hidden whitespace-nowrap",
                     classNames?.label,
@@ -422,14 +383,11 @@ export function ExpandableTabs({
       </motion.div>
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed left-0 top-0 -z-10 flex opacity-0"
+        className="pointer-events-none fixed top-0 left-0 -z-10 flex opacity-0"
       >
         {items.map((item) => (
           <span
-            className={cn(
-              "whitespace-nowrap text-sm font-medium leading-none",
-              classNames?.label,
-            )}
+            className={cn("text-sm leading-none font-medium whitespace-nowrap", classNames?.label)}
             key={item.id}
             ref={setLabelMeasureRef(item.id)}
           >

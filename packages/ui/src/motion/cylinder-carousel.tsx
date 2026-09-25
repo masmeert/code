@@ -17,11 +17,7 @@ import {
   useState,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import {
-  capturePointer,
-  releasePointer,
-  TOUCH_GESTURE_CLASS,
-} from "@apcode/ui/lib/touch";
+import { capturePointer, releasePointer, TOUCH_GESTURE_CLASS } from "@apcode/ui/lib/touch";
 import { cn } from "@apcode/ui/lib/utils";
 
 // Carousel-specific: a soft spring that receives the release velocity, so a
@@ -137,9 +133,7 @@ function CarouselBall({
   // (convex).
   const scale = useTransform(offset, (o) => {
     const t = Math.min(Math.abs(o) / edgeOffset, THETA_CLAMP / THETA_EDGE);
-    return convex
-      ? 1 - (1 - minScale) * t
-      : minScale + (1 - minScale) * t;
+    return convex ? 1 - (1 - minScale) * t : minScale + (1 - minScale) * t;
   });
   // Parabola centered on the stage — valley for concave (center ball dips
   // arc/2 below the midline, edges rise arc/2 above), arch for convex — and
@@ -218,9 +212,7 @@ export function CylinderCarousel({
   let scaleSum = 0;
   for (let i = 0; i < visibleItems; i++) {
     const t = Math.abs(i - (visibleItems - 1) / 2) / edgeOffset;
-    scaleSum += convex
-      ? 1 - (1 - minScale) * t
-      : minScale + (1 - minScale) * t;
+    scaleSum += convex ? 1 - (1 - minScale) * t : minScale + (1 - minScale) * t;
   }
   const size = Math.min(itemSize, (stageWidth * 0.65) / scaleSum);
 
@@ -233,8 +225,7 @@ export function CylinderCarousel({
   // projection stays monotonic up to THETA_CLAMP).
   const alpha = THETA_EDGE / edgeOffset;
   const k = Math.max(0.2, (minScale - Math.cos(THETA_EDGE)) / (1 - minScale));
-  const projection =
-    (halfWidth * (Math.cos(THETA_EDGE) + k)) / Math.sin(THETA_EDGE);
+  const projection = (halfWidth * (Math.cos(THETA_EDGE) + k)) / Math.sin(THETA_EDGE);
 
   // scroll is in item units (continuous); item i sits at x = (i - scroll) * gap.
   // Drags write it 1:1 so the wall sticks to the pointer; releases hand the
@@ -288,10 +279,7 @@ export function CylinderCarousel({
     (velocity: number) => {
       const projected =
         scroll.get() +
-        Math.max(
-          -MAX_FLICK_ITEMS,
-          Math.min(MAX_FLICK_ITEMS, velocity * FLICK_MOMENTUM),
-        );
+        Math.max(-MAX_FLICK_ITEMS, Math.min(MAX_FLICK_ITEMS, velocity * FLICK_MOMENTUM));
       glideTo(snap ? Math.round(projected) : projected, velocity);
     },
     [scroll, snap, glideTo],
@@ -362,14 +350,10 @@ export function CylinderCarousel({
   const onWheel = useCallback(
     (e: ReactWheelEvent) => {
       stopGlide();
-      const delta =
-        Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       scroll.set(scroll.get() + delta / gap);
       if (wheelSettleRef.current) window.clearTimeout(wheelSettleRef.current);
-      wheelSettleRef.current = window.setTimeout(
-        () => settle(scroll.getVelocity()),
-        140,
-      );
+      wheelSettleRef.current = window.setTimeout(() => settle(scroll.getVelocity()), 140);
     },
     [scroll, gap, settle, stopGlide],
   );
@@ -393,65 +377,65 @@ export function CylinderCarousel({
   const stageHeight = height ?? size;
 
   return (
-      <div
-        ref={stageRef}
-        role="application"
-        aria-roledescription="carousel"
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: focusable custom carousel widget
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowRight") {
-            e.preventDefault();
-            rollBy(1);
-          } else if (e.key === "ArrowLeft") {
-            e.preventDefault();
-            rollBy(-1);
-          }
-        }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onWheel={onWheel}
-        onPointerEnter={() => {
-          hoverRef.current = true;
-        }}
-        onPointerLeave={() => {
-          hoverRef.current = false;
-        }}
-        className={cn(
-          // clip-path, not overflow: it also clips the GPU-composited balls
-          "relative w-full touch-none outline-none [clip-path:inset(0)]",
-          // The stage drives the roll from the press itself, so iOS must not
-          // claim the same touch for its callout or a slide drag.
-          TOUCH_GESTURE_CLASS,
-          "cursor-grab active:cursor-grabbing",
-          "focus-visible:ring-4 focus-visible:ring-ring",
-          className,
-        )}
-        style={{ height: stageHeight }}
-      >
-        {items.map((item, i) => (
-          <CarouselBall
-            // biome-ignore lint/suspicious/noArrayIndexKey: slides are positional and stable
-            key={i}
-            scroll={scroll}
-            index={i}
-            count={count}
-            alpha={alpha}
-            k={k}
-            projection={projection}
-            gap={gap}
-            edgeOffset={edgeOffset}
-            minScale={minScale}
-            convex={convex}
-            arc={arc}
-            halfWidth={halfWidth}
-            itemSize={size}
-          >
-            {item}
-          </CarouselBall>
-        ))}
-      </div>
+    <div
+      ref={stageRef}
+      role="application"
+      aria-roledescription="carousel"
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: focusable custom carousel widget
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowRight") {
+          e.preventDefault();
+          rollBy(1);
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          rollBy(-1);
+        }
+      }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onWheel={onWheel}
+      onPointerEnter={() => {
+        hoverRef.current = true;
+      }}
+      onPointerLeave={() => {
+        hoverRef.current = false;
+      }}
+      className={cn(
+        // clip-path, not overflow: it also clips the GPU-composited balls
+        "relative w-full touch-none outline-none [clip-path:inset(0)]",
+        // The stage drives the roll from the press itself, so iOS must not
+        // claim the same touch for its callout or a slide drag.
+        TOUCH_GESTURE_CLASS,
+        "cursor-grab active:cursor-grabbing",
+        "focus-visible:ring-4 focus-visible:ring-ring",
+        className,
+      )}
+      style={{ height: stageHeight }}
+    >
+      {items.map((item, i) => (
+        <CarouselBall
+          // biome-ignore lint/suspicious/noArrayIndexKey: slides are positional and stable
+          key={i}
+          scroll={scroll}
+          index={i}
+          count={count}
+          alpha={alpha}
+          k={k}
+          projection={projection}
+          gap={gap}
+          edgeOffset={edgeOffset}
+          minScale={minScale}
+          convex={convex}
+          arc={arc}
+          halfWidth={halfWidth}
+          itemSize={size}
+        >
+          {item}
+        </CarouselBall>
+      ))}
+    </div>
   );
 }

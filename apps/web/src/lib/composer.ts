@@ -1,4 +1,11 @@
-import type { Attachment, AttachmentInput, Effort, PermissionLevel, ProviderKind, TurnOptions } from "@apcode/contracts";
+import type {
+  Attachment,
+  AttachmentInput,
+  Effort,
+  PermissionLevel,
+  ProviderKind,
+  TurnOptions,
+} from "@apcode/contracts";
 import { useEffect, useReducer, useRef } from "react";
 import { type DraftAttachment, getDraft, setDraft, useDraft } from "./drafts.ts";
 
@@ -40,12 +47,16 @@ export interface TurnPrefs {
 // (effort per harness) become the defaults for new chats.
 
 const PREFS_KEY = "apcode.composer";
-type Defaults = { effort: Partial<Record<ProviderKind, Effort | null>>; permission: PermissionLevel };
+type Defaults = {
+  effort: Partial<Record<ProviderKind, Effort | null>>;
+  permission: PermissionLevel;
+};
 
 const readDefaults = (): Defaults => {
   try {
     const parsed = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "null") as Defaults | null;
-    if (parsed && typeof parsed === "object") return { effort: parsed.effort ?? {}, permission: parsed.permission ?? "ask" };
+    if (parsed && typeof parsed === "object")
+      return { effort: parsed.effort ?? {}, permission: parsed.permission ?? "ask" };
   } catch {}
   return { effort: {}, permission: "ask" };
 };
@@ -66,13 +77,22 @@ const fit = (prefs: TurnPrefs, provider: ProviderKind): TurnPrefs =>
 export const useTurnPrefs = (key: string, provider: ProviderKind) => {
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   const defaults = readDefaults();
-  const prefs = fit(perThread.get(key) ?? { effort: defaults.effort[provider] ?? null, permission: defaults.permission }, provider);
+  const prefs = fit(
+    perThread.get(key) ?? {
+      effort: defaults.effort[provider] ?? null,
+      permission: defaults.permission,
+    },
+    provider,
+  );
 
   const update = (patch: Partial<TurnPrefs>) => {
     const next = { ...prefs, ...patch };
     perThread.set(key, next);
     const latest = readDefaults();
-    writeDefaults({ effort: { ...latest.effort, [provider]: next.effort }, permission: next.permission });
+    writeDefaults({
+      effort: { ...latest.effort, [provider]: next.effort },
+      permission: next.permission,
+    });
     rerender();
   };
   return [prefs, update] as const;
@@ -100,13 +120,19 @@ const readBase64 = (file: File) =>
 
 const fromFile = async (file: File): Promise<DraftAttachment> => {
   const image = file.type.startsWith("image/");
-  const name = file.name || (image ? `Pasted image.${file.type.split("/")[1] ?? "png"}` : "Pasted file");
+  const name =
+    file.name || (image ? `Pasted image.${file.type.split("/")[1] ?? "png"}` : "Pasted file");
   return {
     id: crypto.randomUUID(),
     name,
     image,
     preview: image ? URL.createObjectURL(file) : undefined,
-    input: { _tag: "data", name, mediaType: file.type || "application/octet-stream", data: await readBase64(file) },
+    input: {
+      _tag: "data",
+      name,
+      mediaType: file.type || "application/octet-stream",
+      data: await readBase64(file),
+    },
   };
 };
 
@@ -119,34 +145,45 @@ export const LARGE_PASTE_BYTES = 32 * 1024;
 const toBase64 = (text: string) => {
   const bytes = new TextEncoder().encode(text);
   let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(binary);
 };
 
 /** Pasted text as a file the agent can read. */
 export const fromText = (text: string): DraftAttachment => {
   const name = `Pasted text (${Math.max(1, Math.round(text.length / 1024))} KB).txt`;
-  return { id: crypto.randomUUID(), name, image: false, input: { _tag: "data", name, mediaType: "text/plain", data: toBase64(text) } };
+  return {
+    id: crypto.randomUUID(),
+    name,
+    image: false,
+    input: { _tag: "data", name, mediaType: "text/plain", data: toBase64(text) },
+  };
 };
 
 /** Files queued for the next message of composer `key`: picked, pasted, or dropped onto the window. */
 export const useAttachments = ({ key, acceptDrops }: { key: string; acceptDrops: boolean }) => {
   const attachments = useDraft(key).attachments;
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const setAttachments = (update: (prev: ReadonlyArray<DraftAttachment>) => ReadonlyArray<DraftAttachment>) =>
-    setDraft(key, (draft) => ({ ...draft, attachments: update(draft.attachments) }));
+  const setAttachments = (
+    update: (prev: ReadonlyArray<DraftAttachment>) => ReadonlyArray<DraftAttachment>,
+  ) => setDraft(key, (draft) => ({ ...draft, attachments: update(draft.attachments) }));
 
-  const add = (next: ReadonlyArray<DraftAttachment>) => setAttachments((prev) => [...prev, ...next]);
+  const add = (next: ReadonlyArray<DraftAttachment>) =>
+    setAttachments((prev) => [...prev, ...next]);
   const revoke = (list: ReadonlyArray<DraftAttachment>) => {
     for (const a of list) if (a.preview) URL.revokeObjectURL(a.preview);
   };
 
-  const addFiles = async (files: ReadonlyArray<File>) => add(await Promise.all(files.map(fromFile)));
+  const addFiles = async (files: ReadonlyArray<File>) =>
+    add(await Promise.all(files.map(fromFile)));
 
   const pick = async () => {
     if (!window.desktop) {
       // Browsers can't hand out paths, so files travel as data.
-      const input = inputRef.current ?? Object.assign(document.createElement("input"), { type: "file", multiple: true });
+      const input =
+        inputRef.current ??
+        Object.assign(document.createElement("input"), { type: "file", multiple: true });
       inputRef.current = input;
       input.onchange = () => {
         void addFiles([...(input.files ?? [])]);
@@ -180,7 +217,10 @@ export const useAttachments = ({ key, acceptDrops }: { key: string; acceptDrops:
   return { attachments, add, pick, addFiles, remove, take };
 };
 
-export const toTurnOptions = (prefs: TurnPrefs, attachments: ReadonlyArray<AttachmentInput>): TurnOptions => ({
+export const toTurnOptions = (
+  prefs: TurnPrefs,
+  attachments: ReadonlyArray<AttachmentInput>,
+): TurnOptions => ({
   effort: prefs.effort,
   permission: prefs.permission,
   attachments,

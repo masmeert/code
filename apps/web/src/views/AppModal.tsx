@@ -1,10 +1,21 @@
 import { Button } from "@apcode/ui/motion/button/base";
 import { MorphingModal } from "@apcode/ui/motion/morphing-modal";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@apcode/ui/motion/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@apcode/ui/motion/select";
 import { Tabs, TabsList, TabsTrigger } from "@apcode/ui/motion/tabs";
 import { PROVIDER_AVATAR_CLASS, PROVIDER_LOGO } from "@/components/provider-logo";
 import { cn } from "@apcode/ui/lib/utils";
-import { DEFAULT_SETTLE_DELAY_MINUTES, type ProviderKind, type ProviderStatus, type Theme } from "@apcode/contracts";
+import {
+  DEFAULT_SETTLE_DELAY_MINUTES,
+  type ProviderKind,
+  type ProviderStatus,
+  type Theme,
+} from "@apcode/contracts";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { defaultModel, encodeChoice, PROVIDER_LABEL, recommendedBadge } from "../lib/models.ts";
@@ -26,10 +37,13 @@ export const AppModal = (props: {
   }, [view, onView]);
 
   return (
-    <MorphingModal viewId={view} onClose={() => onView(null)} placement="center" className="max-w-lg">
-      {view === "settings" ? (
-        <SettingsView />
-      ) : null}
+    <MorphingModal
+      viewId={view}
+      onClose={() => onView(null)}
+      placement="center"
+      className="max-w-lg"
+    >
+      {view === "settings" ? <SettingsView /> : null}
     </MorphingModal>
   );
 };
@@ -38,7 +52,9 @@ export const AppModal = (props: {
 
 const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
   <section className="mb-5 last:mb-0">
-    <h3 className="mb-2 px-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{title}</h3>
+    <h3 className="mb-2 px-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+      {title}
+    </h3>
     {children}
   </section>
 );
@@ -48,7 +64,13 @@ const SettingsGroup = ({ children }: { children: React.ReactNode }) => (
   <div className="divide-y divide-rule rounded-xl border border-border bg-card">{children}</div>
 );
 
-const SettingsRow = ({ label, children }: { label: React.ReactNode; children?: React.ReactNode }) => (
+const SettingsRow = ({
+  label,
+  children,
+}: {
+  label: React.ReactNode;
+  children?: React.ReactNode;
+}) => (
   <div className="flex min-h-11 items-center justify-between gap-4 px-3 py-2">
     <div className="min-w-0 flex-1">{label}</div>
     {children ? <div className="shrink-0">{children}</div> : null}
@@ -107,7 +129,9 @@ const SettingsView = () => {
             label={
               <>
                 <p>Settle threads</p>
-                <p className="text-xs text-muted-foreground">How long a finished thread you've seen stays in Active</p>
+                <p className="text-xs text-muted-foreground">
+                  How long a finished thread you've seen stays in Active
+                </p>
               </>
             }
           >
@@ -132,13 +156,17 @@ const SettingsView = () => {
             label={
               <>
                 <p>Messages while the agent works</p>
-                <p className="text-xs text-muted-foreground">⌘↩ does the other one for a single message</p>
+                <p className="text-xs text-muted-foreground">
+                  ⌘↩ does the other one for a single message
+                </p>
               </>
             }
           >
             <Select
               value={settings.followUp ?? "queue"}
-              onValueChange={(v) => updateSettings({ ...settings, followUp: v as "queue" | "steer" })}
+              onValueChange={(v) =>
+                updateSettings({ ...settings, followUp: v as "queue" | "steer" })
+              }
               className="w-44"
             >
               <SelectTrigger className="py-1.5 text-[13px] whitespace-nowrap">
@@ -175,20 +203,25 @@ const CommitModelRow = () => {
   const linked = providers.filter((p) => p.linked && p.models.length);
   if (!linked.length) return null;
   const saved = settings.commitModel;
-  const listed = saved && linked.some((p) => p.models.some((m) => encodeChoice(p.kind, m.id) === saved));
+  const listed =
+    saved && linked.some((p) => p.models.some((m) => encodeChoice(p.kind, m.id) === saved));
   return (
     <SettingsGroup>
       <SettingsRow
         label={
           <>
             <p>Commit messages</p>
-            <p className="text-xs text-muted-foreground">Writes the message when you commit without one</p>
+            <p className="text-xs text-muted-foreground">
+              Writes the message when you commit without one
+            </p>
           </>
         }
       >
         <Select
           value={listed ? saved : "auto"}
-          onValueChange={(v) => updateSettings({ ...settings, commitModel: v === "auto" ? null : v })}
+          onValueChange={(v) =>
+            updateSettings({ ...settings, commitModel: v === "auto" ? null : v })
+          }
           className="w-52"
         >
           <SelectTrigger className="py-1.5 text-[13px] whitespace-nowrap">
@@ -201,7 +234,12 @@ const CommitModelRow = () => {
             {linked.flatMap((p) => {
               const Logo = PROVIDER_LOGO[p.kind];
               return p.models.map((m) => (
-                <SelectItem key={encodeChoice(p.kind, m.id)} value={encodeChoice(p.kind, m.id)} label={m.label} className="text-[13px]">
+                <SelectItem
+                  key={encodeChoice(p.kind, m.id)}
+                  value={encodeChoice(p.kind, m.id)}
+                  label={m.label}
+                  className="text-[13px]"
+                >
                   <span className="flex items-center gap-1.5">
                     <Logo aria-label={PROVIDER_LABEL[p.kind]} className="size-3.5 shrink-0" />
                     {m.label}
@@ -219,12 +257,20 @@ const CommitModelRow = () => {
 /** CLIs report versions as e.g. "2.1.281 (Claude Code)" or "codex-cli 0.154.0"; keep just the number. */
 const shortVersion = (raw: string) => raw.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? raw;
 
-const ProviderCard = ({ kind, status }: { kind: ProviderKind; status: ProviderStatus | undefined }) => {
+const ProviderCard = ({
+  kind,
+  status,
+}: {
+  kind: ProviderKind;
+  status: ProviderStatus | undefined;
+}) => {
   const settings = useStore((s) => s.settings);
   const flow = useStore((s) => s.authFlows[kind]);
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [code, setCode] = useState("");
-  const inFlow = flow && (flow.stage === "starting" || flow.stage === "browser" || flow.stage === "awaiting-code");
+  const inFlow =
+    flow &&
+    (flow.stage === "starting" || flow.stage === "browser" || flow.stage === "awaiting-code");
   const Logo = PROVIDER_LOGO[kind];
 
   const statusLine = !status
@@ -238,17 +284,30 @@ const ProviderCard = ({ kind, status }: { kind: ProviderKind; status: ProviderSt
   const setDefault = (model: string) =>
     send({
       _tag: "settings.update",
-      settings: { ...settings, providers: { ...settings.providers, [kind]: { defaultModel: model } } },
+      settings: {
+        ...settings,
+        providers: { ...settings.providers, [kind]: { defaultModel: model } },
+      },
     });
 
   const action = !status?.installed ? null : inFlow ? (
-    <Button size="sm" variant="ghost" className="h-7 rounded-lg" onClick={() => send({ _tag: "provider.linkCancel", provider: kind })}>
+    <Button
+      size="sm"
+      variant="ghost"
+      className="h-7 rounded-lg"
+      onClick={() => send({ _tag: "provider.linkCancel", provider: kind })}
+    >
       Cancel
     </Button>
   ) : status.linked ? (
     confirmUnlink ? (
       <div className="flex items-center gap-1">
-        <Button size="sm" variant="ghost" className="h-7 rounded-lg" onClick={() => setConfirmUnlink(false)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 rounded-lg"
+          onClick={() => setConfirmUnlink(false)}
+        >
           Keep
         </Button>
         <Button
@@ -264,12 +323,21 @@ const ProviderCard = ({ kind, status }: { kind: ProviderKind; status: ProviderSt
         </Button>
       </div>
     ) : (
-      <Button size="sm" variant="secondary" className="h-7 rounded-lg" onClick={() => setConfirmUnlink(true)}>
+      <Button
+        size="sm"
+        variant="secondary"
+        className="h-7 rounded-lg"
+        onClick={() => setConfirmUnlink(true)}
+      >
         Unlink
       </Button>
     )
   ) : (
-    <Button size="sm" className="h-7 rounded-lg" onClick={() => send({ _tag: "provider.link", provider: kind })}>
+    <Button
+      size="sm"
+      className="h-7 rounded-lg"
+      onClick={() => send({ _tag: "provider.link", provider: kind })}
+    >
       Link
     </Button>
   );
@@ -279,14 +347,21 @@ const ProviderCard = ({ kind, status }: { kind: ProviderKind; status: ProviderSt
       <SettingsRow
         label={
           <div className="flex items-center gap-3">
-            <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg", PROVIDER_AVATAR_CLASS[kind])}>
+            <span
+              className={cn(
+                "flex size-8 shrink-0 items-center justify-center rounded-lg",
+                PROVIDER_AVATAR_CLASS[kind],
+              )}
+            >
               <Logo className="size-4" />
             </span>
             <div className="min-w-0">
               <div className="flex items-baseline gap-1.5">
                 <span className="font-medium">{PROVIDER_LABEL[kind]}</span>
                 {status?.version ? (
-                  <span className="text-xs text-muted-foreground tabular-nums">v{shortVersion(status.version)}</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    v{shortVersion(status.version)}
+                  </span>
                 ) : null}
                 {status?.linked && status.plan ? (
                   <span className="self-center rounded-md bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground capitalize">
@@ -298,7 +373,11 @@ const ProviderCard = ({ kind, status }: { kind: ProviderKind; status: ProviderSt
                 <span
                   className={cn(
                     "size-1.5 shrink-0 rounded-full",
-                    status?.linked ? "bg-emerald-500" : status?.installed ? "bg-warning" : "bg-muted-foreground/40",
+                    status?.linked
+                      ? "bg-emerald-500"
+                      : status?.installed
+                        ? "bg-warning"
+                        : "bg-muted-foreground/40",
                   )}
                 />
                 <span className="truncate">{statusLine}</span>
@@ -331,7 +410,8 @@ const ProviderCard = ({ kind, status }: { kind: ProviderKind; status: ProviderSt
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && code.trim()) send({ _tag: "provider.linkCode", provider: kind, code });
+                    if (e.key === "Enter" && code.trim())
+                      send({ _tag: "provider.linkCode", provider: kind, code });
                   }}
                   placeholder="Paste code"
                   className="selectable h-7 min-w-0 flex-1 rounded-lg border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-ring"
@@ -348,7 +428,12 @@ const ProviderCard = ({ kind, status }: { kind: ProviderKind; status: ProviderSt
             </>
           )}
           {flow.url ? (
-            <a href={flow.url} target="_blank" rel="noreferrer" className="mt-2 block truncate underline">
+            <a
+              href={flow.url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 block truncate underline"
+            >
               Open sign-in page again
             </a>
           ) : null}
@@ -359,7 +444,11 @@ const ProviderCard = ({ kind, status }: { kind: ProviderKind; status: ProviderSt
 
       {status?.linked && status.models.length ? (
         <SettingsRow label="Default model">
-          <Select value={defaultModel([status], settings, kind) ?? status.models[0]!.id} onValueChange={setDefault} className="w-52">
+          <Select
+            value={defaultModel([status], settings, kind) ?? status.models[0]!.id}
+            onValueChange={setDefault}
+            className="w-52"
+          >
             <SelectTrigger className="py-1.5 text-[13px] whitespace-nowrap">
               <SelectValue className="min-w-0 truncate" />
             </SelectTrigger>

@@ -1,9 +1,4 @@
-import {
-  type MutableRefObject,
-  useCallback,
-  useLayoutEffect,
-  useState,
-} from "react";
+import { type MutableRefObject, useCallback, useLayoutEffect, useState } from "react";
 
 export type PortalLayout = {
   trigger: {

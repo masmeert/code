@@ -1,8 +1,4 @@
-export {
-  MultiSelect,
-  type MultiSelectFilter,
-  type MultiSelectProps,
-} from "./multi-select/context";
+export { MultiSelect, type MultiSelectFilter, type MultiSelectProps } from "./multi-select/context";
 export {
   MultiSelectInput,
   type MultiSelectInputProps,
@@ -11,10 +7,7 @@ export {
   MultiSelectValue,
   type MultiSelectValueProps,
 } from "./multi-select/trigger";
-export {
-  MultiSelectContent,
-  type MultiSelectContentProps,
-} from "./multi-select/content";
+export { MultiSelectContent, type MultiSelectContentProps } from "./multi-select/content";
 export {
   MultiSelectEmpty,
   type MultiSelectEmptyProps,

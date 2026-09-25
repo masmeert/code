@@ -119,10 +119,7 @@ function formatBytes(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
 
   const units = ["B", "KB", "MB", "GB", "TB"];
-  const exponent = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1,
-  );
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const value = bytes / 1024 ** exponent;
 
   return `${value >= 10 || exponent === 0 ? value.toFixed(0) : value.toFixed(1)} ${
@@ -131,9 +128,7 @@ function formatBytes(bytes: number) {
 }
 
 function fileKind(item: FileUploadItem) {
-  const extension = item.name.includes(".")
-    ? item.name.split(".").pop()
-    : undefined;
+  const extension = item.name.includes(".") ? item.name.split(".").pop() : undefined;
 
   if (extension) return extension.toUpperCase();
   if (item.type) return item.type.split("/").pop()?.toUpperCase();
@@ -141,9 +136,7 @@ function fileKind(item: FileUploadItem) {
 }
 
 function getFileIcon(item: FileUploadItem) {
-  const extension = item.name.includes(".")
-    ? item.name.split(".").pop()?.toLowerCase()
-    : undefined;
+  const extension = item.name.includes(".") ? item.name.split(".").pop()?.toLowerCase() : undefined;
   const type = item.type ?? "";
 
   if (type.startsWith("image/")) return FileImage;
@@ -171,19 +164,9 @@ function getFileIcon(item: FileUploadItem) {
     return FileText;
   }
   if (
-    [
-      "css",
-      "html",
-      "js",
-      "jsx",
-      "json",
-      "mdx",
-      "ts",
-      "tsx",
-      "xml",
-      "yaml",
-      "yml",
-    ].includes(extension ?? "")
+    ["css", "html", "js", "jsx", "json", "mdx", "ts", "tsx", "xml", "yaml", "yml"].includes(
+      extension ?? "",
+    )
   ) {
     return FileCode2;
   }
@@ -203,30 +186,16 @@ export function createFileUploadItem(file: File, index = 0): FileUploadItem {
   };
 }
 
-function StatusIcon({
-  status,
-  reduce,
-}: {
-  status: FileUploadStatus;
-  reduce: boolean;
-}) {
+function StatusIcon({ status, reduce }: { status: FileUploadStatus; reduce: boolean }) {
   const iconClassName = "h-4 w-4";
 
   return (
     <AnimatePresence mode="wait" initial={false}>
       <motion.span
         key={status}
-        initial={
-          reduce
-            ? { opacity: 0 }
-            : { opacity: 0, transform: "translateY(4px)" }
-        }
+        initial={reduce ? { opacity: 0 } : { opacity: 0, transform: "translateY(4px)" }}
         animate={{ opacity: 1, transform: "translateY(0px)" }}
-        exit={
-          reduce
-            ? { opacity: 0 }
-            : { opacity: 0, transform: "translateY(-4px)" }
-        }
+        exit={reduce ? { opacity: 0 } : { opacity: 0, transform: "translateY(-4px)" }}
         transition={FAST_TRANSITION}
         className={cn("grid h-6 w-6 place-items-center", STATUS_TONE[status])}
       >
@@ -235,13 +204,7 @@ function StatusIcon({
         ) : status === "error" ? (
           <AlertCircle className={iconClassName} />
         ) : status === "uploading" ? (
-          <Loader2
-            className={cn(
-              iconClassName,
-              "animate-spin",
-              reduce && "animate-none",
-            )}
-          />
+          <Loader2 className={cn(iconClassName, "animate-spin", reduce && "animate-none")} />
         ) : (
           <FileIcon className={iconClassName} />
         )}
@@ -272,13 +235,9 @@ function FileUploadRow({
   return (
     <motion.li
       layout={!reduce}
-      initial={
-        reduce ? { opacity: 0 } : { opacity: 0, transform: "translateY(8px)" }
-      }
+      initial={reduce ? { opacity: 0 } : { opacity: 0, transform: "translateY(8px)" }}
       animate={{ opacity: 1, transform: "translateY(0px)" }}
-      exit={
-        reduce ? { opacity: 0 } : { opacity: 0, transform: "translateY(-6px)" }
-      }
+      exit={reduce ? { opacity: 0 } : { opacity: 0, transform: "translateY(-6px)" }}
       transition={ROW_TRANSITION}
       className={cn(
         "relative overflow-hidden rounded-2xl border border-border bg-background p-3",
@@ -298,20 +257,10 @@ function FileUploadRow({
         <div className={cn("min-w-0 flex-1", classNames?.content)}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p
-                className={cn(
-                  "truncate text-sm font-medium text-foreground",
-                  classNames?.name,
-                )}
-              >
+              <p className={cn("truncate text-sm font-medium text-foreground", classNames?.name)}>
                 {item.name}
               </p>
-              <p
-                className={cn(
-                  "mt-0.5 text-xs text-muted-foreground",
-                  classNames?.meta,
-                )}
-              >
+              <p className={cn("mt-0.5 text-xs text-muted-foreground", classNames?.meta)}>
                 {fileKind(item)} · {formatBytes(item.size)}
                 {status === "error" && item.error ? ` · ${item.error}` : null}
               </p>
@@ -361,18 +310,14 @@ function FileUploadRow({
               <motion.div
                 className={cn(
                   "h-full rounded-full",
-                  status === "success"
-                    ? "bg-emerald-500"
-                    : "bg-foreground",
+                  status === "success" ? "bg-emerald-500" : "bg-foreground",
                 )}
                 style={{
                   transformOrigin: "left",
                   transform: reduce ? `scaleX(${progressRatio})` : undefined,
                 }}
                 initial={false}
-                animate={
-                  reduce ? undefined : { transform: `scaleX(${progressRatio})` }
-                }
+                animate={reduce ? undefined : { transform: `scaleX(${progressRatio})` }}
                 transition={{ duration: 0.28, ease: EASE_OUT }}
               />
             </div>
@@ -427,10 +372,7 @@ export function FileUpload({
         maxFiles === undefined ? incomingFiles.length : maxFiles - items.length;
       if (remainingSlots <= 0) return;
 
-      const files = incomingFiles.slice(
-        0,
-        multiple ? remainingSlots : Math.min(1, remainingSlots),
-      );
+      const files = incomingFiles.slice(0, multiple ? remainingSlots : Math.min(1, remainingSlots));
       const added = files.map((file, index) => createFileUploadItem(file, index));
 
       if (added.length === 0) return;
@@ -458,9 +400,7 @@ export function FileUpload({
         status: "uploading" as const,
       };
 
-      commit(
-        items.map((entry) => (entry.id === item.id ? retryingItem : entry)),
-      );
+      commit(items.map((entry) => (entry.id === item.id ? retryingItem : entry)));
       onRetry?.(retryingItem);
     },
     [commit, items, onRetry],
@@ -545,9 +485,7 @@ export function FileUpload({
             reduce
               ? undefined
               : {
-                  transform: dragging
-                    ? "translateY(-2px)"
-                    : "translateY(0px)",
+                  transform: dragging ? "translateY(-2px)" : "translateY(0px)",
                 }
           }
           transition={FAST_TRANSITION}
@@ -570,9 +508,7 @@ export function FileUpload({
               centered ? "mt-1 leading-5" : "mt-0.5",
             )}
           >
-            {maxReached
-              ? `${items.length} of ${maxFiles} files added`
-              : description}
+            {maxReached ? `${items.length} of ${maxFiles} files added` : description}
           </span>
         </span>
 

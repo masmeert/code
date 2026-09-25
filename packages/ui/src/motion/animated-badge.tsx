@@ -1,12 +1,4 @@
-import {
-  AlertTriangle,
-  Check,
-  Circle,
-  Info,
-  LoaderCircle,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { AlertTriangle, Check, Circle, Info, LoaderCircle, X, type LucideIcon } from "lucide-react";
 import {
   AnimatePresence,
   motion,
@@ -18,20 +10,11 @@ import type { ReactNode } from "react";
 import { EASE_OUT } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
-export type AnimatedBadgeStatus =
-  | "neutral"
-  | "info"
-  | "success"
-  | "warning"
-  | "danger"
-  | "loading";
+export type AnimatedBadgeStatus = "neutral" | "info" | "success" | "warning" | "danger" | "loading";
 
 export type AnimatedBadgeSize = "sm" | "md";
 
-export interface AnimatedBadgeProps extends Omit<
-  HTMLMotionProps<"span">,
-  "children"
-> {
+export interface AnimatedBadgeProps extends Omit<HTMLMotionProps<"span">, "children"> {
   status?: AnimatedBadgeStatus;
   size?: AnimatedBadgeSize;
   children?: ReactNode;
@@ -136,16 +119,14 @@ export function AnimatedBadge({
   const Icon = ICONS[status];
   const resolvedContentKey =
     contentKey ??
-    (typeof children === "string" || typeof children === "number"
-      ? children
-      : status);
+    (typeof children === "string" || typeof children === "number" ? children : status);
 
   return (
     <motion.span
       layout
       transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
       className={cn(
-        "relative inline-flex shrink-0 items-center overflow-hidden whitespace-nowrap rounded-full border font-medium tabular-nums",
+        "relative inline-flex shrink-0 items-center overflow-hidden rounded-full border font-medium whitespace-nowrap tabular-nums",
         "transition-colors duration-300",
         STATUS_CLASS[status],
         SIZE_CLASS[size],

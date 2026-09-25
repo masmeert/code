@@ -30,4 +30,8 @@ export { useHeatCalendar } from "./heat-calendar/context";
 export { HeatCalendarGrid } from "./heat-calendar/grid";
 export { HeatCalendarLegend } from "./heat-calendar/legend";
 export { HeatCalendarTooltip } from "./heat-calendar/tooltip";
-export type { HeatCalendarCell, HeatCalendarProps, HeatCalendarSelection } from "./heat-calendar/types";
+export type {
+  HeatCalendarCell,
+  HeatCalendarProps,
+  HeatCalendarSelection,
+} from "./heat-calendar/types";

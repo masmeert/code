@@ -44,9 +44,7 @@ export function ComboboxTrigger({ children, className }: ComboboxTriggerProps) {
 
 export interface ComboboxValueProps {
   placeholder?: ReactNode;
-  children?:
-    | ReactNode
-    | ((value: string | undefined, label: string | undefined) => ReactNode);
+  children?: ReactNode | ((value: string | undefined, label: string | undefined) => ReactNode);
   className?: string;
 }
 
@@ -60,15 +58,13 @@ export function ComboboxValue({
   const content =
     typeof children === "function"
       ? children(context.value, label)
-      : children ?? label ?? placeholder;
+      : (children ?? label ?? placeholder);
 
   return (
     <span
       className={cn(
         "block truncate",
-        context.value === undefined
-          ? "text-muted-foreground"
-          : "text-foreground",
+        context.value === undefined ? "text-muted-foreground" : "text-foreground",
         className,
       )}
     >
@@ -77,11 +73,10 @@ export function ComboboxValue({
   );
 }
 
-export interface ComboboxInputProps
-  extends Omit<
-    InputHTMLAttributes<HTMLInputElement>,
-    "defaultValue" | "value"
-  > {
+export interface ComboboxInputProps extends Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "defaultValue" | "value"
+> {
   ref?: Ref<HTMLInputElement>;
   wrapperClassName?: string;
 }
@@ -135,12 +130,7 @@ export function ComboboxInput({
   };
 
   return (
-    <div
-      className={cn(
-        "flex min-w-0 flex-1 items-center gap-2",
-        wrapperClassName,
-      )}
-    >
+    <div className={cn("flex min-w-0 flex-1 items-center gap-2", wrapperClassName)}>
       <Search aria-hidden className="size-4 shrink-0 text-muted-foreground" />
       <input
         {...props}
@@ -151,9 +141,7 @@ export function ComboboxInput({
         aria-autocomplete="list"
         aria-expanded={context.open}
         aria-controls={context.listId}
-        aria-activedescendant={
-          context.open ? context.activeItemId : undefined
-        }
+        aria-activedescendant={context.open ? context.activeItemId : undefined}
         autoComplete="off"
         disabled={context.disabled}
         value={context.open ? context.query : (selectedLabel ?? "")}

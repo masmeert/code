@@ -99,9 +99,7 @@ function getSummary(
   }
   if (type === "trace") {
     const messages = items.filter(
-      (item) =>
-        item.type === "trace" &&
-        (item.kind === "thinking" || item.kind === "message"),
+      (item) => item.type === "trace" && (item.kind === "thinking" || item.kind === "message"),
     ).length;
     const tools = items.length - messages;
     return `${tools} ${tools === 1 ? "tool call" : "tool calls"}, ${messages} ${messages === 1 ? "message" : "messages"}`;
@@ -141,15 +139,11 @@ export function AgentActivity({
   });
   const working = status === "working";
   const expanded = working || currentOpen;
-  const contentType = items.length
-    ? getContentType(items)
-    : (initialContentType ?? "mixed");
+  const contentType = items.length ? getContentType(items) : (initialContentType ?? "mixed");
   const cappedHeight = Math.min(contentHeight, Math.max(0, maxHeight));
   const viewportHeight = working ? Math.max(0, maxHeight) : cappedHeight;
   const capped = contentHeight > maxHeight;
-  const streamOffset = working
-    ? Math.min(0, viewportHeight - contentHeight)
-    : 0;
+  const streamOffset = working ? Math.min(0, viewportHeight - contentHeight) : 0;
 
   useLayoutEffect(() => {
     const node = contentRef.current;
@@ -198,9 +192,11 @@ export function AgentActivity({
           role="status"
           className="flex h-7 min-w-0 items-center text-muted-foreground"
         >
-          {renderWorkingStatus
-            ? renderWorkingStatus({ label: liveLabel, duration })
-            : <ThinkingShimmer>{liveLabel}</ThinkingShimmer>}
+          {renderWorkingStatus ? (
+            renderWorkingStatus({ label: liveLabel, duration })
+          ) : (
+            <ThinkingShimmer>{liveLabel}</ThinkingShimmer>
+          )}
         </div>
       ) : (
         <button
@@ -209,7 +205,7 @@ export function AgentActivity({
           aria-expanded={expanded}
           aria-controls={contentId}
           onClick={toggle}
-          className="group flex h-7 min-w-0 items-center gap-1.5 rounded-md text-left font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          className="group flex h-7 min-w-0 items-center gap-1.5 rounded-md text-left font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
           <span className="truncate">
             {renderCompletedStatus

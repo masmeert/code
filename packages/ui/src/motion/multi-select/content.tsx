@@ -46,11 +46,7 @@ export function MultiSelectContent({
   const [portalReady, setPortalReady] = useState(false);
   const [actualSide, setActualSide] = useState<Side>(side);
   const [morphReady, setMorphReady] = useState(false);
-  const layout = usePopoverPortalPosition(
-    context.triggerRef,
-    measureRef,
-    portalReady,
-  );
+  const layout = usePopoverPortalPosition(context.triggerRef, measureRef, portalReady);
 
   useEffect(() => setPortalReady(true), []);
   useLayoutEffect(() => {
@@ -65,20 +61,11 @@ export function MultiSelectContent({
       setActualSide(side);
       return;
     }
-    const below =
-      window.innerHeight - (layout.trigger.top + layout.trigger.height);
+    const below = window.innerHeight - (layout.trigger.top + layout.trigger.height);
     const above = layout.trigger.top;
-    if (
-      side === "bottom" &&
-      below < layout.content.height + sideOffset &&
-      above > below
-    ) {
+    if (side === "bottom" && below < layout.content.height + sideOffset && above > below) {
       setActualSide("top");
-    } else if (
-      side === "top" &&
-      above < layout.content.height + sideOffset &&
-      below > above
-    ) {
+    } else if (side === "top" && above < layout.content.height + sideOffset && below > above) {
       setActualSide("bottom");
     } else {
       setActualSide(side);
@@ -96,10 +83,7 @@ export function MultiSelectContent({
       : align === "center"
         ? triggerLeft + (triggerWidth - contentWidth) / 2
         : triggerLeft;
-  const maxLeft = Math.max(
-    VIEWPORT_PADDING,
-    window.innerWidth - contentWidth - VIEWPORT_PADDING,
-  );
+  const maxLeft = Math.max(VIEWPORT_PADDING, window.innerWidth - contentWidth - VIEWPORT_PADDING);
   const left = Math.min(Math.max(desiredLeft, VIEWPORT_PADDING), maxLeft);
   const surfaceHeight = layout?.content.height ?? 0;
 
@@ -114,15 +98,9 @@ export function MultiSelectContent({
       animate={{
         height: context.open ? surfaceHeight : 0,
         opacity: context.open ? 1 : 0,
-        y: context.open
-          ? actualSide === "bottom"
-            ? sideOffset
-            : -sideOffset
-          : 0,
+        y: context.open ? (actualSide === "bottom" ? sideOffset : -sideOffset) : 0,
       }}
-      transition={
-        context.reduce || !morphReady ? { duration: 0 } : MULTI_SELECT_MORPH
-      }
+      transition={context.reduce || !morphReady ? { duration: 0 } : MULTI_SELECT_MORPH}
       style={
         {
           left,
@@ -131,9 +109,7 @@ export function MultiSelectContent({
               ? layout.trigger.top + layout.trigger.height
               : undefined,
           bottom:
-            actualSide === "top" && layout
-              ? window.innerHeight - layout.trigger.top
-              : undefined,
+            actualSide === "top" && layout ? window.innerHeight - layout.trigger.top : undefined,
           minWidth: triggerWidth,
           pointerEvents: context.open ? "auto" : "none",
           transformOrigin: actualSide === "bottom" ? "top" : "bottom",
@@ -142,7 +118,7 @@ export function MultiSelectContent({
         } as CSSProperties
       }
       className={cn(
-        "fixed z-[9999] w-(--multi-select-trigger-width) overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-panel outline-none will-change-[height,transform]",
+        "fixed z-[9999] w-(--multi-select-trigger-width) overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-panel will-change-[height,transform] outline-none",
         className,
       )}
     >
@@ -150,9 +126,7 @@ export function MultiSelectContent({
         ref={measureRef}
         initial={false}
         animate={{ opacity: context.open ? 1 : 0 }}
-        transition={
-          context.reduce || !morphReady ? { duration: 0 } : MULTI_SELECT_MORPH
-        }
+        transition={context.reduce || !morphReady ? { duration: 0 } : MULTI_SELECT_MORPH}
       >
         {children}
       </motion.div>

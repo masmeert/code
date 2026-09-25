@@ -1,12 +1,5 @@
-export {
-  ComboboxContent,
-  type ComboboxContentProps,
-} from "./combobox/content";
-export {
-  Combobox,
-  type ComboboxFilter,
-  type ComboboxProps,
-} from "./combobox/context";
+export { ComboboxContent, type ComboboxContentProps } from "./combobox/content";
+export { Combobox, type ComboboxFilter, type ComboboxProps } from "./combobox/context";
 export {
   ComboboxEmpty,
   type ComboboxEmptyProps,

@@ -15,10 +15,7 @@ export interface MultiSelectTriggerProps {
   className?: string;
 }
 
-export function MultiSelectTrigger({
-  children,
-  className,
-}: MultiSelectTriggerProps) {
+export function MultiSelectTrigger({ children, className }: MultiSelectTriggerProps) {
   const context = useMultiSelectContext("MultiSelectTrigger");
 
   return (
@@ -46,13 +43,8 @@ export function MultiSelectTrigger({
         className,
       )}
     >
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-        {children}
-      </div>
-      <ChevronsUpDown
-        aria-hidden="true"
-        className="size-4 shrink-0 text-muted-foreground"
-      />
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">{children}</div>
+      <ChevronsUpDown aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
     </div>
   );
 }
@@ -106,9 +98,7 @@ export function MultiSelectValue({
                   : "inset(0 0 0 100% round 0.5rem)",
                 transform: "translateY(0px) scale(1)",
                 transition: {
-                  clipPath: context.reduce
-                    ? { duration: 0 }
-                    : { duration: 0.16, ease: EASE_OUT },
+                  clipPath: context.reduce ? { duration: 0 } : { duration: 0.16, ease: EASE_OUT },
                   transform: { duration: 0 },
                 },
               }}
@@ -130,9 +120,7 @@ export function MultiSelectValue({
                 chipClassName,
               )}
             >
-              <span className="truncate">
-                {children ? children(value, label) : label}
-              </span>
+              <span className="truncate">{children ? children(value, label) : label}</span>
               <button
                 type="button"
                 data-multi-select-remove=""
@@ -144,7 +132,7 @@ export function MultiSelectValue({
                   context.remove(value);
                   context.inputRef.current?.focus({ preventScroll: true });
                 }}
-                className="-mr-1 grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+                className="-mr-1 grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-foreground/10 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
               >
                 <X aria-hidden="true" className="size-3" />
               </button>
@@ -156,11 +144,10 @@ export function MultiSelectValue({
   );
 }
 
-export interface MultiSelectInputProps
-  extends Omit<
-    InputHTMLAttributes<HTMLInputElement>,
-    "defaultValue" | "value"
-  > {
+export interface MultiSelectInputProps extends Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "defaultValue" | "value"
+> {
   ref?: Ref<HTMLInputElement>;
   showIcon?: boolean;
 }
@@ -212,9 +199,7 @@ export function MultiSelectInput({
 
   return (
     <div className="flex min-w-20 flex-1 items-center gap-1.5">
-      {showIcon ? (
-        <Search aria-hidden="true" className="size-3.5 text-muted-foreground" />
-      ) : null}
+      {showIcon ? <Search aria-hidden="true" className="size-3.5 text-muted-foreground" /> : null}
       <input
         {...props}
         ref={mergeRefs(ref, context.inputRef)}
@@ -224,9 +209,7 @@ export function MultiSelectInput({
         aria-autocomplete="list"
         aria-expanded={context.open}
         aria-controls={context.listId}
-        aria-activedescendant={
-          context.open ? context.activeItemId : undefined
-        }
+        aria-activedescendant={context.open ? context.activeItemId : undefined}
         autoComplete="off"
         disabled={context.disabled}
         value={context.query}

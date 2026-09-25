@@ -1,12 +1,5 @@
 import { LayoutGroup, useReducedMotion } from "motion/react";
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { cn } from "@apcode/ui/lib/utils";
 import { DayRow } from "./availability-scheduler/day-row";
 import {
@@ -48,9 +41,7 @@ export function AvailabilityScheduler({
   const options = useMemo(() => buildOptions(step), [step]);
   const idRef = useRef(0);
 
-  const [internal, setInternal] = useState<WeekAvailability>(
-    () => defaultValue ?? defaultWeek(),
-  );
+  const [internal, setInternal] = useState<WeekAvailability>(() => defaultValue ?? defaultWeek());
   // The row that last opened a dropdown paints above the rest — see DayRow.
   const [openDay, setOpenDay] = useState<DayKey | null>(null);
   // Exactly one time panel is open at a time, and the scheduler is the one that
@@ -98,17 +89,12 @@ export function AvailabilityScheduler({
     [commit, week],
   );
 
-  const panelOpenChange = useCallback(
-    (day: DayKey, id: string, open: boolean) => {
-      setOpenPanel((current) =>
-        open ? id : current === id ? null : current,
-      );
-      // Elevation stays on the row that opened last so the panel's collapse
-      // animation finishes above its neighbours.
-      if (open) setOpenDay(day);
-    },
-    [],
-  );
+  const panelOpenChange = useCallback((day: DayKey, id: string, open: boolean) => {
+    setOpenPanel((current) => (open ? id : current === id ? null : current));
+    // Elevation stays on the row that opened last so the panel's collapse
+    // animation finishes above its neighbours.
+    if (open) setOpenDay(day);
+  }, []);
 
   const copyDay = useCallback(
     (from: DayKey, targets: DayKey[]) => {

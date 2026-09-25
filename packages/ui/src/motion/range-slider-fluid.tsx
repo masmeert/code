@@ -67,9 +67,7 @@ export function FluidSlider({
       className={cn(
         "relative flex h-12 w-full touch-none overflow-hidden rounded-full bg-muted",
         TOUCH_GESTURE_CLASS,
-        options.disabled
-          ? "pointer-events-none opacity-50"
-          : "cursor-grab active:cursor-grabbing",
+        options.disabled ? "pointer-events-none opacity-50" : "cursor-grab active:cursor-grabbing",
         className,
       )}
     >
@@ -93,7 +91,7 @@ export function FluidSlider({
       <button
         type="button"
         {...sliderProps}
-        className="absolute inset-0 touch-none rounded-full outline-none ring-inset ring-ring focus-visible:ring-4"
+        className="absolute inset-0 touch-none rounded-full ring-ring outline-none ring-inset focus-visible:ring-4"
       />
     </motion.div>
   );

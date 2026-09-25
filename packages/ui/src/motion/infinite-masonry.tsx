@@ -1,13 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AlertCircle, Inbox } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type MutableRefObject,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { EASE_OUT, SPRING_PANEL } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
@@ -70,9 +64,7 @@ function useMasonryMetrics({
       );
 
       setMetrics((current) =>
-        current.columns === columns && current.width === width
-          ? current
-          : { columns, width },
+        current.columns === columns && current.width === width ? current : { columns, width },
       );
     };
 
@@ -128,9 +120,7 @@ function MasonryItemReveal({
   animate: boolean;
   children: ReactNode;
 }) {
-  const [shouldReveal] = useState(
-    () => animate && !revealedKeys.current.has(itemKey),
-  );
+  const [shouldReveal] = useState(() => animate && !revealedKeys.current.has(itemKey));
 
   useEffect(() => {
     revealedKeys.current.add(itemKey);
@@ -217,11 +207,9 @@ export function InfiniteMasonry<T>({
   });
 
   const virtualItems = virtualizer.getVirtualItems();
-  const viewportEnd =
-    (virtualizer.scrollOffset ?? 0) + (virtualizer.scrollRect?.height ?? 0);
+  const viewportEnd = (virtualizer.scrollOffset ?? 0) + (virtualizer.scrollRect?.height ?? 0);
   const lastVisibleIndex = virtualItems.reduce(
-    (lastIndex, item) =>
-      item.start < viewportEnd ? Math.max(lastIndex, item.index) : lastIndex,
+    (lastIndex, item) => (item.start < viewportEnd ? Math.max(lastIndex, item.index) : lastIndex),
     -1,
   );
 
@@ -256,8 +244,7 @@ export function InfiniteMasonry<T>({
     );
   }
 
-  const columnWidth =
-    columns > 0 ? Math.max(0, (width - gap * (columns - 1)) / columns) : 0;
+  const columnWidth = columns > 0 ? Math.max(0, (width - gap * (columns - 1)) / columns) : 0;
 
   return (
     <section
@@ -265,7 +252,7 @@ export function InfiniteMasonry<T>({
       aria-label={ariaLabel}
       aria-busy={loading}
       className={cn(
-        "w-full contain-[layout_paint] overflow-y-auto overscroll-none rounded-2xl border border-border bg-background p-3 [overflow-anchor:none] [scrollbar-gutter:stable]",
+        "w-full [scrollbar-gutter:stable] overflow-y-auto overscroll-none rounded-2xl border border-border bg-background p-3 contain-[layout_paint] [overflow-anchor:none]",
         className,
       )}
     >
@@ -284,7 +271,7 @@ export function InfiniteMasonry<T>({
               ref={virtualizer.measureElement}
               data-index={virtualItem.index}
               className={cn(
-                "absolute left-0 top-0 will-change-transform",
+                "absolute top-0 left-0 will-change-transform",
                 !isTail && itemClassName,
               )}
               style={{
@@ -299,14 +286,12 @@ export function InfiniteMasonry<T>({
                       <AlertCircle className="size-4" aria-hidden="true" />
                       <p className="text-sm font-medium">Couldn&apos;t load more</p>
                     </div>
-                    <div className="mt-2 text-xs leading-5 text-muted-foreground">
-                      {error}
-                    </div>
+                    <div className="mt-2 text-xs leading-5 text-muted-foreground">{error}</div>
                     {onRetry ? (
                       <button
                         type="button"
                         onClick={onRetry}
-                        className="mt-3 min-h-10 rounded-xl border border-border bg-background px-4 text-xs font-medium text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        className="mt-3 min-h-10 rounded-xl border border-border bg-background px-4 text-xs font-medium text-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
                         Try again
                       </button>
@@ -335,9 +320,7 @@ export function InfiniteMasonry<T>({
       </div>
 
       {!hasMore && items.length > 0 && endState ? (
-        <div className="py-4 text-center text-xs text-muted-foreground">
-          {endState}
-        </div>
+        <div className="py-4 text-center text-xs text-muted-foreground">{endState}</div>
       ) : null}
       <span className="sr-only" aria-live="polite">
         {loading ? "Loading more items" : null}

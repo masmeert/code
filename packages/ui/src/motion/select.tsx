@@ -122,8 +122,7 @@ export function Select({
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     const onPointer = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node))
-        setOpen(false);
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onPointer);
@@ -190,7 +189,7 @@ export function SelectTrigger({ className, children }: SelectTriggerProps) {
       aria-controls={ctx.listId}
       onClick={() => ctx.setOpen(!ctx.open)}
       className={cn(
-        "relative z-10 flex w-full items-center justify-between gap-2 rounded-[12px] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors",
+        "relative z-10 flex w-full items-center justify-between gap-2 rounded-[12px] border border-border bg-background px-3 py-2 text-sm text-foreground transition-colors outline-none",
         "hover:border-border-strong focus-visible:ring-4 focus-visible:ring-ring",
         "disabled:pointer-events-none disabled:opacity-50",
         className,
@@ -217,9 +216,7 @@ export function SelectValue({ placeholder, className }: SelectValueProps) {
   const ctx = useSelectContext("SelectValue");
   const label = ctx.labelFor(ctx.value);
   return (
-    <span
-      className={cn(label ? "text-foreground" : "text-muted-foreground", className)}
-    >
+    <span className={cn(label ? "text-foreground" : "text-muted-foreground", className)}>
       {label ?? placeholder ?? "Select"}
     </span>
   );
@@ -290,7 +287,7 @@ export function SelectContent({ className, children }: SelectContentProps) {
         if (!open) setShown(false);
       }}
       className={cn(
-        "absolute left-0 right-0 z-20 overflow-hidden rounded-[12px] border border-border bg-popover shadow-panel",
+        "absolute right-0 left-0 z-20 overflow-hidden rounded-[12px] border border-border bg-popover shadow-panel",
         isTop ? "bottom-full mb-2 origin-bottom" : "top-full mt-2 origin-top",
         open ? "pointer-events-auto" : "pointer-events-none",
         !shown && "h-0",
@@ -338,7 +335,7 @@ export function SelectItem({
         disabled={disabled}
         onClick={() => ctx.select(value)}
         className={cn(
-          "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm outline-none transition-colors",
+          "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors outline-none",
           selected
             ? "bg-muted text-foreground"
             : "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:bg-muted",

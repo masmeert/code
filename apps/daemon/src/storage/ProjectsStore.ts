@@ -17,7 +17,9 @@ export class ProjectsStore extends Context.Service<
   {
     readonly list: Effect.Effect<ReadonlyArray<Project>>;
     /** Returns the existing project for `path`, or registers a new one. */
-    readonly ensure: (path: string) => Effect.Effect<{ readonly project: Project; readonly created: boolean }, ProjectNotFound>;
+    readonly ensure: (
+      path: string,
+    ) => Effect.Effect<{ readonly project: Project; readonly created: boolean }, ProjectNotFound>;
     readonly remove: (projectId: string) => Effect.Effect<boolean>;
   }
 >()("apcode/ProjectsStore") {}
@@ -38,9 +40,15 @@ const make = Effect.gen(function* () {
         Effect.map((s) => s.isDirectory()),
         Effect.orElseSucceed(() => false),
       );
-      if (!isDir) return yield* Effect.fail(new ProjectNotFound({ message: `Not a folder: ${path}` }));
+      if (!isDir)
+        return yield* Effect.fail(new ProjectNotFound({ message: `Not a folder: ${path}` }));
 
-      const project: Project = { id: crypto.randomUUID(), path, name: basename(path) || path, addedAt: Date.now() };
+      const project: Project = {
+        id: crypto.randomUUID(),
+        path,
+        name: basename(path) || path,
+        addedAt: Date.now(),
+      };
       yield* file.set([...projects, project]);
       return { project, created: true };
     });

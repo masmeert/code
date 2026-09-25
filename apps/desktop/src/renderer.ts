@@ -15,20 +15,31 @@ const CONTENT_SECURITY_POLICY = [
 ].join("; ");
 
 export function registerRendererScheme() {
-  protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
+  protocol.registerSchemesAsPrivileged([
+    { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  ]);
 }
 
 export function serveRenderer() {
   if (!app.isPackaged) {
-    session.defaultSession.webRequest.onHeadersReceived({ urls: [`${APP_URL}*`] }, (details, callback) =>
-      callback({ responseHeaders: { ...details.responseHeaders, "Content-Security-Policy": [CONTENT_SECURITY_POLICY] } }),
+    session.defaultSession.webRequest.onHeadersReceived(
+      { urls: [`${APP_URL}*`] },
+      (details, callback) =>
+        callback({
+          responseHeaders: {
+            ...details.responseHeaders,
+            "Content-Security-Policy": [CONTENT_SECURITY_POLICY],
+          },
+        }),
     );
     return;
   }
   protocol.handle("app", async (request) => {
     const { pathname } = new URL(request.url);
     const response = await net.fetch(
-      pathToFileURL(join(process.resourcesPath, "renderer", pathname === "/" ? "index.html" : pathname)).toString(),
+      pathToFileURL(
+        join(process.resourcesPath, "renderer", pathname === "/" ? "index.html" : pathname),
+      ).toString(),
     );
     return new Response(response.body, {
       status: response.status,

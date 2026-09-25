@@ -146,8 +146,7 @@ function QuestionOptions({
           }
           className={cn("p-0.5", question.options?.length && "mt-1.5")}
           classNames={{
-            field:
-              "h-10 rounded-xl border-0 bg-background/70 focus-within:bg-background",
+            field: "h-10 rounded-xl border-0 bg-background/70 focus-within:bg-background",
             input: "px-3 text-sm",
           }}
         />
@@ -205,8 +204,7 @@ export function ApprovalCard({
   className,
 }: ApprovalCardProps) {
   const reduce = useReducedMotion() ?? false;
-  const [internalAnswers, setInternalAnswers] =
-    useState<ApprovalCardAnswers>(defaultAnswers);
+  const [internalAnswers, setInternalAnswers] = useState<ApprovalCardAnswers>(defaultAnswers);
   const [internalStep, setInternalStep] = useState(defaultStep);
   const autoAdvanceTimer = useRef<number | undefined>(undefined);
   const currentAnswers = answers ?? internalAnswers;
@@ -220,9 +218,7 @@ export function ApprovalCard({
   const pending = status === "pending";
   const busy = status === "submitting";
   const interactive = pending || busy;
-  const currentAnswer = question
-    ? (currentAnswers[question.id] ?? EMPTY_ANSWER)
-    : EMPTY_ANSWER;
+  const currentAnswer = question ? (currentAnswers[question.id] ?? EMPTY_ANSWER) : EMPTY_ANSWER;
   const displayTitle = question?.title ?? title;
   const titleKey = question?.id ?? String(status);
   const statusLabel = getStatusLabel(status);
@@ -283,10 +279,7 @@ export function ApprovalCard({
     <div
       data-state={status}
       aria-busy={busy}
-      className={cn(
-        "w-full overflow-hidden rounded-2xl bg-muted p-4 text-sm",
-        className,
-      )}
+      className={cn("w-full overflow-hidden rounded-2xl bg-muted p-4 text-sm", className)}
     >
       <div className="flex items-start gap-3">
         <span
@@ -313,14 +306,12 @@ export function ApprovalCard({
 
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-start gap-3">
-            <h3 className="min-w-0 flex-1 text-base font-medium leading-5 text-foreground">
-              <ActionSwapRollText value={titleKey}>
-                {displayTitle}
-              </ActionSwapRollText>
+            <h3 className="min-w-0 flex-1 text-base leading-5 font-medium text-foreground">
+              <ActionSwapRollText value={titleKey}>{displayTitle}</ActionSwapRollText>
             </h3>
             {questionMode && interactive ? (
               multipleQuestions ? (
-                <span className="shrink-0 text-xs tabular-nums text-muted-foreground/65">
+                <span className="shrink-0 text-xs text-muted-foreground/65 tabular-nums">
                   {currentStep + 1}/{questions.length}
                 </span>
               ) : null
@@ -339,7 +330,7 @@ export function ApprovalCard({
                 type="button"
                 aria-label="Dismiss"
                 onClick={onDismiss}
-                className="grid size-5 shrink-0 place-items-center rounded-full text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+                className="grid size-5 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
               >
                 <X className="size-4" />
               </button>
@@ -361,9 +352,7 @@ export function ApprovalCard({
                   transition={{ duration: reduce ? 0 : 0.2, ease: EASE_OUT }}
                 >
                   {question.description ? (
-                    <p className="mt-1 leading-5 text-muted-foreground">
-                      {question.description}
-                    </p>
+                    <p className="mt-1 leading-5 text-muted-foreground">{question.description}</p>
                   ) : null}
                   <QuestionOptions
                     question={question}
@@ -377,9 +366,7 @@ export function ApprovalCard({
             ) : (
               <div>
                 {description ? (
-                  <p className="mt-1 leading-5 text-muted-foreground">
-                    {description}
-                  </p>
+                  <p className="mt-1 leading-5 text-muted-foreground">{description}</p>
                 ) : null}
                 {children ? <div className="mt-3">{children}</div> : null}
               </div>
@@ -399,18 +386,13 @@ export function ApprovalCard({
                     >
                       <ArrowLeft className="size-4" />
                     </Button>
-                    <ProgressDots
-                      current={currentStep}
-                      ids={questions.map((item) => item.id)}
-                    />
+                    <ProgressDots current={currentStep} ids={questions.map((item) => item.id)} />
                   </>
                 ) : null}
                 <Button
                   size={currentStep === questions.length - 1 ? "sm" : "icon"}
                   aria-label={
-                    currentStep === questions.length - 1
-                      ? "Submit response"
-                      : "Next question"
+                    currentStep === questions.length - 1 ? "Submit response" : "Next question"
                   }
                   disabled={busy || !isAnswered(currentAnswer)}
                   onClick={continueQuestion}
@@ -430,12 +412,7 @@ export function ApprovalCard({
               </div>
             ) : (
               <div className="mt-4 flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  disabled={busy}
-                  onClick={onApprove}
-                  className="rounded-full"
-                >
+                <Button size="sm" disabled={busy} onClick={onApprove} className="rounded-full">
                   {approveLabel}
                 </Button>
                 {onRequestChanges ? (
@@ -465,9 +442,7 @@ export function ApprovalCard({
           </AgentDisclosure>
 
           {!interactive ? (
-            <p className="mt-1 text-sm text-muted-foreground">
-              {result ?? statusLabel}
-            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{result ?? statusLabel}</p>
           ) : null}
         </div>
       </div>

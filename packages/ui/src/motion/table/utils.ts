@@ -24,10 +24,7 @@ export function readCell<T>(row: T, column: TableColumn<T>): ReactNode {
   return (row as Record<string, ReactNode>)[column.key];
 }
 
-export function readSortValue<T>(
-  row: T,
-  column: TableColumn<T>,
-): string | number {
+export function readSortValue<T>(row: T, column: TableColumn<T>): string | number {
   if (column.sortValue) return column.sortValue(row);
   return (row as Record<string, string | number>)[column.key];
 }

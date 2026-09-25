@@ -11,7 +11,8 @@ window.addEventListener("drop", (event) => {
   const files = [...(event.dataTransfer?.files ?? [])];
   if (dropListeners.size === 0 || files.length === 0) return;
   event.preventDefault();
-  for (const listener of dropListeners) listener(files.map((file) => webUtils.getPathForFile(file)));
+  for (const listener of dropListeners)
+    listener(files.map((file) => webUtils.getPathForFile(file)));
 });
 
 contextBridge.exposeInMainWorld("desktop", {
@@ -30,5 +31,6 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.on("browser-event", forward);
     return () => ipcRenderer.removeListener("browser-event", forward);
   },
-  automateBrowser: (webContentsId, action) => ipcRenderer.invoke("automate-browser", { webContentsId, action }),
+  automateBrowser: (webContentsId, action) =>
+    ipcRenderer.invoke("automate-browser", { webContentsId, action }),
 } satisfies DesktopBridge);

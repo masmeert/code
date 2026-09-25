@@ -109,26 +109,42 @@ export function TabsList({
     const max = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
     const rtl = getComputedStyle(viewport).direction === "rtl";
     // Modern browsers expose negative scrollLeft in RTL. Clamp rubber-banding.
-    const fromLeft = Math.max(0, Math.min(max, rtl ? max + viewport.scrollLeft : viewport.scrollLeft));
+    const fromLeft = Math.max(
+      0,
+      Math.min(max, rtl ? max + viewport.scrollLeft : viewport.scrollLeft),
+    );
     const next = { overflow, left: fromLeft > 1, right: fromLeft < max - 1 };
-    setEdges((previous) => previous.overflow === next.overflow && previous.left === next.left && previous.right === next.right ? previous : next);
+    setEdges((previous) =>
+      previous.overflow === next.overflow &&
+      previous.left === next.left &&
+      previous.right === next.right
+        ? previous
+        : next,
+    );
   }, []);
 
-  const reveal = useCallback((tab: HTMLElement | null) => {
-    const viewport = viewportRef.current;
-    if (!viewport || !tab) return;
-    const frame = viewport.getBoundingClientRect();
-    const item = tab.getBoundingClientRect();
-    const max = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
-    const rtl = getComputedStyle(viewport).direction === "rtl";
-    const fromLeft = Math.max(0, Math.min(max, rtl ? max + viewport.scrollLeft : viewport.scrollLeft));
-    // Keep the selected/focused label clear of the arrows over the faded edges.
-    const left = frame.left + (fromLeft > 1 ? 36 : 0);
-    const right = frame.right - (fromLeft < max - 1 ? 36 : 0);
-    const delta = item.left < left ? item.left - left : item.right > right ? item.right - right : 0;
-    // Scroll only this viewport; scrollIntoView can also move the whole page.
-    if (delta) viewport.scrollBy({ left: delta, behavior: reduce ? "instant" : "smooth" });
-  }, [reduce]);
+  const reveal = useCallback(
+    (tab: HTMLElement | null) => {
+      const viewport = viewportRef.current;
+      if (!viewport || !tab) return;
+      const frame = viewport.getBoundingClientRect();
+      const item = tab.getBoundingClientRect();
+      const max = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+      const rtl = getComputedStyle(viewport).direction === "rtl";
+      const fromLeft = Math.max(
+        0,
+        Math.min(max, rtl ? max + viewport.scrollLeft : viewport.scrollLeft),
+      );
+      // Keep the selected/focused label clear of the arrows over the faded edges.
+      const left = frame.left + (fromLeft > 1 ? 36 : 0);
+      const right = frame.right - (fromLeft < max - 1 ? 36 : 0);
+      const delta =
+        item.left < left ? item.left - left : item.right > right ? item.right - right : 0;
+      // Scroll only this viewport; scrollIntoView can also move the whole page.
+      if (delta) viewport.scrollBy({ left: delta, behavior: reduce ? "instant" : "smooth" });
+    },
+    [reduce],
+  );
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -157,7 +173,9 @@ export function TabsList({
     void value;
     void edges.overflow;
     measure();
-    reveal(listRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? null);
+    reveal(
+      listRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? null,
+    );
   }, [children, value, edges.overflow, measure, reveal]);
 
   useLayoutEffect(() => {
@@ -183,13 +201,20 @@ export function TabsList({
         const bounds = label.getBoundingClientRect();
         const left = Math.max(0, Math.min(bounds.width, pill.left - bounds.left));
         const right = Math.max(0, Math.min(bounds.width, bounds.right - pill.right));
-        return left + right >= bounds.width ? "inset(0 100% 0 0)" : `inset(0 ${right}px 0 ${left}px)`;
+        return left + right >= bounds.width
+          ? "inset(0 100% 0 0)"
+          : `inset(0 ${right}px 0 ${left}px)`;
       });
       labels.forEach((label, index) => {
         if (label.style.clipPath !== clips[index]) label.style.clipPath = clips[index];
       });
       frames += 1;
-      stillFrames = previous && Math.abs(pill.left - previous.left) < 0.01 && Math.abs(pill.right - previous.right) < 0.01 ? stillFrames + 1 : 0;
+      stillFrames =
+        previous &&
+        Math.abs(pill.left - previous.left) < 0.01 &&
+        Math.abs(pill.right - previous.right) < 0.01
+          ? stillFrames + 1
+          : 0;
       previous = { left: pill.left, right: pill.right };
       if (reduce || (frames > 2 && stillFrames >= 2)) cancelFrame(syncClips);
     };
@@ -201,15 +226,35 @@ export function TabsList({
 
   const scroll = (direction: number) => {
     const viewport = viewportRef.current;
-    if (viewport) viewport.scrollBy({ left: direction * viewport.clientWidth * 0.8, behavior: reduce ? "instant" : "smooth" });
+    if (viewport)
+      viewport.scrollBy({
+        left: direction * viewport.clientWidth * 0.8,
+        behavior: reduce ? "instant" : "smooth",
+      });
   };
-  const controlClass = "absolute inset-y-0 z-20 inline-flex w-9 items-center justify-center text-foreground transition-opacity hover:opacity-70 focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-0";
-  const surfaceClass = variant === "pill" ? "rounded-full bg-card" : variant === "segment" ? "rounded-lg bg-card" : "";
+  const controlClass =
+    "absolute inset-y-0 z-20 inline-flex w-9 items-center justify-center text-foreground transition-opacity hover:opacity-70 focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-0";
+  const surfaceClass =
+    variant === "pill" ? "rounded-full bg-card" : variant === "segment" ? "rounded-lg bg-card" : "";
 
   return (
-    <div ref={rootRef} className={cn("relative isolate flex w-full max-w-full min-w-0 items-center", edges.overflow && surfaceClass, wrapperClassName)}>
+    <div
+      ref={rootRef}
+      className={cn(
+        "relative isolate flex w-full max-w-full min-w-0 items-center",
+        edges.overflow && surfaceClass,
+        wrapperClassName,
+      )}
+    >
       {edges.overflow && (
-        <button type="button" aria-label="Scroll tabs left" aria-controls={viewportId} disabled={!edges.left} onClick={() => scroll(-1)} className={cn(controlClass, "left-0 rounded-l-full")}>
+        <button
+          type="button"
+          aria-label="Scroll tabs left"
+          aria-controls={viewportId}
+          disabled={!edges.left}
+          onClick={() => scroll(-1)}
+          className={cn(controlClass, "left-0 rounded-l-full")}
+        >
           <ChevronLeft size={20} aria-hidden="true" />
         </button>
       )}
@@ -217,12 +262,20 @@ export function TabsList({
         ref={viewportRef}
         id={viewportId}
         layoutScroll
-        className={cn("w-full min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", edges.overflow && "[border-radius:inherit]")}
-        style={edges.overflow ? {
-          maskImage: `linear-gradient(to right, ${edges.left ? "transparent, black 40px" : "black, black 0px"}, ${edges.right ? "black calc(100% - 40px), transparent" : "black 100%"})`,
-        } : undefined}
+        className={cn(
+          "w-full min-w-0 [scrollbar-width:none] overflow-x-auto [&::-webkit-scrollbar]:hidden",
+          edges.overflow && "[border-radius:inherit]",
+        )}
+        style={
+          edges.overflow
+            ? {
+                maskImage: `linear-gradient(to right, ${edges.left ? "transparent, black 40px" : "black, black 0px"}, ${edges.right ? "black calc(100% - 40px), transparent" : "black 100%"})`,
+              }
+            : undefined
+        }
         onFocusCapture={(event) => {
-          if (event.target instanceof HTMLElement && event.target.getAttribute("role") === "tab") reveal(event.target);
+          if (event.target instanceof HTMLElement && event.target.getAttribute("role") === "tab")
+            reveal(event.target);
         }}
       >
         <div ref={listRef} role="tablist" className={cn(listClasses[variant], "w-max", className)}>
@@ -230,13 +283,26 @@ export function TabsList({
         </div>
       </motion.div>
       {edges.overflow && edges.left && (
-        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 z-10 w-10 rounded-l-[inherit] backdrop-blur-[2px] [mask-image:linear-gradient(to_right,black,transparent)]" />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 left-0 z-10 w-10 rounded-l-[inherit] [mask-image:linear-gradient(to_right,black,transparent)] backdrop-blur-[2px]"
+        />
       )}
       {edges.overflow && edges.right && (
-        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 rounded-r-[inherit] backdrop-blur-[2px] [mask-image:linear-gradient(to_left,black,transparent)]" />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 rounded-r-[inherit] [mask-image:linear-gradient(to_left,black,transparent)] backdrop-blur-[2px]"
+        />
       )}
       {edges.overflow && (
-        <button type="button" aria-label="Scroll tabs right" aria-controls={viewportId} disabled={!edges.right} onClick={() => scroll(1)} className={cn(controlClass, "right-0 rounded-r-full")}>
+        <button
+          type="button"
+          aria-label="Scroll tabs right"
+          aria-controls={viewportId}
+          disabled={!edges.right}
+          onClick={() => scroll(1)}
+          className={cn(controlClass, "right-0 rounded-r-full")}
+        >
           <ChevronRight size={20} aria-hidden="true" />
         </button>
       )}
@@ -258,7 +324,7 @@ export function TabsTrigger({
   const { value: current, setValue, layoutId, variant } = useTabs();
   const active = current === value;
   // React owns the initial mask only; TabsList synchronizes subsequent masks.
-  const [initialClip] = useState(() => active ? "inset(0)" : "inset(0 100% 0 0)");
+  const [initialClip] = useState(() => (active ? "inset(0)" : "inset(0 100% 0 0)"));
 
   if (variant === "underline") {
     return (
@@ -268,21 +334,18 @@ export function TabsTrigger({
         aria-selected={active}
         onClick={() => setValue(value)}
         className={cn(
-          "relative isolate px-3 pb-2.5 pt-1 -mb-px text-sm font-medium transition-colors min-h-[44px] inline-flex items-center whitespace-nowrap shrink-0",
+          "relative isolate -mb-px inline-flex min-h-[44px] shrink-0 items-center px-3 pt-1 pb-2.5 text-sm font-medium whitespace-nowrap transition-colors",
           active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
           className,
         )}
       >
         {children}
         {active ? (
-        <motion.span
-          layoutId={layoutId}
-          layout
-          className={cn(
-            "absolute bottom-0 left-0 right-0 h-px bg-primary",
-            indicatorClassName,
-          )}
-        />
+          <motion.span
+            layoutId={layoutId}
+            layout
+            className={cn("absolute right-0 bottom-0 left-0 h-px bg-primary", indicatorClassName)}
+          />
         ) : null}
       </button>
     );
@@ -298,11 +361,7 @@ export function TabsTrigger({
           layoutId={layoutId}
           layout
           style={{ borderRadius: variant === "pill" ? 9999 : 8 }}
-          className={cn(
-            "absolute inset-0 bg-primary",
-            radius,
-            indicatorClassName,
-          )}
+          className={cn("absolute inset-0 bg-primary", radius, indicatorClassName)}
         />
       ) : null}
       <button
@@ -312,7 +371,7 @@ export function TabsTrigger({
         data-tabs-value={value}
         onClick={() => setValue(value)}
         className={cn(
-          "relative z-10 inline-flex items-center justify-center whitespace-nowrap bg-transparent px-3.5 py-1.5 text-sm font-medium outline-none",
+          "relative z-10 inline-flex items-center justify-center bg-transparent px-3.5 py-1.5 text-sm font-medium whitespace-nowrap outline-none",
           "text-muted-foreground hover:text-foreground",
           radius,
           className,
@@ -323,7 +382,7 @@ export function TabsTrigger({
           data-tabs-label=""
           aria-hidden="true"
           inert
-          className="pointer-events-none absolute inset-0 inline-flex items-center justify-center text-primary-foreground [gap:inherit] [padding:inherit]"
+          className="pointer-events-none absolute inset-0 inline-flex items-center justify-center [gap:inherit] [padding:inherit] text-primary-foreground"
           style={{ clipPath: initialClip }}
         >
           {children}
@@ -333,7 +392,15 @@ export function TabsTrigger({
   );
 }
 
-export function TabsContent({ value, children, className }: { value: string; children: ReactNode; className?: string }) {
+export function TabsContent({
+  value,
+  children,
+  className,
+}: {
+  value: string;
+  children: ReactNode;
+  className?: string;
+}) {
   const { value: current } = useTabs();
   const reduce = useReducedMotion();
   const active = current === value;

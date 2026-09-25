@@ -2,10 +2,7 @@ import { Check, Copy } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { Checkbox } from "@apcode/ui/motion/checkbox";
-import {
-  MorphPopover,
-  MorphPopoverContent,
-} from "@apcode/ui/motion/popover-morph";
+import { MorphPopover, MorphPopoverContent } from "@apcode/ui/motion/popover-morph";
 import { Tooltip } from "@apcode/ui/motion/tooltip";
 import { SPRING_PRESS } from "@apcode/ui/lib/ease";
 import { IconButton } from "./icon-button";
@@ -80,9 +77,7 @@ export function CopyMenu({
       </Tooltip>
 
       <MorphPopoverContent align="end" className="w-52 p-2">
-        <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-          Copy times to
-        </p>
+        <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Copy times to</p>
         <div className="flex flex-col">
           {others.map((d) => (
             <Checkbox
@@ -98,7 +93,7 @@ export function CopyMenu({
           <button
             type="button"
             onClick={() => apply(others.map((d) => d.key))}
-            className="flex-1 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:bg-muted"
+            className="flex-1 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted"
           >
             Every day
           </button>
@@ -106,7 +101,7 @@ export function CopyMenu({
             type="button"
             onClick={() => apply([...picked])}
             disabled={picked.size === 0}
-            className="sheen flex-1 rounded-lg bg-primary px-2 py-1.5 text-xs font-semibold text-primary-foreground outline-none transition-shadow focus-visible:ring-4 focus-visible:ring-ring disabled:opacity-40"
+            className="sheen flex-1 rounded-lg bg-primary px-2 py-1.5 text-xs font-semibold text-primary-foreground transition-shadow outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:opacity-40"
           >
             Apply
           </button>

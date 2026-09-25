@@ -40,7 +40,9 @@ export function useResizableSize(opts: {
 
       const move = (e: PointerEvent) => {
         const delta = (horizontal ? e.clientX : e.clientY) - start;
-        next = latest.current.clamp(Math.round(startSize + (latest.current.side === "start" ? -delta : delta)));
+        next = latest.current.clamp(
+          Math.round(startSize + (latest.current.side === "start" ? -delta : delta)),
+        );
         setSize(next);
       };
       const up = () => {
@@ -73,7 +75,8 @@ export function useResizableSize(opts: {
   /** Arrow keys nudge the size, so the handle works without a pointer. */
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLElement>) => {
-      const [towardStartKey, towardEndKey] = latest.current.axis === "x" ? ["ArrowLeft", "ArrowRight"] : ["ArrowUp", "ArrowDown"];
+      const [towardStartKey, towardEndKey] =
+        latest.current.axis === "x" ? ["ArrowLeft", "ArrowRight"] : ["ArrowUp", "ArrowDown"];
       if (event.key !== towardStartKey && event.key !== towardEndKey) return;
       event.preventDefault();
       const step = (event.shiftKey ? 64 : 16) * (event.key === towardStartKey ? -1 : 1);
@@ -94,7 +97,12 @@ export function useResizableSize(opts: {
  * `side` is where the handle sits on the element: "start" grows the element when dragged left.
  * `clamp` bounds the width at drag time (e.g. against the parent's current size).
  */
-export function useResizable(opts: { key: string; initial: number; side: "start" | "end"; clamp: (width: number) => number }) {
+export function useResizable(opts: {
+  key: string;
+  initial: number;
+  side: "start" | "end";
+  clamp: (width: number) => number;
+}) {
   const { size, dragging, handleProps } = useResizableSize({ ...opts, axis: "x" });
   return { width: size, dragging, handleProps };
 }

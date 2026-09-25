@@ -24,10 +24,7 @@ import {
 import { createPortal } from "react-dom";
 import { usePopoverPortalPosition } from "@apcode/ui/lib/popover-position";
 import { useDismiss } from "@apcode/ui/hooks/use-dismiss";
-import {
-  type HoverGesture,
-  useHoverGesture,
-} from "@apcode/ui/hooks/use-hover-gesture";
+import { type HoverGesture, useHoverGesture } from "@apcode/ui/hooks/use-hover-gesture";
 import { useTapGesture } from "@apcode/ui/hooks/use-tap-gesture";
 import { cn } from "@apcode/ui/lib/utils";
 
@@ -55,11 +52,7 @@ const CIRCLE_KAPPA = 0.5523;
 // they are what made the panel flicker open and shut under a finger. The
 // gesture pairs the two, so the panel a pen tap opened is not closed again by
 // the boundary event that ends the same tap.
-function makeHoverHandlers(
-  hover: HoverGesture,
-  enter: () => void,
-  leave: () => void,
-) {
+function makeHoverHandlers(hover: HoverGesture, enter: () => void, leave: () => void) {
   return {
     onPointerEnter: (event: React.PointerEvent) => {
       if (hover.enter(event)) enter();
@@ -165,9 +158,7 @@ function roundedRectShape(rect: Rect) {
 
 function clipForProgress(geo: Geo, progress: number, supportsShape: boolean) {
   const rect = rectAtProgress(geo, progress);
-  return supportsShape
-    ? roundedRectShape(rect)
-    : insetFor(rect, geo.layerW, geo.layerH);
+  return supportsShape ? roundedRectShape(rect) : insetFor(rect, geo.layerW, geo.layerH);
 }
 
 function roundedRectPath(rect: Rect) {
@@ -311,11 +302,7 @@ export function Popover({
     const animation = animate(
       progress,
       open ? 1 : 0,
-      reduce
-        ? { duration: 0 }
-        : open
-          ? GOO_OPEN_SPRING
-          : GOO_CLOSE_SPRING,
+      reduce ? { duration: 0 } : open ? GOO_OPEN_SPRING : GOO_CLOSE_SPRING,
     );
     return () => animation.stop();
   }, [open, progress, reduce]);
@@ -328,8 +315,7 @@ export function Popover({
   const close = useCallback(() => {
     setOpen(false);
     const focused = document.activeElement;
-    const inPanel =
-      focused instanceof HTMLElement && contentRef.current?.contains(focused);
+    const inPanel = focused instanceof HTMLElement && contentRef.current?.contains(focused);
     if (inPanel) triggerRef.current?.focus();
   }, [setOpen]);
   // The panel is portalled, so both trees participate in outside detection.
@@ -383,15 +369,13 @@ export function Popover({
   );
 
   const hoverHandlers =
-    trigger === "hover"
-      ? makeHoverHandlers(rootHover, openHover, scheduleClose)
-      : {};
+    trigger === "hover" ? makeHoverHandlers(rootHover, openHover, scheduleClose) : {};
 
   return (
     <PopoverContext.Provider value={ctx}>
       <div
         ref={rootRef}
-        className={cn("relative inline-flex isolate", className)}
+        className={cn("relative isolate inline-flex", className)}
         {...hoverHandlers}
       >
         {children}
@@ -428,10 +412,7 @@ export function PopoverTrigger({ children }: PopoverTriggerProps) {
   const childRef = (childProps as { ref?: Ref<HTMLElement> }).ref;
 
   const compose =
-    <E extends { defaultPrevented?: boolean }>(
-      name: string,
-      handler: (event: E) => void,
-    ) =>
+    <E extends { defaultPrevented?: boolean }>(name: string, handler: (event: E) => void) =>
     (event: E) => {
       (childProps[name] as ((e: unknown) => void) | undefined)?.(event);
       if (!event.defaultPrevented) handler(event);
@@ -462,9 +443,8 @@ export function PopoverTrigger({ children }: PopoverTriggerProps) {
       ? {
           onFocus: compose("onFocus", ctx.openHover),
           onBlur: compose("onBlur", ctx.scheduleClose),
-          onPointerDown: observe<React.PointerEvent>(
-            "onPointerDown",
-            (event) => tap.start(event, ctx.open),
+          onPointerDown: observe<React.PointerEvent>("onPointerDown", (event) =>
+            tap.start(event, ctx.open),
           ),
           onPointerCancel: observe("onPointerCancel", tap.drop),
           onKeyDown: observe("onKeyDown", tap.drop),
@@ -528,11 +508,7 @@ export function PopoverContent({ children, className }: PopoverContentProps) {
   const clipRef = useRef<HTMLDivElement>(null);
   const geoRef = useRef<Geo | null>(null);
   const supportsShapeRef = useRef(false);
-  const layout = usePopoverPortalPosition(
-    triggerRef,
-    measureRef,
-    portalReady,
-  );
+  const layout = usePopoverPortalPosition(triggerRef, measureRef, portalReady);
 
   useEffect(() => setPortalReady(true), []);
 
@@ -564,10 +540,7 @@ export function PopoverContent({ children, className }: PopoverContentProps) {
     supportsShapeRef.current =
       typeof CSS !== "undefined" &&
       typeof CSS.supports === "function" &&
-      CSS.supports(
-        "clip-path",
-        "shape(from 0px 0px, line to 1px 1px, close)",
-      );
+      CSS.supports("clip-path", "shape(from 0px 0px, line to 1px 1px, close)");
     geoRef.current = geo;
     render(geo, progress.get());
   }, [geo, progress, render]);
@@ -575,9 +548,7 @@ export function PopoverContent({ children, className }: PopoverContentProps) {
   useMotionValueEvent(progress, "change", (p) => render(geoRef.current, p));
 
   const hoverHandlers =
-    triggerMode === "hover"
-      ? makeHoverHandlers(panelHover, openHover, scheduleClose)
-      : {};
+    triggerMode === "hover" ? makeHoverHandlers(panelHover, openHover, scheduleClose) : {};
 
   // Match the server and first client render, then attach the portal after
   // hydration. This preserves SSR without regenerating the page on the client.
@@ -586,7 +557,7 @@ export function PopoverContent({ children, className }: PopoverContentProps) {
   return createPortal(
     <div
       data-popover-portal=""
-      className="pointer-events-none fixed left-0 top-0 z-[9999] isolate size-0"
+      className="pointer-events-none fixed top-0 left-0 isolate z-[9999] size-0"
       style={{
         visibility: layout ? "visible" : "hidden",
         transform: `translate3d(${layout?.trigger.left ?? 0}px, ${layout?.trigger.top ?? 0}px, 0)`,
@@ -598,11 +569,7 @@ export function PopoverContent({ children, className }: PopoverContentProps) {
         <title>Popover visual effects</title>
         <defs>
           <filter id={gooId} x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur
-              in="SourceGraphic"
-              stdDeviation={gooStrength}
-              result="blur"
-            />
+            <feGaussianBlur in="SourceGraphic" stdDeviation={gooStrength} result="blur" />
             <feColorMatrix
               in="blur"
               mode="matrix"

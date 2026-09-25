@@ -9,13 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { EASE_IN_OUT, EASE_OUT } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
-const CHROMATIC_PALETTE = [
-  "#60a5fa",
-  "#818cf8",
-  "#c084fc",
-  "#fb7185",
-  "#fbbf24",
-];
+const CHROMATIC_PALETTE = ["#60a5fa", "#818cf8", "#c084fc", "#fb7185", "#fbbf24"];
 
 const TRAIL_HALF_WIDTH = 14;
 const REVEAL_START = `-${TRAIL_HALF_WIDTH}%`;
@@ -53,8 +47,7 @@ function composeChromaticGradient(colors: string[], foregroundColor: string) {
     const offset =
       palette.length === 1
         ? 0
-        : -TRAIL_HALF_WIDTH +
-          (index / (palette.length - 1)) * TRAIL_HALF_WIDTH * 2;
+        : -TRAIL_HALF_WIDTH + (index / (palette.length - 1)) * TRAIL_HALF_WIDTH * 2;
     const operator = offset < 0 ? "-" : "+";
     const distance = Number(Math.abs(offset).toFixed(2));
     return `${color} calc(var(--chromatic-sweep) ${operator} ${distance}%)`;
@@ -103,12 +96,7 @@ export function ChromaticTextReveal({
   const scheduleNextWord = useCallback(() => {
     clearPendingWord();
     const isLastWord = activeIndex === words.length - 1;
-    if (
-      reduceMotion ||
-      !shouldReveal ||
-      words.length < 2 ||
-      (isLastWord && !loop)
-    ) {
+    if (reduceMotion || !shouldReveal || words.length < 2 || (isLastWord && !loop)) {
       return;
     }
 
@@ -159,9 +147,7 @@ export function ChromaticTextReveal({
                   }
             }
             animate={{
-              "--chromatic-sweep": shouldReveal
-                ? REVEAL_FINISH
-                : REVEAL_START,
+              "--chromatic-sweep": shouldReveal ? REVEAL_FINISH : REVEAL_START,
               opacity: 1,
               filter: "blur(0px)",
               transform: "translateY(0px)",
@@ -170,26 +156,20 @@ export function ChromaticTextReveal({
               "--chromatic-sweep": reduceMotion
                 ? { duration: 0 }
                 : { duration, delay, ease: EASE_IN_OUT },
-              opacity: reduceMotion
-                ? { duration: 0 }
-                : { duration: 0.28, ease: EASE_OUT },
-              filter: reduceMotion
-                ? { duration: 0 }
-                : { duration: 0.36, ease: EASE_OUT },
-              transform: reduceMotion
-                ? { duration: 0 }
-                : { duration: 0.36, ease: EASE_OUT },
+              opacity: reduceMotion ? { duration: 0 } : { duration: 0.28, ease: EASE_OUT },
+              filter: reduceMotion ? { duration: 0 } : { duration: 0.36, ease: EASE_OUT },
+              transform: reduceMotion ? { duration: 0 } : { duration: 0.36, ease: EASE_OUT },
             }}
             onAnimationComplete={scheduleNextWord}
-            className="absolute start-0 top-0 whitespace-nowrap bg-clip-text text-transparent [background-image:var(--chromatic-gradient)] [contain:paint]"
-            style={{
-              "--chromatic-sweep": reduceMotion
-                ? REVEAL_FINISH
-                : REVEAL_START,
-              "--chromatic-gradient": backgroundImage,
-              backgroundSize: "100% 100%",
-              backgroundRepeat: "no-repeat",
-            } as MotionStyle}
+            className="absolute start-0 top-0 [background-image:var(--chromatic-gradient)] bg-clip-text whitespace-nowrap text-transparent [contain:paint]"
+            style={
+              {
+                "--chromatic-sweep": reduceMotion ? REVEAL_FINISH : REVEAL_START,
+                "--chromatic-gradient": backgroundImage,
+                backgroundSize: "100% 100%",
+                backgroundRepeat: "no-repeat",
+              } as MotionStyle
+            }
           >
             {activeWord}
           </motion.span>

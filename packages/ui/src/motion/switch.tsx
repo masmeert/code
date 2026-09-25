@@ -32,11 +32,7 @@ export function Switch({
   useEffect(() => {
     if (!thumbRef.current || reduce) return;
     if (disabled && isPressed) {
-      animate(
-        thumbRef.current,
-        { x: [0, -2, 2, -1, 0] },
-        { delay: 0.2, duration: 0.6 },
-      );
+      animate(thumbRef.current, { x: [0, -2, 2, -1, 0] }, { delay: 0.2, duration: 0.6 });
     }
   }, [disabled, isPressed, reduce]);
 
@@ -62,7 +58,7 @@ export function Switch({
           initial={false}
           data-state={checked ? "checked" : "unchecked"}
           className={cn(
-            "group peer inline-flex h-7 w-12 shrink-0 cursor-pointer items-center px-1 rounded-full outline-none transition-colors duration-200",
+            "group peer inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full px-1 transition-colors duration-200 outline-none",
             "focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             "disabled:cursor-not-allowed disabled:opacity-60",
             checked ? "justify-end bg-primary" : "justify-start bg-muted-foreground/60",
@@ -75,12 +71,7 @@ export function Switch({
             className="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-md"
           >
             {/* Stretch toward the destination while active. */}
-            <div
-              className={cn(
-                "size-5",
-                squish && (checked ? "ml-1" : "mr-1"),
-              )}
-            />
+            <div className={cn("size-5", squish && (checked ? "ml-1" : "mr-1"))} />
           </motion.div>
         </motion.button>
         {label ? (

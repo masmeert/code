@@ -66,10 +66,14 @@ const withCodex = async (cwd: string, model: string | undefined, prompt: string)
   let text = "";
   const rpc = await connectCodex(cwd, {
     onNotification: (method, params) => {
-      if (method === "item/completed" && params.item?.type === "agentMessage") text = params.item.text;
+      if (method === "item/completed" && params.item?.type === "agentMessage")
+        text = params.item.text;
       else if (method === "turn/completed")
-        params.turn?.status === "failed" ? abort(new Error(params.turn.error?.message ?? "Codex turn failed")) : finish(text);
-      else if (method === "error" && !params.willRetry) abort(new Error(params.error?.message ?? "Codex error"));
+        params.turn?.status === "failed"
+          ? abort(new Error(params.turn.error?.message ?? "Codex turn failed"))
+          : finish(text);
+      else if (method === "error" && !params.willRetry)
+        abort(new Error(params.error?.message ?? "Codex error"));
     },
     onExit: (code, stderr) => abort(new Error(`codex exited (${code}): ${stderr}`)),
   });
@@ -81,7 +85,10 @@ const withCodex = async (cwd: string, model: string | undefined, prompt: string)
       approvalPolicy: "never",
       sandbox: "read-only",
     });
-    await rpc.request("turn/start", { threadId: started.thread.id, input: [{ type: "text", text: prompt, text_elements: [] }] });
+    await rpc.request("turn/start", {
+      threadId: started.thread.id,
+      input: [{ type: "text", text: prompt, text_elements: [] }],
+    });
     return await done;
   } finally {
     rpc.close();
@@ -99,7 +106,9 @@ export const generateCommitMessage = async (input: {
   const prompt = promptFor(input.patch, input.recent);
   const run = input.provider === "claude" ? withClaude : withCodex;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("Timed out")), TIMEOUT_MS)));
+  const timeout = new Promise<never>(
+    (_, reject) => (timer = setTimeout(() => reject(new Error("Timed out")), TIMEOUT_MS)),
+  );
   try {
     const message = clean(await Promise.race([run(input.cwd, input.model, prompt), timeout]));
     if (!message) throw new Error("The model returned an empty message");

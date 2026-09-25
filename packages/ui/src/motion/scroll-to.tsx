@@ -7,8 +7,7 @@ import {
 } from "@apcode/ui/motion/smooth-scroll";
 import { cn } from "@apcode/ui/lib/utils";
 
-export interface ScrollToProps
-  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onClick"> {
+export interface ScrollToProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onClick"> {
   /** Where to scroll: px offset, selector string or element. */
   to: ScrollTarget;
   /** Extra px offset from the target (e.g. to clear a sticky header). */
@@ -23,23 +22,11 @@ export interface ScrollToProps
  * Button that smooth-scrolls to a target via the active SmoothScroll provider
  * (or native scroll as a fallback). Respects reduced motion — jumps instantly.
  */
-export function ScrollTo({
-  to,
-  offset,
-  duration,
-  children,
-  className,
-  ...rest
-}: ScrollToProps) {
+export function ScrollTo({ to, offset, duration, children, className, ...rest }: ScrollToProps) {
   const { scrollTo } = useSmoothScroll();
   const options: ScrollToOptions = { offset, duration };
   return (
-    <button
-      type="button"
-      onClick={() => scrollTo(to, options)}
-      className={cn(className)}
-      {...rest}
-    >
+    <button type="button" onClick={() => scrollTo(to, options)} className={cn(className)} {...rest}>
       {children}
     </button>
   );

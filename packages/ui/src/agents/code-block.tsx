@@ -94,22 +94,14 @@ export function CodeBlock({
     <div
       data-state={status}
       aria-busy={streaming}
-      className={cn(
-        "w-full overflow-hidden rounded-2xl bg-muted/80 text-sm",
-        className,
-      )}
+      className={cn("w-full overflow-hidden rounded-2xl bg-muted/80 text-sm", className)}
     >
       <div className="flex h-10 items-center gap-2.5 px-3">
-        <FileCode2
-          aria-hidden="true"
-          className="size-3.5 shrink-0 text-muted-foreground/70"
-        />
+        <FileCode2 aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground/70" />
         {filename ? (
-          <span className="min-w-0 truncate font-mono text-xs text-foreground/80">
-            {filename}
-          </span>
+          <span className="min-w-0 truncate font-mono text-xs text-foreground/80">{filename}</span>
         ) : null}
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/55">
+        <span className="text-[10px] font-medium tracking-wide text-muted-foreground/55 uppercase">
           {language}
         </span>
         <span className="ml-auto" />
@@ -123,9 +115,7 @@ export function CodeBlock({
             )}
           >
             {streaming ? (
-              <LoaderCircle
-                className={cn("size-3", !reduce && "animate-spin")}
-              />
+              <LoaderCircle className={cn("size-3", !reduce && "animate-spin")} />
             ) : (
               <Check className="size-3" />
             )}
@@ -140,14 +130,10 @@ export function CodeBlock({
             onClick={handleCopy}
             whileTap={reduce ? undefined : { scale: 0.95 }}
             transition={SPRING_PRESS}
-            className="grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-background/70 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+            className="grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-background/70 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
           >
             <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">
-              {copied ? (
-                <Check className="size-3.5" />
-              ) : (
-                <Copy className="size-3.5" />
-              )}
+              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
             </ActionSwapRollIcon>
           </motion.button>
         ) : null}
@@ -169,14 +155,12 @@ export function CodeBlock({
                   key={line.offset}
                   className={cn(
                     "grid min-h-5",
-                    showLineNumbers
-                      ? "grid-cols-[2.75rem_minmax(0,1fr)]"
-                      : "grid-cols-1",
+                    showLineNumbers ? "grid-cols-[2.75rem_minmax(0,1fr)]" : "grid-cols-1",
                     highlighted.has(lineNumber) && "bg-blue-500/[0.07]",
                   )}
                 >
                   {showLineNumbers ? (
-                    <span className="select-none pr-3 text-right tabular-nums text-muted-foreground/35">
+                    <span className="pr-3 text-right text-muted-foreground/35 tabular-nums select-none">
                       {lineNumber}
                     </span>
                   ) : null}
@@ -186,9 +170,7 @@ export function CodeBlock({
                     className={cn(
                       "pr-4",
                       showLineNumbers ? "pl-1" : "pl-4",
-                      wrap
-                        ? "whitespace-pre-wrap break-words"
-                        : "whitespace-pre",
+                      wrap ? "break-words whitespace-pre-wrap" : "whitespace-pre",
                     )}
                   />
                 </span>

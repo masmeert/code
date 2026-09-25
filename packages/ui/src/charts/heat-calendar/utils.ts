@@ -41,4 +41,8 @@ export const fmtDay = new Intl.DateTimeFormat("en-US", {
 
 export const fmtMonth = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short" });
 
-export const fmtRange = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
+export const fmtRange = new Intl.DateTimeFormat("en-US", {
+  timeZone: "UTC",
+  month: "short",
+  day: "numeric",
+});

@@ -32,12 +32,20 @@ interface GitResult {
   readonly stderr: string;
 }
 
-const execGit = async (cwd: string, args: ReadonlyArray<string>, options: ExecFileOptions): Promise<GitResult> => {
+const execGit = async (
+  cwd: string,
+  args: ReadonlyArray<string>,
+  options: ExecFileOptions,
+): Promise<GitResult> => {
   await acquire();
   try {
     return await new Promise((resolve) => {
-      execFile("git", ["-C", cwd, ...args], { ...options, encoding: "utf8" }, (error, stdout, stderr) =>
-        resolve({ error, stdout: String(stdout), stderr: String(stderr) }),
+      execFile(
+        "git",
+        ["-C", cwd, ...args],
+        { ...options, encoding: "utf8" },
+        (error, stdout, stderr) =>
+          resolve({ error, stdout: String(stdout), stderr: String(stderr) }),
       );
     });
   } finally {
@@ -87,7 +95,11 @@ export const checkoutBranch = async (cwd: string, branch: string) => {
 export const createBranch = async (cwd: string, branch: string) => {
   const name = branch.trim();
   // check-ref-format rejects spaces, "..", trailing ".lock" and the like; a leading "-" would read as a flag.
-  if (!name || name.startsWith("-") || !(await git(cwd, ["check-ref-format", "--branch", name])).ok) {
+  if (
+    !name ||
+    name.startsWith("-") ||
+    !(await git(cwd, ["check-ref-format", "--branch", name])).ok
+  ) {
     return `"${name}" isn't a valid branch name`;
   }
   const { branches } = await listBranches(cwd);
@@ -104,7 +116,10 @@ const MAX_PATCH_BYTES = 4 * 1024 * 1024;
 const MAX_UNTRACKED = 100;
 
 const gitRaw = async (cwd: string, args: ReadonlyArray<string>) => {
-  const { error, stdout, stderr } = await execGit(cwd, args, { timeout: 10000, maxBuffer: MAX_PATCH_BYTES * 2 });
+  const { error, stdout, stderr } = await execGit(cwd, args, {
+    timeout: 10000,
+    maxBuffer: MAX_PATCH_BYTES * 2,
+  });
   return {
     code: error ? (typeof error.code === "number" ? error.code : -1) : 0,
     stdout,
@@ -112,10 +127,18 @@ const gitRaw = async (cwd: string, args: ReadonlyArray<string>) => {
   };
 };
 
-const DIFF_FLAGS = ["--no-color", "--no-ext-diff", "--no-renames", "--src-prefix=a/", "--dst-prefix=b/"];
+const DIFF_FLAGS = [
+  "--no-color",
+  "--no-ext-diff",
+  "--no-renames",
+  "--src-prefix=a/",
+  "--dst-prefix=b/",
+];
 
 /** Uncommitted changes in `cwd` vs HEAD, untracked files included, as one unified patch. */
-export const readDiff = async (cwd: string): Promise<{ patch: string; truncated: boolean; error: string | null }> => {
+export const readDiff = async (
+  cwd: string,
+): Promise<{ patch: string; truncated: boolean; error: string | null }> => {
   const inside = await git(cwd, ["rev-parse", "--is-inside-work-tree"]);
   if (!inside.ok) return { patch: "", truncated: false, error: "Not a git repo" };
   const hasHead = (await git(cwd, ["rev-parse", "--verify", "--quiet", "HEAD"])).ok;
@@ -128,14 +151,17 @@ export const readDiff = async (cwd: string): Promise<{ patch: string; truncated:
   let patch = tracked.stdout;
   let truncated = untracked.length > MAX_UNTRACKED;
   // In parallel (the process cap bounds it), kept in order.
-  const added = patch.length > MAX_PATCH_BYTES
-    ? []
-    : await Promise.all(
-        untracked
-          .slice(0, MAX_UNTRACKED)
-          // --no-index exits 1 when the files differ, which is always the case here.
-          .map((file) => gitRaw(cwd, ["diff", ...DIFF_FLAGS, "--no-index", "--", "/dev/null", file])),
-      );
+  const added =
+    patch.length > MAX_PATCH_BYTES
+      ? []
+      : await Promise.all(
+          untracked
+            .slice(0, MAX_UNTRACKED)
+            // --no-index exits 1 when the files differ, which is always the case here.
+            .map((file) =>
+              gitRaw(cwd, ["diff", ...DIFF_FLAGS, "--no-index", "--", "/dev/null", file]),
+            ),
+        );
   for (const file of added) if (file.code === 0 || file.code === 1) patch += file.stdout;
   if (patch.length > MAX_PATCH_BYTES) {
     // Cut at a file boundary so the patch still parses.
@@ -150,8 +176,16 @@ export const readDiff = async (cwd: string): Promise<{ patch: string; truncated:
 const NO_PROMPT = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "", SSH_ASKPASS: "" };
 
 const gitLong = async (cwd: string, args: ReadonlyArray<string>, timeout = 60000) => {
-  const { error, stdout, stderr } = await execGit(cwd, args, { timeout, env: NO_PROMPT, maxBuffer: 4 * 1024 * 1024 });
-  return { ok: !error, stdout: stdout.trim(), stderr: stderr.trim() || stdout.trim() || (error?.message ?? "") };
+  const { error, stdout, stderr } = await execGit(cwd, args, {
+    timeout,
+    env: NO_PROMPT,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  return {
+    ok: !error,
+    stdout: stdout.trim(),
+    stderr: stderr.trim() || stdout.trim() || (error?.message ?? ""),
+  };
 };
 
 export interface RepoStatus {
@@ -197,7 +231,14 @@ export const readStatus = async (cwd: string): Promise<RepoStatus | null> => {
     const count = await git(cwd, ["rev-list", "--count", "HEAD"]);
     ahead = count.ok ? Number(count.stdout) || 0 : 0;
   }
-  return { changes, upstream, ahead, behind, hasRemote: remotes.ok && remotes.stdout.length > 0, detached };
+  return {
+    changes,
+    upstream,
+    ahead,
+    behind,
+    hasRemote: remotes.ok && remotes.stdout.length > 0,
+    detached,
+  };
 };
 
 /** Subjects of the last few commits, newest first; empty before the first commit. */
@@ -263,7 +304,10 @@ const snapshot = async (cwd: string, message: string): Promise<string | null> =>
     const tree = await execGit(cwd, ["write-tree"], { timeout: 30000, env });
     const treeId = tree.stdout.trim();
     if (tree.error || !treeId) return null;
-    const commit = await execGit(cwd, ["commit-tree", treeId, "-m", message], { timeout: 10000, env });
+    const commit = await execGit(cwd, ["commit-tree", treeId, "-m", message], {
+      timeout: 10000,
+      env,
+    });
     const commitId = commit.stdout.trim();
     return commit.error || !commitId ? null : commitId;
   } finally {
@@ -278,7 +322,8 @@ export const captureCheckpoint = async (cwd: string, ref: string) => {
   return (await git(cwd, ["update-ref", ref, commit])).ok;
 };
 
-const refExists = async (cwd: string, ref: string) => (await git(cwd, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])).ok;
+const refExists = async (cwd: string, ref: string) =>
+  (await git(cwd, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])).ok;
 
 /** Keeps a patch under the size cap, cut at a file boundary so it still parses. */
 const capPatch = (patch: string) => {
@@ -296,7 +341,8 @@ const turnEnd = async (cwd: string, threadId: string, messageId: string) => {
 /** What one turn changed, as a unified patch. */
 export const readCheckpointDiff = async (cwd: string, threadId: string, messageId: string) => {
   const start = checkpointRef(threadId, messageId, "start");
-  if (!(await refExists(cwd, start))) return { patch: "", truncated: false, error: "No snapshot of this turn" };
+  if (!(await refExists(cwd, start)))
+    return { patch: "", truncated: false, error: "No snapshot of this turn" };
   const end = await turnEnd(cwd, threadId, messageId);
   if (!end) return { patch: "", truncated: false, error: "Couldn't read the working tree" };
   const diff = await gitRaw(cwd, ["diff", ...DIFF_FLAGS, start, end]);
@@ -328,7 +374,11 @@ export const readCheckpointStats = async (cwd: string, threadId: string, message
  * Puts the working tree back to the snapshot taken when `messageId` was sent. What's
  * there now is snapshotted first (under a backup ref), so the restore itself can be undone.
  */
-export const restoreCheckpoint = async (cwd: string, threadId: string, messageId: string): Promise<string | null> => {
+export const restoreCheckpoint = async (
+  cwd: string,
+  threadId: string,
+  messageId: string,
+): Promise<string | null> => {
   const start = checkpointRef(threadId, messageId, "start");
   if (!(await refExists(cwd, start))) return "There's no snapshot of the files from that point";
   const current = await snapshot(cwd, "apcode backup before restore");
@@ -339,16 +389,26 @@ export const restoreCheckpoint = async (cwd: string, threadId: string, messageId
   const paths = changed.stdout.split("\0").filter(Boolean);
   if (!paths.length) return null;
   const inStart = new Set(
-    (await git(cwd, ["ls-tree", "-r", "--name-only", "-z", start])).stdout.split("\0").filter(Boolean),
+    (await git(cwd, ["ls-tree", "-r", "--name-only", "-z", start])).stdout
+      .split("\0")
+      .filter(Boolean),
   );
   const restore = paths.filter((path) => inStart.has(path));
   // Batches keep the command line short.
   for (let i = 0; i < restore.length; i += 200) {
-    const result = await gitLong(cwd, ["restore", `--source=${start}`, "--worktree", "--", ...restore.slice(i, i + 200)]);
+    const result = await gitLong(cwd, [
+      "restore",
+      `--source=${start}`,
+      "--worktree",
+      "--",
+      ...restore.slice(i, i + 200),
+    ]);
     if (!result.ok) return firstLines(result.stderr);
   }
   // Files created since then.
-  await Promise.all(paths.filter((path) => !inStart.has(path)).map((path) => rm(join(cwd, path), { force: true })));
+  await Promise.all(
+    paths.filter((path) => !inStart.has(path)).map((path) => rm(join(cwd, path), { force: true })),
+  );
   return null;
 };
 
@@ -358,16 +418,30 @@ export const hasCheckpoint = (cwd: string, threadId: string, messageId: string) 
 
 /** Drops every snapshot of a thread, backups included. */
 export const deleteThreadCheckpoints = async (cwd: string, threadId: string) => {
-  const refs = await git(cwd, ["for-each-ref", "--format=%(refname)", `${CHECKPOINT_REFS}/${threadId}`, `refs/apcode/backups/${threadId}`]);
+  const refs = await git(cwd, [
+    "for-each-ref",
+    "--format=%(refname)",
+    `${CHECKPOINT_REFS}/${threadId}`,
+    `refs/apcode/backups/${threadId}`,
+  ]);
   if (!refs.ok || !refs.stdout) return;
-  await updateRefs(cwd, refs.stdout.split("\n").filter(Boolean).map((ref) => `delete ${ref}\n`).join(""));
+  await updateRefs(
+    cwd,
+    refs.stdout
+      .split("\n")
+      .filter(Boolean)
+      .map((ref) => `delete ${ref}\n`)
+      .join(""),
+  );
 };
 
 const updateRefs = async (cwd: string, stdin: string) => {
   await acquire();
   try {
     await new Promise<void>((resolve) => {
-      const child = execFile("git", ["-C", cwd, "update-ref", "--stdin"], { timeout: 10000 }, () => resolve());
+      const child = execFile("git", ["-C", cwd, "update-ref", "--stdin"], { timeout: 10000 }, () =>
+        resolve(),
+      );
       child.stdin?.end(stdin);
     });
   } finally {
@@ -376,8 +450,15 @@ const updateRefs = async (cwd: string, stdin: string) => {
 };
 
 /** Drops the snapshots of the given messages' turns. */
-export const deleteCheckpoints = async (cwd: string, threadId: string, messageIds: ReadonlyArray<string>) => {
-  const refs = messageIds.flatMap((id) => [checkpointRef(threadId, id, "start"), checkpointRef(threadId, id, "end")]);
+export const deleteCheckpoints = async (
+  cwd: string,
+  threadId: string,
+  messageIds: ReadonlyArray<string>,
+) => {
+  const refs = messageIds.flatMap((id) => [
+    checkpointRef(threadId, id, "start"),
+    checkpointRef(threadId, id, "end"),
+  ]);
   if (refs.length) await updateRefs(cwd, refs.map((ref) => `delete ${ref}\n`).join(""));
 };
 

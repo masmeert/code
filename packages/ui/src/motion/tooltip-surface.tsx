@@ -27,15 +27,23 @@ export function TooltipSurface({
             }
           : {
               initial: { opacity: 0, transform: "scale(0.97)" },
-              animate: { opacity: 1, transform: "scale(1)", transition: { duration: 0.15, ease: EASE_OUT } },
-              exit: { opacity: 0, transform: "scale(0.97)", transition: { duration: 0.12, ease: EASE_OUT } },
+              animate: {
+                opacity: 1,
+                transform: "scale(1)",
+                transition: { duration: 0.15, ease: EASE_OUT },
+              },
+              exit: {
+                opacity: 0,
+                transform: "scale(0.97)",
+                transition: { duration: 0.12, ease: EASE_OUT },
+              },
             }
       }
       initial="initial"
       animate="animate"
       exit="exit"
       className={cn(
-        "block whitespace-nowrap rounded-lg border border-border bg-popover px-2.5 py-1 text-xs font-medium text-foreground shadow-panel",
+        "block rounded-lg border border-border bg-popover px-2.5 py-1 text-xs font-medium whitespace-nowrap text-foreground shadow-panel",
         className,
       )}
       {...props}

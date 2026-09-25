@@ -29,8 +29,12 @@ export function Marquee({
       className={cn(
         "group relative flex overflow-hidden",
         vertical ? "flex-col" : "flex-row",
-        fade && !vertical && "[mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]",
-        fade && vertical && "[mask-image:linear-gradient(to_bottom,transparent,black_12%,black_88%,transparent)]",
+        fade &&
+          !vertical &&
+          "[mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]",
+        fade &&
+          vertical &&
+          "[mask-image:linear-gradient(to_bottom,transparent,black_12%,black_88%,transparent)]",
         className,
       )}
       // gap on the wrapper too, so the seam between the two tracks matches the
@@ -49,7 +53,7 @@ export function Marquee({
           }}
           className={cn(
             "flex shrink-0 items-center",
-            vertical ? "flex-col animate-marquee-vertical" : "flex-row animate-marquee",
+            vertical ? "animate-marquee-vertical flex-col" : "animate-marquee flex-row",
             pauseOnHover && "group-hover:[animation-play-state:paused]",
           )}
         >

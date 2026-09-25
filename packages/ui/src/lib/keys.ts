@@ -23,5 +23,15 @@ export const matches = (event: KeyboardEvent | React.KeyboardEvent, binding: str
 export const formatBinding = (binding: string) =>
   binding
     .split("+")
-    .map((part) => (part === "mod" ? (isMac ? "⌘" : "Ctrl+") : part === "shift" ? "⇧" : part === "alt" ? "⌥" : part.toUpperCase()))
+    .map((part) =>
+      part === "mod"
+        ? isMac
+          ? "⌘"
+          : "Ctrl+"
+        : part === "shift"
+          ? "⇧"
+          : part === "alt"
+            ? "⌥"
+            : part.toUpperCase(),
+    )
     .join("");

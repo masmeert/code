@@ -26,7 +26,10 @@ export type KeybindingId = keyof typeof KEYBINDINGS;
 export const describe = (id: KeybindingId) => formatBinding(KEYBINDINGS[id]);
 
 /** Runs `onPress` on the shortcut while mounted. */
-export const useKeybinding = (id: KeybindingId | undefined, onPress: (event: KeyboardEvent) => void) => {
+export const useKeybinding = (
+  id: KeybindingId | undefined,
+  onPress: (event: KeyboardEvent) => void,
+) => {
   const handler = useRef(onPress);
   handler.current = onPress;
   useEffect(() => {

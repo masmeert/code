@@ -12,18 +12,10 @@ import {
 import { ActionSwapRollText } from "@apcode/ui/motion/action-swap-roll";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
 import { useArrivalOrder } from "@apcode/ui/hooks/use-arrival-order";
-import {
-  EASE_OUT,
-  SPRING_LAYOUT,
-  SPRING_SWAP,
-} from "@apcode/ui/lib/ease";
+import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
-export type TodoItemStatus =
-  | "pending"
-  | "in-progress"
-  | "completed"
-  | "cancelled";
+export type TodoItemStatus = "pending" | "in-progress" | "completed" | "cancelled";
 
 export interface TodoItem {
   id: string;
@@ -55,10 +47,7 @@ function TodoHeaderIcon({ complete }: { complete: boolean }) {
   const reduce = useReducedMotion() ?? false;
 
   return (
-    <span
-      aria-hidden="true"
-      className="relative grid size-6 shrink-0 place-items-center"
-    >
+    <span aria-hidden="true" className="relative grid size-6 shrink-0 place-items-center">
       <AnimatePresence initial={false} mode="popLayout">
         {complete ? (
           <motion.svg
@@ -80,9 +69,7 @@ function TodoHeaderIcon({ complete }: { complete: boolean }) {
               strokeLinejoin="round"
               initial={reduce ? { pathLength: 1 } : { pathLength: 0 }}
               animate={{ pathLength: 1 }}
-              transition={
-                reduce ? { duration: 0 } : { duration: 0.24, ease: EASE_OUT }
-              }
+              transition={reduce ? { duration: 0 } : { duration: 0.24, ease: EASE_OUT }}
             />
           </motion.svg>
         ) : (
@@ -102,13 +89,7 @@ function TodoHeaderIcon({ complete }: { complete: boolean }) {
   );
 }
 
-function TodoStatusIcon({
-  status,
-  progress,
-}: {
-  status: TodoItemStatus;
-  progress?: number;
-}) {
+function TodoStatusIcon({ status, progress }: { status: TodoItemStatus; progress?: number }) {
   const reduce = useReducedMotion() ?? false;
   const normalizedProgress =
     progress === undefined ? 0.68 : Math.min(100, Math.max(0, progress)) / 100;
@@ -257,10 +238,7 @@ export function TodoList({
   return (
     <section
       aria-label="Agent task list"
-      className={cn(
-        "w-full overflow-hidden rounded-2xl border border-border/70",
-        className,
-      )}
+      className={cn("w-full overflow-hidden rounded-2xl border border-border/70", className)}
     >
       <button
         id={triggerId}
@@ -271,12 +249,10 @@ export function TodoList({
         className="group flex h-11 w-full items-center gap-2.5 rounded-2xl px-3.5 text-left outline-none focus-visible:ring-4 focus-visible:ring-ring"
       >
         <TodoHeaderIcon complete={allComplete} />
-        <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground/90">
-          {title}
-        </h3>
+        <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground/90">{title}</h3>
         <span
           className={cn(
-            "shrink-0 text-xs font-medium tabular-nums text-muted-foreground",
+            "shrink-0 text-xs font-medium text-muted-foreground tabular-nums",
             allComplete && "text-emerald-600 dark:text-emerald-400",
           )}
         >
@@ -284,9 +260,7 @@ export function TodoList({
             {completed} of {items.length} tasks completed
           </span>
           <span aria-hidden="true" className="inline-flex">
-            <ActionSwapRollText value={String(completed)}>
-              {completed}
-            </ActionSwapRollText>
+            <ActionSwapRollText value={String(completed)}>{completed}</ActionSwapRollText>
             <span>/</span>
             <span>{items.length}</span>
           </span>
@@ -300,12 +274,7 @@ export function TodoList({
         />
       </button>
 
-      <AgentDisclosure
-        id={contentId}
-        role="region"
-        aria-labelledby={triggerId}
-        open={currentOpen}
-      >
+      <AgentDisclosure id={contentId} role="region" aria-labelledby={triggerId} open={currentOpen}>
         <div
           ref={viewportRef}
           className="scrollbar-hide overflow-y-auto px-2 pb-2"
@@ -313,69 +282,67 @@ export function TodoList({
         >
           {items.length ? (
             <ol aria-live="polite" className="relative space-y-0">
-            <AnimatePresence initial={false} mode="popLayout">
-              {items.map((item) => {
-                const status = item.status ?? "pending";
-                const delay = arrival(item.id) * 0.04;
-                return (
-                  <motion.li
-                    layout="position"
-                    key={item.id}
-                    initial={reduce ? { opacity: 1 } : { opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={reduce ? { opacity: 0 } : { opacity: 0, y: -3 }}
-                    transition={
-                      reduce
-                        ? { duration: 0 }
-                        : {
-                            opacity: { duration: 0.18, ease: EASE_OUT, delay },
-                            y: { ...SPRING_LAYOUT, delay },
-                            layout: SPRING_LAYOUT,
-                          }
-                    }
-                    className="flex min-h-9 items-center gap-2.5 rounded-xl px-1.5 py-1"
-                  >
-                    <TodoStatusIcon status={status} progress={item.progress} />
-                    <span className="sr-only">{statusLabel(status)}: </span>
-                    <span
-                      className={cn(
-                        "min-w-0 flex-1 truncate text-sm leading-5",
-                        status === "pending" && "text-muted-foreground/65",
-                        status === "in-progress" && "text-foreground",
-                        status === "completed" && "text-muted-foreground/60",
-                        status === "cancelled" && "text-muted-foreground/55",
-                      )}
+              <AnimatePresence initial={false} mode="popLayout">
+                {items.map((item) => {
+                  const status = item.status ?? "pending";
+                  const delay = arrival(item.id) * 0.04;
+                  return (
+                    <motion.li
+                      layout="position"
+                      key={item.id}
+                      initial={reduce ? { opacity: 1 } : { opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={reduce ? { opacity: 0 } : { opacity: 0, y: -3 }}
+                      transition={
+                        reduce
+                          ? { duration: 0 }
+                          : {
+                              opacity: { duration: 0.18, ease: EASE_OUT, delay },
+                              y: { ...SPRING_LAYOUT, delay },
+                              layout: SPRING_LAYOUT,
+                            }
+                      }
+                      className="flex min-h-9 items-center gap-2.5 rounded-xl px-1.5 py-1"
                     >
-                      <span className="relative inline-block max-w-full">
-                        {item.title}
-                        <motion.span
-                          aria-hidden="true"
-                          initial={false}
-                          animate={{
-                            scaleX: status === "completed" ? 1 : 0,
-                            opacity: status === "completed" ? 1 : 0,
-                          }}
-                          transition={
-                            reduce ? { duration: 0 } : { duration: 0.2, ease: EASE_OUT }
-                          }
-                          className="absolute inset-x-0 top-1/2 h-px origin-left bg-current"
-                        />
+                      <TodoStatusIcon status={status} progress={item.progress} />
+                      <span className="sr-only">{statusLabel(status)}: </span>
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 truncate text-sm leading-5",
+                          status === "pending" && "text-muted-foreground/65",
+                          status === "in-progress" && "text-foreground",
+                          status === "completed" && "text-muted-foreground/60",
+                          status === "cancelled" && "text-muted-foreground/55",
+                        )}
+                      >
+                        <span className="relative inline-block max-w-full">
+                          {item.title}
+                          <motion.span
+                            aria-hidden="true"
+                            initial={false}
+                            animate={{
+                              scaleX: status === "completed" ? 1 : 0,
+                              opacity: status === "completed" ? 1 : 0,
+                            }}
+                            transition={
+                              reduce ? { duration: 0 } : { duration: 0.2, ease: EASE_OUT }
+                            }
+                            className="absolute inset-x-0 top-1/2 h-px origin-left bg-current"
+                          />
+                        </span>
                       </span>
-                    </span>
-                    {item.detail ? (
-                      <span className="shrink-0 text-sm text-muted-foreground/55">
-                        {item.detail}
-                      </span>
-                    ) : null}
-                  </motion.li>
-                );
-              })}
-            </AnimatePresence>
+                      {item.detail ? (
+                        <span className="shrink-0 text-sm text-muted-foreground/55">
+                          {item.detail}
+                        </span>
+                      ) : null}
+                    </motion.li>
+                  );
+                })}
+              </AnimatePresence>
             </ol>
           ) : (
-            <p className="px-1.5 py-2 text-sm text-muted-foreground">
-              No tasks yet
-            </p>
+            <p className="px-1.5 py-2 text-sm text-muted-foreground">No tasks yet</p>
           )}
         </div>
       </AgentDisclosure>

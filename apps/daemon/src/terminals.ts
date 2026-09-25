@@ -43,7 +43,12 @@ export function createTerminals(options: {
     return `${threadId}\u0000${terminalId}`;
   }
 
-  function start(threadId: string, terminalId: string, columns: number, rows: number): TerminalSession | string {
+  function start(
+    threadId: string,
+    terminalId: string,
+    columns: number,
+    rows: number,
+  ): TerminalSession | string {
     const folder = options.folderOf(threadId);
     if (folder === null) return "This thread is gone.";
     if (!existsSync(folder)) return `The thread's folder is gone: ${folder}`;
@@ -58,7 +63,12 @@ export function createTerminals(options: {
         }
       }) ?? "/bin/sh";
     const shellName = basename(shellPath);
-    const screen = new HeadlessTerminal({ cols: columns, rows, scrollback: 5000, allowProposedApi: true });
+    const screen = new HeadlessTerminal({
+      cols: columns,
+      rows,
+      scrollback: 5000,
+      allowProposedApi: true,
+    });
     const serializer = new SerializeAddon();
     screen.loadAddon(serializer);
     screen.loadAddon(new Unicode11Addon());
@@ -70,7 +80,9 @@ export function createTerminals(options: {
         shell: Bun.spawn(
           [
             shellPath,
-            ...(process.platform === "darwin" && (shellName === "zsh" || shellName === "bash") ? ["-l"] : []),
+            ...(process.platform === "darwin" && (shellName === "zsh" || shellName === "bash")
+              ? ["-l"]
+              : []),
             ...(shellName === "zsh" ? ["-o", "nopromptsp"] : []),
           ],
           {
@@ -79,7 +91,9 @@ export function createTerminals(options: {
               ...Object.fromEntries(
                 Object.entries(process.env).filter(
                   ([key]) =>
-                    !/^(APCODE_|npm_|PNPM_|VSCODE_|ITERM_)|^(INIT_CWD|TMUX|TMUX_PANE|TERM_PROGRAM(_VERSION)?|TERM_SESSION_ID|COLUMNS|LINES)$/.test(key),
+                    !/^(APCODE_|npm_|PNPM_|VSCODE_|ITERM_)|^(INIT_CWD|TMUX|TMUX_PANE|TERM_PROGRAM(_VERSION)?|TERM_SESSION_ID|COLUMNS|LINES)$/.test(
+                      key,
+                    ),
                 ),
               ),
               LANG: process.env.LANG ?? "en_US.UTF-8",
@@ -87,7 +101,12 @@ export function createTerminals(options: {
               COLORTERM: "truecolor",
               TERM_PROGRAM: "APCode",
             },
-            terminal: { cols: columns, rows, name: "xterm-256color", data: (_terminal, bytes) => receive(session, bytes) },
+            terminal: {
+              cols: columns,
+              rows,
+              name: "xterm-256color",
+              data: (_terminal, bytes) => receive(session, bytes),
+            },
           },
         ),
         screen,
@@ -128,25 +147,50 @@ export function createTerminals(options: {
     for (const [viewer, attachment] of session.viewers) deliver(session, viewer, attachment, data);
   }
 
-  function deliver(session: TerminalSession, viewer: TerminalViewer, attachment: Attachment, data: string) {
+  function deliver(
+    session: TerminalSession,
+    viewer: TerminalViewer,
+    attachment: Attachment,
+    data: string,
+  ) {
     if (attachment.stale) return;
-    if (!attachment.waitingForSnapshot && attachment.queued.length === 0 && attachment.inFlightCharacters < IN_FLIGHT_CHARACTER_LIMIT) {
+    if (
+      !attachment.waitingForSnapshot &&
+      attachment.queued.length === 0 &&
+      attachment.inFlightCharacters < IN_FLIGHT_CHARACTER_LIMIT
+    ) {
       attachment.inFlightCharacters += data.length;
-      viewer.send({ _tag: "terminal.output", threadId: session.threadId, terminalId: session.terminalId, data });
+      viewer.send({
+        _tag: "terminal.output",
+        threadId: session.threadId,
+        terminalId: session.terminalId,
+        data,
+      });
       return;
     }
     attachment.queued.push(data);
     attachment.queuedCharacters += data.length;
-    if (attachment.queuedCharacters > 1024 * 1024) Object.assign(attachment, { queued: [], queuedCharacters: 0, stale: true });
+    if (attachment.queuedCharacters > 1024 * 1024)
+      Object.assign(attachment, { queued: [], queuedCharacters: 0, stale: true });
   }
 
   function sendSnapshot(session: TerminalSession, viewer: TerminalViewer, attachment: Attachment) {
-    Object.assign(attachment, { waitingForSnapshot: true, stale: false, queued: [], queuedCharacters: 0 });
+    Object.assign(attachment, {
+      waitingForSnapshot: true,
+      stale: false,
+      queued: [],
+      queuedCharacters: 0,
+    });
     session.screen.write("", () => {
       if (session.viewers.get(viewer) !== attachment) return;
       const data = session.serializer.serialize();
       Object.assign(attachment, { waitingForSnapshot: false, inFlightCharacters: data.length });
-      viewer.send({ _tag: "terminal.snapshot", threadId: session.threadId, terminalId: session.terminalId, data });
+      viewer.send({
+        _tag: "terminal.snapshot",
+        threadId: session.threadId,
+        terminalId: session.terminalId,
+        data,
+      });
     });
   }
 
@@ -178,13 +222,26 @@ export function createTerminals(options: {
     list(): Array<TerminalInfo> {
       return [...sessions.values()].map(({ threadId, terminalId }) => ({ threadId, terminalId }));
     },
-    attach(threadId: string, terminalId: string, columns: number, rows: number, viewer: TerminalViewer) {
+    attach(
+      threadId: string,
+      terminalId: string,
+      columns: number,
+      rows: number,
+      viewer: TerminalViewer,
+    ) {
       const existing = sessions.get(keyOf(threadId, terminalId));
       if (existing) resize(existing, columns, rows);
       const session = existing ?? start(threadId, terminalId, columns, rows);
-      if (typeof session === "string") return viewer.send({ _tag: "terminal.error", threadId, terminalId, message: session });
+      if (typeof session === "string")
+        return viewer.send({ _tag: "terminal.error", threadId, terminalId, message: session });
       flush(session);
-      const attachment: Attachment = { inFlightCharacters: 0, queued: [], queuedCharacters: 0, waitingForSnapshot: false, stale: false };
+      const attachment: Attachment = {
+        inFlightCharacters: 0,
+        queued: [],
+        queuedCharacters: 0,
+        waitingForSnapshot: false,
+        stale: false,
+      };
       session.viewers.set(viewer, attachment);
       sendSnapshot(session, viewer, attachment);
     },
@@ -203,9 +260,18 @@ export function createTerminals(options: {
         if (attachment.inFlightCharacters === 0) sendSnapshot(session, viewer, attachment);
         return;
       }
-      if (attachment.waitingForSnapshot || attachment.queued.length === 0 || attachment.inFlightCharacters >= IN_FLIGHT_CHARACTER_LIMIT) return;
+      if (
+        attachment.waitingForSnapshot ||
+        attachment.queued.length === 0 ||
+        attachment.inFlightCharacters >= IN_FLIGHT_CHARACTER_LIMIT
+      )
+        return;
       const data = attachment.queued.join("");
-      Object.assign(attachment, { queued: [], queuedCharacters: 0, inFlightCharacters: attachment.inFlightCharacters + data.length });
+      Object.assign(attachment, {
+        queued: [],
+        queuedCharacters: 0,
+        inFlightCharacters: attachment.inFlightCharacters + data.length,
+      });
       viewer.send({ _tag: "terminal.output", threadId, terminalId, data });
     },
     write(threadId: string, terminalId: string, data: string) {
@@ -217,7 +283,8 @@ export function createTerminals(options: {
     },
     close,
     closeThread(threadId: string) {
-      for (const session of sessions.values()) if (session.threadId === threadId) close(threadId, session.terminalId);
+      for (const session of sessions.values())
+        if (session.threadId === threadId) close(threadId, session.terminalId);
     },
     closeAll() {
       for (const session of sessions.values()) session.shell.kill("SIGHUP");

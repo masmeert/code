@@ -1,10 +1,4 @@
-import {
-  Check,
-  ChevronRight,
-  Copy,
-  FileCode2,
-  LoaderCircle,
-} from "lucide-react";
+import { Check, ChevronRight, Copy, FileCode2, LoaderCircle } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import {
   type ReactNode,
@@ -111,11 +105,7 @@ export function FileDiff({
     if (previousStatus.current !== "streaming" && status === "streaming") {
       setOpen(true);
     }
-    if (
-      previousStatus.current === "streaming" &&
-      status === "complete" &&
-      collapseOnComplete
-    ) {
+    if (previousStatus.current === "streaming" && status === "complete" && collapseOnComplete) {
       setOpen(false);
     }
     previousStatus.current = status;
@@ -148,11 +138,7 @@ export function FileDiff({
   }, [copyText, onCopy]);
 
   return (
-    <div
-      data-state={status}
-      aria-busy={streaming}
-      className={cn("w-full text-sm", className)}
-    >
+    <div data-state={status} aria-busy={streaming} className={cn("w-full text-sm", className)}>
       <button
         id={triggerId}
         type="button"
@@ -161,13 +147,8 @@ export function FileDiff({
         onClick={() => setOpen(!currentOpen)}
         className="group flex min-h-9 w-full items-center gap-2 rounded-md py-1 text-left outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
-        <FileCode2
-          aria-hidden="true"
-          className="size-4 shrink-0 text-muted-foreground"
-        />
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground/80">
-          {file}
-        </span>
+        <FileCode2 aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground/80">{file}</span>
         <span className="flex shrink-0 items-center gap-2">
           <ChangeCount value={additions} type="added" />
           <ChangeCount value={deletions} type="removed" />
@@ -191,13 +172,8 @@ export function FileDiff({
         />
       </button>
 
-      <AgentDisclosure
-        id={contentId}
-        role="region"
-        aria-labelledby={triggerId}
-        open={currentOpen}
-      >
-        <div className="pl-6 pt-1.5">
+      <AgentDisclosure id={contentId} role="region" aria-labelledby={triggerId} open={currentOpen}>
+        <div className="pt-1.5 pl-6">
           <div className="overflow-hidden rounded-xl bg-muted/80">
             <div
               ref={viewportRef}
@@ -219,31 +195,25 @@ export function FileDiff({
                         type === "removed" && "bg-rose-500/[0.07]",
                       )}
                     >
-                      <span className="select-none pr-2 text-right tabular-nums text-muted-foreground/40">
+                      <span className="pr-2 text-right text-muted-foreground/40 tabular-nums select-none">
                         {line.oldLine}
                       </span>
-                      <span className="select-none pr-2 text-right tabular-nums text-muted-foreground/40">
+                      <span className="pr-2 text-right text-muted-foreground/40 tabular-nums select-none">
                         {line.newLine}
                       </span>
                       <span
                         className={cn(
-                          "select-none text-center text-muted-foreground/45",
-                          type === "added" &&
-                            "text-emerald-600 dark:text-emerald-400",
-                          type === "removed" &&
-                            "text-rose-600 dark:text-rose-400",
+                          "text-center text-muted-foreground/45 select-none",
+                          type === "added" && "text-emerald-600 dark:text-emerald-400",
+                          type === "removed" && "text-rose-600 dark:text-rose-400",
                         )}
                       >
-                        {type === "added"
-                          ? "+"
-                          : type === "removed"
-                            ? "−"
-                            : ""}
+                        {type === "added" ? "+" : type === "removed" ? "−" : ""}
                       </span>
                       <AgentCodeLine
                         code={line.content}
                         tokens={tokens?.[index]}
-                        className="min-w-0 whitespace-pre px-1.5"
+                        className="min-w-0 px-1.5 whitespace-pre"
                       />
                     </div>
                   );
@@ -252,7 +222,7 @@ export function FileDiff({
             </div>
 
             {canCopy ? (
-              <div className="flex justify-end px-2 pb-1.5 pt-1">
+              <div className="flex justify-end px-2 pt-1 pb-1.5">
                 <motion.button
                   type="button"
                   aria-label={copied ? "Copied" : "Copy diff"}
@@ -260,14 +230,10 @@ export function FileDiff({
                   onClick={handleCopy}
                   whileTap={reduce ? undefined : { scale: 0.95 }}
                   transition={SPRING_PRESS}
-                  className="grid size-7 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-background/70 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+                  className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-background/70 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
                 >
                   <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">
-                    {copied ? (
-                      <Check className="size-3.5" />
-                    ) : (
-                      <Copy className="size-3.5" />
-                    )}
+                    {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
                   </ActionSwapRollIcon>
                 </motion.button>
               </div>

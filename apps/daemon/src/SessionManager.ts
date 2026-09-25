@@ -50,7 +50,11 @@ import {
 } from "./git.ts";
 import { ClaudeAdapter } from "./providers/ClaudeAdapter.ts";
 import { CodexAdapter } from "./providers/CodexAdapter.ts";
-import { ProviderError, type ProviderAdapter, type ProviderSession } from "./providers/ProviderAdapter.ts";
+import {
+  ProviderError,
+  type ProviderAdapter,
+  type ProviderSession,
+} from "./providers/ProviderAdapter.ts";
 import { ProviderRegistry } from "./providers/ProviderRegistry.ts";
 import { DATA_DIR } from "./storage/jsonFile.ts";
 import { ProjectsStore } from "./storage/ProjectsStore.ts";
@@ -60,7 +64,10 @@ import { type Browsers, createBrowsers } from "./browsers.ts";
 import { createMcp, type Mcp } from "./mcp.ts";
 import { createTerminals, type Terminals } from "./terminals.ts";
 
-const ADAPTERS: Record<ProviderKind, ProviderAdapter> = { claude: ClaudeAdapter, codex: CodexAdapter };
+const ADAPTERS: Record<ProviderKind, ProviderAdapter> = {
+  claude: ClaudeAdapter,
+  codex: CodexAdapter,
+};
 
 export interface SequencedEvent {
   /** Publish order, in memory only; lets a connection skip what a transcript read already covered. */
@@ -174,7 +181,11 @@ export class SessionManager extends Context.Service<
      * A thread's transcript: what was missed since `after`, or the latest `turnLimit` turns.
      * Synchronous, so live events with a `seq` above the read's are exactly the ones it lacks.
      */
-    readonly readThread: (threadId: string, after: number | null, turnLimit: number) => ThreadRead | null;
+    readonly readThread: (
+      threadId: string,
+      after: number | null,
+      turnLimit: number,
+    ) => ThreadRead | null;
     readonly readOlder: (
       threadId: string,
       before: number,
@@ -206,7 +217,11 @@ const resolveAttachments = (inputs: ReadonlyArray<AttachmentInput>) =>
       Promise.all(
         inputs.map(async (input): Promise<Attachment> => {
           if (input._tag === "path") {
-            return { name: basename(input.path), path: input.path, isImage: IMAGE_EXTENSIONS.has(extname(input.path).toLowerCase()) };
+            return {
+              name: basename(input.path),
+              path: input.path,
+              isImage: IMAGE_EXTENSIONS.has(extname(input.path).toLowerCase()),
+            };
           }
           await mkdir(ATTACHMENTS_DIR, { recursive: true });
           const extension = extname(input.name) || `.${input.mediaType.split("/")[1] ?? "bin"}`;
@@ -234,7 +249,14 @@ const make = Effect.gen(function* () {
 
   // --- restore -------------------------------------------------------------
   for (const { info, resumeToken } of yield* store.load) {
-    threads.set(info.id, { info, session: null, resumeToken, activeAt: Date.now(), currentTurn: null, lock: yield* Semaphore.make(1) });
+    threads.set(info.id, {
+      info,
+      session: null,
+      resumeToken,
+      activeAt: Date.now(),
+      currentTurn: null,
+      lock: yield* Semaphore.make(1),
+    });
   }
   // Approvals pending when the daemon stopped died with their agent process.
   for (const [requestId, threadId] of store.unresolvedApprovals()) {
@@ -288,7 +310,10 @@ const make = Effect.gen(function* () {
   const publish = (event: RuntimeEvent) => {
     if (event._tag === "assistant.delta") {
       const pending = pendingDeltas.get(event.messageId);
-      pendingDeltas.set(event.messageId, pending ? { ...pending, delta: pending.delta + event.delta } : event);
+      pendingDeltas.set(
+        event.messageId,
+        pending ? { ...pending, delta: pending.delta + event.delta } : event,
+      );
       flushTimer ??= setTimeout(flushDeltas, DELTA_FLUSH_MS);
       return;
     }
@@ -342,7 +367,8 @@ const make = Effect.gen(function* () {
         return Effect.flatMap(settingsStore.get, (settings) =>
           ADAPTERS[entry.info.provider].start({
             cwd: entry.info.cwd,
-            model: entry.info.model ?? settings.providers[entry.info.provider].defaultModel ?? undefined,
+            model:
+              entry.info.model ?? settings.providers[entry.info.provider].defaultModel ?? undefined,
             resumeToken: entry.resumeToken ?? undefined,
             effort: options.effort,
             permission: options.permission,
@@ -354,7 +380,8 @@ const make = Effect.gen(function* () {
               // The agent process ending isn't the thread ending: drop the session so the next message resumes it.
               if (event._tag === "thread.status" && event.status === "closed") {
                 entry.session = null;
-                if (threads.has(threadId)) publish({ _tag: "thread.status", threadId, status: "idle" });
+                if (threads.has(threadId))
+                  publish({ _tag: "thread.status", threadId, status: "idle" });
                 return;
               }
               publish({ ...event, threadId } as RuntimeEvent);
@@ -384,7 +411,10 @@ const make = Effect.gen(function* () {
   };
 
   /** Runs `f` against the thread's live session, if it has one. */
-  const withLiveSession = (threadId: string, f: (session: ProviderSession) => Effect.Effect<void, ProviderError>) =>
+  const withLiveSession = (
+    threadId: string,
+    f: (session: ProviderSession) => Effect.Effect<void, ProviderError>,
+  ) =>
     Effect.flatMap(getEntry(threadId), (entry) => (entry.session ? f(entry.session) : Effect.void));
 
   const removeThread = (threadId: string) =>
@@ -405,8 +435,10 @@ const make = Effect.gen(function* () {
           if (root) await removeWorktreeIfClean(root);
         }
       })();
-      for (const [messageId, message] of streaming) if (message.threadId === threadId) streaming.delete(messageId);
-      for (const [messageId, delta] of pendingDeltas) if (delta.threadId === threadId) pendingDeltas.delete(messageId);
+      for (const [messageId, message] of streaming)
+        if (message.threadId === threadId) streaming.delete(messageId);
+      for (const [messageId, delta] of pendingDeltas)
+        if (delta.threadId === threadId) pendingDeltas.delete(messageId);
       publish({ _tag: "thread.removed", threadId });
     });
 
@@ -434,25 +466,49 @@ const make = Effect.gen(function* () {
       yield* setArchived(entry, false);
       const attachments = yield* resolveAttachments(options.attachments);
       const messageId = crypto.randomUUID();
-      const turn = { messageId, text, attachments, effort: options.effort, permission: options.permission };
+      const turn = {
+        messageId,
+        text,
+        attachments,
+        effort: options.effort,
+        permission: options.permission,
+      };
       // A turn is running: the message joins it.
       const { status } = entry.info;
       if (entry.session && (status === "running" || status === "awaiting-approval")) {
-        publish({ _tag: "user.message", threadId, messageId, text, ...(attachments.length ? { attachments } : {}), steer: true });
+        publish({
+          _tag: "user.message",
+          threadId,
+          messageId,
+          text,
+          ...(attachments.length ? { attachments } : {}),
+          steer: true,
+        });
         return yield* entry.session.steer(turn);
       }
-      publish({ _tag: "user.message", threadId, messageId, text, ...(attachments.length ? { attachments } : {}) });
+      publish({
+        _tag: "user.message",
+        threadId,
+        messageId,
+        text,
+        ...(attachments.length ? { attachments } : {}),
+      });
       publish({ _tag: "thread.status", threadId, status: "running" });
       // Snapshot the folder before the agent touches it, so the turn's changes can be shown and undone.
       entry.currentTurn = messageId;
-      yield* Effect.promise(() => captureCheckpoint(entry.info.cwd, checkpointRef(threadId, messageId, "start")));
+      yield* Effect.promise(() =>
+        captureCheckpoint(entry.info.cwd, checkpointRef(threadId, messageId, "start")),
+      );
       const session = yield* ensureSession(entry, options).pipe(
-        Effect.tapError(() => Effect.sync(() => publish({ _tag: "thread.status", threadId, status: "error" }))),
+        Effect.tapError(() =>
+          Effect.sync(() => publish({ _tag: "thread.status", threadId, status: "error" })),
+        ),
       );
       yield* session.send(turn);
     });
 
-  const isBusy = (entry: ThreadEntry) => entry.info.status === "running" || entry.info.status === "awaiting-approval";
+  const isBusy = (entry: ThreadEntry) =>
+    entry.info.status === "running" || entry.info.status === "awaiting-approval";
 
   /**
    * Rewinds to before a user message: the provider's conversation first (the step that
@@ -465,10 +521,19 @@ const make = Effect.gen(function* () {
       if (isBusy(entry)) return yield* Effect.fail(fail("Stop the agent before rewinding"));
       const found = store.findUserMessage(threadId, command.messageId);
       if (!found) return yield* Effect.fail(fail("That message is gone"));
-      if (found.event.steer) return yield* Effect.fail(fail("A message sent mid-turn can't be rewound to"));
+      if (found.event.steer)
+        return yield* Effect.fail(fail("A message sent mid-turn can't be rewound to"));
       if (command.restoreFiles) {
-        if ([...threads.values()].some((other) => other !== entry && other.info.cwd === cwd && isBusy(other))) {
-          return yield* Effect.fail(fail("Another thread is working in this folder; restoring files would undo its changes too"));
+        if (
+          [...threads.values()].some(
+            (other) => other !== entry && other.info.cwd === cwd && isBusy(other),
+          )
+        ) {
+          return yield* Effect.fail(
+            fail(
+              "Another thread is working in this folder; restoring files would undo its changes too",
+            ),
+          );
         }
         if (!(yield* Effect.promise(() => hasCheckpoint(cwd, threadId, command.messageId)))) {
           return yield* Effect.fail(fail("There's no snapshot of the files from that point"));
@@ -493,24 +558,40 @@ const make = Effect.gen(function* () {
       store.truncate(threadId, found.seq);
       publish({ _tag: "thread.rewound", threadId, messageId: command.messageId });
       touch(threadId);
-      const error = command.restoreFiles ? yield* Effect.promise(() => restoreCheckpoint(cwd, threadId, command.messageId)) : null;
-      void deleteCheckpoints(cwd, threadId, found.from.map((message) => message.messageId));
-      if (error) return yield* Effect.fail(fail(`Rewound the conversation, but couldn't restore the files: ${error}`));
+      const error = command.restoreFiles
+        ? yield* Effect.promise(() => restoreCheckpoint(cwd, threadId, command.messageId))
+        : null;
+      void deleteCheckpoints(
+        cwd,
+        threadId,
+        found.from.map((message) => message.messageId),
+      );
+      if (error)
+        return yield* Effect.fail(
+          fail(`Rewound the conversation, but couldn't restore the files: ${error}`),
+        );
     });
 
   const compact = (threadId: string) =>
     Effect.gen(function* () {
       const entry = yield* getEntry(threadId);
-      if (isBusy(entry)) return yield* Effect.fail(fail("Wait for the agent to finish before compacting"));
+      if (isBusy(entry))
+        return yield* Effect.fail(fail("Wait for the agent to finish before compacting"));
       if (!entry.resumeToken && !entry.session) return;
-      const session = yield* ensureSession(entry, { effort: null, permission: "ask", attachments: [] });
+      const session = yield* ensureSession(entry, {
+        effort: null,
+        permission: "ask",
+        attachments: [],
+      });
       yield* session.compact;
     });
 
   const listCommands = (threadId: string) =>
     Effect.gen(function* () {
       const entry = yield* getEntry(threadId);
-      const commands = entry.session ? yield* entry.session.commands.pipe(Effect.orElseSucceed(() => [])) : [];
+      const commands = entry.session
+        ? yield* entry.session.commands.pipe(Effect.orElseSucceed(() => []))
+        : [];
       publish({ _tag: "thread.commands", threadId, commands: [...commands] });
     });
 
@@ -532,32 +613,58 @@ const make = Effect.gen(function* () {
   /** Announces the branches at `path`; `error` reports a failed checkout alongside them. */
   const publishBranches = (path: string, error: string | null = null) =>
     Effect.promise(() => listBranches(path)).pipe(
-      Effect.map(({ current, branches }) => publish({ _tag: "git.branches", path, current, branches, error })),
+      Effect.map(({ current, branches }) =>
+        publish({ _tag: "git.branches", path, current, branches, error }),
+      ),
     );
 
   /** Announces the repo state at `path`; `action`/`error` report the commit or push it answers. */
-  const publishStatus = (path: string, action: GitAction | null = null, error: string | null = null) =>
+  const publishStatus = (
+    path: string,
+    action: GitAction | null = null,
+    error: string | null = null,
+  ) =>
     Effect.promise(() => readStatus(path)).pipe(
       Effect.map((status) => publish({ _tag: "git.status", path, status, action, error })),
     );
 
   // Plain refreshes (every window, every finished tool call) coalesce per repo.
-  const refreshStatus = coalesced((path) => readStatus(path).then((status) => publish({ _tag: "git.status", path, status, action: null, error: null })));
-  const refreshDiff = coalesced((path) => readDiff(path).then((diff) => publish({ _tag: "git.diff", path, ...diff })));
+  const refreshStatus = coalesced((path) =>
+    readStatus(path).then((status) =>
+      publish({ _tag: "git.status", path, status, action: null, error: null }),
+    ),
+  );
+  const refreshDiff = coalesced((path) =>
+    readDiff(path).then((diff) => publish({ _tag: "git.diff", path, ...diff })),
+  );
 
   /** A message for everything uncommitted at `path`, from the commit model in settings. */
   const writeCommitMessage = (path: string) =>
     Effect.gen(function* () {
       const settings = yield* settingsStore.get;
       const split = settings.commitModel?.indexOf(":") ?? -1;
-      const provider = split > 0 ? (settings.commitModel!.slice(0, split) as ProviderKind) : settings.lastProvider;
-      const model = split > 0 ? settings.commitModel!.slice(split + 1) : settings.providers[provider].defaultModel;
-      const [diff, recent] = yield* Effect.promise(() => Promise.all([readDiff(path), readRecentSubjects(path)]));
+      const provider =
+        split > 0 ? (settings.commitModel!.slice(0, split) as ProviderKind) : settings.lastProvider;
+      const model =
+        split > 0
+          ? settings.commitModel!.slice(split + 1)
+          : settings.providers[provider].defaultModel;
+      const [diff, recent] = yield* Effect.promise(() =>
+        Promise.all([readDiff(path), readRecentSubjects(path)]),
+      );
       if (diff.error) return { error: diff.error };
       if (!diff.patch) return { error: "Nothing to commit" };
       return yield* Effect.tryPromise({
-        try: () => generateCommitMessage({ cwd: path, provider, model: model || undefined, patch: diff.patch, recent }),
-        catch: (e) => `Couldn't write a commit message: ${e instanceof Error ? e.message : String(e)}`,
+        try: () =>
+          generateCommitMessage({
+            cwd: path,
+            provider,
+            model: model || undefined,
+            patch: diff.patch,
+            recent,
+          }),
+        catch: (e) =>
+          `Couldn't write a commit message: ${e instanceof Error ? e.message : String(e)}`,
       }).pipe(
         Effect.map((message) => ({ message })),
         Effect.catch((error) => Effect.succeed({ error })),
@@ -584,7 +691,13 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const root = yield* Effect.promise(() => repoRoot(projectPath));
       if (!root) return yield* Effect.fail(fail("New worktrees need the project to be a git repo"));
-      const slug = `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "thread"}-${threadId.slice(0, 6)}`;
+      const slug = `${
+        title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "")
+          .slice(0, 40) || "thread"
+      }-${threadId.slice(0, 6)}`;
       const path = join(WORKTREES_DIR, basename(root), slug);
       const error = yield* Effect.promise(() => addWorktree(projectPath, path, `apcode/${slug}`));
       if (error) return yield* Effect.fail(fail(`Couldn't create a worktree: ${error}`));
@@ -593,13 +706,18 @@ const make = Effect.gen(function* () {
 
   const create = (command: Extract<ClientCommand, { _tag: "thread.create" }>) =>
     Effect.gen(function* () {
-      const { project, created } = yield* projectsStore.ensure(command.path).pipe(Effect.mapError((e) => fail(e.message)));
+      const { project, created } = yield* projectsStore
+        .ensure(command.path)
+        .pipe(Effect.mapError((e) => fail(e.message)));
       if (created) publish({ _tag: "project.added", project });
 
       const now = Date.now();
       const id = crypto.randomUUID();
       const title = titleFrom(command.text, project.name);
-      const cwd = command.workspace === "worktree" ? yield* makeWorktree(project.path, title, id) : project.path;
+      const cwd =
+        command.workspace === "worktree"
+          ? yield* makeWorktree(project.path, title, id)
+          : project.path;
       const info: ThreadInfo = {
         id,
         projectId: project.id,
@@ -614,7 +732,14 @@ const make = Effect.gen(function* () {
         archivedAt: null,
         worktree: command.workspace === "worktree",
       };
-      const entry: ThreadEntry = { info, session: null, resumeToken: null, activeAt: now, currentTurn: null, lock: yield* Semaphore.make(1) };
+      const entry: ThreadEntry = {
+        info,
+        session: null,
+        resumeToken: null,
+        activeAt: now,
+        currentTurn: null,
+        lock: yield* Semaphore.make(1),
+      };
       threads.set(info.id, entry);
       store.insertThread(info);
       publish({ _tag: "thread.created", thread: info, requestId: command.requestId });
@@ -633,7 +758,9 @@ const make = Effect.gen(function* () {
       case "thread.create":
         return create(command);
       case "thread.send":
-        return Effect.flatMap(getEntry(command.threadId), (entry) => send(entry, command.text, command.options));
+        return Effect.flatMap(getEntry(command.threadId), (entry) =>
+          send(entry, command.text, command.options),
+        );
       case "thread.rewind":
         return rewind(command);
       case "thread.compact":
@@ -643,8 +770,15 @@ const make = Effect.gen(function* () {
       case "checkpoint.diff":
         return Effect.gen(function* () {
           const entry = yield* getEntry(command.threadId);
-          const diff = yield* Effect.promise(() => readCheckpointDiff(entry.info.cwd, command.threadId, command.messageId));
-          publish({ _tag: "checkpoint.diff", threadId: command.threadId, messageId: command.messageId, ...diff });
+          const diff = yield* Effect.promise(() =>
+            readCheckpointDiff(entry.info.cwd, command.threadId, command.messageId),
+          );
+          publish({
+            _tag: "checkpoint.diff",
+            threadId: command.threadId,
+            messageId: command.messageId,
+            ...diff,
+          });
         });
       case "git.listBranches":
         return publishBranches(command.path);
@@ -656,23 +790,31 @@ const make = Effect.gen(function* () {
           const run = command._tag === "git.checkout" ? checkoutBranch : createBranch;
           const error = yield* Effect.promise(() => run(command.path, command.branch));
           yield* publishBranches(command.path, error);
-          for (const entry of threads.values()) if (entry.info.cwd === command.path) refreshMeta(entry);
+          for (const entry of threads.values())
+            if (entry.info.cwd === command.path) refreshMeta(entry);
         });
       case "git.status":
         return Effect.promise(() => refreshStatus(command.path));
       case "git.commit":
       case "git.push": {
         const { path } = command;
-        const action: GitAction = command._tag === "git.push" ? "push" : command.push ? "commit-push" : "commit";
+        const action: GitAction =
+          command._tag === "git.push" ? "push" : command.push ? "commit-push" : "commit";
         return withRepoLock(
           path,
           Effect.gen(function* () {
             let error: string | null = null;
             if (command._tag === "git.commit") {
-              const written = command.message.trim() ? { message: command.message } : yield* writeCommitMessage(path);
-              error = "error" in written ? written.error : yield* Effect.promise(() => commitAll(path, written.message));
+              const written = command.message.trim()
+                ? { message: command.message }
+                : yield* writeCommitMessage(path);
+              error =
+                "error" in written
+                  ? written.error
+                  : yield* Effect.promise(() => commitAll(path, written.message));
             }
-            if (!error && action !== "commit") error = yield* Effect.promise(() => pushBranch(path));
+            if (!error && action !== "commit")
+              error = yield* Effect.promise(() => pushBranch(path));
             yield* publishStatus(path, action, error);
             if (action !== "push") {
               const diff = yield* Effect.promise(() => readDiff(path));
@@ -692,7 +834,9 @@ const make = Effect.gen(function* () {
       case "project.add":
         return projectsStore.ensure(command.path).pipe(
           Effect.mapError((e) => fail(e.message)),
-          Effect.map(({ project, created }) => (created ? publish({ _tag: "project.added", project }) : undefined)),
+          Effect.map(({ project, created }) =>
+            created ? publish({ _tag: "project.added", project }) : undefined,
+          ),
         );
       case "providers.refresh":
         return registry.refresh;
@@ -707,11 +851,15 @@ const make = Effect.gen(function* () {
       case "thread.interrupt":
         return withLiveSession(command.threadId, (s) => s.interrupt);
       case "approval.respond":
-        return withLiveSession(command.threadId, (s) => s.respondApproval(command.requestId, command.decision));
+        return withLiveSession(command.threadId, (s) =>
+          s.respondApproval(command.requestId, command.decision),
+        );
       case "thread.close":
         return removeThread(command.threadId);
       case "thread.archive":
-        return Effect.flatMap(getEntry(command.threadId), (entry) => setArchived(entry, command.archived));
+        return Effect.flatMap(getEntry(command.threadId), (entry) =>
+          setArchived(entry, command.archived),
+        );
       case "project.remove":
         return Effect.gen(function* () {
           if (!(yield* projectsStore.remove(command.projectId))) return;
@@ -720,9 +868,13 @@ const make = Effect.gen(function* () {
           publish({ _tag: "project.removed", projectId: command.projectId });
         });
       case "terminal.write":
-        return Effect.sync(() => terminals.write(command.threadId, command.terminalId, command.data));
+        return Effect.sync(() =>
+          terminals.write(command.threadId, command.terminalId, command.data),
+        );
       case "terminal.resize":
-        return Effect.sync(() => terminals.resize(command.threadId, command.terminalId, command.columns, command.rows));
+        return Effect.sync(() =>
+          terminals.resize(command.threadId, command.terminalId, command.columns, command.rows),
+        );
       case "terminal.close":
         return Effect.sync(() => terminals.close(command.threadId, command.terminalId));
       // Per connection; the server answers these.
@@ -747,7 +899,13 @@ const make = Effect.gen(function* () {
     dispatch: (command) =>
       dispatch(command).pipe(
         Effect.tapError((e) =>
-          Effect.sync(() => publish({ _tag: "error", threadId: "threadId" in command ? command.threadId : null, message: e.message })),
+          Effect.sync(() =>
+            publish({
+              _tag: "error",
+              threadId: "threadId" in command ? command.threadId : null,
+              message: e.message,
+            }),
+          ),
         ),
       ),
     subscribe: Effect.map(
@@ -770,7 +928,8 @@ const make = Effect.gen(function* () {
       // Each streaming message's text so far, as one delta.
       const live: Array<RuntimeEvent> = [];
       for (const [messageId, message] of streaming) {
-        if (message.threadId === threadId) live.push({ _tag: "assistant.delta", threadId, messageId, delta: message.text });
+        if (message.threadId === threadId)
+          live.push({ _tag: "assistant.delta", threadId, messageId, delta: message.text });
       }
       const cursor = store.cursor(threadId);
       // A cursor past the end means the cache is from another database: start over.
@@ -778,7 +937,13 @@ const make = Effect.gen(function* () {
       if (after !== null && after <= cursor) {
         const { count, bytes } = store.measureAfter(threadId, after);
         if (count <= MAX_REPLAY && bytes <= MAX_REPLAY_BYTES) {
-          return { _tag: "thread.replay", events: store.readAfter(threadId, after), streaming: live, cursor, seq };
+          return {
+            _tag: "thread.replay",
+            events: store.readAfter(threadId, after),
+            streaming: live,
+            cursor,
+            seq,
+          };
         }
       }
       const { events, page } = store.readTurns(threadId, turnLimit);
@@ -793,7 +958,9 @@ const make = Effect.gen(function* () {
     shutdown: Effect.suspend(() => {
       flushDeltas();
       terminals.closeAll();
-      return Effect.forEach([...threads.values()], (t) => t.session?.close ?? Effect.void, { discard: true });
+      return Effect.forEach([...threads.values()], (t) => t.session?.close ?? Effect.void, {
+        discard: true,
+      });
     }),
   });
 });

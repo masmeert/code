@@ -1,7 +1,4 @@
-import {
-  PreviewRail,
-  type PreviewRailItem,
-} from "@apcode/ui/motion/preview-rail";
+import { PreviewRail, type PreviewRailItem } from "@apcode/ui/motion/preview-rail";
 import { cn } from "@apcode/ui/lib/utils";
 import { useReducedMotion } from "motion/react";
 import {
@@ -32,19 +29,14 @@ function getMessageText(message: HTMLElement) {
   return (surface.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 
-function getMessagePreview(
-  message: HTMLElement,
-  assistantResponse?: HTMLElement,
-) {
+function getMessagePreview(message: HTMLElement, assistantResponse?: HTMLElement) {
   const text = getMessageText(message);
   if (!text) {
     return { label: "Message", description: undefined };
   }
 
   if (text.length <= PREVIEW_TITLE_LENGTH) {
-    const responseText = assistantResponse
-      ? getMessageText(assistantResponse)
-      : "";
+    const responseText = assistantResponse ? getMessageText(assistantResponse) : "";
     return {
       label: text,
       description: responseText
@@ -56,9 +48,7 @@ function getMessagePreview(
   const titleExcerpt = text.slice(0, PREVIEW_TITLE_LENGTH);
   const titleBoundary = titleExcerpt.lastIndexOf(" ");
   const titleEnd =
-    titleBoundary > PREVIEW_TITLE_LENGTH * 0.65
-      ? titleBoundary
-      : PREVIEW_TITLE_LENGTH;
+    titleBoundary > PREVIEW_TITLE_LENGTH * 0.65 ? titleBoundary : PREVIEW_TITLE_LENGTH;
   const label = `${text.slice(0, titleEnd).trim()}…`;
   const responseText = assistantResponse
     ? getMessageText(assistantResponse)
@@ -92,14 +82,8 @@ export interface MessageScrollerProps extends ComponentPropsWithRef<"div"> {
   contentClassName?: string;
   railClassName?: string;
   viewportRef?: Ref<HTMLElement>;
-  viewportProps?: Omit<
-    ComponentPropsWithRef<"section">,
-    "children" | "className" | "ref"
-  >;
-  contentProps?: Omit<
-    ComponentPropsWithRef<"div">,
-    "children" | "className" | "ref"
-  >;
+  viewportProps?: Omit<ComponentPropsWithRef<"section">, "children" | "className" | "ref">;
+  contentProps?: Omit<ComponentPropsWithRef<"div">, "children" | "className" | "ref">;
 }
 
 export function MessageScroller({
@@ -177,8 +161,7 @@ export function MessageScroller({
       return;
     }
 
-    const distanceFromEnd =
-      viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    const distanceFromEnd = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
     if (distanceFromEnd <= followThreshold) {
       const lastId = targets.at(-1)?.[0] ?? "";
       setActiveRailId((current) => (current === lastId ? current : lastId));
@@ -199,9 +182,7 @@ export function MessageScroller({
       }
     }
 
-    setActiveRailId((current) =>
-      current === nearestId ? current : nearestId,
-    );
+    setActiveRailId((current) => (current === nearestId ? current : nearestId));
   }, [followThreshold, navigation]);
 
   const syncRailItems = useCallback(() => {
@@ -210,9 +191,7 @@ export function MessageScroller({
     const viewport = viewportRef.current;
     if (!content || !viewport) return;
 
-    const messages = Array.from(
-      content.querySelectorAll<HTMLElement>('[data-slot="message"]'),
-    );
+    const messages = Array.from(content.querySelectorAll<HTMLElement>('[data-slot="message"]'));
     const targets = new Map<string, HTMLElement>();
     const nextItems = messages.map((message, index) => {
       let id = railIdRef.current.get(message);
@@ -225,9 +204,7 @@ export function MessageScroller({
       const sender = message.dataset.from ?? "conversation";
       const assistantResponse =
         sender === "user"
-          ? messages
-              .slice(index + 1)
-              .find((candidate) => candidate.dataset.from === "assistant")
+          ? messages.slice(index + 1).find((candidate) => candidate.dataset.from === "assistant")
           : undefined;
       const preview = getMessagePreview(message, assistantResponse);
 
@@ -252,9 +229,7 @@ export function MessageScroller({
         );
       return unchanged ? current : nextItems;
     });
-    setRailOverflowing(
-      viewport.scrollHeight > viewport.clientHeight + 1 && messages.length > 1,
-    );
+    setRailOverflowing(viewport.scrollHeight > viewport.clientHeight + 1 && messages.length > 1);
   }, [navigation]);
 
   const scheduleRailSync = useCallback(() => {
@@ -277,17 +252,19 @@ export function MessageScroller({
       viewport.scrollTop = viewport.scrollHeight;
     }
     if (scrollTimerRef.current) window.clearTimeout(scrollTimerRef.current);
-    scrollTimerRef.current = window.setTimeout(() => {
-      programmaticScrollRef.current = false;
-    }, behavior === "smooth" ? 320 : 0);
+    scrollTimerRef.current = window.setTimeout(
+      () => {
+        programmaticScrollRef.current = false;
+      },
+      behavior === "smooth" ? 320 : 0,
+    );
   }, []);
 
   const handleScroll = useCallback(() => {
     const viewport = viewportRef.current;
     if (!viewport || programmaticScrollRef.current) return;
 
-    const distance =
-      viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
     setFollowing(distance <= followThreshold);
     updateActiveRailItem();
   }, [followThreshold, setFollowing, updateActiveRailItem]);
@@ -333,9 +310,7 @@ export function MessageScroller({
 
     scheduleRailSync();
     const mutationObserver =
-      typeof MutationObserver === "undefined"
-        ? null
-        : new MutationObserver(scheduleRailSync);
+      typeof MutationObserver === "undefined" ? null : new MutationObserver(scheduleRailSync);
     mutationObserver?.observe(content, {
       childList: true,
       characterData: true,
@@ -343,9 +318,7 @@ export function MessageScroller({
     });
 
     const resizeObserver =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(scheduleRailSync);
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleRailSync);
     resizeObserver?.observe(content);
     resizeObserver?.observe(viewport);
 
@@ -395,9 +368,12 @@ export function MessageScroller({
         viewport.scrollTop = top;
       }
       if (scrollTimerRef.current) window.clearTimeout(scrollTimerRef.current);
-      scrollTimerRef.current = window.setTimeout(() => {
-        programmaticScrollRef.current = false;
-      }, behavior === "smooth" ? 320 : 0);
+      scrollTimerRef.current = window.setTimeout(
+        () => {
+          programmaticScrollRef.current = false;
+        },
+        behavior === "smooth" ? 320 : 0,
+      );
     },
     [railItems, reduce, scrollToEnd, setFollowing, smooth],
   );
@@ -426,9 +402,9 @@ export function MessageScroller({
         onViewportKeyDown?.(event);
       }}
       className={cn(
-        "h-full overflow-y-auto overscroll-contain outline-none [overflow-anchor:none] focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-ring",
+        "h-full overflow-y-auto overscroll-contain outline-none [overflow-anchor:none] focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-inset",
         navigation === "rail"
-          ? "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          ? "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           : "[scrollbar-gutter:stable]",
         viewportClassName,
         navigation === "rail" && railOverflowing && "pr-10",
@@ -449,11 +425,7 @@ export function MessageScroller({
   );
 
   return (
-    <div
-      data-slot="message-scroller"
-      className={cn("min-h-0", className)}
-      {...props}
-    >
+    <div data-slot="message-scroller" className={cn("min-h-0", className)} {...props}>
       {navigation === "rail" ? (
         <PreviewRail
           items={railOverflowing ? railItems : []}
@@ -468,9 +440,7 @@ export function MessageScroller({
           previewClassName="mr-1 w-64 max-w-full [&_[data-slot=preview-rail-card]]:h-20 [&_[data-slot=preview-rail-card]]:overflow-hidden [&_[data-slot=preview-rail-card]]:p-3 [&_[data-slot=preview-rail-title]]:line-clamp-1 [&_[data-slot=preview-rail-title]]:text-xs [&_[data-slot=preview-rail-title]]:leading-4 [&_[data-slot=preview-rail-description]]:line-clamp-2 [&_[data-slot=preview-rail-description]]:text-xs [&_[data-slot=preview-rail-description]]:leading-4"
           railClassName={cn(
             "absolute inset-y-3 right-1 w-7 content-center py-1 [&_[data-slot=preview-rail-item]]:w-7 [&_[data-slot=preview-rail-item]]:justify-end [&_[data-slot=preview-rail-tick]]:h-px [&_[data-slot=preview-rail-tick]]:w-4 [&_[data-slot=preview-rail-tick]]:origin-right",
-            railOverflowing
-              ? "pointer-events-auto opacity-100"
-              : "pointer-events-none opacity-0",
+            railOverflowing ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
             railClassName,
           )}
         >

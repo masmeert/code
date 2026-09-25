@@ -1,10 +1,4 @@
-import {
-  motion,
-  useMotionValue,
-  useReducedMotion,
-  useSpring,
-  useTransform,
-} from "motion/react";
+import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } from "motion/react";
 import { useEffect, useLayoutEffect, useState } from "react";
 
 import { SPRING_GLIDE, SPRING_PRESS } from "@apcode/ui/lib/ease";
@@ -45,13 +39,13 @@ export function RangeSlider({ showTicks = true, className, ...options }: RangeSl
   }, [percent, target]);
   const smooth = useSpring(target, SPRING_GLIDE);
   const pos = reduce ? target : smooth;
-  const thumbX = useTransform(pos, (p) => 8 + Math.max(0, trackWidth - 20) * p / 100);
+  const thumbX = useTransform(pos, (p) => 8 + (Math.max(0, trackWidth - 20) * p) / 100);
   // Match InlineSlider: the 4px handle starts 8px inside the track, and
   // the rounded fill extends 8px past its left edge. Translate a full-size
   // fill inside the 2px inset clip so its corner never stretches.
-  const fillX = useTransform(pos, (p) => p >= 100
-    ? "0%"
-    : `calc(${p - 100}% + ${14 - 0.16 * p}px)`);
+  const fillX = useTransform(pos, (p) =>
+    p >= 100 ? "0%" : `calc(${p - 100}% + ${14 - 0.16 * p}px)`,
+  );
 
   // Floor rather than round, so a range the step does not divide (0 to 10 by 4)
   // stops its dots at the last whole step instead of drawing one past max.
@@ -69,13 +63,14 @@ export function RangeSlider({ showTicks = true, className, ...options }: RangeSl
       className={cn(
         "relative flex h-10 w-full touch-none items-center overflow-hidden rounded-lg bg-muted",
         TOUCH_GESTURE_CLASS,
-        options.disabled
-          ? "pointer-events-none opacity-50"
-          : "cursor-grab active:cursor-grabbing",
+        options.disabled ? "pointer-events-none opacity-50" : "cursor-grab active:cursor-grabbing",
         className,
       )}
     >
-      <div aria-hidden="true" className="pointer-events-none absolute inset-x-[2px] inset-y-0 overflow-hidden rounded-lg">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-[2px] inset-y-0 overflow-hidden rounded-lg"
+      >
         <motion.div className="absolute inset-0 rounded-lg bg-foreground/15" style={{ x: fillX }} />
       </div>
 
@@ -98,7 +93,7 @@ export function RangeSlider({ showTicks = true, className, ...options }: RangeSl
         {...sliderProps}
         animate={reduce ? undefined : { scaleY: dragging ? 1.15 : 1 }}
         transition={SPRING_PRESS}
-        className="absolute left-0 top-1/2 h-6 w-1 rounded-full bg-foreground outline-none ring-inset ring-foreground/30 focus-visible:ring-4"
+        className="absolute top-1/2 left-0 h-6 w-1 rounded-full bg-foreground ring-foreground/30 outline-none ring-inset focus-visible:ring-4"
         style={{ x: thumbX, y: "-50%" }}
       />
     </div>

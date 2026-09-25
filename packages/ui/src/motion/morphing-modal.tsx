@@ -1,8 +1,4 @@
-import {
-  AnimatePresence,
-  motion,
-  useReducedMotion,
-} from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect } from "react";
 import { EASE_OUT, SPRING_PANEL } from "@apcode/ui/lib/ease";
 import { PresenceGate } from "@apcode/ui/motion/presence-gate";
@@ -100,11 +96,7 @@ export function MorphingModal({
                   <AnimatePresence mode="popLayout" initial={false}>
                     <motion.div
                       key={viewId}
-                      initial={
-                        reduce
-                          ? { opacity: 0 }
-                          : { opacity: 0, y: 8, filter: "blur(4px)" }
-                      }
+                      initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8, filter: "blur(4px)" }}
                       animate={
                         reduce
                           ? {

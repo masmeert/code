@@ -110,23 +110,11 @@ export const SHADER_BACKGROUND_VARIANTS = Object.keys(
  * Not every variant animates (e.g. dot-grid is a static pattern), so `speed`
  * is only frozen for reduced motion when the variant actually exposes it.
  */
-export function ShaderBackground({
-  variant,
-  className,
-  ...rest
-}: ShaderBackgroundProps) {
+export function ShaderBackground({ variant, className, ...rest }: ShaderBackgroundProps) {
   const reducedMotion = useReducedMotion();
-  const Shader = VARIANT_COMPONENTS[variant] as ComponentType<
-    Record<string, unknown>
-  >;
+  const Shader = VARIANT_COMPONENTS[variant] as ComponentType<Record<string, unknown>>;
   const props = rest as Record<string, unknown>;
   const speedProps = reducedMotion && "speed" in props ? { speed: 0 } : {};
 
-  return (
-    <Shader
-      {...props}
-      {...speedProps}
-      className={cn("h-full w-full", className)}
-    />
-  );
+  return <Shader {...props} {...speedProps} className={cn("h-full w-full", className)} />;
 }

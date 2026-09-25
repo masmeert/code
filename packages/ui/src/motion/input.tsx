@@ -1,9 +1,4 @@
-import {
-  AnimatePresence,
-  animate,
-  motion,
-  useReducedMotion,
-} from "motion/react";
+import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import {
   forwardRef,
   useEffect,
@@ -88,11 +83,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   // Shake the field when an error appears.
   useEffect(() => {
     if (!fieldRef.current || reduce || !hasError) return;
-    animate(
-      fieldRef.current,
-      { x: [0, -6, 6, -4, 4, -2, 0] },
-      { duration: 0.45 },
-    );
+    animate(fieldRef.current, { x: [0, -6, 6, -4, 4, -2, 0] }, { duration: 0.45 });
   }, [hasError, reduce]);
 
   const handleChange = (next: string) => {
@@ -101,16 +92,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   };
 
   return (
-    <div
-      className={cn("flex flex-col gap-1.5", className, classNames?.root)}
-    >
+    <div className={cn("flex flex-col gap-1.5", className, classNames?.root)}>
       {label ? (
         <label
           htmlFor={id}
-          className={cn(
-            "px-1 text-sm font-medium text-foreground",
-            classNames?.label,
-          )}
+          className={cn("px-1 text-sm font-medium text-foreground", classNames?.label)}
         >
           {label}
         </label>
@@ -118,15 +104,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
 
       <div
         ref={fieldRef}
-        data-state={
-          hasError
-            ? "error"
-            : success
-              ? "success"
-              : focused
-                ? "focused"
-                : "idle"
-        }
+        data-state={hasError ? "error" : success ? "success" : focused ? "focused" : "idle"}
         className={cn(
           "relative h-11 overflow-hidden rounded-xl border transition-colors duration-200",
           "border-border",
@@ -139,7 +117,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         {leftIcon ? (
           <span
             className={cn(
-              "pointer-events-none absolute left-3 top-1/2 flex -translate-y-1/2 items-center text-muted-foreground [&_svg]:h-4 [&_svg]:w-4",
+              "pointer-events-none absolute top-1/2 left-3 flex -translate-y-1/2 items-center text-muted-foreground [&_svg]:h-4 [&_svg]:w-4",
               classNames?.leftIcon,
             )}
           >
@@ -180,7 +158,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             viewBox="0 0 24 24"
             fill="none"
             className={cn(
-              "absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-(--color-success)",
+              "absolute top-1/2 right-3.5 h-5 w-5 -translate-y-1/2 text-(--color-success)",
               classNames?.successIcon,
             )}
           >
@@ -198,7 +176,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         ) : rightSlot ? (
           <span
             className={cn(
-              "absolute right-0 top-0 flex h-full items-center text-muted-foreground [&_button]:grid [&_button]:size-11 [&_button]:place-items-center [&_svg]:h-4 [&_svg]:w-4",
+              "absolute top-0 right-0 flex h-full items-center text-muted-foreground [&_button]:grid [&_button]:size-11 [&_button]:place-items-center [&_svg]:h-4 [&_svg]:w-4",
               classNames?.rightIcon,
             )}
           >
@@ -213,22 +191,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             <motion.p
               id={`${id}-error`}
               role="alert"
-              initial={
-                reduce
-                  ? { opacity: 0 }
-                  : { opacity: 0, y: -4, filter: "blur(4px)" }
-              }
+              initial={reduce ? { opacity: 0 } : { opacity: 0, y: -4, filter: "blur(4px)" }}
               animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              exit={
-                reduce
-                  ? { opacity: 0 }
-                  : { opacity: 0, y: -4, filter: "blur(4px)" }
-              }
+              exit={reduce ? { opacity: 0 } : { opacity: 0, y: -4, filter: "blur(4px)" }}
               transition={{ duration: 0.2 }}
-              className={cn(
-                "px-1 text-xs text-destructive",
-                classNames?.errorMessage,
-              )}
+              className={cn("px-1 text-xs text-destructive", classNames?.errorMessage)}
             >
               {errorMessage}
             </motion.p>

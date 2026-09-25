@@ -1,6 +1,5 @@
 {
   "name": "@apcode/desktop",
-  "productName": "APCode",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -20,5 +19,6 @@
     "electron-builder": "^26.15.3",
     "electron-updater": "^6.8.9",
     "typescript": "catalog:"
-  }
+  },
+  "productName": "APCode"
 }

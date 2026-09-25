@@ -81,10 +81,7 @@ export function NumberTicker({
   }, [armed, entered, duration, stagger, glyphs.length]);
 
   return (
-    <span
-      ref={containerRef}
-      className={cn("inline-flex items-center tabular-nums", className)}
-    >
+    <span ref={containerRef} className={cn("inline-flex items-center tabular-nums", className)}>
       <span className="sr-only">{readableText}</span>
       <span aria-hidden="true" className="inline-flex items-center">
         {prefix ? <span>{prefix}</span> : null}
@@ -162,18 +159,11 @@ function Digit({
         ref={columnRef}
         initial={{ transform: "translateY(0em)" }}
         animate={{ transform: `translateY(-${digit * DIGIT_HEIGHT_EM}em)` }}
-        transition={
-          reduce
-            ? { duration: 0 }
-            : { duration, delay, ease: EASE_OUT }
-        }
+        transition={reduce ? { duration: 0 } : { duration, delay, ease: EASE_OUT }}
         className="absolute inset-x-0 top-0 flex flex-col items-center will-change-transform"
       >
         {DIGITS.map((n) => (
-          <span
-            key={n}
-            className="flex h-[1.1em] items-center justify-center leading-none"
-          >
+          <span key={n} className="flex h-[1.1em] items-center justify-center leading-none">
             {n}
           </span>
         ))}

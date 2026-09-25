@@ -1,4 +1,15 @@
-import { ArrowUp, Check, ChevronDown, CirclePlus, FileText, ImageIcon, Paperclip, Plus, Square, X } from "lucide-react";
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  CirclePlus,
+  FileText,
+  ImageIcon,
+  Paperclip,
+  Plus,
+  Square,
+  X,
+} from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   type ButtonHTMLAttributes,
@@ -143,9 +154,7 @@ export function PromptInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const measurementRef = useRef<HTMLDivElement>(null);
   const [internalValue, setInternalValue] = useState(defaultValue);
-  const [internalModel, setInternalModel] = useState(
-    defaultModel ?? models[0]?.value,
-  );
+  const [internalModel, setInternalModel] = useState(defaultModel ?? models[0]?.value);
   const [actionsOpen, setActionsOpen] = useState(false);
   const currentValue = value ?? internalValue;
   const currentModelValue = model ?? internalModel;
@@ -202,7 +211,8 @@ export function PromptInput({
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     onKeyDown?.(event);
-    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "v") plainPaste.current = true;
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "v")
+      plainPaste.current = true;
     if (
       event.defaultPrevented ||
       event.key !== "Enter" ||
@@ -258,7 +268,7 @@ export function PromptInput({
         <div
           ref={measurementRef}
           aria-hidden="true"
-          className="pointer-events-none invisible absolute inset-x-2 top-0 whitespace-pre-wrap px-2 text-sm leading-6 [overflow-wrap:break-word]"
+          className="pointer-events-none invisible absolute inset-x-2 top-0 px-2 text-sm leading-6 [overflow-wrap:break-word] whitespace-pre-wrap"
         >
           {`${currentValue}\u200b`}
         </div>
@@ -328,34 +338,32 @@ export function PromptInput({
                 className="w-56 p-1.5"
               >
                 <MorphPopoverMenu>
-                {actions.map((action) => (
-                  <button
-                    key={action.value}
-                    type="button"
-                    disabled={action.disabled}
-                    onClick={() => {
-                      onAction?.(action.value);
-                      setActionsOpen(false);
-                    }}
-                    className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left outline-none transition-colors hover:bg-muted focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-50"
-                  >
-                    {action.icon ? (
-                      <span className="mt-0.5 grid size-5 shrink-0 place-items-center text-muted-foreground [&_svg]:size-4">
-                        {action.icon}
-                      </span>
-                    ) : null}
-                    <span className="min-w-0">
-                      <span className="block text-sm text-foreground">
-                        {action.label}
-                      </span>
-                      {action.description ? (
-                        <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
-                          {action.description}
+                  {actions.map((action) => (
+                    <button
+                      key={action.value}
+                      type="button"
+                      disabled={action.disabled}
+                      onClick={() => {
+                        onAction?.(action.value);
+                        setActionsOpen(false);
+                      }}
+                      className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none hover:bg-muted focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      {action.icon ? (
+                        <span className="mt-0.5 grid size-5 shrink-0 place-items-center text-muted-foreground [&_svg]:size-4">
+                          {action.icon}
                         </span>
                       ) : null}
-                    </span>
-                  </button>
-                ))}
+                      <span className="min-w-0">
+                        <span className="block text-sm text-foreground">{action.label}</span>
+                        {action.description ? (
+                          <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
+                            {action.description}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  ))}
                 </MorphPopoverMenu>
               </MorphPopoverContent>
             </MorphPopover>
@@ -390,16 +398,30 @@ export function PromptInput({
               type={showStop ? "button" : "submit"}
               size="icon"
               disabled={showStop ? !onStop : !canSubmit}
-              aria-label={showStop ? "Stop generating" : loading ? "Send when the agent is done" : "Send prompt"}
+              aria-label={
+                showStop
+                  ? "Stop generating"
+                  : loading
+                    ? "Send when the agent is done"
+                    : "Send prompt"
+              }
               onClick={showStop ? onStop : undefined}
               className="size-8 rounded-lg"
             >
               <AnimatePresence initial={false} mode="popLayout">
                 <motion.span
                   key={showStop ? "stop" : "send"}
-                  initial={reduce ? { opacity: 1 } : { opacity: 0, transform: "scale(0.95)", filter: "blur(2px)" }}
+                  initial={
+                    reduce
+                      ? { opacity: 1 }
+                      : { opacity: 0, transform: "scale(0.95)", filter: "blur(2px)" }
+                  }
                   animate={{ opacity: 1, transform: "scale(1)", filter: "blur(0px)" }}
-                  exit={reduce ? { opacity: 0 } : { opacity: 0, transform: "scale(0.95)", filter: "blur(2px)" }}
+                  exit={
+                    reduce
+                      ? { opacity: 0 }
+                      : { opacity: 0, transform: "scale(0.95)", filter: "blur(2px)" }
+                  }
                   transition={reduce ? { duration: 0 } : SPRING_SWAP}
                   className="grid place-items-center"
                 >
@@ -434,14 +456,14 @@ function AttachmentChip({
   return (
     <div className="group flex h-8 max-w-52 items-center gap-2 rounded-lg border border-border bg-background pr-1 pl-1 text-xs text-foreground">
       {attachment.preview ? (
-        <img
-          src={attachment.preview}
-          alt=""
-          className="size-6 shrink-0 rounded-md object-cover"
-        />
+        <img src={attachment.preview} alt="" className="size-6 shrink-0 rounded-md object-cover" />
       ) : (
         <span className="grid size-6 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
-          {attachment.image ? <ImageIcon className="size-3.5" /> : <FileText className="size-3.5" />}
+          {attachment.image ? (
+            <ImageIcon className="size-3.5" />
+          ) : (
+            <FileText className="size-3.5" />
+          )}
         </span>
       )}
       <span className="min-w-0 truncate">{attachment.name}</span>
@@ -450,7 +472,7 @@ function AttachmentChip({
           type="button"
           aria-label={`Remove ${attachment.name}`}
           onClick={() => onRemove(attachment.id)}
-          className="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+          className="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
         >
           <X className="size-3" />
         </button>
@@ -505,12 +527,14 @@ function PickerTrigger({
       type="button"
       disabled={disabled}
       className={cn(
-        "flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+        "flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
         open && "bg-muted text-foreground",
         className,
       )}
     >
-      {icon ? <span className="grid size-3.5 shrink-0 place-items-center [&_svg]:size-3.5">{icon}</span> : null}
+      {icon ? (
+        <span className="grid size-3.5 shrink-0 place-items-center [&_svg]:size-3.5">{icon}</span>
+      ) : null}
       <span className="truncate">{children}</span>
       <ChevronDown className="size-3 shrink-0 opacity-60" />
     </button>
@@ -523,7 +547,15 @@ function PickerTrigger({
  */
 const DIAL_SPRING = { type: "spring", stiffness: 1000, damping: 48, mass: 0.5 } as const;
 
-function DialText({ value, className, children }: { value: number; className?: string; children: ReactNode }) {
+function DialText({
+  value,
+  className,
+  children,
+}: {
+  value: number;
+  className?: string;
+  children: ReactNode;
+}) {
   const reduce = useReducedMotion();
   const previous = useRef(value);
   const direction = value >= previous.current ? 1 : -1;
@@ -532,7 +564,10 @@ function DialText({ value, className, children }: { value: number; className?: s
   }, [value]);
   // Tighter than SPRING_SWAP: the label has to keep up with a thumb being dragged.
   const variants = {
-    enter: (dir: number) => ({ opacity: 0, transform: `translateY(${dir * 55}%) rotateX(${dir * -50}deg)` }),
+    enter: (dir: number) => ({
+      opacity: 0,
+      transform: `translateY(${dir * 55}%) rotateX(${dir * -50}deg)`,
+    }),
     center: { opacity: 1, transform: "translateY(0%) rotateX(0deg)", transition: DIAL_SPRING },
     exit: (dir: number) => ({
       opacity: 0,
@@ -541,7 +576,12 @@ function DialText({ value, className, children }: { value: number; className?: s
     }),
   };
   return (
-    <span className={cn("relative inline-grid overflow-hidden whitespace-nowrap [perspective:200px]", className)}>
+    <span
+      className={cn(
+        "relative inline-grid overflow-hidden whitespace-nowrap [perspective:200px]",
+        className,
+      )}
+    >
       <AnimatePresence initial={false} mode="popLayout" custom={direction}>
         <motion.span
           key={value}
@@ -630,16 +670,21 @@ export function PromptSlider({
     setOpenState(next);
     setInstant(false);
   };
-  usePickerOpener(() => {
-    setOpen(true);
-    setInstant(true);
-  }, { shortcut, disabled });
+  usePickerOpener(
+    () => {
+      setOpen(true);
+      setInstant(true);
+    },
+    { shortcut, disabled },
+  );
 
   // Focus the handle once the panel has morphed in, so arrow keys step right away.
   useEffect(() => {
     if (!open) return;
     const frame = requestAnimationFrame(() =>
-      contentRef.current?.querySelector<HTMLElement>('[role="slider"]')?.focus({ preventScroll: true }),
+      contentRef.current
+        ?.querySelector<HTMLElement>('[role="slider"]')
+        ?.focus({ preventScroll: true }),
     );
     return () => cancelAnimationFrame(frame);
   }, [open]);
@@ -651,7 +696,14 @@ export function PromptSlider({
           {current?.label ?? placeholder}
         </PickerTrigger>
       </MorphPopoverTrigger>
-      <MorphPopoverContent side={side} align={align} sideOffset={6} radius={12} instant={instant} className={cn(width, "p-3")}>
+      <MorphPopoverContent
+        side={side}
+        align={align}
+        sideOffset={6}
+        radius={12}
+        instant={instant}
+        className={cn(width, "p-3")}
+      >
         <div
           ref={contentRef}
           onKeyDown={(event) => {
@@ -670,7 +722,9 @@ export function PromptSlider({
             <DialText value={draft ?? index} className="text-foreground">
               {shown?.label ?? placeholder}
             </DialText>
-            {shown?.badge ? <span className="grid shrink-0 place-items-center [&_svg]:size-3">{shown.badge}</span> : null}
+            {shown?.badge ? (
+              <span className="grid shrink-0 place-items-center [&_svg]:size-3">{shown.badge}</span>
+            ) : null}
           </div>
           {minLabel || maxLabel ? (
             <div className="mt-3 mb-1.5 flex justify-between text-[11px] text-muted-foreground">
@@ -773,19 +827,23 @@ export function PromptSelect({
     if (!next) setQuery("");
     onOpenChange?.(next);
   };
-  usePickerOpener(() => {
-    setOpen(true);
-    setInstant(true);
-  }, { shortcut, disabled, openSignal });
+  usePickerOpener(
+    () => {
+      setOpen(true);
+      setInstant(true);
+    },
+    { shortcut, disabled, openSignal },
+  );
   const current = options.find((option) => option.value === value);
-  const triggerIcon = icon ?? (showOptionIcon ? current?.groupIcon ?? current?.icon : undefined);
+  const triggerIcon = icon ?? (showOptionIcon ? (current?.groupIcon ?? current?.icon) : undefined);
   const searchable = Boolean(onCreate) || options.length >= searchThreshold;
   const trimmed = query.trim();
   const needle = trimmed.toLowerCase();
   const visible = needle
     ? options.filter((option) => option.value.toLowerCase().includes(needle))
     : options;
-  const canCreate = Boolean(onCreate && trimmed) && !options.some((option) => option.value === trimmed);
+  const canCreate =
+    Boolean(onCreate && trimmed) && !options.some((option) => option.value === trimmed);
 
   const create = () => {
     onCreate?.(trimmed);
@@ -806,8 +864,17 @@ export function PromptSelect({
           {multi.length ? `${multi.length + 1} models` : (current?.label ?? placeholder)}
         </PickerTrigger>
       </MorphPopoverTrigger>
-      <MorphPopoverContent side={side} align={align} sideOffset={6} radius={12} instant={instant} className={cn(width, "p-1")}>
-        {title ? <div className="px-2 pt-1 pb-1.5 text-[11px] text-muted-foreground">{title}</div> : null}
+      <MorphPopoverContent
+        side={side}
+        align={align}
+        sideOffset={6}
+        radius={12}
+        instant={instant}
+        className={cn(width, "p-1")}
+      >
+        {title ? (
+          <div className="px-2 pt-1 pb-1.5 text-[11px] text-muted-foreground">{title}</div>
+        ) : null}
         {searchable ? (
           <input
             ref={searchRef}
@@ -832,29 +899,45 @@ export function PromptSelect({
             className="mb-1 h-7 w-full rounded-md bg-muted px-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
           />
         ) : null}
-        <div role="listbox" className="scrollbar-hide flex max-h-80 flex-col gap-0.5 overflow-y-auto overscroll-contain">
+        <div
+          role="listbox"
+          className="scrollbar-hide flex max-h-80 flex-col gap-0.5 overflow-y-auto overscroll-contain"
+        >
           {visible.length === 0 && !canCreate ? (
-            <div className="px-2 py-1.5 text-[13px] text-muted-foreground">{needle ? "No matches" : empty ?? "Nothing here"}</div>
+            <div className="px-2 py-1.5 text-[13px] text-muted-foreground">
+              {needle ? "No matches" : (empty ?? "Nothing here")}
+            </div>
           ) : null}
           {canCreate ? (
             <button
               type="button"
               onClick={create}
-              className="flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-[13px] text-foreground outline-none transition-colors hover:bg-muted focus-visible:bg-muted"
+              className="flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-[13px] text-foreground transition-colors outline-none hover:bg-muted focus-visible:bg-muted"
             >
               <CirclePlus className="size-3.5 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1 truncate">{createLabel(trimmed)}</span>
             </button>
           ) : null}
-          {canCreate && visible.length ? <div aria-hidden="true" className="mx-2 my-0.5 h-px shrink-0 bg-border" /> : null}
+          {canCreate && visible.length ? (
+            <div aria-hidden="true" className="mx-2 my-0.5 h-px shrink-0 bg-border" />
+          ) : null}
           {visible.map((option, index) => {
             const selected = option.value === value || multi.includes(option.value);
             const header = option.group && option.group !== visible[index - 1]?.group;
             return (
               <div key={option.value}>
                 {header ? (
-                  <div className={cn("flex items-center gap-1.5 px-2 pb-1 text-[11px] text-muted-foreground", index > 0 ? "mt-1 border-t border-border pt-2" : "pt-1")}>
-                    {option.groupIcon ? <span className="grid size-3 place-items-center [&_svg]:size-3">{option.groupIcon}</span> : null}
+                  <div
+                    className={cn(
+                      "flex items-center gap-1.5 px-2 pb-1 text-[11px] text-muted-foreground",
+                      index > 0 ? "mt-1 border-t border-border pt-2" : "pt-1",
+                    )}
+                  >
+                    {option.groupIcon ? (
+                      <span className="grid size-3 place-items-center [&_svg]:size-3">
+                        {option.groupIcon}
+                      </span>
+                    ) : null}
                     {option.group}
                   </div>
                 ) : null}
@@ -873,14 +956,17 @@ export function PromptSelect({
                     setOpen(false);
                   }}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none transition-colors hover:bg-muted focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-50",
+                    "flex w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors outline-none hover:bg-muted focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-50",
                     option.description ? "py-1.5" : "h-7",
                     selected ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {option.icon ? (
                     <span
-                      className={cn("grid size-4 shrink-0 place-items-center [&_svg]:size-3.5", option.description && "self-start")}
+                      className={cn(
+                        "grid size-4 shrink-0 place-items-center [&_svg]:size-3.5",
+                        option.description && "self-start",
+                      )}
                       style={option.description ? { marginTop: 2 } : undefined}
                     >
                       {option.icon}
@@ -889,10 +975,16 @@ export function PromptSelect({
                   <span className="min-w-0 flex-1">
                     <span className="flex min-w-0 items-center gap-1.5">
                       <span className="truncate">{option.label}</span>
-                      {option.badge ? <span className="grid shrink-0 place-items-center [&_svg]:size-3">{option.badge}</span> : null}
+                      {option.badge ? (
+                        <span className="grid shrink-0 place-items-center [&_svg]:size-3">
+                          {option.badge}
+                        </span>
+                      ) : null}
                     </span>
                     {option.description ? (
-                      <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">{option.description}</span>
+                      <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">
+                        {option.description}
+                      </span>
                     ) : null}
                   </span>
                   {selected ? <Check className="size-3.5 shrink-0" /> : null}
@@ -901,7 +993,11 @@ export function PromptSelect({
             );
           })}
         </div>
-        {note ? <div className="mt-1 border-t border-border px-2 pt-1.5 pb-1 text-[11px] leading-4 text-muted-foreground">{note}</div> : null}
+        {note ? (
+          <div className="mt-1 border-t border-border px-2 pt-1.5 pb-1 text-[11px] leading-4 text-muted-foreground">
+            {note}
+          </div>
+        ) : null}
       </MorphPopoverContent>
     </MorphPopover>
   );

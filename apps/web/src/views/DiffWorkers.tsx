@@ -14,7 +14,8 @@ const subscribeToTheme = (onChange: () => void) => {
 };
 
 /** The theme on screen, with "system" resolved: follows <html class="dark">. */
-export const useResolvedTheme = (): DiffTheme => useSyncExternalStore(subscribeToTheme, () => (isDark() ? "dark" : "light"));
+export const useResolvedTheme = (): DiffTheme =>
+  useSyncExternalStore(subscribeToTheme, () => (isDark() ? "dark" : "light"));
 
 const cores = navigator.hardwareConcurrency || 4;
 
@@ -45,7 +46,19 @@ const HIGHLIGHTER_OPTIONS = {
   ...HIGHLIGHT,
   theme: THEMES[isDark() ? "dark" : "light"],
   // Preloaded so the first diff doesn't wait on a lazy grammar load; others still load on demand.
-  langs: ["typescript", "tsx", "javascript", "json", "css", "html", "markdown", "rust", "toml", "yaml", "bash"],
+  langs: [
+    "typescript",
+    "tsx",
+    "javascript",
+    "json",
+    "css",
+    "html",
+    "markdown",
+    "rust",
+    "toml",
+    "yaml",
+    "bash",
+  ],
 };
 
 /** The pool is created once; a theme switch re-highlights with the other theme instead. */

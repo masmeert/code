@@ -25,11 +25,7 @@ export type RegisteredItem = {
   ref: MutableRefObject<HTMLButtonElement | null>;
 };
 
-export type ComboboxFilter = (
-  value: string,
-  query: string,
-  keywords: string[],
-) => boolean;
+export type ComboboxFilter = (value: string, query: string, keywords: string[]) => boolean;
 
 const defaultFilter: ComboboxFilter = (value, query, keywords) => {
   const needle = query.trim().toLocaleLowerCase();
@@ -92,8 +88,7 @@ export function mergeRefs<T>(...refs: Array<Ref<T> | undefined>) {
   return (node: T | null) => {
     for (const ref of refs) {
       if (typeof ref === "function") ref(node);
-      else if (ref && typeof ref === "object")
-        (ref as MutableRefObject<T | null>).current = node;
+      else if (ref && typeof ref === "object") (ref as MutableRefObject<T | null>).current = node;
     }
   };
 }
@@ -162,9 +157,7 @@ export function Combobox({
       onOpenChange?.(next);
       if (!next) updateQuery("");
       if (restoreFocus)
-        requestAnimationFrame(() =>
-          inputRef.current?.focus({ preventScroll: true }),
-        );
+        requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
     },
     [disabled, onOpenChange, openControlled, updateQuery],
   );
@@ -248,9 +241,7 @@ export function Combobox({
 
   useEffect(() => {
     if (!open) return;
-    const frame = requestAnimationFrame(() =>
-      inputRef.current?.focus({ preventScroll: true }),
-    );
+    const frame = requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
@@ -262,8 +253,7 @@ export function Combobox({
     const itemRect = item.getBoundingClientRect();
     const listRect = list.getBoundingClientRect();
     if (itemRect.top < listRect.top) list.scrollTop -= listRect.top - itemRect.top;
-    else if (itemRect.bottom > listRect.bottom)
-      list.scrollTop += itemRect.bottom - listRect.bottom;
+    else if (itemRect.bottom > listRect.bottom) list.scrollTop += itemRect.bottom - listRect.bottom;
   }, [activeValue, items, open]);
 
   useEffect(() => {
@@ -306,8 +296,7 @@ export function Combobox({
       selectActive,
       registerItem,
       unregisterItem,
-      labelFor: (itemValue) =>
-        itemValue === undefined ? undefined : items.get(itemValue)?.label,
+      labelFor: (itemValue) => (itemValue === undefined ? undefined : items.get(itemValue)?.label),
       isVisible: (itemValue) => !listQuery.trim() || visibleValues.has(itemValue),
       hasVisibleItems: (groupId) => visibleGroupIds.has(groupId),
       visibleCount: visibleItems.length,

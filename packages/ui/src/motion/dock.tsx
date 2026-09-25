@@ -19,10 +19,7 @@ export interface DockProps {
 
 export function Dock({ children, size = 44, className }: DockProps) {
   const pillLayoutId = useId();
-  const ctx = useMemo<DockContextValue>(
-    () => ({ size, pillLayoutId }),
-    [size, pillLayoutId],
-  );
+  const ctx = useMemo<DockContextValue>(() => ({ size, pillLayoutId }), [size, pillLayoutId]);
 
   return (
     <DockContext.Provider value={ctx}>
@@ -47,13 +44,7 @@ export interface DockItemProps {
   "aria-label"?: string;
 }
 
-export function DockItem({
-  children,
-  className,
-  onClick,
-  active,
-  ...rest
-}: DockItemProps) {
+export function DockItem({ children, className, onClick, active, ...rest }: DockItemProps) {
   const dock = useContext(DockContext);
   const reduce = useReducedMotion();
   const size = dock?.size ?? 44;
@@ -102,10 +93,5 @@ export function DockItem({
 }
 
 export function DockSeparator({ className }: { className?: string }) {
-  return (
-    <span
-      aria-hidden
-      className={cn("mx-1 h-6 w-px self-center bg-border", className)}
-    />
-  );
+  return <span aria-hidden className={cn("mx-1 h-6 w-px self-center bg-border", className)} />;
 }

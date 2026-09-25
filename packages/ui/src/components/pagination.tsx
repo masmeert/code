@@ -1,10 +1,6 @@
 import * as React from "react";
 import { cn } from "@apcode/ui/lib/utils";
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  MoreHorizontalIcon,
-} from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from "lucide-react";
 
 import { buttonVariants, type ButtonSize } from "@apcode/ui/motion/button";
 
@@ -20,10 +16,7 @@ function Pagination({ className, ...props }: React.ComponentProps<"nav">) {
   );
 }
 
-function PaginationContent({
-  className,
-  ...props
-}: React.ComponentProps<"ul">) {
+function PaginationContent({ className, ...props }: React.ComponentProps<"ul">) {
   return (
     <ul
       data-slot="pagination-content"
@@ -42,12 +35,7 @@ type PaginationLinkProps = {
   size?: ButtonSize;
 } & React.ComponentProps<"a">;
 
-function PaginationLink({
-  className,
-  isActive,
-  size = "icon",
-  ...props
-}: PaginationLinkProps) {
+function PaginationLink({ className, isActive, size = "icon", ...props }: PaginationLinkProps) {
   return (
     <a
       aria-current={isActive ? "page" : undefined}
@@ -65,10 +53,7 @@ function PaginationLink({
   );
 }
 
-function PaginationPrevious({
-  className,
-  ...props
-}: React.ComponentProps<typeof PaginationLink>) {
+function PaginationPrevious({ className, ...props }: React.ComponentProps<typeof PaginationLink>) {
   return (
     <PaginationLink
       aria-label="Go to previous page"
@@ -82,10 +67,7 @@ function PaginationPrevious({
   );
 }
 
-function PaginationNext({
-  className,
-  ...props
-}: React.ComponentProps<typeof PaginationLink>) {
+function PaginationNext({ className, ...props }: React.ComponentProps<typeof PaginationLink>) {
   return (
     <PaginationLink
       aria-label="Go to next page"
@@ -99,10 +81,7 @@ function PaginationNext({
   );
 }
 
-function PaginationEllipsis({
-  className,
-  ...props
-}: React.ComponentProps<"span">) {
+function PaginationEllipsis({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
       aria-hidden

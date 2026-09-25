@@ -88,9 +88,7 @@ export const Liquid = forwardRef<HTMLDivElement, LiquidProps>(function Liquid(
         height: root.offsetHeight,
       };
       setSize((current) =>
-        current.width === next.width && current.height === next.height
-          ? current
-          : next,
+        current.width === next.width && current.height === next.height ? current : next,
       );
     };
 
@@ -109,12 +107,7 @@ export const Liquid = forwardRef<HTMLDivElement, LiquidProps>(function Liquid(
   );
 
   return (
-    <div
-      {...props}
-      ref={setRootRef}
-      className={cn("relative isolate", className)}
-      style={style}
-    >
+    <div {...props} ref={setRootRef} className={cn("relative isolate", className)} style={style}>
       <svg
         aria-hidden="true"
         focusable="false"
@@ -130,23 +123,14 @@ export const Liquid = forwardRef<HTMLDivElement, LiquidProps>(function Liquid(
             filterUnits="userSpaceOnUse"
             colorInterpolationFilters="sRGB"
           >
-            <feGaussianBlur
-              in="SourceGraphic"
-              stdDeviation={blur}
-              result="blur"
-            />
+            <feGaussianBlur in="SourceGraphic" stdDeviation={blur} result="blur" />
             <feColorMatrix
               in="blur"
               type="matrix"
               values={`1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 ${contrast} ${intercept}`}
               result="goo"
             />
-            <feComposite
-              in="SourceGraphic"
-              in2="goo"
-              operator="atop"
-              result="shape"
-            />
+            <feComposite in="SourceGraphic" in2="goo" operator="atop" result="shape" />
             {edgeWidth > 0 ? (
               <>
                 <feColorMatrix
@@ -161,23 +145,9 @@ export const Liquid = forwardRef<HTMLDivElement, LiquidProps>(function Liquid(
                   radius={edgeWidth}
                   result="inset-shape"
                 />
-                <feComposite
-                  in="solid-shape"
-                  in2="inset-shape"
-                  operator="out"
-                  result="edge-mask"
-                />
-                <feFlood
-                  floodColor={edgeColor}
-                  floodOpacity={edgeOpacity}
-                  result="edge-color"
-                />
-                <feComposite
-                  in="edge-color"
-                  in2="edge-mask"
-                  operator="in"
-                  result="edge"
-                />
+                <feComposite in="solid-shape" in2="inset-shape" operator="out" result="edge-mask" />
+                <feFlood floodColor={edgeColor} floodOpacity={edgeOpacity} result="edge-color" />
+                <feComposite in="edge-color" in2="edge-mask" operator="in" result="edge" />
                 <feMerge>
                   <feMergeNode in="shape" />
                   <feMergeNode in="edge" />
@@ -188,9 +158,7 @@ export const Liquid = forwardRef<HTMLDivElement, LiquidProps>(function Liquid(
         </defs>
         <g ref={portalRef} fill={fill} filter={`url(#${filterId})`} />
       </svg>
-      <LiquidContext.Provider value={context}>
-        {children}
-      </LiquidContext.Provider>
+      <LiquidContext.Provider value={context}>{children}</LiquidContext.Provider>
     </div>
   );
 });
@@ -203,8 +171,7 @@ type LiquidBox = {
   radius: number;
 };
 
-export interface LiquidItemProps
-  extends Omit<HTMLAttributes<HTMLDivElement>, "children"> {
+export interface LiquidItemProps extends Omit<HTMLAttributes<HTMLDivElement>, "children"> {
   children: ReactNode;
   x: number;
   y: number;
@@ -228,21 +195,14 @@ function cubicBezier([x1, y1, x2, y2]: LiquidEase) {
     for (let index = 0; index < 20; index++) {
       const time = (lower + upper) / 2;
       const inverse = 1 - time;
-      const x =
-        3 * inverse * inverse * time * x1 +
-        3 * inverse * time * time * x2 +
-        time ** 3;
+      const x = 3 * inverse * inverse * time * x1 + 3 * inverse * time * time * x2 + time ** 3;
       if (x < progress) lower = time;
       else upper = time;
     }
 
     const time = (lower + upper) / 2;
     const inverse = 1 - time;
-    return (
-      3 * inverse * inverse * time * y1 +
-      3 * inverse * time * time * y2 +
-      time ** 3
-    );
+    return 3 * inverse * inverse * time * y1 + 3 * inverse * time * time * y2 + time ** 3;
   };
 }
 
@@ -271,10 +231,7 @@ export function LiquidItem({
     const portal = context.getPortal();
     if (!portal) return;
 
-    const blob = document.createElementNS(
-      "http://www.w3.org/2000/svg",
-      "rect",
-    );
+    const blob = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     blob.setAttribute("x", "0");
     blob.setAttribute("y", "0");
     blob.style.transformBox = "fill-box";
@@ -340,7 +297,7 @@ export function LiquidItem({
     <div
       {...props}
       ref={wrapperRef}
-      className={cn("absolute left-0 top-0 z-10", className)}
+      className={cn("absolute top-0 left-0 z-10", className)}
       style={{ ...style, willChange: "transform, width, height" }}
     >
       {children}

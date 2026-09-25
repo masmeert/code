@@ -18,13 +18,17 @@ const loadShellEnv = (): Record<string, string> | null => {
   const shell = process.env.SHELL || "/bin/zsh";
   try {
     // Markers fence off anything the rc files print; NUL-separated so multi-line values survive.
-    const out = execFileSync(shell, ["-ilc", `printf '${MARKER}'; /usr/bin/env -0; printf '${MARKER}'`], {
-      encoding: "utf8",
-      timeout: 10_000,
-      stdio: ["ignore", "pipe", "ignore"],
-      // An interactive shell may try to grab the terminal; there is none, so keep it from waiting.
-      env: { ...process.env, DISABLE_AUTO_UPDATE: "true", ZSH_TMUX_AUTOSTARTED: "true" },
-    });
+    const out = execFileSync(
+      shell,
+      ["-ilc", `printf '${MARKER}'; /usr/bin/env -0; printf '${MARKER}'`],
+      {
+        encoding: "utf8",
+        timeout: 10_000,
+        stdio: ["ignore", "pipe", "ignore"],
+        // An interactive shell may try to grab the terminal; there is none, so keep it from waiting.
+        env: { ...process.env, DISABLE_AUTO_UPDATE: "true", ZSH_TMUX_AUTOSTARTED: "true" },
+      },
+    );
     const body = out.split(MARKER)[1];
     if (!body) return null;
     const env: Record<string, string> = {};

@@ -1,4 +1,8 @@
-import { MorphPopover, MorphPopoverContent, MorphPopoverMenu } from "@apcode/ui/motion/popover-morph";
+import {
+  MorphPopover,
+  MorphPopoverContent,
+  MorphPopoverMenu,
+} from "@apcode/ui/motion/popover-morph";
 import { cn } from "@apcode/ui/lib/utils";
 import type { GitAction } from "@apcode/contracts";
 import { ArrowUp, ChevronDown, GitCommitHorizontal, LoaderCircle } from "lucide-react";
@@ -7,18 +11,36 @@ import { send, useStore } from "../lib/store.ts";
 
 type Panel = "menu" | "commit" | null;
 
-const PENDING_LABEL: Record<GitAction, string> = { commit: "Committing…", "commit-push": "Committing…", push: "Pushing…" };
+const PENDING_LABEL: Record<GitAction, string> = {
+  commit: "Committing…",
+  "commit-push": "Committing…",
+  push: "Pushing…",
+};
 
-const MenuItem = ({ onClick, disabled, children, hint }: { onClick: () => void; disabled?: boolean; children: ReactNode; hint?: ReactNode }) => (
+const MenuItem = ({
+  onClick,
+  disabled,
+  children,
+  hint,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: ReactNode;
+  hint?: ReactNode;
+}) => (
   <button
     type="button"
     role="menuitem"
     disabled={disabled}
     onClick={onClick}
-    className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-foreground outline-none transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4 [&_svg]:text-muted-foreground"
+    className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4 [&_svg]:text-muted-foreground"
   >
     {children}
-    {hint ? <span className="ml-auto pl-3 font-mono text-xs text-muted-foreground tabular-nums">{hint}</span> : null}
+    {hint ? (
+      <span className="ml-auto pl-3 font-mono text-xs text-muted-foreground tabular-nums">
+        {hint}
+      </span>
+    ) : null}
   </button>
 );
 
@@ -73,10 +95,18 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
   };
   // With nothing to commit, the main button pushes instead.
   const primaryPushes = status.changes === 0 && canPush;
-  const primary = () => (primaryPushes ? run("push") : setPanel(panel === "commit" ? null : "commit"));
+  const primary = () =>
+    primaryPushes ? run("push") : setPanel(panel === "commit" ? null : "commit");
   // An empty message is written by the commit model first, which takes a moment.
-  const pendingLabel = pending && pending !== "push" && !message.trim() ? "Writing message…" : pending ? PENDING_LABEL[pending] : null;
-  const errorNote = error ? <p className="whitespace-pre-wrap px-2 pt-1.5 pb-1 text-xs text-destructive">{error}</p> : null;
+  const pendingLabel =
+    pending && pending !== "push" && !message.trim()
+      ? "Writing message…"
+      : pending
+        ? PENDING_LABEL[pending]
+        : null;
+  const errorNote = error ? (
+    <p className="px-2 pt-1.5 pb-1 text-xs whitespace-pre-wrap text-destructive">{error}</p>
+  ) : null;
 
   return (
     <MorphPopover open={panel !== null} onOpenChange={(open) => !open && setPanel(null)}>
@@ -85,8 +115,14 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
           type="button"
           onClick={primary}
           disabled={!!pending || (!canCommit && !primaryPushes)}
-          title={primaryPushes ? "Push commits" : status.changes ? `Commit ${status.changes} changed ${status.changes === 1 ? "file" : "files"}` : "Nothing to commit"}
-          className="flex items-center gap-1.5 pr-2.5 pl-2 text-xs font-medium outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-50"
+          title={
+            primaryPushes
+              ? "Push commits"
+              : status.changes
+                ? `Commit ${status.changes} changed ${status.changes === 1 ? "file" : "files"}`
+                : "Nothing to commit"
+          }
+          className="flex items-center gap-1.5 pr-2.5 pl-2 text-xs font-medium transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-50"
         >
           {pending ? (
             <LoaderCircle className="size-4 animate-spin" />
@@ -96,7 +132,9 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
             <GitCommitHorizontal className="size-4" />
           )}
           {pending ? pendingLabel : primaryPushes ? "Push" : "Commit"}
-          {!pending && primaryPushes && status.upstream ? <span className="font-mono tabular-nums opacity-70">{status.ahead}</span> : null}
+          {!pending && primaryPushes && status.upstream ? (
+            <span className="font-mono tabular-nums opacity-70">{status.ahead}</span>
+          ) : null}
         </button>
         <button
           type="button"
@@ -105,7 +143,7 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
           aria-expanded={panel === "menu"}
           onClick={() => setPanel(panel === "menu" ? null : "menu")}
           className={cn(
-            "grid w-6 place-items-center border-l border-border outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:bg-muted/60",
+            "grid w-6 place-items-center border-l border-border transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:bg-muted/60",
             panel === "menu" && "bg-muted/60 text-foreground",
           )}
         >
@@ -113,7 +151,13 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
         </button>
       </div>
 
-      <MorphPopoverContent side="bottom" align="end" sideOffset={6} radius={12} className={panel === "commit" ? "w-80 p-2" : "w-56 p-1.5"}>
+      <MorphPopoverContent
+        side="bottom"
+        align="end"
+        sideOffset={6}
+        radius={12}
+        className={panel === "commit" ? "w-80 p-2" : "w-56 p-1.5"}
+      >
         {panel === "commit" ? (
           <form
             className="flex flex-col gap-2"
@@ -137,7 +181,8 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
               className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
             />
             <p className="px-0.5 text-xs text-muted-foreground">
-              {status.changes} changed {status.changes === 1 ? "file" : "files"}, all staged on commit
+              {status.changes} changed {status.changes === 1 ? "file" : "files"}, all staged on
+              commit
             </p>
             {errorNote}
             <div className="flex justify-end gap-1.5">
@@ -147,7 +192,7 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
                   title="⌘⇧↩"
                   disabled={!canCommit}
                   onClick={() => run("commit-push")}
-                  className="h-7 rounded-lg border border-border px-2.5 text-xs font-medium text-foreground outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                  className="h-7 rounded-lg border border-border px-2.5 text-xs font-medium text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                 >
                   Commit & push
                 </button>
@@ -156,7 +201,7 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
                 type="submit"
                 title="⌘↩"
                 disabled={!canCommit}
-                className="h-7 rounded-lg bg-foreground px-2.5 text-xs font-medium text-background outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                className="h-7 rounded-lg bg-foreground px-2.5 text-xs font-medium text-background transition-opacity outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               >
                 {pending && pending !== "push" ? pendingLabel : "Commit"}
               </button>
@@ -164,18 +209,29 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
           </form>
         ) : (
           <MorphPopoverMenu>
-            <MenuItem onClick={() => setPanel("commit")} disabled={!canCommit} hint={status.changes || undefined}>
+            <MenuItem
+              onClick={() => setPanel("commit")}
+              disabled={!canCommit}
+              hint={status.changes || undefined}
+            >
               <GitCommitHorizontal />
               Commit…
             </MenuItem>
-            <MenuItem onClick={() => run("push")} disabled={!canPush} hint={canPush ? pushHint : undefined}>
+            <MenuItem
+              onClick={() => run("push")}
+              disabled={!canPush}
+              hint={canPush ? pushHint : undefined}
+            >
               <ArrowUp />
               Push
             </MenuItem>
-            {!status.hasRemote ? <p className="px-2 pt-1 text-xs text-muted-foreground">No remote configured</p> : null}
+            {!status.hasRemote ? (
+              <p className="px-2 pt-1 text-xs text-muted-foreground">No remote configured</p>
+            ) : null}
             {status.behind > 0 ? (
               <p className="px-2 pt-1 text-xs text-muted-foreground">
-                {status.behind} {status.behind === 1 ? "commit" : "commits"} behind {status.upstream}
+                {status.behind} {status.behind === 1 ? "commit" : "commits"} behind{" "}
+                {status.upstream}
               </p>
             ) : null}
             {errorNote}

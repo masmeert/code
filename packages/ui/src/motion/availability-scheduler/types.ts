@@ -64,18 +64,12 @@ function snapToOption(mins: number, slots: number[]) {
   return best;
 }
 
-function withCurrentOption(
-  filtered: TimeOption[],
-  all: TimeOption[],
-  current?: string,
-) {
+function withCurrentOption(filtered: TimeOption[], all: TimeOption[], current?: string) {
   if (!current || filtered.some((o) => o.value === current)) return filtered;
   const extra =
     all.find((o) => o.value === current) ??
     ({ value: current, label: label12(current) } satisfies TimeOption);
-  return [...filtered, extra].sort(
-    (a, b) => toMinutes(a.value) - toMinutes(b.value),
-  );
+  return [...filtered, extra].sort((a, b) => toMinutes(a.value) - toMinutes(b.value));
 }
 
 /**
@@ -130,40 +124,20 @@ export function clampRange(
   };
 }
 
-export function startOptions(
-  options: TimeOption[],
-  end: string,
-  current?: string,
-) {
-  const filtered = options.filter(
-    (o) => toMinutes(o.value) < toMinutes(end),
-  );
+export function startOptions(options: TimeOption[], end: string, current?: string) {
+  const filtered = options.filter((o) => toMinutes(o.value) < toMinutes(end));
   // An invalid midnight end has no earlier option; expose midnight so choosing
   // it can move the end forward through clampRange instead of trapping the row.
   const recovery = filtered.length === 0 ? options.slice(0, 1) : filtered;
-  return withCurrentOption(
-    recovery,
-    options,
-    current,
-  );
+  return withCurrentOption(recovery, options, current);
 }
 
-export function endOptions(
-  options: TimeOption[],
-  start: string,
-  current?: string,
-) {
-  const filtered = options.filter(
-    (o) => toMinutes(o.value) > toMinutes(start),
-  );
+export function endOptions(options: TimeOption[], start: string, current?: string) {
+  const filtered = options.filter((o) => toMinutes(o.value) > toMinutes(start));
   // An invalid last-slot start has no later option; expose the last slot so
   // choosing it can move the start backward through clampRange.
   const recovery = filtered.length === 0 ? options.slice(-1) : filtered;
-  return withCurrentOption(
-    recovery,
-    options,
-    current,
-  );
+  return withCurrentOption(recovery, options, current);
 }
 
 // Default: Mon–Fri 9–5, weekend off. Fixed ids so SSR and first client render

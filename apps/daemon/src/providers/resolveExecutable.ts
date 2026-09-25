@@ -18,7 +18,10 @@ export const resolveExecutable = (name: string, envOverride: string): string => 
   ];
   for (const [cmd, args] of attempts) {
     try {
-      const found = execFileSync(cmd, args, { encoding: "utf8", timeout: 5000 }).trim().split("\n").at(-1);
+      const found = execFileSync(cmd, args, { encoding: "utf8", timeout: 5000 })
+        .trim()
+        .split("\n")
+        .at(-1);
       if (found && found.startsWith("/")) {
         cache.set(name, found);
         return found;

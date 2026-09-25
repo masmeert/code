@@ -10,7 +10,10 @@ import { createWindow } from "./windows.ts";
 
 const daemonToken = app.isPackaged ? randomBytes(32).toString("hex") : null;
 const daemon = daemonToken
-  ? spawn(join(process.resourcesPath, "apcode-daemon"), { env: { ...process.env, APCODE_TOKEN: daemonToken }, stdio: "ignore" })
+  ? spawn(join(process.resourcesPath, "apcode-daemon"), {
+      env: { ...process.env, APCODE_TOKEN: daemonToken },
+      stdio: "ignore",
+    })
   : null;
 
 function checkForUpdates() {

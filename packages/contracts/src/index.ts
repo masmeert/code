@@ -5,7 +5,13 @@ export const DEFAULT_DAEMON_PORT = 47821;
 export const ProviderKind = Schema.Literals(["claude", "codex"]);
 export type ProviderKind = typeof ProviderKind.Type;
 
-export const ThreadStatus = Schema.Literals(["idle", "running", "awaiting-approval", "error", "closed"]);
+export const ThreadStatus = Schema.Literals([
+  "idle",
+  "running",
+  "awaiting-approval",
+  "error",
+  "closed",
+]);
 export type ThreadStatus = typeof ThreadStatus.Type;
 
 export const ApprovalDecision = Schema.Literals(["allow", "allow-session", "deny"]);
@@ -21,7 +27,11 @@ export const BrowserAction = Schema.Union([
   Schema.TaggedStruct("status", {}),
   Schema.TaggedStruct("snapshot", {}),
   Schema.TaggedStruct("click", { target: Schema.String }),
-  Schema.TaggedStruct("type", { target: Schema.String, text: Schema.String, submit: Schema.Boolean }),
+  Schema.TaggedStruct("type", {
+    target: Schema.String,
+    text: Schema.String,
+    submit: Schema.Boolean,
+  }),
   Schema.TaggedStruct("press", { key: Schema.String }),
   Schema.TaggedStruct("evaluate", { expression: Schema.String }),
   Schema.TaggedStruct("console", {}),
@@ -47,7 +57,10 @@ export interface DesktopBridge {
   readonly setTheme: (theme: Theme) => Promise<void>;
   readonly onFileDrop: (listener: (paths: ReadonlyArray<string>) => void) => () => void;
   readonly onBrowserEvent: (listener: (event: DesktopBrowserEvent) => void) => () => void;
-  readonly automateBrowser: (webContentsId: number, action: BrowserAction) => Promise<BrowserResult>;
+  readonly automateBrowser: (
+    webContentsId: number,
+    action: BrowserAction,
+  ) => Promise<BrowserResult>;
 }
 
 /** Reasoning effort. Each harness takes a subset: Claude low…max, Codex minimal…xhigh. */
@@ -61,12 +74,20 @@ export type PermissionLevel = typeof PermissionLevel.Type;
 /** A file for the next message: a path on disk, or bytes pasted into the composer (base64). */
 export const AttachmentInput = Schema.Union([
   Schema.TaggedStruct("path", { path: Schema.String }),
-  Schema.TaggedStruct("data", { name: Schema.String, mediaType: Schema.String, data: Schema.String }),
+  Schema.TaggedStruct("data", {
+    name: Schema.String,
+    mediaType: Schema.String,
+    data: Schema.String,
+  }),
 ]);
 export type AttachmentInput = typeof AttachmentInput.Type;
 
 /** An attachment as sent; pasted data has been written to disk by then. */
-export const Attachment = Schema.Struct({ name: Schema.String, path: Schema.String, isImage: Schema.Boolean });
+export const Attachment = Schema.Struct({
+  name: Schema.String,
+  path: Schema.String,
+  isImage: Schema.Boolean,
+});
 export type Attachment = typeof Attachment.Type;
 
 /** Per-message settings chosen in the composer. */
@@ -214,9 +235,18 @@ export type RepoStatus = typeof RepoStatus.Type;
 
 export const RuntimeEvent = Schema.Union([
   /** `requestId` echoes the creating command, so only that window selects the new thread. */
-  Schema.TaggedStruct("thread.created", { thread: ThreadInfo, requestId: Schema.NullOr(Schema.String) }),
-  Schema.TaggedStruct("thread.model", { threadId: Schema.String, model: Schema.NullOr(Schema.String) }),
-  Schema.TaggedStruct("thread.archived", { threadId: Schema.String, archivedAt: Schema.NullOr(Schema.Number) }),
+  Schema.TaggedStruct("thread.created", {
+    thread: ThreadInfo,
+    requestId: Schema.NullOr(Schema.String),
+  }),
+  Schema.TaggedStruct("thread.model", {
+    threadId: Schema.String,
+    model: Schema.NullOr(Schema.String),
+  }),
+  Schema.TaggedStruct("thread.archived", {
+    threadId: Schema.String,
+    archivedAt: Schema.NullOr(Schema.Number),
+  }),
   Schema.TaggedStruct("thread.status", { threadId: Schema.String, status: ThreadStatus }),
   /** Title, activity time or branch changed. */
   Schema.TaggedStruct("thread.meta", {
@@ -236,8 +266,16 @@ export const RuntimeEvent = Schema.Union([
     /** Sent into a running turn rather than starting one; can't be rewound to. */
     steer: Schema.optionalKey(Schema.Boolean),
   }),
-  Schema.TaggedStruct("assistant.delta", { threadId: Schema.String, messageId: Schema.String, delta: Schema.String }),
-  Schema.TaggedStruct("assistant.completed", { threadId: Schema.String, messageId: Schema.String, text: Schema.String }),
+  Schema.TaggedStruct("assistant.delta", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+    delta: Schema.String,
+  }),
+  Schema.TaggedStruct("assistant.completed", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+    text: Schema.String,
+  }),
   Schema.TaggedStruct("tool.started", {
     threadId: Schema.String,
     toolId: Schema.String,
@@ -257,7 +295,10 @@ export const RuntimeEvent = Schema.Union([
     detail: Schema.String,
   }),
   Schema.TaggedStruct("approval.resolved", { threadId: Schema.String, requestId: Schema.String }),
-  Schema.TaggedStruct("turn.completed", { threadId: Schema.String, durationMs: Schema.NullOr(Schema.Number) }),
+  Schema.TaggedStruct("turn.completed", {
+    threadId: Schema.String,
+    durationMs: Schema.NullOr(Schema.Number),
+  }),
   /** What the turn started by `messageId` changed on disk, from the snapshots taken before and after it. */
   Schema.TaggedStruct("turn.checkpoint", {
     threadId: Schema.String,
@@ -269,7 +310,10 @@ export const RuntimeEvent = Schema.Union([
   /** The conversation was rewound to before `messageId`: it and everything after it are gone. */
   Schema.TaggedStruct("thread.rewound", { threadId: Schema.String, messageId: Schema.String }),
   /** Slash commands the thread's harness offers; answers `thread.listCommands`. */
-  Schema.TaggedStruct("thread.commands", { threadId: Schema.String, commands: Schema.Array(SlashCommand) }),
+  Schema.TaggedStruct("thread.commands", {
+    threadId: Schema.String,
+    commands: Schema.Array(SlashCommand),
+  }),
   /** The changes of one turn (see `turn.checkpoint`); answers `checkpoint.diff`. */
   Schema.TaggedStruct("checkpoint.diff", {
     threadId: Schema.String,
@@ -312,7 +356,11 @@ export const RuntimeEvent = Schema.Union([
 export type RuntimeEvent = typeof RuntimeEvent.Type;
 
 /** Distributive Omit over the event union (drops `threadId` so adapters stay thread-agnostic). */
-export type ProviderEvent = RuntimeEvent extends infer E ? (E extends { threadId: unknown } ? Omit<E, "threadId"> : never) : never;
+export type ProviderEvent = RuntimeEvent extends infer E
+  ? E extends { threadId: unknown }
+    ? Omit<E, "threadId">
+    : never
+  : never;
 
 // ---------------------------------------------------------------------------
 // Client -> daemon commands
@@ -331,15 +379,26 @@ export const ClientCommand = Schema.Union([
     /** "worktree" starts the thread in a new git worktree on its own branch. */
     workspace: Schema.Literals(["local", "worktree"]),
   }),
-  Schema.TaggedStruct("thread.setModel", { threadId: Schema.String, model: Schema.NullOr(Schema.String) }),
+  Schema.TaggedStruct("thread.setModel", {
+    threadId: Schema.String,
+    model: Schema.NullOr(Schema.String),
+  }),
   Schema.TaggedStruct("project.add", { path: Schema.String }),
   /** Starts a turn; while one is running, the message goes into it instead (steering). */
-  Schema.TaggedStruct("thread.send", { threadId: Schema.String, text: Schema.String, options: TurnOptions }),
+  Schema.TaggedStruct("thread.send", {
+    threadId: Schema.String,
+    text: Schema.String,
+    options: TurnOptions,
+  }),
   /**
    * Rewinds the conversation to before user message `messageId`. With `restoreFiles`, the
    * thread's folder also goes back to how it was when that message was sent.
    */
-  Schema.TaggedStruct("thread.rewind", { threadId: Schema.String, messageId: Schema.String, restoreFiles: Schema.Boolean }),
+  Schema.TaggedStruct("thread.rewind", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+    restoreFiles: Schema.Boolean,
+  }),
   /** Summarizes the conversation so far to free up context. */
   Schema.TaggedStruct("thread.compact", { threadId: Schema.String }),
   /** Answered with a `thread.commands` event. */
@@ -358,7 +417,11 @@ export const ClientCommand = Schema.Union([
   /** Answered with a `git.status` event. */
   Schema.TaggedStruct("git.status", { path: Schema.String }),
   /** Stages everything and commits it, then pushes if `push`; answered with a `git.status` event. An empty `message` is written by the commit model. */
-  Schema.TaggedStruct("git.commit", { path: Schema.String, message: Schema.String, push: Schema.Boolean }),
+  Schema.TaggedStruct("git.commit", {
+    path: Schema.String,
+    message: Schema.String,
+    push: Schema.Boolean,
+  }),
   /** Answered with a `git.status` event. */
   Schema.TaggedStruct("git.push", { path: Schema.String }),
   Schema.TaggedStruct("thread.interrupt", { threadId: Schema.String }),
@@ -390,7 +453,11 @@ export const ClientCommand = Schema.Union([
   }),
   Schema.TaggedStruct("thread.unsubscribe", { threadId: Schema.String }),
   /** Older turns, before event id `before`. Answered with `thread.page`. */
-  Schema.TaggedStruct("thread.loadOlder", { threadId: Schema.String, before: Schema.Number, turnLimit: Schema.Number }),
+  Schema.TaggedStruct("thread.loadOlder", {
+    threadId: Schema.String,
+    before: Schema.Number,
+    turnLimit: Schema.Number,
+  }),
   Schema.TaggedStruct("terminal.open", {
     threadId: Schema.String,
     terminalId: Schema.String,
@@ -398,14 +465,22 @@ export const ClientCommand = Schema.Union([
     rows: TerminalRows,
   }),
   Schema.TaggedStruct("terminal.detach", { threadId: Schema.String, terminalId: Schema.String }),
-  Schema.TaggedStruct("terminal.write", { threadId: Schema.String, terminalId: Schema.String, data: Schema.String }),
+  Schema.TaggedStruct("terminal.write", {
+    threadId: Schema.String,
+    terminalId: Schema.String,
+    data: Schema.String,
+  }),
   Schema.TaggedStruct("terminal.resize", {
     threadId: Schema.String,
     terminalId: Schema.String,
     columns: TerminalColumns,
     rows: TerminalRows,
   }),
-  Schema.TaggedStruct("terminal.acknowledge", { threadId: Schema.String, terminalId: Schema.String, characters: Schema.Number }),
+  Schema.TaggedStruct("terminal.acknowledge", {
+    threadId: Schema.String,
+    terminalId: Schema.String,
+    characters: Schema.Number,
+  }),
   Schema.TaggedStruct("terminal.close", { threadId: Schema.String, terminalId: Schema.String }),
   Schema.TaggedStruct("browser.host", {}),
   Schema.TaggedStruct("browser.respond", {
@@ -432,7 +507,9 @@ export type PageInfo = typeof PageInfo.Type;
  * Transcript events: they only reach clients subscribed to that thread. Everything else
  * (thread list, status, settings, projects…) goes to every client.
  */
-export const isTranscriptEvent = (event: RuntimeEvent): event is Extract<RuntimeEvent, { threadId: string }> => {
+export const isTranscriptEvent = (
+  event: RuntimeEvent,
+): event is Extract<RuntimeEvent, { threadId: string }> => {
   switch (event._tag) {
     case "user.message":
     case "assistant.delta":
@@ -488,12 +565,31 @@ export const ServerFrame = Schema.Union([
     page: PageInfo,
   }),
   /** Answers a `search` command from this connection. */
-  Schema.TaggedStruct("search.results", { requestId: Schema.String, hits: Schema.Array(SearchHit) }),
+  Schema.TaggedStruct("search.results", {
+    requestId: Schema.String,
+    hits: Schema.Array(SearchHit),
+  }),
   /** A live event; `id` is set on stored (transcript) events and advances the thread's cursor. */
   Schema.TaggedStruct("event", { id: Schema.NullOr(Schema.Number), event: RuntimeEvent }),
-  Schema.TaggedStruct("terminal.snapshot", { threadId: Schema.String, terminalId: Schema.String, data: Schema.String }),
-  Schema.TaggedStruct("terminal.output", { threadId: Schema.String, terminalId: Schema.String, data: Schema.String }),
-  Schema.TaggedStruct("terminal.error", { threadId: Schema.String, terminalId: Schema.String, message: Schema.String }),
-  Schema.TaggedStruct("browser.request", { requestId: Schema.String, threadId: Schema.String, action: BrowserAction }),
+  Schema.TaggedStruct("terminal.snapshot", {
+    threadId: Schema.String,
+    terminalId: Schema.String,
+    data: Schema.String,
+  }),
+  Schema.TaggedStruct("terminal.output", {
+    threadId: Schema.String,
+    terminalId: Schema.String,
+    data: Schema.String,
+  }),
+  Schema.TaggedStruct("terminal.error", {
+    threadId: Schema.String,
+    terminalId: Schema.String,
+    message: Schema.String,
+  }),
+  Schema.TaggedStruct("browser.request", {
+    requestId: Schema.String,
+    threadId: Schema.String,
+    action: BrowserAction,
+  }),
 ]);
 export type ServerFrame = typeof ServerFrame.Type;

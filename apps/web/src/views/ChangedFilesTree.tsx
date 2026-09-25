@@ -26,11 +26,20 @@ const TREE_STYLE = {
  * The files in the current diff, as a tree with git status.
  * Selecting a file reports it so the diff view can scroll there.
  */
-export const ChangedFilesTree = ({ files, onPick }: { files: ReadonlyArray<FileDiffMetadata>; onPick: (path: string) => void }) => {
+export const ChangedFilesTree = ({
+  files,
+  onPick,
+}: {
+  files: ReadonlyArray<FileDiffMetadata>;
+  onPick: (path: string) => void;
+}) => {
   const paths = useMemo(() => files.map((file) => file.name), [files]);
   // Shape (and sort) once per diff, outside the tree's render path.
   const prepared = useMemo(() => prepareFileTreeInput(paths), [paths]);
-  const status = useMemo(() => files.map((file): GitStatusEntry => ({ path: file.name, status: STATUS[file.type] })), [files]);
+  const status = useMemo(
+    () => files.map((file): GitStatusEntry => ({ path: file.name, status: STATUS[file.type] })),
+    [files],
+  );
 
   // The model reads its options once; later callbacks go through a ref.
   const pick = useRef(onPick);

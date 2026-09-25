@@ -59,7 +59,10 @@ export interface ExpandableActionBarProps {
   collapseDelay?: number;
   className?: string;
   classNames?: ExpandableActionBarClassNames;
-  renderItem?: (item: ExpandableActionBarItem, state: { expanded: boolean; active: boolean }) => ReactNode;
+  renderItem?: (
+    item: ExpandableActionBarItem,
+    state: { expanded: boolean; active: boolean },
+  ) => ReactNode;
 }
 
 const ITEM_TRANSITION: Transition = {
@@ -237,7 +240,7 @@ export function ExpandableActionBar({
             // Labelled actions can outgrow the space the bar sits in — the pill
             // stays inside it and scrolls its rail rather than running off the
             // edge, where the last action is unreachable.
-            "scrollbar-hide relative inline-flex max-w-full items-center overflow-x-auto overflow-y-hidden rounded-full border border-border bg-popover/90 shadow-panel backdrop-blur-xl",
+            "relative scrollbar-hide inline-flex max-w-full items-center overflow-x-auto overflow-y-hidden rounded-full border border-border bg-popover/90 shadow-panel backdrop-blur-xl",
             SIZE_CLASS[size],
             classNames?.track,
           )}
@@ -296,7 +299,7 @@ export function ExpandableActionBar({
                 whileTap={reduce || item.disabled ? undefined : { scale: 0.96 }}
                 transition={ITEM_TRANSITION}
                 className={cn(
-                  "relative isolate inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-medium text-muted-foreground outline-none transition-[color,background-color] duration-150 ease-out",
+                  "relative isolate inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-medium text-muted-foreground transition-[color,background-color] duration-150 ease-out outline-none",
                   "focus-visible:text-foreground disabled:pointer-events-none disabled:opacity-40",
                   isHighlighted && "text-foreground",
                   ITEM_SIZE_CLASS[size],
@@ -364,7 +367,7 @@ export function ExpandableActionBar({
                         }}
                         transition={LABEL_TRANSITION}
                         className={cn(
-                          "hidden overflow-hidden whitespace-nowrap text-[10px] text-muted-foreground sm:inline-block",
+                          "hidden overflow-hidden text-[10px] whitespace-nowrap text-muted-foreground sm:inline-block",
                           classNames?.shortcut,
                         )}
                       >
@@ -376,7 +379,7 @@ export function ExpandableActionBar({
                       <span
                         className={cn(
                           "ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-none text-primary-foreground",
-                          !isExpanded && "absolute right-0.5 top-0.5",
+                          !isExpanded && "absolute top-0.5 right-0.5",
                           classNames?.badge,
                         )}
                       >
@@ -398,10 +401,7 @@ export function useExpandableActionBar(items: ExpandableActionBarItem[]) {
   const [expanded, setExpanded] = useState(false);
   const [activeId, setActiveId] = useState(items[0]?.id);
 
-  const activeItem = useMemo(
-    () => items.find((item) => item.id === activeId),
-    [activeId, items],
-  );
+  const activeItem = useMemo(() => items.find((item) => item.id === activeId), [activeId, items]);
 
   return useMemo(
     () => ({ expanded, setExpanded, activeId, setActiveId, activeItem }),

@@ -33,7 +33,8 @@ function restoredBounds(): Partial<Rectangle> {
 
 function openLink(url: string) {
   if (url.startsWith(APP_URL)) createWindow(url, { width: 1100, height: 760 });
-  else if (url.startsWith("https://") || url.startsWith("http://")) shell.openExternal(url).catch(() => {});
+  else if (url.startsWith("https://") || url.startsWith("http://"))
+    shell.openExternal(url).catch(() => {});
 }
 
 nativeTheme.on("updated", () => {
@@ -75,7 +76,8 @@ export function createWindow(url: string, bounds = restoredBounds()) {
     openLink(target);
   });
   window.webContents.on("did-fail-load", (_event, _code, description, failedUrl, isMainFrame) => {
-    if (isMainFrame && description === "ERR_CONNECTION_REFUSED") setTimeout(() => window.loadURL(failedUrl).catch(() => {}), 500);
+    if (isMainFrame && description === "ERR_CONNECTION_REFUSED")
+      setTimeout(() => window.loadURL(failedUrl).catch(() => {}), 500);
   });
   window.webContents.on("context-menu", (_event, params) => {
     if (!params.isEditable && !params.selectionText) return;

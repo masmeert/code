@@ -47,7 +47,10 @@ const open = () =>
     req.onerror = () => reject(req.error);
   }));
 
-const get = async <A extends { version: number }>(store: string, key: string): Promise<A | null> => {
+const get = async <A extends { version: number }>(
+  store: string,
+  key: string,
+): Promise<A | null> => {
   try {
     const conn = await open();
     const value = await new Promise<unknown>((resolve, reject) => {
@@ -65,7 +68,8 @@ const get = async <A extends { version: number }>(store: string, key: string): P
 const threadKey = (dataId: string, threadId: string) => `${dataId}:${threadId}`;
 
 export const loadShell = () => get<CachedShell>(SHELL, "shell");
-export const loadTranscript = (dataId: string, threadId: string) => get<CachedTranscript>(THREADS, threadKey(dataId, threadId));
+export const loadTranscript = (dataId: string, threadId: string) =>
+  get<CachedTranscript>(THREADS, threadKey(dataId, threadId));
 
 // Writes are debounced (streaming deltas arrive many times a second) and only the
 // latest value per key is kept.
@@ -94,10 +98,15 @@ const queue = (store: string, id: string, value: unknown) => {
   timer ??= setTimeout(flush, 500);
 };
 
-export const saveShell = (shell: Omit<CachedShell, "version">) => queue(SHELL, "shell", { version: VERSION, ...shell });
-export const saveTranscript = (dataId: string, threadId: string, transcript: Omit<CachedTranscript, "version">) =>
-  queue(THREADS, threadKey(dataId, threadId), { version: VERSION, ...transcript });
-export const removeTranscript = (dataId: string, threadId: string) => queue(THREADS, threadKey(dataId, threadId), undefined);
+export const saveShell = (shell: Omit<CachedShell, "version">) =>
+  queue(SHELL, "shell", { version: VERSION, ...shell });
+export const saveTranscript = (
+  dataId: string,
+  threadId: string,
+  transcript: Omit<CachedTranscript, "version">,
+) => queue(THREADS, threadKey(dataId, threadId), { version: VERSION, ...transcript });
+export const removeTranscript = (dataId: string, threadId: string) =>
+  queue(THREADS, threadKey(dataId, threadId), undefined);
 
 // Don't lose the last half second on quit.
 window.addEventListener("pagehide", () => {

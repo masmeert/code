@@ -32,11 +32,7 @@ import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
 import { useTouchCapable } from "@apcode/ui/hooks/use-touch-capable";
 import { cn } from "@apcode/ui/lib/utils";
 
-export type SidebarResourceKind =
-  | "folder"
-  | "project"
-  | "file"
-  | "bookmark";
+export type SidebarResourceKind = "folder" | "project" | "file" | "bookmark";
 
 export interface SidebarResource {
   id: string;
@@ -86,10 +82,7 @@ export interface AISidebarProps {
   onActiveChange?: (id: string) => void;
   defaultExpandedIds?: string[];
   renderIcon?: (item: SidebarResource) => ReactNode;
-  renderMenu?: (
-    item: SidebarResource,
-    controls: SidebarResourceMenuControls,
-  ) => ReactNode;
+  renderMenu?: (item: SidebarResource, controls: SidebarResourceMenuControls) => ReactNode;
   ariaLabel?: string;
   className?: string;
 }
@@ -123,17 +116,11 @@ function flattenResources(
   return items.flatMap((item) => {
     const row = { item, depth, parentId };
     if (!item.children?.length || !expanded.has(item.id)) return [row];
-    return [
-      row,
-      ...flattenResources(item.children, expanded, depth + 1, item.id),
-    ];
+    return [row, ...flattenResources(item.children, expanded, depth + 1, item.id)];
   });
 }
 
-function findResource(
-  items: SidebarResource[],
-  id: string,
-): SidebarResource | undefined {
+function findResource(items: SidebarResource[], id: string): SidebarResource | undefined {
   for (const item of items) {
     if (item.id === id) return item;
     const child = item.children ? findResource(item.children, id) : undefined;
@@ -142,10 +129,7 @@ function findResource(
 }
 
 function containsResource(item: SidebarResource, id: string): boolean {
-  return (
-    item.id === id ||
-    item.children?.some((child) => containsResource(child, id)) === true
-  );
+  return item.id === id || item.children?.some((child) => containsResource(child, id)) === true;
 }
 
 function removeResource(
@@ -214,33 +198,19 @@ function moveResource(
   if (move.targetId && containsResource(source, move.targetId)) return null;
 
   const target = move.targetId ? findResource(items, move.targetId) : undefined;
-  if (
-    move.position === "inside" &&
-    (!target || target.disabled || !canContain(target))
-  )
+  if (move.position === "inside" && (!target || target.disabled || !canContain(target)))
     return null;
 
   const removed = removeResource(items, move.itemId);
   if (!removed.removed) return null;
-  return insertResource(
-    removed.items,
-    removed.removed,
-    move.targetId,
-    move.position,
-  );
+  return insertResource(removed.items, removed.removed, move.targetId, move.position);
 }
 
-function renameResource(
-  items: SidebarResource[],
-  id: string,
-  label: string,
-): SidebarResource[] {
+function renameResource(items: SidebarResource[], id: string, label: string): SidebarResource[] {
   return items.map((item) => ({
     ...item,
     label: item.id === id ? label : item.label,
-    children: item.children
-      ? renameResource(item.children, id, label)
-      : undefined,
+    children: item.children ? renameResource(item.children, id, label) : undefined,
   }));
 }
 
@@ -251,8 +221,8 @@ function defaultIcon(item: SidebarResource, expanded: boolean) {
         ? FolderOpen
         : Folder
       : item.kind === "bookmark"
-          ? Bookmark
-          : FileText;
+        ? Bookmark
+        : FileText;
   return <Icon className="size-4" />;
 }
 
@@ -319,7 +289,7 @@ export function ResourceMenuAction({
     <button
       type="button"
       onClick={onSelect}
-      className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs text-foreground outline-none transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
+      className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs text-foreground transition-colors outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
     >
       <Icon aria-hidden="true" className="size-3.5 shrink-0" />
       <span className="min-w-0 truncate">{children}</span>
@@ -432,10 +402,7 @@ function ResourceRow({
         </ResourceMenuAction>
       ) : null}
       {moves.into ? (
-        <ResourceMenuAction
-          icon={FolderInput}
-          onSelect={runFromMenu(moves.into.run)}
-        >
+        <ResourceMenuAction icon={FolderInput} onSelect={runFromMenu(moves.into.run)}>
           Move into {moves.into.label}
         </ResourceMenuAction>
       ) : null}
@@ -465,13 +432,7 @@ function ResourceRow({
       onFocus={onFocus}
       onKeyDown={onKeyDown}
       onClick={(event) => {
-        if (
-          event.defaultPrevented ||
-          draggedRef.current ||
-          renaming ||
-          row.item.disabled
-        )
-          return;
+        if (event.defaultPrevented || draggedRef.current || renaming || row.item.disabled) return;
         if (acceptsChildren) onToggle();
         else onSelect();
       }}
@@ -502,7 +463,7 @@ function ResourceRow({
         "data-[dragging=true]:opacity-40",
         "data-[drop=inside]:bg-muted data-[drop=inside]:ring-1 data-[drop=inside]:ring-primary/45",
         "data-[drop=before]:before:absolute data-[drop=before]:before:-top-0.5 data-[drop=before]:before:right-2 data-[drop=before]:before:left-2 data-[drop=before]:before:h-0.5 data-[drop=before]:before:rounded-full data-[drop=before]:before:bg-primary",
-        "data-[drop=after]:after:absolute data-[drop=after]:after:-bottom-0.5 data-[drop=after]:after:right-2 data-[drop=after]:after:left-2 data-[drop=after]:after:h-0.5 data-[drop=after]:after:rounded-full data-[drop=after]:after:bg-primary",
+        "data-[drop=after]:after:absolute data-[drop=after]:after:right-2 data-[drop=after]:after:-bottom-0.5 data-[drop=after]:after:left-2 data-[drop=after]:after:h-0.5 data-[drop=after]:after:rounded-full data-[drop=after]:after:bg-primary",
         !acceptsChildren && active && "bg-muted text-foreground",
         row.item.disabled && "cursor-not-allowed opacity-45",
       )}
@@ -542,10 +503,7 @@ function ResourceRow({
       )}
 
       {!renaming && !row.item.disabled ? (
-        <MorphPopover
-          open={menuOpen}
-          onOpenChange={onMenuOpenChange}
-        >
+        <MorphPopover open={menuOpen} onOpenChange={onMenuOpenChange}>
           <MorphPopoverTrigger>
             <button
               type="button"
@@ -554,7 +512,7 @@ function ResourceRow({
               aria-label={`Actions for ${row.item.label}`}
               onClick={(event) => event.stopPropagation()}
               className={cn(
-                "grid size-7 shrink-0 place-items-center rounded-lg outline-none transition-opacity hover:bg-foreground/5 focus-visible:opacity-100 focus-visible:ring-4 focus-visible:ring-ring group-hover/resource:opacity-100 group-data-[menu-open=true]/resource:opacity-100",
+                "grid size-7 shrink-0 place-items-center rounded-lg transition-opacity outline-none group-hover/resource:opacity-100 group-data-[menu-open=true]/resource:opacity-100 hover:bg-foreground/5 focus-visible:opacity-100 focus-visible:ring-4 focus-visible:ring-ring",
                 // A finger never hovers, and this menu is the only path to
                 // rename and move without a drag — keep it on screen there.
                 canTouch ? "opacity-100" : "opacity-0",
@@ -596,12 +554,8 @@ export function AISidebar({
 }: AISidebarProps) {
   const [internalItems, setInternalItems] = useState(items ?? defaultItems);
   const [internalActiveId, setInternalActiveId] = useState(defaultActiveId);
-  const [expandedIds, setExpandedIds] = useState(
-    () => new Set(defaultExpandedIds),
-  );
-  const [focusedId, setFocusedId] = useState<string | null>(
-    activeId ?? defaultActiveId,
-  );
+  const [expandedIds, setExpandedIds] = useState(() => new Set(defaultExpandedIds));
+  const [focusedId, setFocusedId] = useState<string | null>(activeId ?? defaultActiveId);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -801,9 +755,7 @@ export function AISidebar({
           focusRow(row.parentId);
         } else if (
           moveModifier ||
-          ["ArrowRight", "Enter", " ", "F2", "ContextMenu"].includes(
-            event.key,
-          ) ||
+          ["ArrowRight", "Enter", " ", "F2", "ContextMenu"].includes(event.key) ||
           (event.shiftKey && event.key === "F10")
         ) {
           event.preventDefault();
@@ -859,131 +811,130 @@ export function AISidebar({
   return (
     <>
       <div
-      role="tree"
-      aria-label={ariaLabel}
-      aria-multiselectable="false"
-      onDragOver={(event) => {
-        if (!draggingId || event.target !== event.currentTarget) return;
-        event.preventDefault();
-        setDropTarget((current) =>
-          current?.id === null && current.position === "after"
-            ? current
-            : { id: null, position: "after" },
-        );
-      }}
-      onDrop={(event) => {
-        event.preventDefault();
-        if (draggingId && dropTarget) {
-          void performMove({
-            itemId: draggingId,
-            targetId: dropTarget.id,
-            position: dropTarget.position,
-          });
-        }
-      }}
-      className={cn(
-        "relative flex min-w-0 flex-col gap-0.5 [overflow-anchor:none] group-data-[state=collapsed]/sidebar:hidden",
-        draggingId && "select-none pb-9",
-        className,
-      )}
-    >
-      <AnimatePresence initial={false}>
-        {flat.map((row) => (
-          <ResourceRow
-            key={row.item.id}
-            row={row}
-            active={selectedId === row.item.id}
-            expanded={expandedIds.has(row.item.id)}
-            focused={focusedRow === row.item.id}
-            draggingId={draggingId}
-            dropTarget={dropTarget}
-            menuOpen={menuOpenId === row.item.id}
-            moves={moveCommands(row)}
-            renaming={renamingId === row.item.id}
-            onFocus={() => setFocusedId(row.item.id)}
-            onSelect={() => select(row.item.id)}
-            onToggle={() => toggle(row.item.id)}
-            onKeyDown={(event) => handleKeyDown(event, row)}
-            onRenameStart={() => setRenamingId(row.item.id)}
-            onRenameCancel={() => setRenamingId(null)}
-            onRenameCommit={(label) => {
-              const trimmed = label.trim();
-              setRenamingId(null);
-              if (!trimmed || trimmed === row.item.label) return;
-              const before = renderedItems;
-              updateItems(renameResource(before, row.item.id, trimmed));
-              void Promise.resolve(onRename?.(row.item, trimmed)).catch(() => {
-                updateItems(before);
-                setAnnouncement(`Rename failed. ${row.item.label} was restored.`);
-              });
-            }}
-            onMenuOpenChange={(open) => {
-              setMenuOpenId(open ? row.item.id : null);
-              if (!open) focusRow(row.item.id);
-            }}
-            onDragStart={(event, id) => {
-              setDraggingId(id);
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/plain", id);
-            }}
-            onDragEnd={() => {
-              setDraggingId(null);
-              setDropTarget(null);
-            }}
-            onDragOver={(event, targetRow) => {
-              if (!draggingId || draggingId === targetRow.item.id) return;
-              const source = findResource(renderedItems, draggingId);
-              if (source && containsResource(source, targetRow.item.id)) return;
-              event.preventDefault();
-              event.stopPropagation();
-              const rect = event.currentTarget.getBoundingClientRect();
-              const ratio = (event.clientY - rect.top) / rect.height;
-              const position =
-                !targetRow.item.disabled &&
-                canContain(targetRow.item) &&
-                ratio >= 0.25 &&
-                ratio <= 0.75
-                  ? "inside"
-                  : ratio < 0.5
-                    ? "before"
-                    : "after";
-              setDropTarget((current) =>
-                current?.id === targetRow.item.id && current.position === position
-                  ? current
-                  : { id: targetRow.item.id, position },
-              );
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              if (draggingId && dropTarget) {
-                void performMove({
-                  itemId: draggingId,
-                  targetId: dropTarget.id,
-                  position: dropTarget.position,
+        role="tree"
+        aria-label={ariaLabel}
+        aria-multiselectable="false"
+        onDragOver={(event) => {
+          if (!draggingId || event.target !== event.currentTarget) return;
+          event.preventDefault();
+          setDropTarget((current) =>
+            current?.id === null && current.position === "after"
+              ? current
+              : { id: null, position: "after" },
+          );
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          if (draggingId && dropTarget) {
+            void performMove({
+              itemId: draggingId,
+              targetId: dropTarget.id,
+              position: dropTarget.position,
+            });
+          }
+        }}
+        className={cn(
+          "relative flex min-w-0 flex-col gap-0.5 [overflow-anchor:none] group-data-[state=collapsed]/sidebar:hidden",
+          draggingId && "pb-9 select-none",
+          className,
+        )}
+      >
+        <AnimatePresence initial={false}>
+          {flat.map((row) => (
+            <ResourceRow
+              key={row.item.id}
+              row={row}
+              active={selectedId === row.item.id}
+              expanded={expandedIds.has(row.item.id)}
+              focused={focusedRow === row.item.id}
+              draggingId={draggingId}
+              dropTarget={dropTarget}
+              menuOpen={menuOpenId === row.item.id}
+              moves={moveCommands(row)}
+              renaming={renamingId === row.item.id}
+              onFocus={() => setFocusedId(row.item.id)}
+              onSelect={() => select(row.item.id)}
+              onToggle={() => toggle(row.item.id)}
+              onKeyDown={(event) => handleKeyDown(event, row)}
+              onRenameStart={() => setRenamingId(row.item.id)}
+              onRenameCancel={() => setRenamingId(null)}
+              onRenameCommit={(label) => {
+                const trimmed = label.trim();
+                setRenamingId(null);
+                if (!trimmed || trimmed === row.item.label) return;
+                const before = renderedItems;
+                updateItems(renameResource(before, row.item.id, trimmed));
+                void Promise.resolve(onRename?.(row.item, trimmed)).catch(() => {
+                  updateItems(before);
+                  setAnnouncement(`Rename failed. ${row.item.label} was restored.`);
                 });
-              }
-            }}
-            renderIcon={renderIcon}
-            renderMenu={renderMenu}
-            setRef={(node) => {
-              if (node) rowRefs.current.set(row.item.id, node);
-              else rowRefs.current.delete(row.item.id);
-            }}
-          />
-        ))}
-      </AnimatePresence>
+              }}
+              onMenuOpenChange={(open) => {
+                setMenuOpenId(open ? row.item.id : null);
+                if (!open) focusRow(row.item.id);
+              }}
+              onDragStart={(event, id) => {
+                setDraggingId(id);
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", id);
+              }}
+              onDragEnd={() => {
+                setDraggingId(null);
+                setDropTarget(null);
+              }}
+              onDragOver={(event, targetRow) => {
+                if (!draggingId || draggingId === targetRow.item.id) return;
+                const source = findResource(renderedItems, draggingId);
+                if (source && containsResource(source, targetRow.item.id)) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const rect = event.currentTarget.getBoundingClientRect();
+                const ratio = (event.clientY - rect.top) / rect.height;
+                const position =
+                  !targetRow.item.disabled &&
+                  canContain(targetRow.item) &&
+                  ratio >= 0.25 &&
+                  ratio <= 0.75
+                    ? "inside"
+                    : ratio < 0.5
+                      ? "before"
+                      : "after";
+                setDropTarget((current) =>
+                  current?.id === targetRow.item.id && current.position === position
+                    ? current
+                    : { id: targetRow.item.id, position },
+                );
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (draggingId && dropTarget) {
+                  void performMove({
+                    itemId: draggingId,
+                    targetId: dropTarget.id,
+                    position: dropTarget.position,
+                  });
+                }
+              }}
+              renderIcon={renderIcon}
+              renderMenu={renderMenu}
+              setRef={(node) => {
+                if (node) rowRefs.current.set(row.item.id, node);
+                else rowRefs.current.delete(row.item.id);
+              }}
+            />
+          ))}
+        </AnimatePresence>
 
-      {draggingId ? (
-        <div
-          aria-hidden="true"
-          data-active={dropTarget?.id === null || undefined}
-          className="absolute inset-x-1 bottom-0 flex h-8 items-center justify-center rounded-lg border border-dashed border-border text-[10px] text-muted-foreground data-[active=true]:border-primary/50 data-[active=true]:bg-muted data-[active=true]:text-foreground"
-        >
-          Move to top level
-        </div>
-      ) : null}
-
+        {draggingId ? (
+          <div
+            aria-hidden="true"
+            data-active={dropTarget?.id === null || undefined}
+            className="absolute inset-x-1 bottom-0 flex h-8 items-center justify-center rounded-lg border border-dashed border-border text-[10px] text-muted-foreground data-[active=true]:border-primary/50 data-[active=true]:bg-muted data-[active=true]:text-foreground"
+          >
+            Move to top level
+          </div>
+        ) : null}
       </div>
       <span className="sr-only" aria-live="polite">
         {announcement}

@@ -32,7 +32,10 @@ export const setDraft = (key: string, next: Draft | ((prev: Draft) => Draft)) =>
 
 /** Adds text to a composer as its own paragraph, after what's there. */
 export const appendToDraft = (key: string, text: string) =>
-  setDraft(key, (prev) => ({ ...prev, text: prev.text.trim() ? `${prev.text.trimEnd()}\n\n${text}` : text }));
+  setDraft(key, (prev) => ({
+    ...prev,
+    text: prev.text.trim() ? `${prev.text.trimEnd()}\n\n${text}` : text,
+  }));
 
 export const useDraft = (key: string) =>
   useSyncExternalStore(
@@ -95,7 +98,10 @@ export const stashDraft = (key: string) => {
   const draft = getDraft(key);
   const attachments = draft.attachments.filter((a) => a.input._tag === "path");
   if (!draft.text.trim() && !attachments.length) return false;
-  writeStashes([{ id: crypto.randomUUID(), text: draft.text, attachments, at: Date.now() }, ...stashes]);
+  writeStashes([
+    { id: crypto.randomUUID(), text: draft.text, attachments, at: Date.now() },
+    ...stashes,
+  ]);
   setDraft(key, EMPTY);
   return true;
 };

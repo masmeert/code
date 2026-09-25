@@ -1,10 +1,5 @@
 import { Minus, Plus } from "lucide-react";
-import {
-  AnimatePresence,
-  type HTMLMotionProps,
-  motion,
-  useReducedMotion,
-} from "motion/react";
+import { AnimatePresence, type HTMLMotionProps, motion, useReducedMotion } from "motion/react";
 import {
   createContext,
   type MouseEvent,
@@ -18,15 +13,8 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  EASE_OUT,
-  SPRING_PRESS,
-} from "@apcode/ui/lib/ease";
-import {
-  Liquid,
-  LiquidItem,
-  type LiquidTransition,
-} from "@apcode/ui/motion/liquid";
+import { EASE_OUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
+import { Liquid, LiquidItem, type LiquidTransition } from "@apcode/ui/motion/liquid";
 import { cn } from "@apcode/ui/lib/utils";
 
 // The deliberately elastic separation curve from the liquid email reference.
@@ -51,9 +39,7 @@ type AdaptiveStepperContextValue = {
   incrementRef: React.MutableRefObject<HTMLButtonElement | null>;
 };
 
-const AdaptiveStepperContext = createContext<AdaptiveStepperContextValue | null>(
-  null,
-);
+const AdaptiveStepperContext = createContext<AdaptiveStepperContextValue | null>(null);
 
 function useAdaptiveStepperContext(component: string) {
   const context = useContext(AdaptiveStepperContext);
@@ -71,13 +57,7 @@ function cleanNumber(value: number) {
   return Number(value.toFixed(10));
 }
 
-function nextStep(
-  value: number,
-  direction: -1 | 1,
-  min: number,
-  max: number,
-  step: number,
-) {
+function nextStep(value: number, direction: -1 | 1, min: number, max: number, step: number) {
   if (direction === 1) {
     const nextIndex = Math.floor((value - min) / step + 1e-10) + 1;
     return cleanNumber(Math.min(max, min + nextIndex * step));
@@ -140,11 +120,7 @@ export function AdaptiveStepper({
   );
   const controlled = controlledValue !== undefined;
   const suppliedValue = controlled ? controlledValue : internalValue;
-  const currentValue = clamp(
-    Number.isFinite(suppliedValue) ? suppliedValue : lower,
-    lower,
-    upper,
-  );
+  const currentValue = clamp(Number.isFinite(suppliedValue) ? suppliedValue : lower, lower, upper);
   const previousValueRef = useRef(currentValue);
   const currentValueRef = useRef(currentValue);
   const direction: StepDirection =
@@ -209,37 +185,19 @@ export function AdaptiveStepper({
       decrementRef,
       incrementRef,
     }),
-    [
-      currentValue,
-      decrement,
-      direction,
-      disabled,
-      increment,
-      lower,
-      reduce,
-      upper,
-      valueText,
-    ],
+    [currentValue, decrement, direction, disabled, increment, lower, reduce, upper, valueText],
   );
 
   return (
     <AdaptiveStepperContext.Provider value={context}>
       <fieldset
         disabled={disabled}
-        className={cn(
-          "relative isolate m-0 inline-block h-12 w-[13.5rem] border-0 p-0",
-          className,
-        )}
+        className={cn("relative isolate m-0 inline-block h-12 w-[13.5rem] border-0 p-0", className)}
       >
         <legend id={labelId} className="sr-only">
           {ariaLabel}. Current value: {valueText}
         </legend>
-        <Liquid
-          blur={8}
-          contrast={22}
-          fill="var(--background)"
-          className="size-full"
-        >
+        <Liquid blur={8} contrast={22} fill="var(--background)" className="size-full">
           {children}
         </Liquid>
         {name ? <input type="hidden" name={name} value={currentValue} /> : null}
@@ -248,8 +206,10 @@ export function AdaptiveStepper({
   );
 }
 
-export interface AdaptiveStepperActionProps
-  extends Omit<HTMLMotionProps<"button">, "children" | "onClick"> {
+export interface AdaptiveStepperActionProps extends Omit<
+  HTMLMotionProps<"button">,
+  "children" | "onClick"
+> {
   children?: ReactNode;
   onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   ref?: Ref<HTMLButtonElement>;
@@ -268,19 +228,10 @@ function StepperAction({
 }: AdaptiveStepperActionProps & { direction: -1 | 1 }) {
   const context = useAdaptiveStepperContext("AdaptiveStepper action");
   const hidden = direction === -1 ? context.atMin : context.atMax;
-  const actionRef =
-    direction === -1 ? context.decrementRef : context.incrementRef;
-  const label =
-    ariaLabel ?? (direction === -1 ? "Decrease value" : "Increase value");
+  const actionRef = direction === -1 ? context.decrementRef : context.incrementRef;
+  const label = ariaLabel ?? (direction === -1 ? "Decrease value" : "Increase value");
   const action = direction === -1 ? context.decrement : context.increment;
-  const x =
-    direction === -1
-      ? hidden
-        ? 32
-        : 0
-      : hidden
-        ? 136
-        : 168;
+  const x = direction === -1 ? (hidden ? 32 : 0) : hidden ? 136 : 168;
 
   return (
     <LiquidItem
@@ -299,15 +250,11 @@ function StepperAction({
         aria-hidden={hidden || undefined}
         tabIndex={hidden ? -1 : tabIndex}
         disabled={context.disabled || hidden}
-        whileTap={
-          context.reduce || context.disabled || hidden
-            ? undefined
-            : { scale: 0.94 }
-        }
+        whileTap={context.reduce || context.disabled || hidden ? undefined : { scale: 0.94 }}
         transition={context.reduce ? { duration: 0 } : SPRING_PRESS}
         style={style}
         className={cn(
-          "grid size-full place-items-center rounded-full border border-transparent bg-transparent bg-clip-padding text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none",
+          "grid size-full place-items-center rounded-full border border-transparent bg-transparent bg-clip-padding text-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none",
           hidden && "hover:bg-transparent",
           context.disabled && "opacity-50",
           className,
@@ -345,8 +292,7 @@ export function AdaptiveStepperDecrement(props: AdaptiveStepperActionProps) {
   return <StepperAction {...props} direction={-1} />;
 }
 
-export interface AdaptiveStepperValueProps
-  extends Omit<HTMLMotionProps<"output">, "children"> {
+export interface AdaptiveStepperValueProps extends Omit<HTMLMotionProps<"output">, "children"> {
   children?: ReactNode | ((value: number) => ReactNode);
 }
 
@@ -365,11 +311,9 @@ export function AdaptiveStepperValue({
         : context.atMax
           ? { x: 64, width: 152 }
           : { x: 64, width: 88 };
-  const displayValue =
-    typeof children === "function" ? children(context.value) : children;
+  const displayValue = typeof children === "function" ? children(context.value) : children;
   const renderedValue = displayValue ?? context.value;
-  const canRoll =
-    typeof renderedValue === "number" || typeof renderedValue === "string";
+  const canRoll = typeof renderedValue === "number" || typeof renderedValue === "string";
   const distance = context.reduce || !canRoll ? 0 : context.direction * 32;
   const enterFrom = `translateY(${distance}%)`;
   const exitTo = `translateY(${-distance}%)`;
@@ -389,7 +333,7 @@ export function AdaptiveStepperValue({
         aria-atomic="true"
         style={style}
         className={cn(
-          "flex size-full min-w-0 items-center justify-center overflow-hidden rounded-full border border-transparent bg-transparent bg-clip-padding px-4 text-lg font-semibold tabular-nums text-foreground",
+          "flex size-full min-w-0 items-center justify-center overflow-hidden rounded-full border border-transparent bg-transparent bg-clip-padding px-4 text-lg font-semibold text-foreground tabular-nums",
           className,
         )}
       >

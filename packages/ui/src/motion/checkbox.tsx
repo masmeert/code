@@ -56,11 +56,9 @@ export function Checkbox({
         onClick={() => !disabled && onCheckedChange(!checked)}
         whileTap={reduce || disabled ? undefined : { scale: 0.95 }}
         transition={SPRING_PRESS}
-        data-state={
-          checked ? "checked" : indeterminate ? "indeterminate" : "unchecked"
-        }
+        data-state={checked ? "checked" : indeterminate ? "indeterminate" : "unchecked"}
         className={cn(
-          "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 outline-none transition-colors duration-200",
+          "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors duration-200 outline-none",
           "focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           "disabled:cursor-not-allowed disabled:opacity-60",
           showMark
@@ -82,14 +80,8 @@ export function Checkbox({
               strokeLinejoin="round"
               initial={reduce ? { opacity: 1 } : { opacity: 0, scale: 0.5 }}
               animate={reduce ? { opacity: 1 } : { opacity: 1, scale: 1 }}
-              exit={
-                reduce
-                  ? { opacity: 0 }
-                  : { opacity: 0, scale: 0.5, filter: "blur(4px)" }
-              }
-              transition={
-                reduce ? { duration: 0 } : { duration: 0.16, ease: EASE_OUT }
-              }
+              exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.5, filter: "blur(4px)" }}
+              transition={reduce ? { duration: 0 } : { duration: 0.16, ease: EASE_OUT }}
               aria-hidden
             >
               <title>{indeterminate ? "Partially selected" : "Selected"}</title>
@@ -97,18 +89,14 @@ export function Checkbox({
                 d={path}
                 initial={reduce ? { pathLength: 1 } : { pathLength: 0 }}
                 animate={{ pathLength: 1 }}
-                transition={
-                  reduce
-                    ? { duration: 0 }
-                    : { duration: 0.2, ease: EASE_OUT }
-                }
+                transition={reduce ? { duration: 0 } : { duration: 0.2, ease: EASE_OUT }}
               />
             </motion.svg>
           ) : null}
         </AnimatePresence>
       </motion.button>
       {label ? (
-        <span className={cn("select-none text-sm text-foreground", disabled && "opacity-60")}>
+        <span className={cn("text-sm text-foreground select-none", disabled && "opacity-60")}>
           {label}
         </span>
       ) : null}

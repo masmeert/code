@@ -6,13 +6,7 @@ import {
   useReducedMotion,
   type Variants,
 } from "motion/react";
-import {
-  type MouseEvent,
-  type ReactNode,
-  useCallback,
-  useRef,
-  useState,
-} from "react";
+import { type MouseEvent, type ReactNode, useCallback, useRef, useState } from "react";
 import { cn } from "@apcode/ui/lib/utils";
 
 // Matches the Motion Patterns "Layout continuity" recipe so the surface
@@ -37,8 +31,7 @@ type ExpandableStateProps = {
 };
 
 export interface ExpandableButtonProps
-  extends Omit<HTMLMotionProps<"button">, "children">,
-    ExpandableStateProps {
+  extends Omit<HTMLMotionProps<"button">, "children">, ExpandableStateProps {
   icon: ReactNode;
   label: ReactNode;
 }
@@ -116,7 +109,7 @@ export function ExpandableButton({
         aria-expanded={isExpanded}
         disabled={disabled}
         className={cn(
-          "relative inline-flex h-11 min-w-11 items-center overflow-hidden rounded-full border border-border bg-transparent p-1 pr-1 text-sm font-medium text-foreground outline-none transition-colors focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+          "relative inline-flex h-11 min-w-11 items-center overflow-hidden rounded-full border border-border bg-transparent p-1 pr-1 text-sm font-medium text-foreground transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-50",
           className,
         )}
         style={{ borderRadius: 9999 }}
@@ -142,7 +135,7 @@ export function ExpandableButton({
               animate={reduce ? { opacity: 1 } : "visible"}
               exit={reduce ? { opacity: 0 } : "exit"}
               transition={transition}
-              className="relative inline-flex w-max items-center whitespace-nowrap pr-3"
+              className="relative inline-flex w-max items-center pr-3 whitespace-nowrap"
               aria-hidden="true"
             >
               {label}
@@ -191,7 +184,7 @@ export function ExpandableChip({
       <motion.div
         layout
         className={cn(
-          "inline-flex h-10 items-center overflow-hidden rounded-full border border-border bg-transparent text-sm text-foreground has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
+          "inline-flex h-10 items-center overflow-hidden rounded-full border border-border bg-transparent text-sm text-foreground has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-inset",
           className,
         )}
         style={{ borderRadius: 9999 }}
@@ -204,7 +197,7 @@ export function ExpandableChip({
           aria-expanded={isExpanded}
           disabled={disabled}
           className={cn(
-            "h-full whitespace-nowrap py-0 pl-3 font-medium outline-none disabled:pointer-events-none disabled:opacity-50",
+            "h-full py-0 pl-3 font-medium whitespace-nowrap outline-none disabled:pointer-events-none disabled:opacity-50",
             isExpanded ? "pr-1" : "pr-3",
             labelClassName,
           )}
@@ -221,13 +214,7 @@ export function ExpandableChip({
           )}
           aria-hidden={!isExpanded}
           initial={false}
-          animate={
-            reduce
-              ? { opacity: isExpanded ? 1 : 0 }
-              : isExpanded
-                ? "visible"
-                : "hidden"
-          }
+          animate={reduce ? { opacity: isExpanded ? 1 : 0 } : isExpanded ? "visible" : "hidden"}
           transition={transition}
         >
           <motion.button
@@ -235,7 +222,7 @@ export function ExpandableChip({
             aria-label={actionLabel}
             disabled={disabled || !isExpanded}
             className={cn(
-              "flex h-10 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:text-foreground disabled:pointer-events-none",
+              "flex h-10 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors outline-none hover:text-foreground disabled:pointer-events-none",
               disabled && "opacity-50",
               actionClassName,
             )}

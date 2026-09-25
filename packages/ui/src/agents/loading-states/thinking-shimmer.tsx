@@ -16,11 +16,7 @@ export function ThinkingShimmer({
   className,
 }: ThinkingShimmerProps) {
   return (
-    <TextShimmer
-      as="span"
-      duration={duration}
-      className={cn("font-medium", className)}
-    >
+    <TextShimmer as="span" duration={duration} className={cn("font-medium", className)}>
       {children}
     </TextShimmer>
   );

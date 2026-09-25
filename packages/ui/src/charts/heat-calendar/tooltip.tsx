@@ -9,23 +9,36 @@ export function HeatCalendarTooltip({
   children,
   className,
 }: {
-  children?: ReactNode | ((data: NonNullable<ReturnType<typeof useHeatCalendar>["tooltip"]>) => ReactNode);
+  children?:
+    | ReactNode
+    | ((data: NonNullable<ReturnType<typeof useHeatCalendar>["tooltip"]>) => ReactNode);
   className?: string;
 }) {
   const { gridRef, tooltipId, tip, tooltip, unit } = useHeatCalendar();
   const [dismissed, setDismissed] = useState<typeof tip>(null);
-  const anchorRef = useMemo(() => ({ get current() {
-    return tip ? gridRef.current?.querySelector<HTMLElement>(`[data-heat-cell="${tip.w}-${tip.d}"]`) ?? null : null;
-  }}), [gridRef, tip]);
+  const anchorRef = useMemo(
+    () => ({
+      get current() {
+        return tip
+          ? (gridRef.current?.querySelector<HTMLElement>(`[data-heat-cell="${tip.w}-${tip.d}"]`) ??
+              null)
+          : null;
+      },
+    }),
+    [gridRef, tip],
+  );
   return (
     <Tooltip
       key={tip ? `${tip.w}-${tip.d}` : "closed"}
       open={tooltip !== null && dismissed !== tip}
-      onOpenChange={(open) => { if (!open) setDismissed(tip); }}
+      onOpenChange={(open) => {
+        if (!open) setDismissed(tip);
+      }}
       id={tooltipId}
       anchorRef={anchorRef}
       className={cn("flex flex-wrap items-center gap-1.5", className)}
-      content={tooltip &&
+      content={
+        tooltip &&
         (typeof children === "function"
           ? children(tooltip)
           : (children ?? (
@@ -43,9 +56,12 @@ export function HeatCalendarTooltip({
                     ? `${fmtRange.format(tooltip.startDate)} – ${fmtRange.format(tooltip.endDate)}`
                     : fmtDay.format(tooltip.date)}
                 </span>
-                {tooltip.days > 1 ? <span className="text-muted-foreground">{tooltip.days} days</span> : null}
+                {tooltip.days > 1 ? (
+                  <span className="text-muted-foreground">{tooltip.days} days</span>
+                ) : null}
               </>
-            )))}
+            )))
+      }
     />
   );
 }

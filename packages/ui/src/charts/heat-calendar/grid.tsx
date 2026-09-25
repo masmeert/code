@@ -5,7 +5,13 @@ import { cn } from "@apcode/ui/lib/utils";
 import { useHeatCalendar } from "./context";
 import { DAYS, fmtDay, GAP, LIFT, MONTH_ROW, PITCH } from "./utils";
 
-export function HeatCalendarGrid({ children, className }: { children?: ReactNode; className?: string }) {
+export function HeatCalendarGrid({
+  children,
+  className,
+}: {
+  children?: ReactNode;
+  className?: string;
+}) {
   const {
     weeks,
     reduce,
@@ -48,7 +54,7 @@ export function HeatCalendarGrid({ children, className }: { children?: ReactNode
           <span
             key={c.id}
             className={cn(
-              "whitespace-nowrap text-[10px] leading-none transition-colors duration-200",
+              "text-[10px] leading-none whitespace-nowrap transition-colors duration-200",
               hotMonth === c.m ? "text-foreground" : "text-muted-foreground",
             )}
             style={{ gridColumn: c.w + 1, gridRow: 1 }}
@@ -66,11 +72,18 @@ export function HeatCalendarGrid({ children, className }: { children?: ReactNode
           const i = w * 7 + d;
           const on = hot?.w === w && hot?.d === d;
           const isEnd = span ? i === span.lo || i === span.hi : pinned?.w === w && pinned?.d === d;
-          const dim = (step !== null && step !== b) || (span !== null && (i < span.lo || i > span.hi));
+          const dim =
+            (step !== null && step !== b) || (span !== null && (i < span.lo || i > span.hi));
           // the ripple: the hovered cell rises most, the ring around it a little, two out barely
           const dist = hot ? Math.max(Math.abs(hot.w - w), Math.abs(hot.d - d)) : 9;
           const lift =
-            reduce || !canHover ? 1 : dist === 0 ? LIFT[0] : canHover && dist < LIFT.length ? LIFT[dist] : 1;
+            reduce || !canHover
+              ? 1
+              : dist === 0
+                ? LIFT[0]
+                : canHover && dist < LIFT.length
+                  ? LIFT[dist]
+                  : 1;
           return (
             // the outer span owns the legend dim so it never fights the transforms inside
             <span
@@ -107,7 +120,9 @@ export function HeatCalendarGrid({ children, className }: { children?: ReactNode
                   className="pointer-events-none absolute inset-0.5 block rounded-[4px]"
                   style={{
                     background: fill(b),
-                    boxShadow: isEnd ? "0 0 0 2px var(--background), 0 0 0 3.5px var(--foreground)" : "none",
+                    boxShadow: isEnd
+                      ? "0 0 0 2px var(--background), 0 0 0 3.5px var(--foreground)"
+                      : "none",
                     transition: "box-shadow 150ms",
                   }}
                   // the diagonal wave: each cell arrives (w + d) steps after the corner;
@@ -123,7 +138,9 @@ export function HeatCalendarGrid({ children, className }: { children?: ReactNode
                       : {
                           opacity: 1,
                           scale: 1,
-                          transition: reduce ? { duration: 0 } : { ...SPRING_PRESS, delay: (w + d) * 0.018 },
+                          transition: reduce
+                            ? { duration: 0 }
+                            : { ...SPRING_PRESS, delay: (w + d) * 0.018 },
                         }
                   }
                 >

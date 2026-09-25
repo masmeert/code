@@ -1,4 +1,11 @@
-import { RuntimeEvent, type PageInfo, type ProviderKind, type SearchHit, type StoredEvent, type ThreadInfo } from "@apcode/contracts";
+import {
+  RuntimeEvent,
+  type PageInfo,
+  type ProviderKind,
+  type SearchHit,
+  type StoredEvent,
+  type ThreadInfo,
+} from "@apcode/contracts";
 import { Database } from "bun:sqlite";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -41,7 +48,10 @@ export class ThreadStore extends Context.Service<
     /** Newest stored event id of a thread; 0 if none. */
     readonly cursor: (threadId: string) => number;
     /** How many events come after id `after`, and their encoded size, without reading them. */
-    readonly measureAfter: (threadId: string, after: number) => { readonly count: number; readonly bytes: number };
+    readonly measureAfter: (
+      threadId: string,
+      after: number,
+    ) => { readonly count: number; readonly bytes: number };
     /** Events after id `after`, oldest first. */
     readonly readAfter: (threadId: string, after: number) => ReadonlyArray<StoredEvent>;
     /**
@@ -73,7 +83,10 @@ export class ThreadStore extends Context.Service<
     readonly search: (query: string, limit: number) => ReadonlyArray<SearchHit>;
     readonly setModel: (threadId: string, model: string | null) => void;
     readonly setArchived: (threadId: string, archivedAt: number | null) => void;
-    readonly setMeta: (threadId: string, meta: { readonly title: string; readonly updatedAt: number }) => void;
+    readonly setMeta: (
+      threadId: string,
+      meta: { readonly title: string; readonly updatedAt: number },
+    ) => void;
     /** Returns the new event's id. */
     readonly appendEvent: (threadId: string, event: RuntimeEvent) => number;
     readonly deleteThread: (threadId: string) => void;
@@ -107,29 +120,49 @@ const make = Effect.acquireRelease(
     )`);
     db.run("CREATE INDEX IF NOT EXISTS events_thread ON events(thread_id)");
     // The event's tag as a column, so turns and approvals are found without decoding every row.
-    const eventColumns = new Set(db.query<{ name: string }, []>("PRAGMA table_info(events)").all().map((c) => c.name));
+    const eventColumns = new Set(
+      db
+        .query<{ name: string }, []>("PRAGMA table_info(events)")
+        .all()
+        .map((c) => c.name),
+    );
     if (!eventColumns.has("kind")) db.run("ALTER TABLE events ADD COLUMN kind TEXT");
-    const untagged = db.query<{ seq: number; json: string }, []>("SELECT seq, json FROM events WHERE kind IS NULL").all();
+    const untagged = db
+      .query<{ seq: number; json: string }, []>("SELECT seq, json FROM events WHERE kind IS NULL")
+      .all();
     if (untagged.length) {
       const setKind = db.prepare("UPDATE events SET kind = $kind WHERE seq = $seq");
       db.transaction(() => {
-        for (const row of untagged) setKind.run({ seq: row.seq, kind: (JSON.parse(row.json) as { _tag?: string })._tag ?? "" });
+        for (const row of untagged)
+          setKind.run({
+            seq: row.seq,
+            kind: (JSON.parse(row.json) as { _tag?: string })._tag ?? "",
+          });
       })();
     }
     db.run("CREATE INDEX IF NOT EXISTS events_thread_kind ON events(thread_id, kind, seq)");
     db.run("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
-    db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('data_id', $id)").run({ id: crypto.randomUUID() });
+    db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('data_id', $id)").run({
+      id: crypto.randomUUID(),
+    });
     // Migrations for databases created before a column existed.
-    const columns = new Set(db.query<{ name: string }, []>("PRAGMA table_info(threads)").all().map((c) => c.name));
+    const columns = new Set(
+      db
+        .query<{ name: string }, []>("PRAGMA table_info(threads)")
+        .all()
+        .map((c) => c.name),
+    );
     if (!columns.has("model")) db.run("ALTER TABLE threads ADD COLUMN model TEXT");
     if (!columns.has("archived_at")) db.run("ALTER TABLE threads ADD COLUMN archived_at INTEGER");
     if (!columns.has("updated_at")) {
       db.run("ALTER TABLE threads ADD COLUMN updated_at INTEGER");
       db.run("UPDATE threads SET updated_at = created_at");
     }
-    if (!columns.has("worktree")) db.run("ALTER TABLE threads ADD COLUMN worktree INTEGER NOT NULL DEFAULT 0");
+    if (!columns.has("worktree"))
+      db.run("ALTER TABLE threads ADD COLUMN worktree INTEGER NOT NULL DEFAULT 0");
     // Full-text index of what was said, for search. Filled as messages are stored; built from the log once.
-    const hasSearch = db.query("SELECT name FROM sqlite_master WHERE name = 'messages_fts'").get() !== null;
+    const hasSearch =
+      db.query("SELECT name FROM sqlite_master WHERE name = 'messages_fts'").get() !== null;
     if (!hasSearch) {
       db.run(
         `CREATE VIRTUAL TABLE messages_fts USING fts5(text, thread_id UNINDEXED, message_id UNINDEXED, sender UNINDEXED, seq UNINDEXED, tokenize = "unicode61 remove_diacritics 2")`,
@@ -147,19 +180,27 @@ const make = Effect.acquireRelease(
     const insertThread = db.prepare(
       "INSERT INTO threads (id, project_id, provider, model, cwd, title, created_at, updated_at, worktree) VALUES ($id, $projectId, $provider, $model, $cwd, $title, $createdAt, $updatedAt, $worktree)",
     );
-    const setMeta = db.prepare("UPDATE threads SET title = $title, updated_at = $updatedAt WHERE id = $id");
+    const setMeta = db.prepare(
+      "UPDATE threads SET title = $title, updated_at = $updatedAt WHERE id = $id",
+    );
     const setModel = db.prepare("UPDATE threads SET model = $model WHERE id = $id");
     const setArchived = db.prepare("UPDATE threads SET archived_at = $archivedAt WHERE id = $id");
     const setResumeToken = db.prepare("UPDATE threads SET resume_token = $token WHERE id = $id");
-    const appendEvent = db.prepare("INSERT INTO events (thread_id, kind, json) VALUES ($threadId, $kind, $json)");
+    const appendEvent = db.prepare(
+      "INSERT INTO events (thread_id, kind, json) VALUES ($threadId, $kind, $json)",
+    );
     const indexMessage = db.prepare(
       "INSERT INTO messages_fts (text, thread_id, message_id, sender, seq) VALUES ($text, $threadId, $messageId, $sender, $seq)",
     );
     const selectUserMessages = db.prepare<{ seq: number; json: string }, { threadId: string }>(
       "SELECT seq, json FROM events WHERE thread_id = $threadId AND kind = 'user.message' ORDER BY seq",
     );
-    const truncateEvents = db.prepare("DELETE FROM events WHERE thread_id = $threadId AND seq >= $seq");
-    const truncateIndex = db.prepare("DELETE FROM messages_fts WHERE thread_id = $threadId AND seq >= $seq");
+    const truncateEvents = db.prepare(
+      "DELETE FROM events WHERE thread_id = $threadId AND seq >= $seq",
+    );
+    const truncateIndex = db.prepare(
+      "DELETE FROM messages_fts WHERE thread_id = $threadId AND seq >= $seq",
+    );
     const deleteIndex = db.prepare("DELETE FROM messages_fts WHERE thread_id = $threadId");
     const selectSearch = db.prepare<
       { thread_id: string; message_id: string; sender: "user" | "assistant"; snippet: string },
@@ -168,22 +209,34 @@ const make = Effect.acquireRelease(
       `SELECT thread_id, message_id, sender, snippet(messages_fts, 0, char(57344), char(57345), '…', 16) AS snippet
        FROM messages_fts WHERE messages_fts MATCH $query ORDER BY seq DESC LIMIT $limit`,
     );
-    const dataId = db.query<{ value: string }, []>("SELECT value FROM meta WHERE key = 'data_id'").get()!.value;
+    const dataId = db
+      .query<{ value: string }, []>("SELECT value FROM meta WHERE key = 'data_id'")
+      .get()!.value;
     const toStored = (rows: ReadonlyArray<{ seq: number; json: string }>): Array<StoredEvent> =>
       rows.flatMap((row) => {
         const decoded = decodeEvent(row.json);
         return decoded._tag === "Some" ? [{ id: row.seq, event: decoded.value }] : [];
       });
-    const selectAfter = db.prepare<{ seq: number; json: string }, { threadId: string; after: number }>(
-      "SELECT seq, json FROM events WHERE thread_id = $threadId AND seq > $after ORDER BY seq",
-    );
-    const selectMeasure = db.prepare<{ count: number; bytes: number | null }, { threadId: string; after: number }>(
+    const selectAfter = db.prepare<
+      { seq: number; json: string },
+      { threadId: string; after: number }
+    >("SELECT seq, json FROM events WHERE thread_id = $threadId AND seq > $after ORDER BY seq");
+    const selectMeasure = db.prepare<
+      { count: number; bytes: number | null },
+      { threadId: string; after: number }
+    >(
       "SELECT COUNT(*) AS count, SUM(length(CAST(json AS BLOB))) AS bytes FROM events WHERE thread_id = $threadId AND seq > $after",
     );
-    const selectRange = db.prepare<{ seq: number; json: string }, { threadId: string; from: number; before: number }>(
+    const selectRange = db.prepare<
+      { seq: number; json: string },
+      { threadId: string; from: number; before: number }
+    >(
       "SELECT seq, json FROM events WHERE thread_id = $threadId AND seq >= $from AND seq < $before ORDER BY seq",
     );
-    const selectTurnStart = db.prepare<{ seq: number }, { threadId: string; before: number; offset: number }>(
+    const selectTurnStart = db.prepare<
+      { seq: number },
+      { threadId: string; before: number; offset: number }
+    >(
       "SELECT seq FROM events WHERE thread_id = $threadId AND kind = 'user.message' AND seq < $before ORDER BY seq DESC LIMIT 1 OFFSET $offset",
     );
     const selectOlder = db.prepare<{ seq: number }, { threadId: string; before: number }>(
@@ -205,7 +258,19 @@ const make = Effect.acquireRelease(
       load: Effect.sync(() =>
         db
           .query<
-            { id: string; project_id: string; provider: ProviderKind; model: string | null; cwd: string; title: string; created_at: number; updated_at: number; archived_at: number | null; resume_token: string | null; worktree: number },
+            {
+              id: string;
+              project_id: string;
+              provider: ProviderKind;
+              model: string | null;
+              cwd: string;
+              title: string;
+              created_at: number;
+              updated_at: number;
+              archived_at: number | null;
+              resume_token: string | null;
+              worktree: number;
+            },
             []
           >("SELECT * FROM threads ORDER BY created_at")
           .all()
@@ -280,7 +345,10 @@ const make = Effect.acquireRelease(
         setMeta.run({ id, ...meta });
       },
       appendEvent: (threadId, event) => {
-        const seq = Number(appendEvent.run({ threadId, kind: event._tag, json: JSON.stringify(event) }).lastInsertRowid);
+        const seq = Number(
+          appendEvent.run({ threadId, kind: event._tag, json: JSON.stringify(event) })
+            .lastInsertRowid,
+        );
         if ((event._tag === "user.message" || event._tag === "assistant.completed") && event.text) {
           const sender = event._tag === "user.message" ? "user" : "assistant";
           indexMessage.run({ text: event.text, threadId, messageId: event.messageId, sender, seq });
@@ -293,7 +361,12 @@ const make = Effect.acquireRelease(
         );
         const index = messages.findIndex((m) => m.event.messageId === messageId);
         if (index === -1) return null;
-        return { seq: messages[index]!.seq, event: messages[index]!.event, before: index, from: messages.slice(index).map((m) => m.event) };
+        return {
+          seq: messages[index]!.seq,
+          event: messages[index]!.event,
+          before: index,
+          from: messages.slice(index).map((m) => m.event),
+        };
       },
       truncate: (threadId, seq) => {
         db.transaction(() => {
@@ -303,7 +376,10 @@ const make = Effect.acquireRelease(
       },
       search: (query, limit) => {
         // Each word prefix-matches; quoting keeps FTS syntax in the query from being interpreted.
-        const terms = query.split(/\s+/).filter(Boolean).map((word) => `"${word.replaceAll('"', '""')}"*`);
+        const terms = query
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((word) => `"${word.replaceAll('"', '""')}"*`);
         if (!terms.length) return [];
         return selectSearch.all({ query: terms.join(" "), limit }).map((row) => ({
           threadId: row.thread_id,

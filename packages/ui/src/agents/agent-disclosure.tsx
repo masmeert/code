@@ -3,8 +3,7 @@ import type { CSSProperties } from "react";
 import { EASE_OUT } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
-export interface AgentDisclosureProps
-  extends Omit<HTMLMotionProps<"div">, "animate" | "initial"> {
+export interface AgentDisclosureProps extends Omit<HTMLMotionProps<"div">, "animate" | "initial"> {
   open: boolean;
   openHeight?: CSSProperties["height"];
 }

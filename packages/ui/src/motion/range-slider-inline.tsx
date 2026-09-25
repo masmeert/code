@@ -1,10 +1,4 @@
-import {
-  animate,
-  motion,
-  useMotionValue,
-  useReducedMotion,
-  useTransform,
-} from "motion/react";
+import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react";
 import {
   type PointerEvent,
   useCallback,
@@ -29,18 +23,14 @@ const SPRING_BOUNCY = { type: "spring", stiffness: 500, damping: 14, mass: 0.7 }
 
 type Stop = { value: number; x: number };
 
-function mapBetweenStops(
-  stops: Stop[],
-  point: number,
-  from: keyof Stop,
-  to: keyof Stop,
-) {
+function mapBetweenStops(stops: Stop[], point: number, from: keyof Stop, to: keyof Stop) {
   const upperIndex = stops.findIndex((stop) => stop[from] >= point);
   const upper = stops[upperIndex < 0 ? stops.length - 1 : upperIndex];
   const lower = stops[Math.max(0, upperIndex - 1)];
   if (lower[from] === upper[from]) return upper[to];
-  return lower[to] +
-    ((point - lower[from]) / (upper[from] - lower[from])) * (upper[to] - lower[to]);
+  return (
+    lower[to] + ((point - lower[from]) / (upper[from] - lower[from])) * (upper[to] - lower[to])
+  );
 }
 
 function nearestStop(stops: Stop[], x: number) {
@@ -110,8 +100,11 @@ export function InlineSlider({
         readoutWidth: readout.getBoundingClientRect().width,
       };
       setGeometry((previous) =>
-        previous.width === next.width && previous.labelWidth === next.labelWidth &&
-        previous.readoutWidth === next.readoutWidth ? previous : next,
+        previous.width === next.width &&
+        previous.labelWidth === next.labelWidth &&
+        previous.readoutWidth === next.readoutWidth
+          ? previous
+          : next,
       );
     };
     measure();
@@ -127,14 +120,19 @@ export function InlineSlider({
   // whether a marker is painted, never whether its stop remains interactive.
   const endX = Math.max(HANDLE_START, geometry.width - HANDLE_END_INSET);
   const stops = useMemo(() => {
-    const values = [...new Set(Array.from({ length: STOP_COUNT }, (_, index) =>
-      snapSliderValue(min + (index / (STOP_COUNT - 1)) * (max - min), min, max, step),
-    ))];
+    const values = [
+      ...new Set(
+        Array.from({ length: STOP_COUNT }, (_, index) =>
+          snapSliderValue(min + (index / (STOP_COUNT - 1)) * (max - min), min, max, step),
+        ),
+      ),
+    ];
     return values.map((value, index) => ({
       value,
-      x: values.length === 1
-        ? HANDLE_START
-        : HANDLE_START + (index / (values.length - 1)) * (endX - HANDLE_START),
+      x:
+        values.length === 1
+          ? HANDLE_START
+          : HANDLE_START + (index / (values.length - 1)) * (endX - HANDLE_START),
     }));
   }, [min, max, step, endX]);
   const restingX = mapBetweenStops(stops, current, "value", "x");
@@ -143,23 +141,27 @@ export function InlineSlider({
   // Never derive dragging pixels from a rounded value or swap to a lagging spring.
   const handleX = useMotionValue(restingX);
   const restingTarget = useRef(restingX);
-  const settleTo = useCallback((x: number) => {
-    restingTarget.current = x;
-    handleX.jump(handleX.get());
-    if (reduce) handleX.jump(x);
-    else animate(handleX, x, { type: "spring", ...SPRING_GLIDE });
-  }, [handleX, reduce]);
+  const settleTo = useCallback(
+    (x: number) => {
+      restingTarget.current = x;
+      handleX.jump(handleX.get());
+      if (reduce) handleX.jump(x);
+      else animate(handleX, x, { type: "spring", ...SPRING_GLIDE });
+    },
+    [handleX, reduce],
+  );
   useLayoutEffect(() => {
     if (gesture.current || restingTarget.current === restingX) return;
     settleTo(restingX);
   }, [restingX, settleTo]);
-  useEffect(() => () => {
-    handleX.stop();
-    if (dragFrame.current !== null) cancelAnimationFrame(dragFrame.current);
-  }, [handleX]);
-  const fillRight = useTransform(handleX, (x) =>
-    x >= endX ? geometry.width - 2 : x + 8,
+  useEffect(
+    () => () => {
+      handleX.stop();
+      if (dragFrame.current !== null) cancelAnimationFrame(dragFrame.current);
+    },
+    [handleX],
   );
+  const fillRight = useTransform(handleX, (x) => (x >= endX ? geometry.width - 2 : x + 8));
   // Slide a fixed-size fill inside the inset clipping window. The labels and
   // dots stay above it, and only transforms animate.
   const fillX = useTransform(fillRight, (right) => right - geometry.width + 2);
@@ -167,17 +169,11 @@ export function InlineSlider({
   // toggling the stem on/off in a single pointer frame. The thumb uses the
   // same two-dot treatment across both the label and numeric readout.
   const split = useTransform(handleX, (x) => {
-    const overlap = (start: number, end: number) => Math.max(0, Math.min(
-      1,
-      (x + 4 - start) / 6,
-      (end - x) / 6,
-    ));
+    const overlap = (start: number, end: number) =>
+      Math.max(0, Math.min(1, (x + 4 - start) / 6, (end - x) / 6));
     return Math.max(
       overlap(TEXT_INSET, TEXT_INSET + geometry.labelWidth),
-      overlap(
-        geometry.width - TEXT_INSET - geometry.readoutWidth,
-        geometry.width - TEXT_INSET,
-      ),
+      overlap(geometry.width - TEXT_INSET - geometry.readoutWidth, geometry.width - TEXT_INSET),
     );
   });
   const stemOpacity = useTransform(split, (amount) => 1 - amount);
@@ -192,8 +188,8 @@ export function InlineSlider({
     x + 2 >= bounds.start && x - 2 <= bounds.end;
   const ticks = showTicks
     ? stops
-      .map((stop) => stop.x)
-      .filter((x) => !overlapsText(x, labelBounds) && !overlapsText(x, readoutBounds))
+        .map((stop) => stop.x)
+        .filter((x) => !overlapsText(x, labelBounds) && !overlapsText(x, readoutBounds))
     : [];
 
   const queueDragCommit = (value: number) => {
@@ -220,9 +216,7 @@ export function InlineSlider({
     cancelDragCommit();
     setDragging(false);
     if (!options.disabled && geometry.width > 0) {
-      const x = event.type === "pointerup"
-        ? event.clientX - active.left - active.offset
-        : active.x;
+      const x = event.type === "pointerup" ? event.clientX - active.left - active.offset : active.x;
       const stop = nearestStop(stops, x);
       commit(stop.value);
       settleTo(options.value === undefined ? stop.x : restingX);
@@ -250,7 +244,9 @@ export function InlineSlider({
         handleX.stop();
         cancelDragCommit();
         capturePointer(event.currentTarget, event.pointerId);
-        event.currentTarget.querySelector<HTMLButtonElement>("[role=slider]")?.focus({ preventScroll: true });
+        event.currentTarget
+          .querySelector<HTMLButtonElement>("[role=slider]")
+          ?.focus({ preventScroll: true });
       }}
       onPointerMove={(event) => {
         const active = gesture.current;
@@ -269,11 +265,9 @@ export function InlineSlider({
       onPointerCancel={endGesture}
       onLostPointerCapture={endGesture}
       className={cn(
-        "relative h-10 w-full touch-none select-none overflow-hidden rounded-lg bg-muted",
+        "relative h-10 w-full touch-none overflow-hidden rounded-lg bg-muted select-none",
         TOUCH_GESTURE_CLASS,
-        options.disabled
-          ? "pointer-events-none opacity-50"
-          : "cursor-grab active:cursor-grabbing",
+        options.disabled ? "pointer-events-none opacity-50" : "cursor-grab active:cursor-grabbing",
         className,
       )}
     >
@@ -281,21 +275,18 @@ export function InlineSlider({
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-[2px] inset-y-0 overflow-hidden rounded-lg"
       >
-        <motion.div
-          className="absolute inset-0 rounded-lg bg-foreground/15"
-          style={{ x: fillX }}
-        />
+        <motion.div className="absolute inset-0 rounded-lg bg-foreground/15" style={{ x: fillX }} />
       </div>
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 text-foreground">
         <span
           ref={labelRef}
-          className="absolute left-5 top-1/2 max-w-[40%] -translate-y-1/2 truncate text-sm font-medium leading-5"
+          className="absolute top-1/2 left-5 max-w-[40%] -translate-y-1/2 truncate text-sm leading-5 font-medium"
         >
           {label}
         </span>
         <span
           ref={readoutRef}
-          className="absolute right-5 top-1/2 max-w-[40%] -translate-y-1/2 truncate text-[13px] font-semibold leading-[18px] tracking-tight tabular-nums"
+          className="absolute top-1/2 right-5 max-w-[40%] -translate-y-1/2 truncate text-[13px] leading-[18px] font-semibold tracking-tight tabular-nums"
         >
           {format(current)}
         </span>
@@ -311,12 +302,21 @@ export function InlineSlider({
         aria-hidden="true"
         animate={reduce ? undefined : { scaleY: dragging ? 1.35 : 1 }}
         transition={SPRING_BOUNCY}
-        className="pointer-events-none absolute left-0 top-2 h-6 w-1 text-foreground"
+        className="pointer-events-none absolute top-2 left-0 h-6 w-1 text-foreground"
         style={{ x: handleX }}
       >
-        <motion.span className="absolute top-0 size-1 rounded-full bg-current" style={{ y: reduce ? 0 : capTop }} />
-        <motion.span className="absolute inset-y-0 w-1 rounded-full bg-current" style={{ opacity: stemOpacity }} />
-        <motion.span className="absolute bottom-0 size-1 rounded-full bg-current" style={{ y: reduce ? 0 : capBottom }} />
+        <motion.span
+          className="absolute top-0 size-1 rounded-full bg-current"
+          style={{ y: reduce ? 0 : capTop }}
+        />
+        <motion.span
+          className="absolute inset-y-0 w-1 rounded-full bg-current"
+          style={{ opacity: stemOpacity }}
+        />
+        <motion.span
+          className="absolute bottom-0 size-1 rounded-full bg-current"
+          style={{ y: reduce ? 0 : capBottom }}
+        />
       </motion.div>
       <button
         type="button"
@@ -338,7 +338,7 @@ export function InlineSlider({
             commit(next);
           }
         }}
-        className="absolute inset-0 cursor-inherit touch-none rounded-lg border-0 outline-none"
+        className="cursor-inherit absolute inset-0 touch-none rounded-lg border-0 outline-none"
       />
     </div>
   );

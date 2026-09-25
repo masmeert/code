@@ -1,9 +1,4 @@
-import {
-  type PointerEvent as ReactPointerEvent,
-  useCallback,
-  useMemo,
-  useState,
-} from "react";
+import { type PointerEvent as ReactPointerEvent, useCallback, useMemo, useState } from "react";
 import { capturePointer, releasePointer } from "@apcode/ui/lib/touch";
 import type { HeaderCellRefs, TableColumn } from "./types";
 
@@ -16,9 +11,7 @@ export function useColumnReorder<T>({
   thRefs: HeaderCellRefs;
   onColumnOrderChange?: (keys: string[]) => void;
 }) {
-  const [order, setOrder] = useState<string[]>(() =>
-    columns.map((c) => c.key),
-  );
+  const [order, setOrder] = useState<string[]>(() => columns.map((c) => c.key));
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
 
@@ -41,16 +34,13 @@ export function useColumnReorder<T>({
       resultKeys.splice(at, 0, column.key);
       present.add(column.key);
     });
-    return resultKeys
-      .map((k) => byKey.get(k))
-      .filter((c): c is TableColumn<T> => c !== undefined);
+    return resultKeys.map((k) => byKey.get(k)).filter((c): c is TableColumn<T> => c !== undefined);
   }, [order, columns]);
 
   const dropIndexFor = useCallback(
     (clientX: number) => {
       for (let i = 0; i < orderedColumns.length; i++) {
-        const rect =
-          thRefs.current[orderedColumns[i].key]?.getBoundingClientRect();
+        const rect = thRefs.current[orderedColumns[i].key]?.getBoundingClientRect();
         if (rect && clientX < rect.left + rect.width / 2) return i;
       }
       return orderedColumns.length;

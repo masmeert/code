@@ -60,7 +60,10 @@ function tokenScore(token: string, { text, words }: Field) {
  * Match every query word across fields and put direct name matches first. Equal
  * scores keep the order they came in.
  */
-export function searchCommands<T extends SearchableCommand>(items: ReadonlyArray<T>, query: string): ReadonlyArray<T> {
+export function searchCommands<T extends SearchableCommand>(
+  items: ReadonlyArray<T>,
+  query: string,
+): ReadonlyArray<T> {
   const normalized = normalize(query);
   if (!normalized) return items;
   const tokens = normalized.split(" ");

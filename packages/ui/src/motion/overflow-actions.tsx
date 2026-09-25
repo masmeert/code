@@ -6,14 +6,7 @@ import {
   type Transition,
   type Variants,
 } from "motion/react";
-import {
-  useCallback,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { EASE_OUT } from "@apcode/ui/lib/ease";
 import { useHoverCapable } from "@apcode/ui/hooks/use-hover-capable";
 import { cn } from "@apcode/ui/lib/utils";
@@ -118,9 +111,7 @@ function useControllableExpanded({
   defaultExpanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
 }) {
-  const [internalExpanded, setInternalExpanded] = useState(
-    defaultExpanded ?? false,
-  );
+  const [internalExpanded, setInternalExpanded] = useState(defaultExpanded ?? false);
   const isControlled = expanded !== undefined;
   const value = expanded ?? internalExpanded;
 
@@ -168,8 +159,7 @@ export function OverflowActions({
 
     if (!isExpanded) {
       overflowNode.style.left = `${
-        overflowWrapperLeftRef.current -
-        overflowNode.getBoundingClientRect().left
+        overflowWrapperLeftRef.current - overflowNode.getBoundingClientRect().left
       }px`;
       return;
     }
@@ -229,10 +219,7 @@ export function OverflowActions({
               layout
               aria-hidden={!isExpanded}
               transition={transition}
-              className={cn(
-                "relative inline-flex w-max items-center",
-                GROUP_GAP_CLASS[size],
-              )}
+              className={cn("relative inline-flex w-max items-center", GROUP_GAP_CLASS[size])}
             >
               {overflowActions.map((item) => (
                 <ActionButton
@@ -332,9 +319,7 @@ function ActionButton({
       animate={variants ? (reduce ? { opacity: 1 } : "visible") : undefined}
       exit={variants ? (reduce ? { opacity: 0 } : "exit") : undefined}
       whileTap={reduce || item.disabled ? undefined : { scale: 0.97 }}
-      whileHover={
-        reduce || !canHover || item.disabled ? undefined : { scale: 1.008 }
-      }
+      whileHover={reduce || !canHover || item.disabled ? undefined : { scale: 1.008 }}
       transition={layoutTransition}
       className="inline-flex shrink-0"
     >
@@ -364,9 +349,7 @@ function ActionButton({
             {item.icon}
           </span>
         ) : null}
-        <span className={cn("whitespace-nowrap", labelClassName)}>
-          {item.label}
-        </span>
+        <span className={cn("whitespace-nowrap", labelClassName)}>{item.label}</span>
       </button>
     </motion.span>
   );

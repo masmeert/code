@@ -2,7 +2,18 @@ import { useReducedMotion } from "motion/react";
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useHoverCapable } from "@apcode/ui/hooks/use-hover-capable";
 import type { HeatCalendarCell, HeatCalendarProps, HeatCalendarSelection } from "./types";
-import { addDays, CELL, EMPTY, fmtMonth, GAP, MONTH_ROW, mondayOf, PITCH, STEPS, startOfDay } from "./utils";
+import {
+  addDays,
+  CELL,
+  EMPTY,
+  fmtMonth,
+  GAP,
+  MONTH_ROW,
+  mondayOf,
+  PITCH,
+  STEPS,
+  startOfDay,
+} from "./utils";
 
 /**
  * Weeks of activity as a single-hue grid with month labels, so
@@ -31,7 +42,8 @@ export function useHeatCalendarModel({
   const canHover = useHoverCapable();
   const [storedHover, setHover] = useState<HeatCalendarCell | null>(null);
   const [internalSelection, setInternalSelection] = useState(defaultSelection);
-  const requestedSelection = controlledSelection === undefined ? internalSelection : controlledSelection;
+  const requestedSelection =
+    controlledSelection === undefined ? internalSelection : controlledSelection;
   const setSelection = (next: HeatCalendarSelection | null) => {
     if (controlledSelection === undefined) setInternalSelection(next);
     onSelectionChange?.(next);
@@ -52,11 +64,15 @@ export function useHeatCalendarModel({
   const [today, setToday] = useState<Date | null>(null);
   useEffect(() => setToday(startOfDay(new Date())), []);
   const end = useMemo(() => (endDate ? startOfDay(endDate) : today), [endDate, today]);
-  const start = useMemo(() => (end ? addDays(mondayOf(end), -(weeks - 1) * 7) : null), [end, weeks]);
+  const start = useMemo(
+    () => (end ? addDays(mondayOf(end), -(weeks - 1) * 7) : null),
+    [end, weeks],
+  );
 
   const level = (w: number, d: number) => Math.max(0, Math.min(1, values?.[w]?.[d] ?? 0));
   const bucket = (v: number) => Math.min(4, Math.floor(v * 5));
-  const fill = (b: number) => (b === 0 ? EMPTY : `color-mix(in srgb, ${color} ${STEPS[b]}%, transparent)`);
+  const fill = (b: number) =>
+    b === 0 ? EMPTY : `color-mix(in srgb, ${color} ${STEPS[b]}%, transparent)`;
   const count = (v: number) => Math.round(v * maxCount);
   const dateOf = (w: number, d: number) => (start ? addDays(start, w * 7 + d) : null);
   const future = (w: number, d: number) => {
@@ -78,7 +94,8 @@ export function useHeatCalendarModel({
     (!requestedSelection.end || validCell(requestedSelection.end))
       ? requestedSelection
       : null;
-  if (requestedSelection && !selection && controlledSelection === undefined) setInternalSelection(null);
+  if (requestedSelection && !selection && controlledSelection === undefined)
+    setInternalSelection(null);
   const pinned = selection?.start ?? null;
   const spanEnd = selection?.end ?? null;
   const hover = storedHover && validCell(storedHover) ? storedHover : null;
@@ -91,7 +108,9 @@ export function useHeatCalendarModel({
       const date = start ? addDays(start, w * 7) : null;
       const m = date ? date.getUTCMonth() : -1;
       const fresh =
-        start !== null && date !== null && (w === 0 || addDays(start, (w - 1) * 7).getUTCMonth() !== m);
+        start !== null &&
+        date !== null &&
+        (w === 0 || addDays(start, (w - 1) * 7).getUTCMonth() !== m);
       return { id: `w${w}`, w, m, label: fresh && date ? fmtMonth.format(date) : null };
     });
     if (list[1]?.label || list[2]?.label) list[0].label = null;
@@ -188,7 +207,9 @@ export function useHeatCalendarModel({
   };
 }
 
-export const HeatCalendarContext = createContext<ReturnType<typeof useHeatCalendarModel> | null>(null);
+export const HeatCalendarContext = createContext<ReturnType<typeof useHeatCalendarModel> | null>(
+  null,
+);
 
 /** Read the shared data and selection from any descendant of HeatCalendar. */
 export function useHeatCalendar() {

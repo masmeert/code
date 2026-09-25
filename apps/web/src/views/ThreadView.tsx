@@ -19,13 +19,44 @@ import { cn } from "@apcode/ui/lib/utils";
 import { PROVIDER_AVATAR_CLASS, PROVIDER_LOGO } from "@/components/provider-logo";
 import type { Attachment, Project, ProviderKind, TurnOptions } from "@apcode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
-import { ArrowUp, FileDiff, FileText, FolderTree, Globe, ImageIcon, PanelLeft, Quote, SquareTerminal, Undo2, X } from "lucide-react";
-import { createContext, lazy, memo, type ReactNode, type RefObject, Suspense, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowUp,
+  FileDiff,
+  FileText,
+  FolderTree,
+  Globe,
+  ImageIcon,
+  PanelLeft,
+  Quote,
+  SquareTerminal,
+  Undo2,
+  X,
+} from "lucide-react";
+import {
+  createContext,
+  lazy,
+  memo,
+  type ReactNode,
+  type RefObject,
+  Suspense,
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toggleBrowser, useBrowser } from "../lib/browser.ts";
 import { fromSent } from "../lib/composer.ts";
 import { appendToDraft, focusComposer, setDraft } from "../lib/drafts.ts";
 import { describe, useKeybinding } from "../lib/keybindings.ts";
-import { decodeChoice, defaultModel, encodeChoice, modelChoices, PROVIDER_LABEL } from "../lib/models.ts";
+import {
+  decodeChoice,
+  defaultModel,
+  encodeChoice,
+  modelChoices,
+  PROVIDER_LABEL,
+} from "../lib/models.ts";
 import {
   createThread,
   type FollowUp,
@@ -51,12 +82,16 @@ const PANEL_WIDTH_KEY = "apcode.diffPanelWidth";
 
 // Loaded on first open, keeping the diff renderer out of startup.
 const DiffPanel = lazy(() => import("./DiffPanel.tsx").then((m) => ({ default: m.DiffPanel })));
-const TerminalPanel = lazy(() => import("./TerminalPanel.tsx").then((m) => ({ default: m.TerminalPanel })));
+const TerminalPanel = lazy(() =>
+  import("./TerminalPanel.tsx").then((m) => ({ default: m.TerminalPanel })),
+);
 
 /** Consecutive agent items form one turn under a single avatar. */
 type UserItem = Extract<TranscriptItem, { kind: "user" }>;
 
-type Turn = { readonly from: "user"; readonly id: string; readonly item: UserItem } | { readonly from: "assistant"; readonly id: string; readonly items: Array<TranscriptItem> };
+type Turn =
+  | { readonly from: "user"; readonly id: string; readonly item: UserItem }
+  | { readonly from: "assistant"; readonly id: string; readonly items: Array<TranscriptItem> };
 
 const toTurns = (items: ReadonlyArray<TranscriptItem>): Array<Turn> => {
   const turns: Array<Turn> = [];
@@ -75,7 +110,9 @@ const toTurns = (items: ReadonlyArray<TranscriptItem>): Array<Turn> => {
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
 
 /** Within a turn, consecutive tool calls collapse into one group row. */
-type Block = { readonly kind: "tools"; readonly id: string; readonly calls: Array<ToolItem> } | Exclude<TranscriptItem, ToolItem>;
+type Block =
+  | { readonly kind: "tools"; readonly id: string; readonly calls: Array<ToolItem> }
+  | Exclude<TranscriptItem, ToolItem>;
 
 const toBlocks = (items: ReadonlyArray<TranscriptItem>): Array<Block> => {
   const blocks: Array<Block> = [];
@@ -106,9 +143,11 @@ const Header = ({
   const { open } = useAnimatedSidebar();
   return (
     // Same row geometry as the sidebar's title bar, so both line up with the traffic lights.
-    <header className={`flex h-10 shrink-0 items-center gap-2 pr-4 pb-[3px] [-webkit-app-region:drag] ${open ? "pl-5" : "pl-[86px]"}`}>
+    <header
+      className={`flex h-10 shrink-0 items-center gap-2 pr-4 pb-[3px] [-webkit-app-region:drag] ${open ? "pl-5" : "pl-[86px]"}`}
+    >
       {open ? null : (
-        <AnimatedSidebarTrigger className="mr-1 size-7 rounded-lg text-muted-foreground hover:bg-muted/60 hover:text-foreground [-webkit-app-region:no-drag]">
+        <AnimatedSidebarTrigger className="mr-1 size-7 rounded-lg text-muted-foreground [-webkit-app-region:no-drag] hover:bg-muted/60 hover:text-foreground">
           <PanelLeft className="size-4" />
         </AnimatedSidebarTrigger>
       )}
@@ -121,13 +160,23 @@ const Header = ({
       ) : null}
       <span className="min-w-0 truncate text-sm font-medium text-foreground">{title}</span>
       {badge}
-      {actions ? <span className="ml-auto flex shrink-0 items-center gap-2 pl-2 [-webkit-app-region:no-drag]">{actions}</span> : null}
+      {actions ? (
+        <span className="ml-auto flex shrink-0 items-center gap-2 pl-2 [-webkit-app-region:no-drag]">
+          {actions}
+        </span>
+      ) : null}
     </header>
   );
 };
 
 /** A new chat that only exists in this window until its first message creates the thread. */
-export const DraftView = ({ path, onPickProject }: { path: string | null; onPickProject: (path: string | null) => void }) => {
+export const DraftView = ({
+  path,
+  onPickProject,
+}: {
+  path: string | null;
+  onPickProject: (path: string | null) => void;
+}) => {
   const providers = useStore((s) => s.providers);
   const settings = useStore((s) => s.settings);
   const project = useStore((s) => s.projects.find((p) => p.path === path));
@@ -135,7 +184,8 @@ export const DraftView = ({ path, onPickProject }: { path: string | null; onPick
   const lastModel = defaultModel(providers, settings, settings.lastProvider);
   const preferred = lastModel ? encodeChoice(settings.lastProvider, lastModel) : undefined;
   const [choice, setChoice] = useState<string | undefined>(undefined);
-  const selected = [choice, preferred].find((c) => c && choices.some((o) => o.value === c)) ?? choices[0]?.value;
+  const selected =
+    [choice, preferred].find((c) => c && choices.some((o) => o.value === c)) ?? choices[0]?.value;
   // Shift-click adds models: the prompt then starts one thread per model, each in its own worktree.
   const [extras, setExtras] = useState<Array<string>>([]);
   const extraModels = extras.filter((c) => c !== selected && choices.some((o) => o.value === c));
@@ -144,11 +194,17 @@ export const DraftView = ({ path, onPickProject }: { path: string | null; onPick
   return (
     <>
       <Header
-        project={path ? { id: project?.id ?? path, name: project?.name ?? path.split("/").at(-1) ?? path } : undefined}
+        project={
+          path
+            ? { id: project?.id ?? path, name: project?.name ?? path.split("/").at(-1) ?? path }
+            : undefined
+        }
         title="New thread"
       />
       <div className="flex flex-1 items-center justify-center px-6 text-center text-muted-foreground [-webkit-app-region:drag]">
-        {choices.length ? "What should we work on?" : "Link Claude Code or Codex in Settings to start."}
+        {choices.length
+          ? "What should we work on?"
+          : "Link Claude Code or Codex in Settings to start."}
       </div>
       <Composer
         // Stable across the project pick, so effort/permission choices carry over.
@@ -165,7 +221,11 @@ export const DraftView = ({ path, onPickProject }: { path: string | null; onPick
           setExtras([]);
         }}
         extraModels={extraModels}
-        onToggleModel={(value) => setExtras((prev) => (prev.includes(value) ? prev.filter((c) => c !== value) : [...prev, value]))}
+        onToggleModel={(value) =>
+          setExtras((prev) =>
+            prev.includes(value) ? prev.filter((c) => c !== value) : [...prev, value],
+          )
+        }
         workspace={workspace}
         placeholder={
           !selected
@@ -183,7 +243,15 @@ export const DraftView = ({ path, onPickProject }: { path: string | null; onPick
             const { provider, model } = decodeChoice(value);
             // Several models, or ⌘Enter: start in the background and stay in the draft.
             const open = all.length === 1 && !how.alternate;
-            createThread({ path, provider, model, text, options, workspace: all.length > 1 ? "worktree" : workspace.value, open });
+            createThread({
+              path,
+              provider,
+              model,
+              text,
+              options,
+              workspace: all.length > 1 ? "worktree" : workspace.value,
+              open,
+            });
           }
         }}
       />
@@ -234,7 +302,10 @@ const FollowUpBubble = ({ threadId, followUp }: { threadId: string; followUp: Fo
         <IconAction label="Send now" onClick={() => sendFollowUpNow(threadId, followUp.id)}>
           <ArrowUp className="size-3.5" />
         </IconAction>
-        <IconAction label="Back to the composer" onClick={() => returnToComposer(threadId, takeFollowUps(threadId, followUp.id))}>
+        <IconAction
+          label="Back to the composer"
+          onClick={() => returnToComposer(threadId, takeFollowUps(threadId, followUp.id))}
+        >
           <X className="size-3.5" />
         </IconAction>
       </div>
@@ -248,7 +319,7 @@ const IconAction = (props: { label: string; onClick: () => void; children: React
     title={props.label}
     aria-label={props.label}
     onClick={props.onClick}
-    className="grid size-6 place-items-center rounded-md outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+    className="grid size-6 place-items-center rounded-md transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
   >
     {props.children}
   </button>
@@ -258,7 +329,13 @@ const IconAction = (props: { label: string; onClick: () => void; children: React
  * Selecting text in an agent reply offers to quote it in the composer, where you can
  * comment on it (t3code's "Cite in composer").
  */
-const QuoteSelection = ({ container, threadId }: { container: RefObject<HTMLDivElement | null>; threadId: string }) => {
+const QuoteSelection = ({
+  container,
+  threadId,
+}: {
+  container: RefObject<HTMLDivElement | null>;
+  threadId: string;
+}) => {
   const [quote, setQuote] = useState<{ text: string; top: number; left: number } | null>(null);
   useEffect(() => {
     const area = container.current;
@@ -267,11 +344,18 @@ const QuoteSelection = ({ container, threadId }: { container: RefObject<HTMLDivE
       const selection = document.getSelection();
       const text = selection?.toString().trim() ?? "";
       const node = selection?.anchorNode;
-      const inReply = node && area.contains(node) && (node instanceof Element ? node : node.parentElement)?.closest('[data-from="assistant"]');
+      const inReply =
+        node &&
+        area.contains(node) &&
+        (node instanceof Element ? node : node.parentElement)?.closest('[data-from="assistant"]');
       if (!selection || selection.isCollapsed || !text || !inReply) return setQuote(null);
       const rect = selection.getRangeAt(0).getBoundingClientRect();
       const box = area.getBoundingClientRect();
-      setQuote({ text, top: rect.top - box.top - 34, left: Math.min(Math.max(rect.left - box.left + rect.width / 2, 40), box.width - 40) });
+      setQuote({
+        text,
+        top: rect.top - box.top - 34,
+        left: Math.min(Math.max(rect.left - box.left + rect.width / 2, 40), box.width - 40),
+      });
     };
     const clear = () => document.getSelection()?.isCollapsed && setQuote(null);
     area.addEventListener("mouseup", update);
@@ -291,7 +375,13 @@ const QuoteSelection = ({ container, threadId }: { container: RefObject<HTMLDivE
       // Keep the selection while clicking.
       onMouseDown={(event) => event.preventDefault()}
       onClick={() => {
-        appendToDraft(threadId, `${quote.text.split("\n").map((line) => `> ${line}`).join("\n")}\n\n`);
+        appendToDraft(
+          threadId,
+          `${quote.text
+            .split("\n")
+            .map((line) => `> ${line}`)
+            .join("\n")}\n\n`,
+        );
         document.getSelection()?.removeAllRanges();
         setQuote(null);
         focusComposer();
@@ -327,16 +417,25 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
     setDiffOpen(true);
   }, []);
   // A rewind can take the turn on show with it.
-  const diffTurnGone = diffTurn !== null && transcript?.status === "live" && !items.some((item) => item.id === diffTurn);
+  const diffTurnGone =
+    diffTurn !== null &&
+    transcript?.status === "live" &&
+    !items.some((item) => item.id === diffTurn);
   useEffect(() => {
     if (diffTurnGone) setDiffTurn(null);
   }, [diffTurnGone]);
   const followUps = useStore((s) => s.followUps[threadId]) ?? NO_FOLLOW_UPS;
   const followUpMode = useStore((s) => s.settings.followUp ?? "queue");
-  const history = useMemo(() => items.flatMap((item) => (item.kind === "user" && item.text ? [item.text] : [])), [items]);
+  const history = useMemo(
+    () => items.flatMap((item) => (item.kind === "user" && item.text ? [item.text] : [])),
+    [items],
+  );
   const scrollArea = useRef<HTMLDivElement>(null);
   // Re-read the diff whenever a tool finishes or a turn ends: either may have changed files.
-  const finishedTools = items.reduce((n, item) => (item.kind === "tool" && item.output !== null ? n + 1 : n), 0);
+  const finishedTools = items.reduce(
+    (n, item) => (item.kind === "tool" && item.output !== null ? n + 1 : n),
+    0,
+  );
   const diffKey = `${status}:${info.updatedAt}:${finishedTools}`;
   const activeTerminal = useStore((s) => s.activeTerminals[threadId]);
   useKeybinding("terminal.toggle", () => {
@@ -381,7 +480,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                 aria-label={activeTerminal ? "Hide terminal" : "Show terminal"}
                 aria-pressed={activeTerminal !== undefined}
                 onClick={() => toggleTerminalPanel(threadId)}
-                className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${activeTerminal ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+                className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${activeTerminal ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
               >
                 <SquareTerminal className="size-4" />
               </button>
@@ -394,7 +493,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                   setDiffOpen(!diffOpen);
                   setDiffTurn(null);
                 }}
-                className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${diffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+                className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${diffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
               >
                 <FileDiff className="size-4" />
               </button>
@@ -405,7 +504,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                   aria-label={browserOpen ? "Hide browser" : "Show browser"}
                   aria-pressed={browserOpen}
                   onClick={() => toggleBrowser(threadId)}
-                  className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${browserOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+                  className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${browserOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
                 >
                   <Globe className="size-4" />
                 </button>
@@ -431,7 +530,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                   type="button"
                   onClick={() => loadOlder(threadId)}
                   disabled={transcript.loadingOlder}
-                  className="mx-auto rounded-lg px-3 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                  className="mx-auto rounded-lg px-3 py-1 text-xs text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
                 >
                   {transcript.loadingOlder ? "Loading…" : "Load earlier messages"}
                 </button>
@@ -440,7 +539,9 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                 <TurnList items={items} provider={provider} threadId={threadId} busy={busy} />
               </TurnDiffContext>
 
-              {status === "running" && lastItem?.kind !== "assistant" && !(lastItem?.kind === "tool" && lastItem.output === null) ? (
+              {status === "running" &&
+              lastItem?.kind !== "assistant" &&
+              !(lastItem?.kind === "tool" && lastItem.output === null) ? (
                 <Message from="assistant" animateIn>
                   <MessageAvatar placeholder />
                   <MessageContent>
@@ -465,7 +566,9 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             busy={busy}
             models={choices}
             model={current ? encodeChoice(provider, current) : undefined}
-            onModelChange={(value) => send({ _tag: "thread.setModel", threadId, model: decodeChoice(value).model })}
+            onModelChange={(value) =>
+              send({ _tag: "thread.setModel", threadId, model: decodeChoice(value).model })
+            }
             placeholder={
               busy
                 ? followUpMode === "queue"
@@ -486,7 +589,19 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
           />
         </div>
         {diffOpen ? (
-          <Suspense fallback={<div style={{ width: readWidth(PANEL_WIDTH_KEY, Math.min(960, Math.round(window.innerWidth * 0.45))) }} className="shrink-0 border-l border-border" />}>
+          <Suspense
+            fallback={
+              <div
+                style={{
+                  width: readWidth(
+                    PANEL_WIDTH_KEY,
+                    Math.min(960, Math.round(window.innerWidth * 0.45)),
+                  ),
+                }}
+                className="shrink-0 border-l border-border"
+              />
+            }
+          >
             <DiffPanel
               cwd={info.cwd}
               refreshKey={diffKey}
@@ -508,7 +623,8 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
 };
 
 /** Same items, by identity: the store only replaces the item that changed. */
-const sameItems = (a: ReadonlyArray<unknown>, b: ReadonlyArray<unknown>) => a.length === b.length && a.every((item, i) => item === b[i]);
+const sameItems = (a: ReadonlyArray<unknown>, b: ReadonlyArray<unknown>) =>
+  a.length === b.length && a.every((item, i) => item === b[i]);
 
 /**
  * The transcript. Every delta re-renders this, but turns and blocks whose items are
@@ -540,7 +656,14 @@ export const TurnList = ({
     // The latest exchange stays fully rendered: it's what streams and what the scroller follows.
     const className = settled && index < turns.length - 2 ? OFFSCREEN_SKIP : KEEP_RENDERED;
     return turn.from === "user" ? (
-      <UserTurn key={turn.id} item={turn.item} threadId={threadId} busy={busy} animateIn={settled} className={className} />
+      <UserTurn
+        key={turn.id}
+        item={turn.item}
+        threadId={threadId}
+        busy={busy}
+        animateIn={settled}
+        className={className}
+      />
     ) : (
       <AssistantTurn
         key={turn.id}
@@ -562,24 +685,44 @@ export const TurnList = ({
 const OFFSCREEN_SKIP = "[content-visibility:auto] [contain-intrinsic-size:auto_240px]";
 const KEEP_RENDERED = "[contain-intrinsic-size:auto_240px]";
 
-const UserTurn = memo(({ item, threadId, busy, animateIn, className }: { item: UserItem; threadId: string; busy: boolean; animateIn: boolean; className: string }) => (
-  <Message from="user" animateIn={animateIn} className={cn("group/turn", className)}>
-    <MessageContent className="gap-1.5">
-      {item.attachments.length ? <AttachmentList attachments={item.attachments} /> : null}
-      {item.text ? (
-        <MessageBubble variant="soft">
-          <MessageBubbleContent className="selectable whitespace-pre-wrap">{item.text}</MessageBubbleContent>
-        </MessageBubble>
-      ) : null}
-      {/* A message sent mid-turn has no turn of its own to go back to. */}
-      {busy || item.steer ? null : <EditFromHere item={item} threadId={threadId} />}
-    </MessageContent>
-  </Message>
-));
+const UserTurn = memo(
+  ({
+    item,
+    threadId,
+    busy,
+    animateIn,
+    className,
+  }: {
+    item: UserItem;
+    threadId: string;
+    busy: boolean;
+    animateIn: boolean;
+    className: string;
+  }) => (
+    <Message from="user" animateIn={animateIn} className={cn("group/turn", className)}>
+      <MessageContent className="gap-1.5">
+        {item.attachments.length ? <AttachmentList attachments={item.attachments} /> : null}
+        {item.text ? (
+          <MessageBubble variant="soft">
+            <MessageBubbleContent className="selectable whitespace-pre-wrap">
+              {item.text}
+            </MessageBubbleContent>
+          </MessageBubble>
+        ) : null}
+        {/* A message sent mid-turn has no turn of its own to go back to. */}
+        {busy || item.steer ? null : <EditFromHere item={item} threadId={threadId} />}
+      </MessageContent>
+    </Message>
+  ),
+);
 
 const REWIND_OPTIONS = [
   { value: "keep", label: "Rewind conversation", description: "The files stay as they are now" },
-  { value: "files", label: "Rewind conversation and files", description: "The folder goes back to how it was when this was sent" },
+  {
+    value: "files",
+    label: "Rewind conversation and files",
+    description: "The folder goes back to how it was when this was sent",
+  },
 ];
 
 /** Rewinds to before this message and puts it back in the composer to edit and resend. */
@@ -601,7 +744,12 @@ const EditFromHere = ({ item, threadId }: { item: UserItem; threadId: string }) 
           text: prev.text.trim() ? `${prev.text.trimEnd()}\n\n${item.text}` : item.text,
           attachments: [...prev.attachments, ...item.attachments.map(fromSent)],
         }));
-        send({ _tag: "thread.rewind", threadId, messageId: item.id, restoreFiles: choice === "files" });
+        send({
+          _tag: "thread.rewind",
+          threadId,
+          messageId: item.id,
+          restoreFiles: choice === "files",
+        });
         focusComposer();
       }}
     />
@@ -615,16 +763,20 @@ const CheckpointChip = ({ item }: { item: Extract<TranscriptItem, { kind: "check
     <button
       type="button"
       onClick={() => openTurnDiff(item.messageId)}
-      className="flex w-fit items-center gap-2 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex w-fit items-center gap-2 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
     >
       <FileDiff className="size-3.5" />
       <span>
         {item.files} {item.files === 1 ? "file" : "files"} changed
       </span>
       <span className="font-mono tabular-nums">
-        {item.additions ? <span className="text-emerald-600 dark:text-emerald-400">+{item.additions}</span> : null}
+        {item.additions ? (
+          <span className="text-emerald-600 dark:text-emerald-400">+{item.additions}</span>
+        ) : null}
         {item.additions && item.deletions ? " " : null}
-        {item.deletions ? <span className="text-rose-600 dark:text-rose-400">−{item.deletions}</span> : null}
+        {item.deletions ? (
+          <span className="text-rose-600 dark:text-rose-400">−{item.deletions}</span>
+        ) : null}
       </span>
     </button>
   );
@@ -655,7 +807,13 @@ const AssistantTurn = memo(
             <span>{PROVIDER_LABEL[provider]}</span>
           </MessageHeader>
           {blocks.map((block) => (
-            <AgentBlock key={block.id} block={block} threadId={threadId} live={busy} streaming={busy && last && block === lastItem} />
+            <AgentBlock
+              key={block.id}
+              block={block}
+              threadId={threadId}
+              live={busy}
+              streaming={busy && last && block === lastItem}
+            />
           ))}
         </MessageContent>
       </Message>
@@ -685,7 +843,10 @@ const AgentBlock = memo(
     a.threadId === b.threadId &&
     a.live === b.live &&
     a.streaming === b.streaming &&
-    (a.block === b.block || (a.block.kind === "tools" && b.block.kind === "tools" && sameItems(a.block.calls, b.block.calls))),
+    (a.block === b.block ||
+      (a.block.kind === "tools" &&
+        b.block.kind === "tools" &&
+        sameItems(a.block.calls, b.block.calls))),
 );
 
 const AgentBlockContent = ({ block: item, threadId, live, streaming }: AgentBlockProps) => {
@@ -696,7 +857,12 @@ const AgentBlockContent = ({ block: item, threadId, live, streaming }: AgentBloc
       return (
         <MessageBubble variant="ghost" className="w-full">
           <MessageBubbleContent>
-            <StreamingResponse status={streaming ? "streaming" : "complete"} copyText={item.text} showActions={!streaming} showFeedback={false}>
+            <StreamingResponse
+              status={streaming ? "streaming" : "complete"}
+              copyText={item.text}
+              showActions={!streaming}
+              showFeedback={false}
+            >
               <Markdown streaming={streaming} className="selectable leading-relaxed">
                 {item.text}
               </Markdown>
@@ -715,7 +881,13 @@ const AgentBlockContent = ({ block: item, threadId, live, streaming }: AgentBloc
           title={`Allow ${item.title}?`}
           status={item.decision === "deny" ? "denied" : item.decision ? "approving" : "pending"}
           defaultOpen
-          parameters={[{ id: "input", label: "Input", value: <ToolApprovalCode code={item.detail} language="bash" /> }]}
+          parameters={[
+            {
+              id: "input",
+              label: "Input",
+              value: <ToolApprovalCode code={item.detail} language="bash" />,
+            },
+          ]}
           onApprove={() => respondApproval(threadId, item.id, "allow")}
           onAlwaysAllow={() => respondApproval(threadId, item.id, "allow-session")}
           onDeny={() => respondApproval(threadId, item.id, "deny")}

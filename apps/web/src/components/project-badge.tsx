@@ -24,7 +24,13 @@ const tint = (key: string) => {
 };
 
 /** Two-letter project mark, tinted per project so they're told apart at a glance. */
-export const ProjectBadge = ({ project, className }: { project: Pick<Project, "id" | "name">; className?: string }) => (
+export const ProjectBadge = ({
+  project,
+  className,
+}: {
+  project: Pick<Project, "id" | "name">;
+  className?: string;
+}) => (
   <span
     aria-hidden="true"
     className={cn(

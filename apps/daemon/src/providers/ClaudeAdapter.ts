@@ -89,18 +89,33 @@ const IMAGE_TYPES: Record<string, "image/png" | "image/jpeg" | "image/gif" | "im
 /** Images inline as base64 blocks, then the text (with other files listed as paths). */
 const toContent = async (turn: TurnInput): Promise<SDKUserMessage["message"]["content"]> => {
   const text = textWithFiles(turn);
-  const images = turn.attachments.filter((a) => a.isImage && IMAGE_TYPES[extname(a.path).toLowerCase()]);
+  const images = turn.attachments.filter(
+    (a) => a.isImage && IMAGE_TYPES[extname(a.path).toLowerCase()],
+  );
   if (!images.length) return text;
   const blocks = await Promise.all(
     images.map(async (a) => ({
       type: "image" as const,
-      source: { type: "base64" as const, media_type: IMAGE_TYPES[extname(a.path).toLowerCase()]!, data: (await readFile(a.path)).toString("base64") },
+      source: {
+        type: "base64" as const,
+        media_type: IMAGE_TYPES[extname(a.path).toLowerCase()]!,
+        data: (await readFile(a.path)).toString("base64"),
+      },
     })),
   );
   return [...blocks, ...(text ? [{ type: "text" as const, text }] : [])];
 };
 
-const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: initialPermission, onResumeToken, emit, mcpServer }: StartSessionInput) =>
+const start = ({
+  cwd,
+  model,
+  resumeToken,
+  effort: initialEffort,
+  permission: initialPermission,
+  onResumeToken,
+  emit,
+  mcpServer,
+}: StartSessionInput) =>
   Effect.try({
     try: () => {
       const inbox = makeInbox<SDKUserMessage>();
@@ -118,7 +133,12 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
             }
           });
           emit({ _tag: "thread.status", status: "awaiting-approval" });
-          emit({ _tag: "approval.requested", requestId, title: toolName, detail: summarizeToolInput(input) });
+          emit({
+            _tag: "approval.requested",
+            requestId,
+            title: toolName,
+            detail: summarizeToolInput(input),
+          });
         });
 
       const q: Query = query({
@@ -136,7 +156,13 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
           includePartialMessages: true,
           canUseTool,
           env: { ...process.env, APCODE_MCP_TOKEN: mcpServer.token },
-          mcpServers: { browser: { type: "http", url: mcpServer.url, headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" } } },
+          mcpServers: {
+            browser: {
+              type: "http",
+              url: mcpServer.url,
+              headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
+            },
+          },
           allowedTools: ["mcp__browser__snapshot", "mcp__browser__console"],
         },
       });
@@ -151,7 +177,11 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
       let effort = initialEffort;
 
       const handle = (msg: SDKMessage) => {
-        if ("session_id" in msg && typeof msg.session_id === "string" && msg.session_id !== sessionId) {
+        if (
+          "session_id" in msg &&
+          typeof msg.session_id === "string" &&
+          msg.session_id !== sessionId
+        ) {
           sessionId = msg.session_id;
           onResumeToken(sessionId);
         }
@@ -178,7 +208,12 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
               if (block.type === "text" && !streamed.has(msg.message.id)) {
                 emit({ _tag: "assistant.completed", messageId: msg.message.id, text: block.text });
               } else if (block.type === "tool_use") {
-                emit({ _tag: "tool.started", toolId: block.id, name: block.name, summary: summarizeToolInput(block.input) });
+                emit({
+                  _tag: "tool.started",
+                  toolId: block.id,
+                  name: block.name,
+                  summary: summarizeToolInput(block.input),
+                });
               }
             }
             return;
@@ -190,13 +225,21 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
               const output =
                 typeof block.content === "string"
                   ? block.content
-                  : (block.content ?? []).map((part) => (part.type === "text" ? part.text : `[${part.type}]`)).join("\n");
-              emit({ _tag: "tool.completed", toolId: block.tool_use_id, output, isError: block.is_error === true });
+                  : (block.content ?? [])
+                      .map((part) => (part.type === "text" ? part.text : `[${part.type}]`))
+                      .join("\n");
+              emit({
+                _tag: "tool.completed",
+                toolId: block.tool_use_id,
+                output,
+                isError: block.is_error === true,
+              });
             }
             return;
           }
           case "result": {
-            if (msg.subtype !== "success") emit({ _tag: "error", message: `Turn ended: ${msg.subtype}` });
+            if (msg.subtype !== "success")
+              emit({ _tag: "error", message: `Turn ended: ${msg.subtype}` });
             emit({ _tag: "turn.completed", durationMs: msg.duration_ms });
             emit({ _tag: "thread.status", status: "idle" });
             return;
@@ -230,7 +273,12 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
                 effort = turn.effort;
               }
               const content = await toContent(turn);
-              inbox.push({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, uuid: turn.messageId as UUID });
+              inbox.push({
+                type: "user",
+                message: { role: "user", content },
+                parent_tool_use_id: null,
+                uuid: turn.messageId as UUID,
+              });
             },
             catch: (e) => fail(e instanceof Error ? e.message : String(e)),
           }),
@@ -251,14 +299,25 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
           }),
         compact: Effect.sync(() => {
           emit({ _tag: "thread.status", status: "running" });
-          inbox.push({ type: "user", message: { role: "user", content: "/compact" }, parent_tool_use_id: null });
+          inbox.push({
+            type: "user",
+            message: { role: "user", content: "/compact" },
+            parent_tool_use_id: null,
+          });
         }),
         commands: Effect.tryPromise({
           try: async () =>
-            (await q.supportedCommands()).map((c) => ({ name: c.name, description: c.description, argumentHint: c.argumentHint })),
+            (await q.supportedCommands()).map((c) => ({
+              name: c.name,
+              description: c.description,
+              argumentHint: c.argumentHint,
+            })),
           catch: (e) => fail(String(e)),
         }),
-        interrupt: Effect.tryPromise({ try: () => q.interrupt(), catch: (e) => fail(String(e)) }).pipe(Effect.asVoid),
+        interrupt: Effect.tryPromise({
+          try: () => q.interrupt(),
+          catch: (e) => fail(String(e)),
+        }).pipe(Effect.asVoid),
         respondApproval: (requestId, decision) =>
           Effect.suspend(() => {
             const entry = pending.get(requestId);
@@ -270,7 +329,9 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
                 : {
                     behavior: "allow",
                     updatedInput: entry.input,
-                    ...(decision === "allow-session" && entry.suggestions ? { updatedPermissions: entry.suggestions } : {}),
+                    ...(decision === "allow-session" && entry.suggestions
+                      ? { updatedPermissions: entry.suggestions }
+                      : {}),
                   },
             );
             emit({ _tag: "approval.resolved", requestId });
@@ -278,7 +339,10 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
             return Effect.void;
           }),
         setModel: (next) =>
-          Effect.tryPromise({ try: () => q.setModel(next ?? undefined), catch: (e) => fail(String(e)) }),
+          Effect.tryPromise({
+            try: () => q.setModel(next ?? undefined),
+            catch: (e) => fail(String(e)),
+          }),
         close: Effect.sync(() => {
           inbox.end();
           q.close();
@@ -296,7 +360,10 @@ const isPrompt = (entry: { type: string; parent_tool_use_id: string | null; mess
   if (entry.type !== "user" || entry.parent_tool_use_id) return false;
   const content = (entry.message as { content?: unknown } | null)?.content;
   if (typeof content === "string") return true;
-  return Array.isArray(content) && !content.some((block) => (block as { type?: string }).type === "tool_result");
+  return (
+    Array.isArray(content) &&
+    !content.some((block) => (block as { type?: string }).type === "tool_result")
+  );
 };
 
 /**
@@ -315,7 +382,10 @@ const rewind: ProviderAdapter["rewind"] = ({ cwd, resumeToken, messageId, keep }
         index = entries.findIndex((entry) => isPrompt(entry) && prompts++ === keep);
       }
       if (index <= 0) throw new Error("couldn't find that message in Claude's session log");
-      const { sessionId } = await forkSession(resumeToken, { dir: cwd, upToMessageId: entries[index - 1]!.uuid });
+      const { sessionId } = await forkSession(resumeToken, {
+        dir: cwd,
+        upToMessageId: entries[index - 1]!.uuid,
+      });
       return sessionId;
     },
     catch: (e) => fail(`Couldn't rewind: ${e instanceof Error ? e.message : String(e)}`),

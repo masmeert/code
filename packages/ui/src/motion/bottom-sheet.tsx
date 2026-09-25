@@ -131,9 +131,7 @@ export function BottomSheet({
 
   const snapValue = snapPoints[snap];
   const heightStyle =
-    snapValue === "auto"
-      ? { maxHeight: "92vh" }
-      : { height: `${snapValue * 100}vh` };
+    snapValue === "auto" ? { maxHeight: "92vh" } : { height: `${snapValue * 100}vh` };
 
   // Portal to <body>: an ancestor with backdrop-filter or transform becomes
   // the containing block for fixed descendants, which would position the
@@ -185,13 +183,12 @@ export function BottomSheet({
               exit={reduce ? { y: 0, opacity: 0 } : { y: "100%" }}
               transition={reduce ? { duration: 0.18, ease: EASE_DRAWER } : DRAWER}
               onAnimationComplete={() => {
-                if (sheetRef.current)
-                  heightRef.current = sheetRef.current.offsetHeight;
+                if (sheetRef.current) heightRef.current = sheetRef.current.offsetHeight;
               }}
               {...gate}
               style={{ ...heightStyle, ...gate.style }}
               className={cn(
-                "pointer-events-auto fixed bottom-0 left-0 right-0 z-50 mx-auto flex max-w-2xl flex-col overflow-hidden rounded-t-3xl will-change-transform",
+                "pointer-events-auto fixed right-0 bottom-0 left-0 z-50 mx-auto flex max-w-2xl flex-col overflow-hidden rounded-t-3xl will-change-transform",
                 "border border-border bg-popover shadow-panel",
                 className,
               )}
@@ -201,7 +198,7 @@ export function BottomSheet({
               aria-describedby={description ? descriptionId : undefined}
               aria-label={title ? undefined : "Bottom sheet"}
             >
-              <div className="flex flex-col items-center px-4 pb-2 pt-3">
+              <div className="flex flex-col items-center px-4 pt-3 pb-2">
                 {/* Drag only the pill so the title and description stay selectable. */}
                 <div
                   onPointerDown={(event) => dragControls.start(event)}
@@ -217,18 +214,12 @@ export function BottomSheet({
                 {title || description ? (
                   <div className="mt-2 w-full">
                     {title ? (
-                      <h2
-                        id={titleId}
-                        className="text-base font-semibold text-foreground"
-                      >
+                      <h2 id={titleId} className="text-base font-semibold text-foreground">
                         {title}
                       </h2>
                     ) : null}
                     {description ? (
-                      <p
-                        id={descriptionId}
-                        className="mt-0.5 text-sm text-muted-foreground"
-                      >
+                      <p id={descriptionId} className="mt-0.5 text-sm text-muted-foreground">
                         {description}
                       </p>
                     ) : null}

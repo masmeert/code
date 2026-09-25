@@ -51,7 +51,10 @@ const parseFiles = (patch: string): Array<FileDiffMetadata> => {
     // and a changed one never shows a stale render.
     files = parsePatchFiles(patch)
       .flatMap((parsed) => parsed.files)
-      .map((file) => ({ ...file, cacheKey: `${file.name}:${file.prevObjectId ?? ""}:${file.newObjectId ?? ""}` }));
+      .map((file) => ({
+        ...file,
+        cacheKey: `${file.name}:${file.prevObjectId ?? ""}:${file.newObjectId ?? ""}`,
+      }));
   } catch {}
   lastParse = { patch, files };
   return files;
@@ -90,7 +93,12 @@ export const DiffPanel = ({
   const turnKey = turn ? `${turn.threadId}:${turn.messageId}` : null;
   const diff = useStore((s) => (turnKey ? s.turnDiffs[turnKey] : s.diffs[cwd]));
   const refresh = useCallback(
-    () => send(turn ? { _tag: "checkpoint.diff", threadId: turn.threadId, messageId: turn.messageId } : { _tag: "git.diff", path: cwd }),
+    () =>
+      send(
+        turn
+          ? { _tag: "checkpoint.diff", threadId: turn.threadId, messageId: turn.messageId }
+          : { _tag: "git.diff", path: cwd },
+      ),
     [cwd, turn?.threadId, turn?.messageId],
   );
   const theme = useResolvedTheme();
@@ -103,7 +111,11 @@ export const DiffPanel = ({
     key: PANEL_WIDTH_KEY,
     initial: defaultPanelWidth(),
     side: "start",
-    clamp: (w) => Math.max(MIN_PANEL, Math.min(w, (aside.current?.parentElement?.clientWidth ?? window.innerWidth) - MIN_CHAT)),
+    clamp: (w) =>
+      Math.max(
+        MIN_PANEL,
+        Math.min(w, (aside.current?.parentElement?.clientWidth ?? window.innerWidth) - MIN_CHAT),
+      ),
   });
   const tree = useResizable({
     key: TREE_WIDTH_KEY,
@@ -111,7 +123,11 @@ export const DiffPanel = ({
     side: "end",
     clamp: (w) => Math.max(MIN_TREE, Math.min(w, (aside.current?.clientWidth ?? 720) - MIN_DIFF)),
   });
-  const jumpTo = useCallback((path: string) => viewer.current?.scrollTo({ type: "item", id: path, align: "start", behavior: "instant" }), []);
+  const jumpTo = useCallback(
+    (path: string) =>
+      viewer.current?.scrollTo({ type: "item", id: path, align: "start", behavior: "instant" }),
+    [],
+  );
 
   // Agents edit in bursts; wait for a short lull before re-reading. A finished turn's changes don't change.
   useEffect(() => {
@@ -148,12 +164,20 @@ export const DiffPanel = ({
   );
   const truncated = diff?.truncated ?? false;
   const renderFooter = useCallback(
-    () => (truncated ? <p className="p-3 text-center text-xs text-muted-foreground">Some files were left out to keep the diff small.</p> : null),
+    () =>
+      truncated ? (
+        <p className="p-3 text-center text-xs text-muted-foreground">
+          Some files were left out to keep the diff small.
+        </p>
+      ) : null,
     [truncated],
   );
   const { additions, deletions } = useMemo(() => countLines(files), [files]);
   // The thread view re-renders on every streamed delta; these subtrees only change with the diff.
-  const fileTree = useMemo(() => <ChangedFilesTree files={files} onPick={jumpTo} />, [files, jumpTo]);
+  const fileTree = useMemo(
+    () => <ChangedFilesTree files={files} onPick={jumpTo} />,
+    [files, jumpTo],
+  );
   const codeView = useMemo(
     () => (
       // Virtualized: only the files and lines on screen are in the DOM.
@@ -190,28 +214,49 @@ export const DiffPanel = ({
       style={{ width: panel.width, maxWidth: `calc(100% - ${MIN_CHAT}px)` }}
       className="relative flex min-h-0 min-w-80 shrink flex-col border-l border-border bg-background"
     >
-      <ResizeHandle side="start" label="Resize changes panel" value={panel.width} dragging={panel.dragging} {...panel.handleProps} />
-      <div className={cn("flex h-10 shrink-0 items-center gap-2 border-b border-border pr-2", turn ? "pl-2" : "pl-4")}>
+      <ResizeHandle
+        side="start"
+        label="Resize changes panel"
+        value={panel.width}
+        dragging={panel.dragging}
+        {...panel.handleProps}
+      />
+      <div
+        className={cn(
+          "flex h-10 shrink-0 items-center gap-2 border-b border-border pr-2",
+          turn ? "pl-2" : "pl-4",
+        )}
+      >
         {turn ? (
           <IconButton label="All uncommitted changes" onClick={onShowAll}>
             <ChevronLeft className="size-3.5" />
           </IconButton>
         ) : null}
-        <span className="text-sm font-medium text-foreground">{turn ? "Turn changes" : "Changes"}</span>
+        <span className="text-sm font-medium text-foreground">
+          {turn ? "Turn changes" : "Changes"}
+        </span>
         {files.length ? (
           <span className="flex items-center gap-2 font-mono text-xs tabular-nums">
             <span className="text-muted-foreground">
               {files.length} {files.length === 1 ? "file" : "files"}
             </span>
-            {additions ? <span className="text-emerald-600 dark:text-emerald-400">+{additions}</span> : null}
-            {deletions ? <span className="text-rose-600 dark:text-rose-400">−{deletions}</span> : null}
+            {additions ? (
+              <span className="text-emerald-600 dark:text-emerald-400">+{additions}</span>
+            ) : null}
+            {deletions ? (
+              <span className="text-rose-600 dark:text-rose-400">−{deletions}</span>
+            ) : null}
           </span>
         ) : null}
         <span className="ml-auto flex items-center gap-0.5">
           <IconButton label="File tree" active={showTree} onClick={toggleTree}>
             <ListTree className="size-3.5" />
           </IconButton>
-          <IconButton label="Unified" active={style === "unified"} onClick={() => pickStyle("unified")}>
+          <IconButton
+            label="Unified"
+            active={style === "unified"}
+            onClick={() => pickStyle("unified")}
+          >
             <Rows2 className="size-3.5" />
           </IconButton>
           <IconButton label="Split" active={style === "split"} onClick={() => pickStyle("split")}>
@@ -241,7 +286,13 @@ export const DiffPanel = ({
                 className="relative shrink-0 border-r border-border"
               >
                 {fileTree}
-                <ResizeHandle side="end" label="Resize file tree" value={tree.width} dragging={tree.dragging} {...tree.handleProps} />
+                <ResizeHandle
+                  side="end"
+                  label="Resize file tree"
+                  value={tree.width}
+                  dragging={tree.dragging}
+                  {...tree.handleProps}
+                />
               </div>
             ) : null}
             {codeView}
@@ -253,5 +304,7 @@ export const DiffPanel = ({
 };
 
 const Empty = ({ children }: { children: React.ReactNode }) => (
-  <div className="flex h-full w-full items-center justify-center px-6 text-center text-sm text-muted-foreground">{children}</div>
+  <div className="flex h-full w-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+    {children}
+  </div>
 );

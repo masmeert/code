@@ -25,9 +25,14 @@ function OptionMenu(props: { label: string; value: ReactNode; children: ReactNod
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
         <span className="shrink-0">{props.label}</span>
-        <span className="min-w-0 flex-1 truncate pl-4 text-right text-muted-foreground">{props.value}</span>
+        <span className="min-w-0 flex-1 truncate pl-4 text-right text-muted-foreground">
+          {props.value}
+        </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent collisionPadding={8} className="max-h-(--radix-dropdown-menu-content-available-height) max-w-64 overflow-y-auto">
+      <DropdownMenuSubContent
+        collisionPadding={8}
+        className="max-h-(--radix-dropdown-menu-content-available-height) max-w-64 overflow-y-auto"
+      >
         {props.children}
       </DropdownMenuSubContent>
     </DropdownMenuSub>
@@ -42,7 +47,10 @@ function ChoiceMenu<Value extends string>(props: {
 }) {
   return (
     <OptionMenu label={props.label} value={props.labels[props.value]}>
-      <DropdownMenuRadioGroup value={props.value} onValueChange={(value) => props.onChange(value as Value)}>
+      <DropdownMenuRadioGroup
+        value={props.value}
+        onValueChange={(value) => props.onChange(value as Value)}
+      >
         {Object.entries<string>(props.labels).map(([value, label]) => (
           <DropdownMenuRadioItem key={value} value={value}>
             {label}
@@ -59,12 +67,21 @@ export function ThreadListMenu(props: {
   onChange: (patch: Partial<ThreadListView>) => void;
 }) {
   const { view } = props;
-  const filtered = view.status !== "active" || view.projects.length > 0 || view.provider !== "all" || view.activity !== "any";
+  const filtered =
+    view.status !== "active" ||
+    view.projects.length > 0 ||
+    view.provider !== "all" ||
+    view.activity !== "any";
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="View options" className={cn("size-7", filtered && "bg-muted/60 text-foreground")}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="View options"
+          className={cn("size-7", filtered && "bg-muted/60 text-foreground")}
+        >
           <SlidersHorizontal className="size-4" />
         </Button>
       </DropdownMenuTrigger>
@@ -98,7 +115,11 @@ export function ThreadListMenu(props: {
               key={project.id}
               checked={view.projects.includes(project.id)}
               onCheckedChange={(checked) =>
-                props.onChange({ projects: checked ? [...view.projects, project.id] : view.projects.filter((id) => id !== project.id) })
+                props.onChange({
+                  projects: checked
+                    ? [...view.projects, project.id]
+                    : view.projects.filter((id) => id !== project.id),
+                })
               }
               onSelect={(event) => event.preventDefault()}
             >
@@ -135,7 +156,15 @@ export function ThreadListMenu(props: {
         {filtered ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => props.onChange({ ...DEFAULT_THREAD_LIST_VIEW, groupBy: view.groupBy, sortBy: view.sortBy })}>
+            <DropdownMenuItem
+              onSelect={() =>
+                props.onChange({
+                  ...DEFAULT_THREAD_LIST_VIEW,
+                  groupBy: view.groupBy,
+                  sortBy: view.sortBy,
+                })
+              }
+            >
               Clear filters
             </DropdownMenuItem>
           </>

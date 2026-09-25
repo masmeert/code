@@ -1,13 +1,6 @@
 import { Check } from "lucide-react";
 import { motion } from "motion/react";
-import {
-  type ReactNode,
-  useContext,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-} from "react";
+import { type ReactNode, useContext, useId, useLayoutEffect, useMemo, useRef } from "react";
 import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 import { ComboboxGroupContext, useComboboxContext } from "./context";
@@ -18,11 +11,7 @@ export interface ComboboxListProps {
   className?: string;
 }
 
-export function ComboboxList({
-  children,
-  ariaLabel = "Options",
-  className,
-}: ComboboxListProps) {
+export function ComboboxList({ children, ariaLabel = "Options", className }: ComboboxListProps) {
   const context = useComboboxContext("ComboboxList");
   return (
     <div
@@ -30,9 +19,10 @@ export function ComboboxList({
       role="listbox"
       aria-label={ariaLabel}
       className={cn(
-        "relative isolate max-h-64 overflow-y-auto overscroll-contain p-1.5 [-ms-overflow-style:none] scrollbar-none [&::-webkit-scrollbar]:hidden",
+        "relative isolate max-h-64 scrollbar-none overflow-y-auto overscroll-contain p-1.5 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden",
         className,
-      )}>
+      )}
+    >
       {children}
     </div>
   );
@@ -50,7 +40,8 @@ export function ComboboxGroup({ children, className }: ComboboxGroupProps) {
     <ComboboxGroupContext.Provider value={groupId}>
       <fieldset
         hidden={!context.hasVisibleItems(groupId)}
-        className={cn("m-0 min-w-0 border-0 p-0 py-0.5", className)}>
+        className={cn("m-0 min-w-0 border-0 p-0 py-0.5", className)}
+      >
         {children}
       </fieldset>
     </ComboboxGroupContext.Provider>
@@ -65,7 +56,7 @@ export interface ComboboxLabelProps {
 export function ComboboxLabel({ children, className }: ComboboxLabelProps) {
   const groupId = useContext(ComboboxGroupContext);
   const labelClassName = cn(
-    "w-full px-2 py-1.5 text-[0.68rem] font-medium uppercase tracking-[0.12em] text-muted-foreground",
+    "w-full px-2 py-1.5 text-[0.68rem] font-medium tracking-[0.12em] text-muted-foreground uppercase",
     className,
   );
   return groupId ? (
@@ -120,16 +111,7 @@ export function ComboboxItem({
       ref: itemRef,
     });
     return () => unregisterItem(value);
-  }, [
-    disabled,
-    groupId,
-    id,
-    label,
-    normalizedKeywords,
-    registerItem,
-    unregisterItem,
-    value,
-  ]);
+  }, [disabled, groupId, id, label, normalizedKeywords, registerItem, unregisterItem, value]);
 
   if (!visible) return null;
 
@@ -155,11 +137,12 @@ export function ComboboxItem({
         context.select(value);
       }}
       className={cn(
-        "relative flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm outline-none transition-colors duration-150",
+        "relative flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors duration-150 outline-none",
         active ? "text-foreground" : "text-muted-foreground",
         "disabled:pointer-events-none disabled:opacity-45",
         className,
-      )}>
+      )}
+    >
       {active ? (
         <motion.span
           aria-hidden
@@ -176,10 +159,9 @@ export function ComboboxItem({
           opacity: selected ? 1 : 0,
           transform: selected ? "scale(1)" : "scale(0.82)",
         }}
-        transition={
-          context.reduce ? { duration: 0 } : { duration: 0.14, ease: EASE_OUT }
-        }
-        className="grid size-5 shrink-0 place-items-center text-foreground">
+        transition={context.reduce ? { duration: 0 } : { duration: 0.14, ease: EASE_OUT }}
+        className="grid size-5 shrink-0 place-items-center text-foreground"
+      >
         <Check className="size-4" />
       </motion.span>
     </button>
@@ -191,19 +173,14 @@ export interface ComboboxEmptyProps {
   className?: string;
 }
 
-export function ComboboxEmpty({
-  children = "No options found.",
-  className,
-}: ComboboxEmptyProps) {
+export function ComboboxEmpty({ children = "No options found.", className }: ComboboxEmptyProps) {
   const context = useComboboxContext("ComboboxEmpty");
   if (context.visibleCount > 0) return null;
   return (
     <div
       role="status"
-      className={cn(
-        "px-3 py-8 text-center text-sm text-muted-foreground",
-        className,
-      )}>
+      className={cn("px-3 py-8 text-center text-sm text-muted-foreground", className)}
+    >
       {children}
     </div>
   );
@@ -214,7 +191,5 @@ export interface ComboboxSeparatorProps {
 }
 
 export function ComboboxSeparator({ className }: ComboboxSeparatorProps) {
-  return (
-    <div aria-hidden className={cn("-mx-1 my-1 h-px bg-border", className)} />
-  );
+  return <div aria-hidden className={cn("-mx-1 my-1 h-px bg-border", className)} />;
 }

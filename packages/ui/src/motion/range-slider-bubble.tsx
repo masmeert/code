@@ -94,10 +94,7 @@ export function BubbleSlider({ format, className, ...options }: BubbleSliderProp
         />
 
         {/* bubble — anchored to the thumb, leaning with drag velocity */}
-        <motion.div
-          className="pointer-events-none absolute bottom-6"
-          style={{ left, x: "-50%" }}
-        >
+        <motion.div className="pointer-events-none absolute bottom-6" style={{ left, x: "-50%" }}>
           <AnimatePresence>
             {dragging ? (
               <motion.div
@@ -110,11 +107,9 @@ export function BubbleSlider({ format, className, ...options }: BubbleSliderProp
                 }
                 transition={reduce ? { duration: 0.12 } : SPRING_PANEL}
                 style={
-                  reduce
-                    ? undefined
-                    : { rotate: tilt, scaleX: squash, scaleY: stretch, originY: 1 }
+                  reduce ? undefined : { rotate: tilt, scaleX: squash, scaleY: stretch, originY: 1 }
                 }
-                className="relative rounded-xl bg-foreground px-2.5 py-1 text-sm font-medium tabular-nums text-background shadow-panel"
+                className="relative rounded-xl bg-foreground px-2.5 py-1 text-sm font-medium text-background tabular-nums shadow-panel"
               >
                 {readout}
                 <span className="absolute -bottom-1 left-1/2 size-2.5 -translate-x-1/2 rotate-45 rounded-[3px] bg-foreground" />
@@ -127,7 +122,7 @@ export function BubbleSlider({ format, className, ...options }: BubbleSliderProp
         <button
           type="button"
           {...sliderProps}
-          className="absolute -inset-y-5 inset-x-0 touch-none rounded-full outline-none ring-ring focus-visible:ring-4"
+          className="absolute inset-x-0 -inset-y-5 touch-none rounded-full ring-ring outline-none focus-visible:ring-4"
         />
       </div>
     </div>

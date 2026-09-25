@@ -1,9 +1,5 @@
 import { Check } from "lucide-react";
-import {
-  AnimatePresence,
-  motion,
-  useReducedMotion,
-} from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   cloneElement,
   createContext,
@@ -87,10 +83,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function collapsedClip(
-  origin: MenuPoint,
-  size: { width: number; height: number },
-) {
+function collapsedClip(origin: MenuPoint, size: { width: number; height: number }) {
   const half = 8;
   const top = clamp(origin.y - half, 0, size.height);
   const right = clamp(size.width - origin.x - half, 0, size.width);
@@ -184,18 +177,7 @@ export function ContextMenu({
       setGlide,
       reduce,
     }),
-    [
-      open,
-      setOpen,
-      openAt,
-      point,
-      modality,
-      invocation,
-      menuId,
-      activeId,
-      glide,
-      reduce,
-    ],
+    [open, setOpen, openAt, point, modality, invocation, menuId, activeId, glide, reduce],
   );
 
   return (
@@ -251,8 +233,7 @@ export function ContextMenuTrigger({
     // A pen presses the same way a finger does and gets no `contextmenu` out
     // of the platform for it, so it holds to open too. A mouse has the right
     // button and is left to `onContextMenu`.
-    const pressToOpen =
-      event.pointerType === "touch" || event.pointerType === "pen";
+    const pressToOpen = event.pointerType === "touch" || event.pointerType === "pen";
     if (event.defaultPrevented || disabled || !pressToOpen) return;
 
     // `pointer-coarse:select-none` misses this press on a laptop whose mouse
@@ -277,8 +258,7 @@ export function ContextMenuTrigger({
     const origin = touchOrigin.current;
     if (
       origin &&
-      Math.hypot(event.clientX - origin.x, event.clientY - origin.y) >
-        LONG_PRESS_TOLERANCE
+      Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > LONG_PRESS_TOLERANCE
     ) {
       cancelLongPress();
     }
@@ -287,8 +267,7 @@ export function ContextMenuTrigger({
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     childProps.onKeyDown?.(event);
     if (event.defaultPrevented || disabled) return;
-    if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))
-      return;
+    if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
 
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
@@ -461,12 +440,7 @@ export function ContextMenuContent({
       items[event.key === "Home" ? 0 : items.length - 1]?.focus();
       return;
     }
-    if (
-      event.key.length === 1 &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      !event.altKey
-    ) {
+    if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
       typeahead.current += event.key.toLocaleLowerCase();
       if (typeaheadTimer.current) clearTimeout(typeaheadTimer.current);
       typeaheadTimer.current = setTimeout(() => {
@@ -501,10 +475,7 @@ export function ContextMenuContent({
       aria-hidden={!context.open}
       inert={!context.open}
       style={{ left: position.x, top: position.y }}
-      className={cn(
-        "fixed z-[100]",
-        context.open ? "pointer-events-auto" : "pointer-events-none",
-      )}
+      className={cn("fixed z-[100]", context.open ? "pointer-events-auto" : "pointer-events-none")}
     >
       <motion.div
         aria-hidden="true"
@@ -574,8 +545,7 @@ function ContextMenuItemBase({
   const context = useContextMenuContext("ContextMenuItem");
   const id = useId();
   const active = context.activeId === id;
-  const checkedProps =
-    role === "menuitem" ? {} : { "aria-checked": ariaChecked };
+  const checkedProps = role === "menuitem" ? {} : { "aria-checked": ariaChecked };
 
   return (
     <button
@@ -597,11 +567,10 @@ function ContextMenuItemBase({
       onClick={(event) => {
         if (disabled) return;
         onSelect?.();
-        if (closeOnSelect)
-          context.setOpen(false, event.detail === 0 ? "keyboard" : undefined);
+        if (closeOnSelect) context.setOpen(false, event.detail === 0 ? "keyboard" : undefined);
       }}
       className={cn(
-        "relative isolate flex w-full select-none items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] outline-none",
+        "relative isolate flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] outline-none select-none",
         "focus-visible:ring-2 focus-visible:ring-foreground/15",
         "disabled:pointer-events-none disabled:opacity-40",
         inset && "pl-8",
@@ -614,13 +583,9 @@ function ContextMenuItemBase({
           layoutId={`${context.menuId}-active`}
           className={cn(
             "absolute inset-0 -z-10 rounded-lg",
-            tone === "destructive"
-              ? "bg-destructive/10"
-              : "bg-foreground/[0.065]",
+            tone === "destructive" ? "bg-destructive/10" : "bg-foreground/[0.065]",
           )}
-          transition={
-            context.reduce || !context.glide ? { duration: 0 } : SPRING_LAYOUT
-          }
+          transition={context.reduce || !context.glide ? { duration: 0 } : SPRING_LAYOUT}
         />
       ) : null}
       {children}
@@ -632,8 +597,7 @@ export function ContextMenuItem(props: ContextMenuItemProps) {
   return <ContextMenuItemBase {...props} />;
 }
 
-export interface ContextMenuCheckboxItemProps
-  extends Omit<ContextMenuItemProps, "onSelect"> {
+export interface ContextMenuCheckboxItemProps extends Omit<ContextMenuItemProps, "onSelect"> {
   checked: boolean;
   onCheckedChange?: (checked: boolean) => void;
 }
@@ -677,8 +641,7 @@ interface ContextMenuRadioGroupContextValue {
   onValueChange?: (value: string) => void;
 }
 
-const ContextMenuRadioGroupContext =
-  createContext<ContextMenuRadioGroupContextValue | null>(null);
+const ContextMenuRadioGroupContext = createContext<ContextMenuRadioGroupContextValue | null>(null);
 
 export interface ContextMenuRadioGroupProps {
   value: string;
@@ -693,10 +656,7 @@ export function ContextMenuRadioGroup({
   children,
   className,
 }: ContextMenuRadioGroupProps) {
-  const context = useMemo(
-    () => ({ value, onValueChange }),
-    [value, onValueChange],
-  );
+  const context = useMemo(() => ({ value, onValueChange }), [value, onValueChange]);
   return (
     <ContextMenuRadioGroupContext.Provider value={context}>
       <div className={className}>{children}</div>
@@ -704,21 +664,14 @@ export function ContextMenuRadioGroup({
   );
 }
 
-export interface ContextMenuRadioItemProps
-  extends Omit<ContextMenuItemProps, "onSelect"> {
+export interface ContextMenuRadioItemProps extends Omit<ContextMenuItemProps, "onSelect"> {
   value: string;
 }
 
-export function ContextMenuRadioItem({
-  value,
-  children,
-  ...props
-}: ContextMenuRadioItemProps) {
+export function ContextMenuRadioItem({ value, children, ...props }: ContextMenuRadioItemProps) {
   const group = useContext(ContextMenuRadioGroupContext);
   if (!group) {
-    throw new Error(
-      "ContextMenuRadioItem must be used within <ContextMenuRadioGroup>",
-    );
+    throw new Error("ContextMenuRadioItem must be used within <ContextMenuRadioGroup>");
   }
   const checked = group.value === value;
   return (
@@ -747,15 +700,11 @@ export interface ContextMenuLabelProps {
   className?: string;
 }
 
-export function ContextMenuLabel({
-  children,
-  inset = false,
-  className,
-}: ContextMenuLabelProps) {
+export function ContextMenuLabel({ children, inset = false, className }: ContextMenuLabelProps) {
   return (
     <div
       className={cn(
-        "px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground",
+        "px-2.5 pt-1.5 pb-1 text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase",
         inset && "pl-8",
         className,
       )}
@@ -769,12 +718,8 @@ export interface ContextMenuSeparatorProps {
   className?: string;
 }
 
-export function ContextMenuSeparator({
-  className,
-}: ContextMenuSeparatorProps) {
-  return (
-    <hr className={cn("-mx-1 my-1 h-px border-0 bg-border", className)} />
-  );
+export function ContextMenuSeparator({ className }: ContextMenuSeparatorProps) {
+  return <hr className={cn("-mx-1 my-1 h-px border-0 bg-border", className)} />;
 }
 
 export interface ContextMenuShortcutProps {
@@ -782,10 +727,7 @@ export interface ContextMenuShortcutProps {
   className?: string;
 }
 
-export function ContextMenuShortcut({
-  children,
-  className,
-}: ContextMenuShortcutProps) {
+export function ContextMenuShortcut({ children, className }: ContextMenuShortcutProps) {
   return (
     <span
       aria-hidden="true"

@@ -6,7 +6,13 @@ export interface BumpSeries {
   color?: string;
 }
 
-export const BUMP_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
+export const BUMP_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+];
 export const PLOT = { width: 560, left: 32, right: 100, top: 28, bottom: 36, rowHeight: 44 };
 
 export function buildBumpChart(series: readonly BumpSeries[], periodCount: number) {

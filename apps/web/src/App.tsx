@@ -1,6 +1,12 @@
 import { ChatApp } from "@apcode/ui/agents/chat-app";
 import { AnimatedSidebarInset } from "@apcode/ui/motion/animated-sidebar";
-import { AppWindow, Globe, Settings as SettingsIcon, SquarePen, SquareTerminal } from "lucide-react";
+import {
+  AppWindow,
+  Globe,
+  Settings as SettingsIcon,
+  SquarePen,
+  SquareTerminal,
+} from "lucide-react";
 import { MotionConfig } from "motion/react";
 import { useEffect, useState } from "react";
 import { toggleBrowser } from "./lib/browser.ts";
@@ -18,7 +24,9 @@ import { DraftView, ThreadView } from "./views/ThreadView.tsx";
 
 /** What this window shows. Each window keeps its own. */
 /** A draft with a null path is a new thread whose project hasn't been picked yet. */
-type View = { readonly kind: "thread"; readonly id: string } | { readonly kind: "draft"; readonly path: string | null };
+type View =
+  | { readonly kind: "thread"; readonly id: string }
+  | { readonly kind: "draft"; readonly path: string | null };
 
 /** Windows opened with Ctrl+N carry their starting point in the URL. */
 const initialView = (): View | null => {
@@ -63,7 +71,12 @@ export const App = () => {
   }, [createdHere]);
 
   const draft = (path: string | null) => setView({ kind: "draft", path });
-  const currentPath = view.kind === "thread" ? (threads[view.id]?.cwd ?? null) : view.kind === "draft" ? view.path : null;
+  const currentPath =
+    view.kind === "thread"
+      ? (threads[view.id]?.cwd ?? null)
+      : view.kind === "draft"
+        ? view.path
+        : null;
 
   // Like Claude Code: a new thread starts in the project on screen, if any.
   useShortcut("n", () => draft(currentPath));
@@ -111,7 +124,13 @@ export const App = () => {
             onOpenThread={(id) => setView({ kind: "thread", id })}
             onNewThreadIn={(path) => draft(path)}
             actions={[
-              { id: "thread.new", label: "New thread", hint: describe("thread.new"), icon: <SquarePen />, run: () => draft(currentPath) },
+              {
+                id: "thread.new",
+                label: "New thread",
+                hint: describe("thread.new"),
+                icon: <SquarePen />,
+                run: () => draft(currentPath),
+              },
               ...(view.kind === "thread"
                 ? [
                     {
@@ -134,11 +153,21 @@ export const App = () => {
                     },
                   ]
                 : []),
-              { id: "window.new", label: "New window", icon: <AppWindow />, run: () => openWindow(currentPath) },
-              { id: "settings.open", label: "Settings", hint: describe("settings.open"), icon: <SettingsIcon />, run: () => setModal("settings") },
+              {
+                id: "window.new",
+                label: "New window",
+                icon: <AppWindow />,
+                run: () => openWindow(currentPath),
+              },
+              {
+                id: "settings.open",
+                label: "Settings",
+                hint: describe("settings.open"),
+                icon: <SettingsIcon />,
+                run: () => setModal("settings"),
+              },
             ]}
           />
-
         </ChatApp>
       </DiffWorkers>
     </MotionConfig>

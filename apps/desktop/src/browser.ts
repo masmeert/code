@@ -10,8 +10,16 @@ function sendToHost(window: BrowserWindow, event: DesktopBrowserEvent) {
   if (!window.isDestroyed()) window.webContents.send("browser-event", event);
 }
 
-function tabShortcut(input: Electron.Input): "new-tab" | "close-tab" | "focus-address" | "reload" | "back" | "forward" | null {
-  if (input.type !== "keyDown" || input.alt || input.shift || !(process.platform === "darwin" ? input.meta : input.control)) return null;
+function tabShortcut(
+  input: Electron.Input,
+): "new-tab" | "close-tab" | "focus-address" | "reload" | "back" | "forward" | null {
+  if (
+    input.type !== "keyDown" ||
+    input.alt ||
+    input.shift ||
+    !(process.platform === "darwin" ? input.meta : input.control)
+  )
+    return null;
   switch (input.key.toLowerCase()) {
     case "t":
       return "new-tab";
@@ -35,12 +43,19 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
   guest.setWindowOpenHandler(({ url, disposition }) => {
     if (!isWebUrl(url)) return { action: "deny" };
     if (disposition === "new-window") {
-      return { action: "allow", overrideBrowserWindowOptions: { webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } } };
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+        },
+      };
     }
     sendToHost(window, { _tag: "open-tab", webContentsId: guest.id, url });
     return { action: "deny" };
   });
-  guest.on("did-create-window", (popup) => popup.webContents.setWindowOpenHandler(() => ({ action: "deny" })));
+  guest.on("did-create-window", (popup) =>
+    popup.webContents.setWindowOpenHandler(() => ({ action: "deny" })),
+  );
   guest.on("before-input-event", (event, input) => {
     const shortcut = tabShortcut(input);
     if (!shortcut) return;
@@ -55,14 +70,33 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
     Menu.buildFromTemplate([
       ...(isWebUrl(params.linkURL)
         ? [
-            { label: "Open Link in New Tab", click: () => sendToHost(window, { _tag: "open-tab", webContentsId: guest.id, url: params.linkURL }) },
-            { label: "Open Link in Default Browser", click: () => shell.openExternal(params.linkURL).catch(() => {}) },
+            {
+              label: "Open Link in New Tab",
+              click: () =>
+                sendToHost(window, {
+                  _tag: "open-tab",
+                  webContentsId: guest.id,
+                  url: params.linkURL,
+                }),
+            },
+            {
+              label: "Open Link in Default Browser",
+              click: () => shell.openExternal(params.linkURL).catch(() => {}),
+            },
             { label: "Copy Link", click: () => clipboard.writeText(params.linkURL) },
             { type: "separator" as const },
           ]
         : []),
-      { label: "Back", enabled: guest.navigationHistory.canGoBack(), click: () => guest.navigationHistory.goBack() },
-      { label: "Forward", enabled: guest.navigationHistory.canGoForward(), click: () => guest.navigationHistory.goForward() },
+      {
+        label: "Back",
+        enabled: guest.navigationHistory.canGoBack(),
+        click: () => guest.navigationHistory.goBack(),
+      },
+      {
+        label: "Forward",
+        enabled: guest.navigationHistory.canGoForward(),
+        click: () => guest.navigationHistory.goForward(),
+      },
       { label: "Reload", click: () => guest.reload() },
       { type: "separator" },
       { role: "cut", enabled: params.editFlags.canCut },
@@ -78,7 +112,9 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
 export function configureBrowserSession() {
   const browserSession = session.fromPartition(BROWSER_PARTITION);
   const allowed = new Set(["clipboard-sanitized-write", "fullscreen"]);
-  browserSession.setPermissionRequestHandler((_contents, permission, callback) => callback(allowed.has(permission)));
+  browserSession.setPermissionRequestHandler((_contents, permission, callback) =>
+    callback(allowed.has(permission)),
+  );
   browserSession.setPermissionCheckHandler((_contents, permission) => allowed.has(permission));
 }
 

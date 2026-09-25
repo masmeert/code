@@ -17,7 +17,10 @@ import {
 
 const fail = (message: string) => new ProviderError({ provider: "codex", message });
 
-const APPROVAL_METHODS = new Set(["item/commandExecution/requestApproval", "item/fileChange/requestApproval"]);
+const APPROVAL_METHODS = new Set([
+  "item/commandExecution/requestApproval",
+  "item/fileChange/requestApproval",
+]);
 
 /** Codex's own presets: untrusted asks before most commands, on-request is "Auto", never + full access is "Full access". */
 const PERMISSION = {
@@ -30,7 +33,13 @@ const PERMISSION = {
 const codexSandboxPolicy = (level: PermissionLevel, cwd: string) =>
   PERMISSION[level].sandbox === "danger-full-access"
     ? { type: "dangerFullAccess" }
-    : { type: "workspaceWrite", writableRoots: [cwd], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false };
+    : {
+        type: "workspaceWrite",
+        writableRoots: [cwd],
+        networkAccess: false,
+        excludeTmpdirEnvVar: false,
+        excludeSlashTmp: false,
+      };
 
 /** Codex has no "max"; its top level is xhigh. */
 const toCodexEffort = (effort: Effort) => (effort === "max" ? "xhigh" : effort);
@@ -42,11 +51,18 @@ function elicitationResponse(params: any, decision: ApprovalDecision) {
   if (decision === "deny" || params.mode === "url") return { action: "decline" };
   const content: Record<string, unknown> = {};
   for (const [key, field] of Object.entries<any>(params.requestedSchema?.properties ?? {})) {
-    const chosen = (field.enum ?? (field.oneOf ?? field.anyOf ?? []).map((option: any) => option.const)).find((value: string) =>
-      decision === "allow-session" ? /session/i.test(value) : /once|accept|approve|allow|yes/i.test(value) && !/session|always|persist/i.test(value),
+    const chosen = (
+      field.enum ?? (field.oneOf ?? field.anyOf ?? []).map((option: any) => option.const)
+    ).find((value: string) =>
+      decision === "allow-session"
+        ? /session/i.test(value)
+        : /once|accept|approve|allow|yes/i.test(value) && !/session|always|persist/i.test(value),
     );
     if (chosen !== undefined) content[key] = chosen;
-    else if (field.type === "boolean") content[key] = /session|remember/i.test(`${key} ${field.title ?? ""}`) ? decision === "allow-session" : (field.default ?? true);
+    else if (field.type === "boolean")
+      content[key] = /session|remember/i.test(`${key} ${field.title ?? ""}`)
+        ? decision === "allow-session"
+        : (field.default ?? true);
     else if (field.default !== undefined && field.default !== null) content[key] = field.default;
   }
   return decision === "allow-session" && [params._meta?.persist].flat().includes("session")
@@ -54,9 +70,21 @@ function elicitationResponse(params: any, decision: ApprovalDecision) {
     : { action: "accept", content };
 }
 
-const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: initialPermission, onResumeToken, emit, mcpServer }: StartSessionInput) =>
+const start = ({
+  cwd,
+  model,
+  resumeToken,
+  effort: initialEffort,
+  permission: initialPermission,
+  onResumeToken,
+  emit,
+  mcpServer,
+}: StartSessionInput) =>
   Effect.gen(function* () {
-    const pendingApprovals = new Map<string, { readonly rpcId: RpcId; readonly elicitation: unknown }>();
+    const pendingApprovals = new Map<
+      string,
+      { readonly rpcId: RpcId; readonly elicitation: unknown }
+    >();
     let threadId = "";
     let activeTurnId: string | null = null;
     let currentModel = model ?? null;
@@ -75,9 +103,19 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
           if (item.type === "commandExecution") {
             emit({ _tag: "tool.started", toolId: item.id, name: "shell", summary: item.command });
           } else if (item.type === "fileChange") {
-            emit({ _tag: "tool.started", toolId: item.id, name: "edit", summary: item.changes.map((c: any) => c.path).join(", ") });
+            emit({
+              _tag: "tool.started",
+              toolId: item.id,
+              name: "edit",
+              summary: item.changes.map((c: any) => c.path).join(", "),
+            });
           } else if (item.type === "mcpToolCall") {
-            emit({ _tag: "tool.started", toolId: item.id, name: `mcp__${item.server}__${item.tool}`, summary: summarizeToolInput(item.arguments) });
+            emit({
+              _tag: "tool.started",
+              toolId: item.id,
+              name: `mcp__${item.server}__${item.tool}`,
+              summary: summarizeToolInput(item.arguments),
+            });
           }
           return;
         }
@@ -86,14 +124,28 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
           if (item.type === "agentMessage") {
             emit({ _tag: "assistant.completed", messageId: item.id, text: item.text });
           } else if (item.type === "commandExecution") {
-            emit({ _tag: "tool.completed", toolId: item.id, output: item.aggregatedOutput ?? "", isError: (item.exitCode ?? 0) !== 0 });
+            emit({
+              _tag: "tool.completed",
+              toolId: item.id,
+              output: item.aggregatedOutput ?? "",
+              isError: (item.exitCode ?? 0) !== 0,
+            });
           } else if (item.type === "fileChange") {
-            emit({ _tag: "tool.completed", toolId: item.id, output: item.changes.map((c: any) => c.diff).join("\n"), isError: item.status === "failed" });
+            emit({
+              _tag: "tool.completed",
+              toolId: item.id,
+              output: item.changes.map((c: any) => c.diff).join("\n"),
+              isError: item.status === "failed",
+            });
           } else if (item.type === "mcpToolCall") {
             emit({
               _tag: "tool.completed",
               toolId: item.id,
-              output: item.error?.message || (item.result?.content ?? []).map((part: any) => (part.type === "text" ? part.text : `[${part.type}]`)).join("\n"),
+              output:
+                item.error?.message ||
+                (item.result?.content ?? [])
+                  .map((part: any) => (part.type === "text" ? part.text : `[${part.type}]`))
+                  .join("\n"),
               isError: item.status === "failed" || Boolean(item.error),
             });
           }
@@ -102,13 +154,15 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
         case "turn/completed": {
           activeTurnId = null;
           const turn = params.turn;
-          if (turn.status === "failed") emit({ _tag: "error", message: turn.error?.message ?? "Turn failed" });
+          if (turn.status === "failed")
+            emit({ _tag: "error", message: turn.error?.message ?? "Turn failed" });
           emit({ _tag: "turn.completed", durationMs: turn.durationMs ?? null });
           emit({ _tag: "thread.status", status: "idle" });
           return;
         }
         case "error":
-          if (!params.willRetry) emit({ _tag: "error", message: params.error?.message ?? "Codex error" });
+          if (!params.willRetry)
+            emit({ _tag: "error", message: params.error?.message ?? "Codex error" });
           return;
         default:
           return;
@@ -120,7 +174,10 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
         const requestId = `codex-${id}`;
         pendingApprovals.set(requestId, { rpcId: id, elicitation: params });
         emit({ _tag: "thread.status", status: "awaiting-approval" });
-        const tool = params._meta?.codex_approval_kind === "mcp_tool_call" ? params.message?.match(/run tool "(.+)"/)?.[1] : undefined;
+        const tool =
+          params._meta?.codex_approval_kind === "mcp_tool_call"
+            ? params.message?.match(/run tool "(.+)"/)?.[1]
+            : undefined;
         emit({
           _tag: "approval.requested",
           requestId,
@@ -150,10 +207,19 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
           {
             onNotification,
             onServerRequest,
-            onExit: (code) => emit({ _tag: "thread.status", status: code === 0 || code === null ? "closed" : "error" }),
+            onExit: (code) =>
+              emit({
+                _tag: "thread.status",
+                status: code === 0 || code === null ? "closed" : "error",
+              }),
           },
           {
-            args: ["-c", `mcp_servers.browser.url="${mcpServer.url}"`, "-c", 'mcp_servers.browser.bearer_token_env_var="APCODE_MCP_TOKEN"'],
+            args: [
+              "-c",
+              `mcp_servers.browser.url="${mcpServer.url}"`,
+              "-c",
+              'mcp_servers.browser.bearer_token_env_var="APCODE_MCP_TOKEN"',
+            ],
             env: { APCODE_MCP_TOKEN: mcpServer.token },
           },
         ),
@@ -174,7 +240,11 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
       sandbox,
     };
     const started = resumeToken
-      ? yield* request("thread/resume", { threadId: resumeToken, excludeTurns: true, ...threadParams })
+      ? yield* request("thread/resume", {
+          threadId: resumeToken,
+          excludeTurns: true,
+          ...threadParams,
+        })
       : yield* request("thread/start", threadParams);
     threadId = started.thread.id;
     onResumeToken(threadId);
@@ -182,7 +252,9 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
     const input = (turn: TurnInput) => {
       const text = textWithFiles(turn);
       return [
-        ...turn.attachments.filter((a) => a.isImage).map((a) => ({ type: "localImage", path: a.path })),
+        ...turn.attachments
+          .filter((a) => a.isImage)
+          .map((a) => ({ type: "localImage", path: a.path })),
         ...(text ? [{ type: "text", text, text_elements: [] }] : []),
       ];
     };
@@ -202,7 +274,10 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
             ...(currentModel ? { model: currentModel } : {}),
             ...(effortChanged ? { effort: toCodexEffort(turn.effort!) } : {}),
             ...(permissionChanged
-              ? { approvalPolicy: PERMISSION[permission].approvalPolicy, sandboxPolicy: codexSandboxPolicy(permission, cwd) }
+              ? {
+                  approvalPolicy: PERMISSION[permission].approvalPolicy,
+                  sandboxPolicy: codexSandboxPolicy(permission, cwd),
+                }
               : {}),
           });
           activeTurnId = res.turn.id;
@@ -211,7 +286,11 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
       steer: (turn) =>
         Effect.suspend(() =>
           activeTurnId
-            ? request("turn/steer", { threadId, input: input(turn), expectedTurnId: activeTurnId }).pipe(Effect.asVoid)
+            ? request("turn/steer", {
+                threadId,
+                input: input(turn),
+                expectedTurnId: activeTurnId,
+              }).pipe(Effect.asVoid)
             : session.send(turn),
         ),
       compact: Effect.suspend(() => {
@@ -220,14 +299,22 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
       }),
       commands: Effect.succeed([]),
       interrupt: Effect.suspend(() =>
-        activeTurnId ? request("turn/interrupt", { threadId, turnId: activeTurnId }).pipe(Effect.asVoid) : Effect.void,
+        activeTurnId
+          ? request("turn/interrupt", { threadId, turnId: activeTurnId }).pipe(Effect.asVoid)
+          : Effect.void,
       ),
       respondApproval: (requestId, decision) =>
         Effect.suspend(() => {
           const pending = pendingApprovals.get(requestId);
-          if (pending === undefined) return Effect.fail(fail(`Unknown approval request ${requestId}`));
+          if (pending === undefined)
+            return Effect.fail(fail(`Unknown approval request ${requestId}`));
           pendingApprovals.delete(requestId);
-          rpc.respond(pending.rpcId, pending.elicitation ? elicitationResponse(pending.elicitation, decision) : { decision: toCodexDecision(decision) });
+          rpc.respond(
+            pending.rpcId,
+            pending.elicitation
+              ? elicitationResponse(pending.elicitation, decision)
+              : { decision: toCodexDecision(decision) },
+          );
           emit({ _tag: "approval.resolved", requestId });
           emit({ _tag: "thread.status", status: "running" });
           return Effect.void;
@@ -243,10 +330,15 @@ const start = ({ cwd, model, resumeToken, effort: initialEffort, permission: ini
 const rewind: ProviderAdapter["rewind"] = ({ cwd, resumeToken, dropTurns }) =>
   Effect.tryPromise({
     try: async () => {
-      const rpc = await connectCodex(cwd, { onNotification: () => {}, onServerRequest: () => false, onExit: () => {} });
+      const rpc = await connectCodex(cwd, {
+        onNotification: () => {},
+        onServerRequest: () => false,
+        onExit: () => {},
+      });
       try {
         await rpc.request("thread/resume", { threadId: resumeToken, excludeTurns: true, cwd });
-        if (dropTurns > 0) await rpc.request("thread/rollback", { threadId: resumeToken, numTurns: dropTurns });
+        if (dropTurns > 0)
+          await rpc.request("thread/rollback", { threadId: resumeToken, numTurns: dropTurns });
         return resumeToken;
       } finally {
         rpc.close();

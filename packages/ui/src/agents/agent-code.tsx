@@ -1,12 +1,4 @@
-import {
-  type CSSProperties,
-  Fragment,
-  memo,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type CSSProperties, Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   type BundledLanguage,
   bundledLanguages,
@@ -162,11 +154,23 @@ function tokenize(h: Highlighter, code: string, lang: BundledLanguage, from: Pro
   const stableEnd = code.lastIndexOf("\n") + 1;
   if (stableEnd > progress.stable.length) {
     // The new complete lines, without their final newline.
-    const chunk = tokenizeChunk(h, code.slice(progress.stable.length, stableEnd - 1), lang, progress.state, progress.stable.length);
-    progress = { lang, stable: code.slice(0, stableEnd), lines: [...progress.lines, ...chunk.lines], state: chunk.state };
+    const chunk = tokenizeChunk(
+      h,
+      code.slice(progress.stable.length, stableEnd - 1),
+      lang,
+      progress.state,
+      progress.stable.length,
+    );
+    progress = {
+      lang,
+      stable: code.slice(0, stableEnd),
+      lines: [...progress.lines, ...chunk.lines],
+      state: chunk.state,
+    };
   }
   // The partial last line is tokenized from the saved state each time, and not kept.
-  const tail = tokenizeChunk(h, code.slice(stableEnd), lang, progress.state, stableEnd).lines[0] ?? [];
+  const tail =
+    tokenizeChunk(h, code.slice(stableEnd), lang, progress.state, stableEnd).lines[0] ?? [];
   return { lines: [...progress.lines, tail], progress };
 }
 
@@ -185,12 +189,17 @@ export function useAgentCodeTokens(
   const progress = useRef<Progress | null>(null);
   const [, setLoaded] = useState(0);
   // Tokens computed after paint for a finished block seen for the first time.
-  const [deferred, setDeferred] = useState<{ key: string; lines: AgentCodeTokenLines } | null>(null);
+  const [deferred, setDeferred] = useState<{ key: string; lines: AgentCodeTokenLines } | null>(
+    null,
+  );
 
   const cached = lang === null || lang === "text" ? undefined : cacheGet(key);
   // Growing code picks up where the last update stopped; a finished block completes the same way.
   const continues =
-    lang !== null && lang !== "text" && progress.current?.lang === lang && code.startsWith(progress.current.stable);
+    lang !== null &&
+    lang !== "text" &&
+    progress.current?.lang === lang &&
+    code.startsWith(progress.current.stable);
 
   const lines = useMemo(() => {
     if (lang === null || lang === "text" || !highlighter) return null;
@@ -252,11 +261,7 @@ export const AgentCodeLine = memo(function AgentCodeLine({
   );
 });
 
-export function AgentCode({
-  code,
-  language = "bash",
-  className,
-}: AgentCodeProps) {
+export function AgentCode({ code, language = "bash", className }: AgentCodeProps) {
   const tokens = useAgentCodeTokens(code, language);
   let offset = 0;
   const lines = code.split("\n").map((content) => {
@@ -268,7 +273,7 @@ export function AgentCode({
   return (
     <pre
       className={cn(
-        "m-0 overflow-x-auto whitespace-pre font-mono text-xs leading-5 text-foreground/85",
+        "m-0 overflow-x-auto font-mono text-xs leading-5 whitespace-pre text-foreground/85",
         className,
       )}
     >

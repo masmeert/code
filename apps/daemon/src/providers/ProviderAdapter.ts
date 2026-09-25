@@ -54,7 +54,10 @@ export interface ProviderSession {
   /** Slash commands this session accepts at the start of a message. */
   readonly commands: Effect.Effect<ReadonlyArray<SlashCommand>, ProviderError>;
   readonly interrupt: Effect.Effect<void, ProviderError>;
-  readonly respondApproval: (requestId: string, decision: ApprovalDecision) => Effect.Effect<void, ProviderError>;
+  readonly respondApproval: (
+    requestId: string,
+    decision: ApprovalDecision,
+  ) => Effect.Effect<void, ProviderError>;
   /** Switches model for subsequent turns; null reverts to the harness default where supported. */
   readonly setModel: (model: string | null) => Effect.Effect<void, ProviderError>;
   readonly close: Effect.Effect<void>;
@@ -86,7 +89,18 @@ export const summarizeToolInput = (input: unknown): string => {
   if (input === null || typeof input !== "object") return String(input ?? "");
   const record = input as Record<string, unknown>;
   if (Object.keys(record).length === 0) return "";
-  for (const key of ["command", "file_path", "path", "pattern", "url", "query", "description", "target", "key", "expression"]) {
+  for (const key of [
+    "command",
+    "file_path",
+    "path",
+    "pattern",
+    "url",
+    "query",
+    "description",
+    "target",
+    "key",
+    "expression",
+  ]) {
     const value = record[key];
     if (typeof value === "string") return value;
   }

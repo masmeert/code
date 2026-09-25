@@ -25,11 +25,7 @@ export type RegisteredMultiSelectItem = {
   ref: MutableRefObject<HTMLButtonElement | null>;
 };
 
-export type MultiSelectFilter = (
-  value: string,
-  query: string,
-  keywords: string[],
-) => boolean;
+export type MultiSelectFilter = (value: string, query: string, keywords: string[]) => boolean;
 
 const defaultFilter: MultiSelectFilter = (value, query, keywords) => {
   const needle = query.trim().toLocaleLowerCase();
@@ -74,8 +70,7 @@ export type MultiSelectContextValue = {
   activeLayoutId: string;
 };
 
-export const MultiSelectContext =
-  createContext<MultiSelectContextValue | null>(null);
+export const MultiSelectContext = createContext<MultiSelectContextValue | null>(null);
 export const MultiSelectGroupContext = createContext<string | null>(null);
 
 export function useMultiSelectContext(component: string) {
@@ -137,9 +132,7 @@ export function MultiSelect({
   const [internalValue, setInternalValue] = useState(defaultValue);
   const [internalOpen, setInternalOpen] = useState(defaultOpen);
   const [internalQuery, setInternalQuery] = useState(defaultQuery);
-  const [items, setItems] = useState<Map<string, RegisteredMultiSelectItem>>(
-    new Map(),
-  );
+  const [items, setItems] = useState<Map<string, RegisteredMultiSelectItem>>(new Map());
 
   const valueControlled = controlledValue !== undefined;
   const openControlled = controlledOpen !== undefined;
@@ -163,9 +156,7 @@ export function MultiSelect({
       onOpenChange?.(next);
       if (!next) updateQuery("");
       if (restoreFocus) {
-        requestAnimationFrame(() =>
-          inputRef.current?.focus({ preventScroll: true }),
-        );
+        requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
       }
     },
     [disabled, onOpenChange, openControlled, updateQuery],
@@ -242,14 +233,10 @@ export function MultiSelect({
     (next: string) => {
       if (items.get(next)?.disabled) return;
       commitValue(
-        values.includes(next)
-          ? values.filter((value) => value !== next)
-          : [...values, next],
+        values.includes(next) ? values.filter((value) => value !== next) : [...values, next],
       );
       updateQuery("");
-      requestAnimationFrame(() =>
-        inputRef.current?.focus({ preventScroll: true }),
-      );
+      requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
     },
     [commitValue, items, updateQuery, values],
   );
@@ -268,9 +255,7 @@ export function MultiSelect({
 
   useEffect(() => {
     if (!open) return;
-    const frame = requestAnimationFrame(() =>
-      inputRef.current?.focus({ preventScroll: true }),
-    );
+    const frame = requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
     return () => cancelAnimationFrame(frame);
   }, [open]);
 

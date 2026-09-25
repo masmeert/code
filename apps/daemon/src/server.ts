@@ -28,7 +28,11 @@ const tokenProtocol = (req: Request) => {
   if (!TOKEN) return null;
   const expected = Buffer.from(TOKEN_PROTOCOL_PREFIX + TOKEN);
   const offered = (req.headers.get("sec-websocket-protocol") ?? "").split(",").map((p) => p.trim());
-  return offered.find((p) => p.length === expected.length && timingSafeEqual(Buffer.from(p), expected)) ?? null;
+  return (
+    offered.find(
+      (p) => p.length === expected.length && timingSafeEqual(Buffer.from(p), expected),
+    ) ?? null
+  );
 };
 
 /**
@@ -58,13 +62,15 @@ export const serve = (port: number) =>
     const send = (ws: ServerWebSocket<ConnectionData>, frame: ServerFrame) => {
       if (ws.readyState !== WebSocket.OPEN) return;
       ws.send(JSON.stringify(frame));
-      if (ws.getBufferedAmount() > MAX_BUFFERED_BYTES) ws.close(4000, "Too far behind; resume from your cursor");
+      if (ws.getBufferedAmount() > MAX_BUFFERED_BYTES)
+        ws.close(4000, "Too far behind; resume from your cursor");
     };
 
     const connection = (ws: ServerWebSocket<ConnectionData>) =>
       Effect.scoped(
         Effect.gen(function* () {
-          const { dataId, settings, projects, providers, threads, terminals, live } = yield* manager.subscribe;
+          const { dataId, settings, projects, providers, threads, terminals, live } =
+            yield* manager.subscribe;
           send(ws, { _tag: "shell", dataId, settings, projects, providers, threads, terminals });
           yield* Stream.runForEach(live, ({ seq, id, event }) =>
             Effect.sync(() => {
@@ -91,7 +97,11 @@ export const serve = (port: number) =>
             return Effect.void;
           }
           case "search":
-            send(ws, { _tag: "search.results", requestId: command.requestId, hits: [...manager.search(command.query)] });
+            send(ws, {
+              _tag: "search.results",
+              requestId: command.requestId,
+              hits: [...manager.search(command.query)],
+            });
             return Effect.void;
           case "thread.unsubscribe":
             ws.data.threads.delete(command.threadId);
@@ -102,22 +112,45 @@ export const serve = (port: number) =>
             return Effect.void;
           }
           case "terminal.open":
-            if (ws.data.viewer) manager.terminals.attach(command.threadId, command.terminalId, command.columns, command.rows, ws.data.viewer);
+            if (ws.data.viewer)
+              manager.terminals.attach(
+                command.threadId,
+                command.terminalId,
+                command.columns,
+                command.rows,
+                ws.data.viewer,
+              );
             return Effect.void;
           case "terminal.detach":
-            if (ws.data.viewer) manager.terminals.detach(command.threadId, command.terminalId, ws.data.viewer);
+            if (ws.data.viewer)
+              manager.terminals.detach(command.threadId, command.terminalId, ws.data.viewer);
             return Effect.void;
           case "terminal.acknowledge":
-            if (ws.data.viewer) manager.terminals.acknowledge(command.threadId, command.terminalId, ws.data.viewer, command.characters);
+            if (ws.data.viewer)
+              manager.terminals.acknowledge(
+                command.threadId,
+                command.terminalId,
+                ws.data.viewer,
+                command.characters,
+              );
             return Effect.void;
           case "browser.host":
             if (!ws.data.browserHost) {
-              ws.data.browserHost = { send: (frame) => send(ws, frame), shows: (threadId) => ws.data.threads.has(threadId) };
+              ws.data.browserHost = {
+                send: (frame) => send(ws, frame),
+                shows: (threadId) => ws.data.threads.has(threadId),
+              };
               manager.browsers.attach(ws.data.browserHost);
             }
             return Effect.void;
           case "browser.respond":
-            if (ws.data.browserHost) manager.browsers.respond(ws.data.browserHost, command.requestId, command.result, command.error);
+            if (ws.data.browserHost)
+              manager.browsers.respond(
+                ws.data.browserHost,
+                command.requestId,
+                command.result,
+                command.error,
+              );
             return Effect.void;
           default:
             return manager.dispatch(command);
@@ -132,7 +165,8 @@ export const serve = (port: number) =>
           fetch(req, server) {
             if (new URL(req.url).pathname === "/mcp") return manager.mcp.handle(req);
             const origin = req.headers.get("origin");
-            if (!origin || !ALLOWED_ORIGINS.has(origin)) return new Response("Forbidden origin", { status: 403 });
+            if (!origin || !ALLOWED_ORIGINS.has(origin))
+              return new Response("Forbidden origin", { status: 403 });
             const protocol = tokenProtocol(req);
             if (TOKEN && !protocol) return new Response("Unauthorized", { status: 401 });
             // The accepted subprotocol must be echoed back, or the browser drops the connection.

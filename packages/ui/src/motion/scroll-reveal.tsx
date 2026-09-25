@@ -37,12 +37,8 @@ export function ScrollReveal({
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { root, once, amount });
 
-  const hidden = reduce
-    ? { opacity: 0 }
-    : { opacity: 0, y, filter: `blur(${blur}px)` };
-  const shown = reduce
-    ? { opacity: 1 }
-    : { opacity: 1, y: 0, filter: "blur(0px)" };
+  const hidden = reduce ? { opacity: 0 } : { opacity: 0, y, filter: `blur(${blur}px)` };
+  const shown = reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: "blur(0px)" };
 
   return (
     <motion.div

@@ -43,9 +43,7 @@ function StepRow({ item }: { item: AgentActivityStep }) {
               className="absolute inset-0 rounded-full bg-foreground/10"
               animate={{ opacity: reduce ? 0.6 : [0.35, 0.8, 0.35] }}
               transition={
-                reduce
-                  ? { duration: 0 }
-                  : { duration: 1.5, repeat: Number.POSITIVE_INFINITY }
+                reduce ? { duration: 0 } : { duration: 1.5, repeat: Number.POSITIVE_INFINITY }
               }
             />
             <span className="size-1.5 rounded-full bg-foreground/60" />
@@ -63,9 +61,7 @@ function StepRow({ item }: { item: AgentActivityStep }) {
         {item.label}
       </span>
       {item.meta ? (
-        <span className="shrink-0 leading-5 text-muted-foreground/55">
-          {item.meta}
-        </span>
+        <span className="shrink-0 leading-5 text-muted-foreground/55">{item.meta}</span>
       ) : null}
     </div>
   );
@@ -73,17 +69,11 @@ function StepRow({ item }: { item: AgentActivityStep }) {
 
 function TextRow({ item }: { item: AgentActivityText }) {
   return (
-    <div className="rounded-md px-1.5 py-1 leading-5 text-muted-foreground">
-      {item.content}
-    </div>
+    <div className="rounded-md px-1.5 py-1 leading-5 text-muted-foreground">{item.content}</div>
   );
 }
 
-function SearchResultRow({
-  result,
-}: {
-  result: AgentSearchResult;
-}) {
+function SearchResultRow({ result }: { result: AgentSearchResult }) {
   const content = (
     <>
       <span
@@ -92,18 +82,14 @@ function SearchResultRow({
       >
         {result.icon ?? <Globe2 className="size-3" strokeWidth={2} />}
       </span>
-      <span className="min-w-0 truncate font-medium text-foreground/90">
-        {result.title}
-      </span>
+      <span className="min-w-0 truncate font-medium text-foreground/90">{result.title}</span>
       {result.domain ? (
-        <span className="min-w-0 truncate text-muted-foreground/55">
-          {result.domain}
-        </span>
+        <span className="min-w-0 truncate text-muted-foreground/55">{result.domain}</span>
       ) : null}
     </>
   );
   const className = cn(
-    "flex min-h-7 items-center gap-2 rounded-md px-1.5 py-1 text-left outline-none transition-colors",
+    "flex min-h-7 items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors outline-none",
     result.url && "focus-visible:ring-4 focus-visible:ring-ring",
   );
 
@@ -224,10 +210,7 @@ function TraceIcon({ kind }: { kind: AgentActivityTrace["kind"] }) {
 function TraceRow({ item }: { item: AgentActivityTrace }) {
   return (
     <div className="grid min-h-8 grid-cols-[1rem_auto_minmax(0,1fr)] items-center gap-2.5 rounded-md px-1.5 py-0.5">
-      <span
-        aria-hidden="true"
-        className="grid size-4 place-items-center text-muted-foreground/70"
-      >
+      <span aria-hidden="true" className="grid size-4 place-items-center text-muted-foreground/70">
         {item.icon ?? <TraceIcon kind={item.kind} />}
       </span>
       <span className="font-medium text-foreground/90">{item.label}</span>

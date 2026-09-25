@@ -1,11 +1,5 @@
 import { animate, motion, useMotionValue, useReducedMotion } from "motion/react";
-import {
-  type ReactNode,
-  useCallback,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@apcode/ui/lib/utils";
 
 export interface BounceSidebarItem {
@@ -44,9 +38,7 @@ const BOUNCE_SPRING = {
 function quadraticBezier(start: number, control: number, end: number, progress: number) {
   const remaining = 1 - progress;
   return (
-    remaining * remaining * start +
-    2 * remaining * progress * control +
-    progress * progress * end
+    remaining * remaining * start + 2 * remaining * progress * control + progress * progress * end
   );
 }
 
@@ -62,9 +54,7 @@ export function BounceSidebar({
   indicatorClassName,
 }: BounceSidebarProps) {
   const reduce = useReducedMotion();
-  const [internalValue, setInternalValue] = useState(
-    defaultValue ?? items[0]?.id ?? "",
-  );
+  const [internalValue, setInternalValue] = useState(defaultValue ?? items[0]?.id ?? "");
   const requestedValue = value ?? internalValue;
   const selectedValue = items.some((item) => item.id === requestedValue)
     ? requestedValue
@@ -86,9 +76,7 @@ export function BounceSidebar({
 
     animationRef.current?.stop();
     x.set(0);
-    y.set(
-      selectedItem.offsetTop + (selectedItem.offsetHeight - DOT_SIZE) / 2,
-    );
+    y.set(selectedItem.offsetTop + (selectedItem.offsetHeight - DOT_SIZE) / 2);
     hasPositionRef.current = true;
   }, [x, y]);
 
@@ -97,8 +85,7 @@ export function BounceSidebar({
       const selectedItem = itemRefs.current.get(selectedValue);
       if (!selectedItem) return;
 
-      const destinationY =
-        selectedItem.offsetTop + (selectedItem.offsetHeight - DOT_SIZE) / 2;
+      const destinationY = selectedItem.offsetTop + (selectedItem.offsetHeight - DOT_SIZE) / 2;
 
       animationRef.current?.stop();
 
@@ -116,13 +103,11 @@ export function BounceSidebar({
       const longJumpProgress = Math.min(1, Math.max(0, (travel - 48) / 120));
       const controlX = -Math.min(40, Math.max(8, travel * 0.25));
       const midpointY = (startY + destinationY) / 2;
-      const controlY =
-        destinationY + (midpointY - destinationY) * longJumpProgress;
+      const controlY = destinationY + (midpointY - destinationY) * longJumpProgress;
 
       animationRef.current = animate(0, 1, {
         ...BOUNCE_SPRING,
-        stiffness:
-          BOUNCE_SPRING.stiffness - 60 * longJumpProgress,
+        stiffness: BOUNCE_SPRING.stiffness - 60 * longJumpProgress,
         damping: BOUNCE_SPRING.damping + longJumpProgress,
         mass: BOUNCE_SPRING.mass + 0.15 * longJumpProgress,
         onUpdate: (progress) => {
@@ -141,8 +126,7 @@ export function BounceSidebar({
   );
 
   useLayoutEffect(() => {
-    const shouldAnimate =
-      hasPositionRef.current && previousIndexRef.current !== selectedIndex;
+    const shouldAnimate = hasPositionRef.current && previousIndexRef.current !== selectedIndex;
     positionIndicator(shouldAnimate);
   }, [positionIndicator, selectedIndex]);
 
@@ -202,11 +186,9 @@ export function BounceSidebar({
             </>
           );
           const interactiveClasses = cn(
-            "flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-sm font-medium outline-none transition-colors",
+            "flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-sm font-medium transition-colors outline-none",
             "focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-            active
-              ? "text-foreground"
-              : "text-muted-foreground hover:text-foreground",
+            active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             item.disabled ? "cursor-not-allowed opacity-40" : undefined,
             itemClassName,
           );
@@ -224,10 +206,7 @@ export function BounceSidebar({
                 <a
                   href={item.href}
                   target={item.target}
-                  rel={
-                    item.rel ??
-                    (item.target === "_blank" ? "noreferrer noopener" : undefined)
-                  }
+                  rel={item.rel ?? (item.target === "_blank" ? "noreferrer noopener" : undefined)}
                   aria-current={active ? "page" : undefined}
                   aria-disabled={item.disabled || undefined}
                   data-active={active || undefined}

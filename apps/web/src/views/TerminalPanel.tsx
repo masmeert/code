@@ -12,7 +12,15 @@ import symbolsFontUrl from "../assets/fonts/symbols-nerd-font-mono.woff2";
 import { IconButton } from "../components/icon-button.tsx";
 import { isLocalUrl, openTab } from "../lib/browser.ts";
 import { focusComposer } from "../lib/drafts.ts";
-import { attachTerminal, closeTerminal, newTerminal, sendIfConnected, showTerminal, toggleTerminalPanel, useStore } from "../lib/store.ts";
+import {
+  attachTerminal,
+  closeTerminal,
+  newTerminal,
+  sendIfConnected,
+  showTerminal,
+  toggleTerminalPanel,
+  useStore,
+} from "../lib/store.ts";
 import { useResizableSize } from "@apcode/ui/hooks/use-resizable";
 
 const symbolsFont = new FontFace("Symbols Nerd Font Mono", `url(${symbolsFontUrl})`);
@@ -76,7 +84,13 @@ function terminalTheme(dark: boolean): ITheme {
       };
 }
 
-export function TerminalPanel({ threadId, activeTerminal }: { threadId: string; activeTerminal: string }) {
+export function TerminalPanel({
+  threadId,
+  activeTerminal,
+}: {
+  threadId: string;
+  activeTerminal: string;
+}) {
   const terminalIds = useStore((state) => state.terminals[threadId]) ?? [];
   const section = useRef<HTMLElement>(null);
   const panel = useResizableSize({
@@ -84,7 +98,14 @@ export function TerminalPanel({ threadId, activeTerminal }: { threadId: string; 
     initial: 288,
     side: "start",
     axis: "y",
-    clamp: (height) => Math.max(120, Math.min(height, (section.current?.parentElement?.clientHeight ?? window.innerHeight) - 200)),
+    clamp: (height) =>
+      Math.max(
+        120,
+        Math.min(
+          height,
+          (section.current?.parentElement?.clientHeight ?? window.innerHeight) - 200,
+        ),
+      ),
   });
   return (
     <section
@@ -93,15 +114,28 @@ export function TerminalPanel({ threadId, activeTerminal }: { threadId: string; 
       style={{ height: panel.size }}
       className="relative flex shrink-0 flex-col border-t border-border bg-background"
     >
-      <ResizeHandle side="start" axis="y" label="Resize terminal" value={panel.size} dragging={panel.dragging} {...panel.handleProps} />
+      <ResizeHandle
+        side="start"
+        axis="y"
+        label="Resize terminal"
+        value={panel.size}
+        dragging={panel.dragging}
+        {...panel.handleProps}
+      />
       <div className="flex h-9 shrink-0 items-center gap-1 pr-2 pl-3">
-        <div role="tablist" aria-label="Terminals" className="scrollbar-hide flex min-w-0 items-center gap-0.5 overflow-x-auto">
+        <div
+          role="tablist"
+          aria-label="Terminals"
+          className="scrollbar-hide flex min-w-0 items-center gap-0.5 overflow-x-auto"
+        >
           {terminalIds.map((terminalId, index) => (
             <div
               key={terminalId}
               className={cn(
                 "group/tab flex h-7 shrink-0 items-center rounded-lg pr-0.5 text-xs transition-colors",
-                terminalId === activeTerminal ? "bg-muted/60 text-foreground" : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                terminalId === activeTerminal
+                  ? "bg-muted/60 text-foreground"
+                  : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
               )}
             >
               <button
@@ -120,8 +154,10 @@ export function TerminalPanel({ threadId, activeTerminal }: { threadId: string; 
                 aria-label={`Close terminal ${index + 1}`}
                 onClick={() => closeTerminal(threadId, terminalId)}
                 className={cn(
-                  "grid size-6 place-items-center rounded-md outline-none transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring",
-                  terminalId === activeTerminal ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100",
+                  "grid size-6 place-items-center rounded-md transition-opacity outline-none hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring",
+                  terminalId === activeTerminal
+                    ? "opacity-100"
+                    : "opacity-0 group-hover/tab:opacity-100",
                 )}
               >
                 <X className="size-3" />
@@ -210,7 +246,9 @@ function TerminalView({ threadId, terminalId }: { threadId: string; terminalId: 
         terminal.onData((data) => {
           if (!replaying) sendIfConnected({ _tag: "terminal.write", threadId, terminalId, data });
         });
-        terminal.onResize(({ cols, rows }) => sendIfConnected({ _tag: "terminal.resize", threadId, terminalId, columns: cols, rows }));
+        terminal.onResize(({ cols, rows }) =>
+          sendIfConnected({ _tag: "terminal.resize", threadId, terminalId, columns: cols, rows }),
+        );
 
         let frame = 0;
         const sizeObserver = new ResizeObserver(() => {
@@ -219,9 +257,14 @@ function TerminalView({ threadId, terminalId }: { threadId: string; terminalId: 
         });
         sizeObserver.observe(host.current);
         const themeObserver = new MutationObserver(() => {
-          terminal.options.theme = terminalTheme(document.documentElement.classList.contains("dark"));
+          terminal.options.theme = terminalTheme(
+            document.documentElement.classList.contains("dark"),
+          );
         });
-        themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+        themeObserver.observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ["class"],
+        });
         terminal.focus();
 
         dispose = () => {
