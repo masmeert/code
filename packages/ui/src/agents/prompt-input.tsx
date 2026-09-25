@@ -49,6 +49,8 @@ export interface PromptOption {
   /** Consecutive options sharing a group render under one section header. */
   group?: string;
   groupIcon?: ReactNode;
+  /** The group starts folded each time the menu opens; its header toggles it, and filtering shows matches anyway. */
+  foldable?: boolean;
 }
 
 export type PromptModel = PromptOption;
@@ -820,11 +822,15 @@ export function PromptSelect({
   const [open, setOpenState] = useState(false);
   const [instant, setInstant] = useState(false);
   const [query, setQuery] = useState("");
+  const [unfolded, setUnfolded] = useState<ReadonlyArray<string>>([]);
   const searchRef = useRef<HTMLInputElement>(null);
   const setOpen = (next: boolean) => {
     setOpenState(next);
     setInstant(false);
-    if (!next) setQuery("");
+    if (!next) {
+      setQuery("");
+      setUnfolded([]);
+    }
     onOpenChange?.(next);
   };
   usePickerOpener(
@@ -924,71 +930,97 @@ export function PromptSelect({
           {visible.map((option, index) => {
             const selected = option.value === value || multi.includes(option.value);
             const header = option.group && option.group !== visible[index - 1]?.group;
+            const group = option.group ?? "";
+            const folded = option.foldable && !needle && !unfolded.includes(group);
+            const headerContent = (
+              <>
+                {option.groupIcon ? (
+                  <span className="grid size-3 place-items-center [&_svg]:size-3">
+                    {option.groupIcon}
+                  </span>
+                ) : null}
+                {option.group}
+              </>
+            );
+            // A folded group keeps only its header; empty wrappers would still take the list's gap.
+            if (folded && !header) return null;
             return (
               <div key={option.value}>
-                {header ? (
-                  <div
-                    className={cn(
-                      "flex items-center gap-1.5 px-2 pb-1 text-[11px] text-muted-foreground",
-                      index > 0 ? "mt-1 border-t border-border pt-2" : "pt-1",
-                    )}
+                {header && index > 0 ? (
+                  <div aria-hidden="true" className="mx-2 my-1 h-px bg-border" />
+                ) : null}
+                {header && option.foldable && !needle ? (
+                  <button
+                    type="button"
+                    aria-expanded={!folded}
+                    onClick={() =>
+                      setUnfolded((current) =>
+                        folded ? [...current, group] : current.filter((entry) => entry !== group),
+                      )
+                    }
+                    className="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left text-[11px] text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted"
                   >
-                    {option.groupIcon ? (
-                      <span className="grid size-3 place-items-center [&_svg]:size-3">
-                        {option.groupIcon}
-                      </span>
-                    ) : null}
-                    {option.group}
+                    {headerContent}
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={cn("ml-auto size-3 transition-transform", folded && "-rotate-90")}
+                    />
+                  </button>
+                ) : header ? (
+                  <div className="flex items-center gap-1.5 px-2 pt-1 pb-1 text-[11px] text-muted-foreground">
+                    {headerContent}
                   </div>
                 ) : null}
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  disabled={option.disabled}
-                  onClick={(event) => {
-                    // Shift-click adds or removes the option and keeps the menu open.
-                    if (event.shiftKey && onToggle) {
-                      onToggle(option.value);
-                      return;
-                    }
-                    onChange(option.value);
-                    setOpen(false);
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors outline-none hover:bg-muted focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-50",
-                    option.description ? "py-1.5" : "h-7",
-                    selected ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {option.icon ? (
-                    <span
-                      className={cn(
-                        "grid size-4 shrink-0 place-items-center [&_svg]:size-3.5",
-                        option.description && "self-start",
-                      )}
-                      style={option.description ? { marginTop: 2 } : undefined}
-                    >
-                      {option.icon}
-                    </span>
-                  ) : null}
-                  <span className="min-w-0 flex-1">
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <span className="truncate">{option.label}</span>
-                      {option.badge ? (
-                        <span className="grid shrink-0 place-items-center [&_svg]:size-3">
-                          {option.badge}
+                {folded ? null : (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    disabled={option.disabled}
+                    onClick={(event) => {
+                      // Shift-click adds or removes the option and keeps the menu open.
+                      if (event.shiftKey && onToggle) {
+                        onToggle(option.value);
+                        return;
+                      }
+                      onChange(option.value);
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors outline-none hover:bg-muted focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-50",
+                      option.description ? "py-1.5" : "h-7",
+                      selected ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {option.icon ? (
+                      <span
+                        className={cn(
+                          "grid size-4 shrink-0 place-items-center [&_svg]:size-3.5",
+                          option.description && "self-start",
+                        )}
+                        style={option.description ? { marginTop: 2 } : undefined}
+                      >
+                        {option.icon}
+                      </span>
+                    ) : null}
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate">{option.label}</span>
+                        {option.badge ? (
+                          <span className="grid shrink-0 place-items-center [&_svg]:size-3">
+                            {option.badge}
+                          </span>
+                        ) : null}
+                      </span>
+                      {option.description ? (
+                        <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">
+                          {option.description}
                         </span>
                       ) : null}
                     </span>
-                    {option.description ? (
-                      <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">
-                        {option.description}
-                      </span>
-                    ) : null}
-                  </span>
-                  {selected ? <Check className="size-3.5 shrink-0" /> : null}
-                </button>
+                    {selected ? <Check className="size-3.5 shrink-0" /> : null}
+                  </button>
+                )}
               </div>
             );
           })}

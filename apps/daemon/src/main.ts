@@ -20,13 +20,9 @@ const program = Effect.gen(function* () {
 
 const MainLive = SessionManagerLive.layer.pipe(
   Layer.provide(
-    Layer.mergeAll(
-      SettingsStoreLive.layer,
-      ProjectsStoreLive.layer,
-      ThreadStoreLive.layer,
-      ProviderRegistryLive.layer,
-    ),
+    Layer.mergeAll(ProjectsStoreLive.layer, ThreadStoreLive.layer, ProviderRegistryLive.layer),
   ),
+  Layer.provideMerge(SettingsStoreLive.layer),
 );
 
 program.pipe(Effect.scoped, Effect.provide(MainLive), BunRuntime.runMain);

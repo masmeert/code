@@ -20,6 +20,7 @@ import {
   type CodexElicitation,
   type RpcId,
 } from "./codexRpc.ts";
+import { harnessLaunch } from "./launch.ts";
 import {
   ProviderError,
   summarizeToolInput,
@@ -94,6 +95,7 @@ function elicitationResponse(elicitation: CodexElicitation, decision: ApprovalDe
 const start = ({
   threadId,
   cwd,
+  harness,
   model,
   resumeToken,
   effort: initialEffort,
@@ -250,8 +252,9 @@ const start = ({
     }
 
     const rpc = yield* Effect.tryPromise({
-      try: () =>
-        connectCodex(
+      try: () => {
+        const launch = harnessLaunch("codex", harness);
+        return connectCodex(
           cwd,
           {
             onNotification,
@@ -265,15 +268,18 @@ const start = ({
               ),
           },
           {
+            ...launch,
             args: [
+              ...launch.args,
               "-c",
               `mcp_servers.browser.url="${mcpServer.url}"`,
               "-c",
               'mcp_servers.browser.bearer_token_env_var="APCODE_MCP_TOKEN"',
             ],
-            env: { APCODE_MCP_TOKEN: mcpServer.token },
+            env: { ...launch.env, APCODE_MCP_TOKEN: mcpServer.token },
           },
-        ),
+        );
+      },
       catch: (e) => fail(e instanceof Error ? e.message : String(e)),
     });
     function request<A>(method: string, params: Schema.Json, response: Schema.Decoder<A>) {
@@ -387,10 +393,10 @@ const start = ({
   });
 
 /** Loads the thread in a short-lived app-server and drops its last turns. The thread id stays. */
-const rewind: ProviderAdapter["rewind"] = ({ cwd, resumeToken, dropTurns }) =>
+const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, dropTurns }) =>
   Effect.tryPromise({
     try: async () => {
-      const rpc = await connectCodex(cwd);
+      const rpc = await connectCodex(cwd, {}, harnessLaunch("codex", harness));
       try {
         await rpc.request(
           "thread/resume",

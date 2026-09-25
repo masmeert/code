@@ -2,12 +2,33 @@ import type { PromptModel } from "@apcode/ui/agents/prompt-input";
 import { PROVIDER_LOGO } from "@/components/provider-logo";
 import { Star } from "lucide-react";
 import { createElement } from "react";
-import type { ProviderKind, ProviderStatus, Settings } from "@apcode/contracts";
+import type {
+  ModelOption,
+  ProviderKind,
+  ProviderSettings,
+  ProviderStatus,
+  Settings,
+} from "@apcode/contracts";
 
 export const PROVIDER_LABEL: Record<ProviderKind, string> = {
   claude: "Claude Code",
   codex: "Codex",
 };
+
+/** The harness's name as the user set it in Settings, else its own. */
+export const harnessLabel = (settings: Settings, provider: ProviderKind) =>
+  settings.providers[provider].displayName?.trim() || PROVIDER_LABEL[provider];
+
+/** Models in the order the user arranged them; ones they haven't placed keep the harness's order, after the rest. */
+export const orderedModels = (models: ReadonlyArray<ModelOption>, harness: ProviderSettings) => {
+  const order = harness.modelOrder ?? [];
+  const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
+  return models.toSorted((a, b) => rank(a.id) - rank(b.id));
+};
+
+/** Models offered in pickers: arranged, without the ones switched off. */
+export const visibleModels = (models: ReadonlyArray<ModelOption>, harness: ProviderSettings) =>
+  orderedModels(models, harness).filter((m) => !harness.hiddenModels?.includes(m.id));
 
 /** Star marking a harness's own default pick (model, effort) in menus. */
 export const recommendedBadge = () =>
@@ -24,22 +45,37 @@ export const decodeChoice = (value: string) => {
   return { provider: value.slice(0, index) as ProviderKind, model: value.slice(index + 1) };
 };
 
-/** Picker options for the linked harnesses (optionally just one). */
+/** Picker options for the linked harnesses (optionally just one): every favorite in one list, then each harness's other models, folded. */
 export const modelChoices = (
   providers: ReadonlyArray<ProviderStatus>,
+  settings: Settings,
   only?: ProviderKind,
-): Array<PromptModel> =>
-  providers
-    .filter((p) => p.linked && (!only || p.kind === only))
-    .flatMap((p) =>
-      p.models.map((m) => ({
+): Array<PromptModel> => {
+  const favorites: Array<PromptModel> = [];
+  const rest: Array<PromptModel> = [];
+  for (const p of providers) {
+    if (!p.linked || (only && p.kind !== only)) continue;
+    const harness = settings.providers[p.kind];
+    for (const m of visibleModels(p.models, harness)) {
+      const logo = createElement(PROVIDER_LOGO[p.kind]);
+      const option = {
         value: encodeChoice(p.kind, m.id),
         label: m.label,
-        badge: m.recommended ? recommendedBadge() : undefined,
-        group: PROVIDER_LABEL[p.kind],
-        groupIcon: createElement(PROVIDER_LOGO[p.kind]),
-      })),
-    );
+      };
+      // Favorites keep their harness logo on the row, so the trigger still shows whose model it is.
+      if (harness.favoriteModels?.includes(m.id))
+        favorites.push({ ...option, icon: logo, group: "Favorites" });
+      else
+        rest.push({
+          ...option,
+          group: harnessLabel(settings, p.kind),
+          groupIcon: logo,
+          foldable: true,
+        });
+    }
+  }
+  return [...favorites, ...rest];
+};
 
 /** The model a harness uses when none is picked: the Settings default if still listed, else the recommended one, else its first. */
 export const defaultModel = (
@@ -47,7 +83,10 @@ export const defaultModel = (
   settings: Settings,
   provider: ProviderKind,
 ) => {
-  const models = providers.find((p) => p.kind === provider)?.models ?? [];
+  const models = visibleModels(
+    providers.find((p) => p.kind === provider)?.models ?? [],
+    settings.providers[provider],
+  );
   const saved = settings.providers[provider].defaultModel;
   if (saved && (!models.length || models.some((m) => m.id === saved))) return saved;
   return (models.find((m) => m.recommended) ?? models[0])?.id ?? saved ?? null;

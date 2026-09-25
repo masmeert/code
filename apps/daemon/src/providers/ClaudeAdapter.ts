@@ -33,7 +33,7 @@ import {
   type StartSessionInput,
   type TurnInput,
 } from "./ProviderAdapter.ts";
-import { resolveExecutable } from "./resolveExecutable.ts";
+import { claudeExtraArgs, harnessLaunch } from "./launch.ts";
 
 /** Minimal push-based async iterable used as the SDK's streaming prompt input. */
 const makeInbox = <A>() => {
@@ -118,6 +118,7 @@ const toContent = async (turn: TurnInput): Promise<SDKUserMessage["message"]["co
 const start = ({
   threadId,
   cwd,
+  harness,
   model,
   resumeToken,
   effort: initialEffort,
@@ -128,6 +129,7 @@ const start = ({
 }: StartSessionInput) =>
   Effect.try({
     try: () => {
+      const launch = harnessLaunch("claude", harness);
       const inbox = makeInbox<SDKUserMessage>();
       const pending = new Map<string, PendingApproval>();
       let nextRequest = 0;
@@ -158,11 +160,12 @@ const start = ({
         permissionMode: PERMISSION_MODE[initialPermission],
         // Only lets the composer switch to "Full access" later; the mode above still applies.
         allowDangerouslySkipPermissions: true,
-        pathToClaudeCodeExecutable: resolveExecutable("claude", "APCODE_CLAUDE_PATH"),
+        pathToClaudeCodeExecutable: launch.bin,
+        extraArgs: claudeExtraArgs(launch.args),
         settingSources: ["user", "project", "local"],
         includePartialMessages: true,
         canUseTool,
-        env: { ...process.env, APCODE_MCP_TOKEN: mcpServer.token },
+        env: { ...launch.env, APCODE_MCP_TOKEN: mcpServer.token },
         mcpServers: {
           browser: {
             type: "http",
@@ -410,24 +413,38 @@ function isPrompt(entry: SessionMessage) {
  * is what later turns resume. Messages carry our id when we sent them; older ones are
  * found by counting prompts.
  */
-const rewind: ProviderAdapter["rewind"] = ({ cwd, resumeToken, messageId, keep }) =>
+const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, messageId, keep }) =>
   Effect.tryPromise({
     try: async () => {
       if (keep === 0) return null;
-      const entries = await getSessionMessages(resumeToken, { dir: cwd });
-      let index = entries.findIndex((entry) => entry.uuid === messageId);
-      if (index === -1) {
-        let prompts = 0;
-        index = entries.findIndex((entry) => isPrompt(entry) && prompts++ === keep);
+      // The SDK's session-log helpers read CLAUDE_CONFIG_DIR from our own env, not from options.
+      // ponytail: swaps process.env for the call; a CLI spawned meanwhile without its own config dir would see it.
+      const configDir = harnessLaunch("claude", harness).env.CLAUDE_CONFIG_DIR;
+      const previous = process.env.CLAUDE_CONFIG_DIR;
+      if (configDir !== undefined) process.env.CLAUDE_CONFIG_DIR = configDir;
+      try {
+        return await forkBefore(cwd, resumeToken, messageId, keep);
+      } finally {
+        if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+        else process.env.CLAUDE_CONFIG_DIR = previous;
       }
-      if (index <= 0) throw new Error("couldn't find that message in Claude's session log");
-      const { sessionId } = await forkSession(resumeToken, {
-        dir: cwd,
-        upToMessageId: entries[index - 1]!.uuid,
-      });
-      return sessionId;
     },
     catch: (e) => fail(`Couldn't rewind: ${e instanceof Error ? e.message : String(e)}`),
   });
+
+async function forkBefore(cwd: string, resumeToken: string, messageId: string, keep: number) {
+  const entries = await getSessionMessages(resumeToken, { dir: cwd });
+  let index = entries.findIndex((entry) => entry.uuid === messageId);
+  if (index === -1) {
+    let prompts = 0;
+    index = entries.findIndex((entry) => isPrompt(entry) && prompts++ === keep);
+  }
+  if (index <= 0) throw new Error("couldn't find that message in Claude's session log");
+  const { sessionId } = await forkSession(resumeToken, {
+    dir: cwd,
+    upToMessageId: entries[index - 1]!.uuid,
+  });
+  return sessionId;
+}
 
 export const ClaudeAdapter: ProviderAdapter = { kind: "claude", start, rewind };

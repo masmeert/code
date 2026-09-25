@@ -364,6 +364,7 @@ const make = Effect.gen(function* () {
           ADAPTERS[entry.info.provider].start({
             threadId,
             cwd: entry.info.cwd,
+            harness: settings.providers[entry.info.provider],
             model:
               entry.info.model ?? settings.providers[entry.info.provider].defaultModel ?? undefined,
             resumeToken: entry.resumeToken ?? undefined,
@@ -538,6 +539,7 @@ const make = Effect.gen(function* () {
       if (entry.resumeToken) {
         const token = yield* ADAPTERS[provider].rewind({
           cwd,
+          harness: (yield* settingsStore.get).providers[provider],
           resumeToken: entry.resumeToken,
           messageId: command.messageId,
           keep: found.before,
@@ -654,6 +656,7 @@ const make = Effect.gen(function* () {
           generateCommitMessage({
             cwd: path,
             provider,
+            harness: settings.providers[provider],
             model: model || undefined,
             patch: diff.patch,
             recent,
@@ -876,13 +879,20 @@ const make = Effect.gen(function* () {
       "browser.host": () => Effect.void,
       "browser.respond": () => Effect.void,
       "settings.update": (command) =>
-        settingsStore
-          .update(command.settings)
-          .pipe(
-            Effect.map((settings) =>
-              publish(RuntimeEvent.cases["settings.updated"].make({ settings })),
-            ),
-          ),
+        Effect.gen(function* () {
+          const before = yield* settingsStore.get;
+          const settings = yield* settingsStore.update(command.settings);
+          publish(RuntimeEvent.cases["settings.updated"].make({ settings }));
+          // A different binary, config dir or env can mean another version or account.
+          const launchOf = (value: Settings) =>
+            JSON.stringify(
+              ProviderKind.literals.map((kind) => {
+                const { binaryPath, configDir, env, launchArgs } = value.providers[kind];
+                return [binaryPath, configDir, env, launchArgs];
+              }),
+            );
+          if (launchOf(before) !== launchOf(settings)) yield* registry.refresh;
+        }),
     });
   }
 

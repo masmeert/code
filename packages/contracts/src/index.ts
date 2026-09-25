@@ -103,9 +103,34 @@ export const TurnOptions = Schema.Struct({
 });
 export type TurnOptions = typeof TurnOptions.Type;
 
+/** Tint a harness wears in the app; "brand" keeps its own colours. */
+export const HarnessColor = Schema.Literals([
+  "brand",
+  "orange",
+  "amber",
+  "emerald",
+  "sky",
+  "violet",
+  "pink",
+]);
+export type HarnessColor = typeof HarnessColor.Type;
+
 export const ProviderSettings = Schema.Struct({
   /** Model for new threads; null uses the harness's own default. */
   defaultModel: Schema.NullOr(Schema.String),
+  /** Shown in place of the harness's own name. The fields below are optional so older settings files still load. */
+  displayName: Schema.optional(Schema.String),
+  color: Schema.optional(HarnessColor),
+  /** CLI to run instead of the one found on PATH. */
+  binaryPath: Schema.optional(Schema.String),
+  /** CLAUDE_CONFIG_DIR for Claude Code, CODEX_HOME for Codex. */
+  configDir: Schema.optional(Schema.String),
+  launchArgs: Schema.optional(Schema.Array(Schema.String)),
+  env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  /** Model ids in picker order; models missing from it follow in the harness's own order. */
+  modelOrder: Schema.optional(Schema.Array(Schema.String)),
+  hiddenModels: Schema.optional(Schema.Array(Schema.String)),
+  favoriteModels: Schema.optional(Schema.Array(Schema.String)),
 });
 export type ProviderSettings = typeof ProviderSettings.Type;
 

@@ -18,7 +18,8 @@ import type { Project } from "@apcode/contracts";
 import * as Match from "effect/Match";
 import { SlidersHorizontal } from "lucide-react";
 import type { ReactNode } from "react";
-import { PROVIDER_LABEL } from "../lib/models.ts";
+import { harnessLabel } from "../lib/models.ts";
+import { useStore } from "../lib/store.ts";
 import { DEFAULT_THREAD_LIST_VIEW, type ThreadListView } from "../lib/threadListView.ts";
 
 function OptionMenu(props: { label: string; value: ReactNode; children: ReactNode }) {
@@ -69,6 +70,7 @@ export function ThreadListMenu(props: {
   onChange: (patch: Partial<ThreadListView>) => void;
 }) {
   const { view } = props;
+  const settings = useStore((s) => s.settings);
   const filtered =
     view.status !== "active" ||
     view.projects.length > 0 ||
@@ -134,7 +136,11 @@ export function ThreadListMenu(props: {
         <ChoiceMenu
           label="Harness"
           value={view.provider}
-          labels={{ all: "All", ...PROVIDER_LABEL }}
+          labels={{
+            all: "All",
+            claude: harnessLabel(settings, "claude"),
+            codex: harnessLabel(settings, "codex"),
+          }}
           onChange={(provider) => props.onChange({ provider })}
         />
         <ChoiceMenu

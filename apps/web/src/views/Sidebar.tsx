@@ -23,7 +23,7 @@ import { NumberTicker } from "@apcode/ui/motion/number-ticker";
 import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
 import { Separator } from "@apcode/ui/components/separator";
 import { ProjectBadge } from "@/components/project-badge";
-import { PROVIDER_LOGO } from "@/components/provider-logo";
+import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import { cn } from "@apcode/ui/lib/utils";
 import {
   ClientCommand,
@@ -403,13 +403,14 @@ const StatusDot = ({
 /** Provider mark; spins while the agent works. */
 const ProviderMark = ({ info }: { info: ThreadInfo }) => {
   const Logo = PROVIDER_LOGO[info.provider];
+  const settings = useStore((s) => s.settings);
   const running = info.status === "running";
   return (
     <Logo
       className={cn(
-        "size-3.5 shrink-0",
+        "size-3.5 shrink-0 text-muted-foreground",
         running && "animate-spin [animation-duration:2.4s]",
-        running && info.provider === "claude" ? "text-[#D97757]" : "text-muted-foreground",
+        running && harnessTint(settings, info.provider).active,
       )}
     />
   );

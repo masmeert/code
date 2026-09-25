@@ -3,10 +3,10 @@
  * commits made without one. Runs on the harness the user picked in settings.
  */
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
-import type { ProviderKind } from "@apcode/contracts";
+import type { ProviderKind, ProviderSettings } from "@apcode/contracts";
 import * as Schema from "effect/Schema";
 import { CodexNotification, connectCodex, ThreadResponse } from "./providers/codexRpc.ts";
-import { resolveExecutable } from "./providers/resolveExecutable.ts";
+import { claudeExtraArgs, harnessLaunch } from "./providers/launch.ts";
 
 /** Enough of the patch to describe it; the model doesn't need every line of a big change. */
 const MAX_PROMPT_PATCH = 60_000;
@@ -33,7 +33,13 @@ const clean = (text: string) =>
     .replace(/^```[a-z]*\n?|\n?```$/g, "")
     .trim();
 
-const withClaude = async (cwd: string, model: string | undefined, prompt: string) => {
+const withClaude = async (
+  cwd: string,
+  harness: ProviderSettings,
+  model: string | undefined,
+  prompt: string,
+) => {
+  const launch = harnessLaunch("claude", harness);
   const options: Options = {
     cwd,
     // Thinking is most of the wait on a message this short.
@@ -42,7 +48,9 @@ const withClaude = async (cwd: string, model: string | undefined, prompt: string
     tools: [],
     settingSources: [],
     persistSession: false,
-    pathToClaudeCodeExecutable: resolveExecutable("claude", "APCODE_CLAUDE_PATH"),
+    pathToClaudeCodeExecutable: launch.bin,
+    extraArgs: claudeExtraArgs(launch.args),
+    env: launch.env,
   };
   if (model) options.model = model;
   const q = query({ prompt, options });
@@ -58,32 +66,42 @@ const withClaude = async (cwd: string, model: string | undefined, prompt: string
   }
 };
 
-const withCodex = async (cwd: string, model: string | undefined, prompt: string) => {
+const withCodex = async (
+  cwd: string,
+  harness: ProviderSettings,
+  model: string | undefined,
+  prompt: string,
+) => {
   let finish: (text: string) => void = () => {};
   let abort: (error: Error) => void = () => {};
   const done = new Promise<string>((resolve, reject) => ((finish = resolve), (abort = reject)));
   let text = "";
-  const rpc = await connectCodex(cwd, {
-    onNotification: (notification) =>
-      CodexNotification.matchOrElse(
-        notification,
-        {
-          "item/completed": ({ params }) => {
-            if (params.item.type === "agentMessage") text = params.item.text;
+  const launch = harnessLaunch("codex", harness);
+  const rpc = await connectCodex(
+    cwd,
+    {
+      onNotification: (notification) =>
+        CodexNotification.matchOrElse(
+          notification,
+          {
+            "item/completed": ({ params }) => {
+              if (params.item.type === "agentMessage") text = params.item.text;
+            },
+            "turn/completed": ({ params }) => {
+              if (params.turn.status === "failed")
+                abort(new Error(params.turn.error?.message ?? "Codex turn failed"));
+              else finish(text);
+            },
+            error: ({ params }) => {
+              if (!params.willRetry) abort(new Error(params.error.message));
+            },
           },
-          "turn/completed": ({ params }) => {
-            if (params.turn.status === "failed")
-              abort(new Error(params.turn.error?.message ?? "Codex turn failed"));
-            else finish(text);
-          },
-          error: ({ params }) => {
-            if (!params.willRetry) abort(new Error(params.error.message));
-          },
-        },
-        () => {},
-      ),
-    onExit: (code, stderr) => abort(new Error(`codex exited (${code}): ${stderr}`)),
-  });
+          () => {},
+        ),
+      onExit: (code, stderr) => abort(new Error(`codex exited (${code}): ${stderr}`)),
+    },
+    launch,
+  );
   try {
     const started = await rpc.request(
       "thread/start",
@@ -114,6 +132,7 @@ const withCodex = async (cwd: string, model: string | undefined, prompt: string)
 export const generateCommitMessage = async (input: {
   readonly cwd: string;
   readonly provider: ProviderKind;
+  readonly harness: ProviderSettings;
   readonly model: string | undefined;
   readonly patch: string;
   readonly recent: ReadonlyArray<string>;
@@ -125,7 +144,9 @@ export const generateCommitMessage = async (input: {
     (_, reject) => (timer = setTimeout(() => reject(new Error("Timed out")), TIMEOUT_MS)),
   );
   try {
-    const message = clean(await Promise.race([run(input.cwd, input.model, prompt), timeout]));
+    const message = clean(
+      await Promise.race([run(input.cwd, input.harness, input.model, prompt), timeout]),
+    );
     if (!message) throw new Error("The model returned an empty message");
     return message;
   } finally {

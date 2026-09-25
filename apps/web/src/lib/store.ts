@@ -4,6 +4,7 @@ import {
   type AuthFlow,
   type Project,
   type ProviderKind,
+  type ProviderSettings,
   type ProviderStatus,
   type Settings,
   type ApprovalDecision,
@@ -840,6 +841,16 @@ export const updateSettings = (settings: Settings) => {
   setState({ ...state, settings });
   send(ClientCommand.cases["settings.update"].make({ settings }));
 };
+
+/** Changes some of one harness's Settings, keeping the rest. */
+export const updateHarness = (provider: ProviderKind, patch: Partial<ProviderSettings>) =>
+  updateSettings({
+    ...state.settings,
+    providers: {
+      ...state.settings.providers,
+      [provider]: { ...state.settings.providers[provider], ...patch },
+    },
+  });
 
 /**
  * Creates a thread from a draft by sending its first message. With `open`, this window

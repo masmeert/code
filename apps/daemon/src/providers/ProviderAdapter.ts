@@ -4,6 +4,7 @@ import type {
   Effort,
   PermissionLevel,
   ProviderKind,
+  ProviderSettings,
   RuntimeEvent,
   SlashCommand,
 } from "@apcode/contracts";
@@ -22,6 +23,8 @@ export interface StartSessionInput {
   /** The thread the session belongs to; every event the adapter emits carries it. */
   readonly threadId: string;
   readonly cwd: string;
+  /** The harness's Settings, for how to launch its CLI. */
+  readonly harness: ProviderSettings;
   readonly model?: string | undefined;
   /** Provider-side conversation id from a previous session; the adapter resumes it instead of starting fresh. */
   readonly resumeToken?: string | undefined;
@@ -69,6 +72,7 @@ export interface ProviderSession {
 
 export interface RewindInput {
   readonly cwd: string;
+  readonly harness: ProviderSettings;
   readonly resumeToken: string;
   /** The user message to rewind to before (it goes too). */
   readonly messageId: string;

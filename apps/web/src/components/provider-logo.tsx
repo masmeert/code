@@ -1,4 +1,4 @@
-import type { ProviderKind } from "@apcode/contracts";
+import type { HarnessColor, ProviderKind, Settings } from "@apcode/contracts";
 import type { ComponentPropsWithRef } from "react";
 
 type LogoProps = ComponentPropsWithRef<"svg">;
@@ -25,8 +25,50 @@ export const PROVIDER_LOGO: Record<ProviderKind, typeof ClaudeLogo> = {
   codex: OpenAILogo,
 };
 
-/** Avatar tint per provider: Claude's coral on a warm wash, OpenAI in plain foreground. */
-export const PROVIDER_AVATAR_CLASS: Record<ProviderKind, string> = {
-  claude: "bg-[#D97757]/15 text-[#D97757]",
-  codex: "bg-foreground text-background",
+interface HarnessTint {
+  readonly avatar: string;
+  readonly swatch: string;
+  /** The logo while the agent works. */
+  readonly active: string;
+}
+
+/** Brand tints: Claude's coral on a warm wash, OpenAI in plain foreground. */
+const BRAND_TINT: Record<ProviderKind, HarnessTint> = {
+  claude: {
+    avatar: "bg-[#D97757]/15 text-[#D97757]",
+    swatch: "bg-[#D97757]",
+    active: "text-[#D97757]",
+  },
+  codex: { avatar: "bg-foreground text-background", swatch: "bg-foreground", active: "" },
+};
+
+export const HARNESS_TINT: Record<Exclude<HarnessColor, "brand">, HarnessTint> = {
+  orange: {
+    avatar: "bg-orange-500/15 text-orange-500",
+    swatch: "bg-orange-500",
+    active: "text-orange-500",
+  },
+  amber: {
+    avatar: "bg-amber-500/15 text-amber-500",
+    swatch: "bg-amber-500",
+    active: "text-amber-500",
+  },
+  emerald: {
+    avatar: "bg-emerald-500/15 text-emerald-500",
+    swatch: "bg-emerald-500",
+    active: "text-emerald-500",
+  },
+  sky: { avatar: "bg-sky-500/15 text-sky-500", swatch: "bg-sky-500", active: "text-sky-500" },
+  violet: {
+    avatar: "bg-violet-500/15 text-violet-500",
+    swatch: "bg-violet-500",
+    active: "text-violet-500",
+  },
+  pink: { avatar: "bg-pink-500/15 text-pink-500", swatch: "bg-pink-500", active: "text-pink-500" },
+};
+
+/** The tint a harness wears, from its Settings colour. */
+export const harnessTint = (settings: Settings, provider: ProviderKind, color?: HarnessColor) => {
+  const picked = color ?? settings.providers[provider].color ?? "brand";
+  return picked === "brand" ? BRAND_TINT[provider] : HARNESS_TINT[picked];
 };

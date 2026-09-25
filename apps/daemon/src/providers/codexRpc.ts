@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { resolveExecutable } from "./resolveExecutable.ts";
+import type { HarnessLaunch } from "./launch.ts";
 
 export type RpcId = number | string;
 
@@ -196,15 +196,11 @@ export interface CodexRpc {
 export async function connectCodex(
   cwd: string | undefined,
   handlers: CodexRpcHandlers = {},
-  launch: {
-    readonly args?: ReadonlyArray<string>;
-    readonly env?: Readonly<Record<string, string>>;
-  } = {},
+  launch: HarnessLaunch,
 ): Promise<CodexRpc> {
-  const bin = resolveExecutable("codex", "APCODE_CODEX_PATH");
-  const child = spawn(bin, ["app-server", ...(launch.args ?? [])], {
+  const child = spawn(launch.bin, ["app-server", ...launch.args], {
     cwd,
-    env: { ...process.env, ...launch.env },
+    env: launch.env,
     stdio: ["pipe", "pipe", "pipe"],
   });
 

@@ -16,7 +16,7 @@ import { ToolApproval, ToolApprovalCode } from "@apcode/ui/agents/tool-approval"
 import { ToolGroup, type ToolCall } from "@apcode/ui/agents/tool-group";
 import { ProjectBadge } from "@/components/project-badge";
 import { cn } from "@apcode/ui/lib/utils";
-import { PROVIDER_AVATAR_CLASS, PROVIDER_LOGO } from "@/components/provider-logo";
+import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import { type Attachment, ClientCommand, type Project, type ProviderKind } from "@apcode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
 import {
@@ -54,8 +54,8 @@ import {
   decodeChoice,
   defaultModel,
   encodeChoice,
+  harnessLabel,
   modelChoices,
-  PROVIDER_LABEL,
 } from "../lib/models.ts";
 import {
   createThread,
@@ -180,7 +180,7 @@ export const DraftView = ({
   const providers = useStore((s) => s.providers);
   const settings = useStore((s) => s.settings);
   const project = useStore((s) => s.projects.find((p) => p.path === path));
-  const choices = modelChoices(providers);
+  const choices = modelChoices(providers, settings);
   const lastModel = defaultModel(providers, settings, settings.lastProvider);
   const preferred = lastModel ? encodeChoice(settings.lastProvider, lastModel) : undefined;
   const [choice, setChoice] = useState<string | undefined>(undefined);
@@ -234,7 +234,7 @@ export const DraftView = ({
               ? "Pick a project below to start…"
               : extraModels.length
                 ? `Ask ${extraModels.length + 1} models, each in its own worktree…`
-                : `Ask ${PROVIDER_LABEL[decodeChoice(selected).provider]}…`
+                : `Ask ${harnessLabel(settings, decodeChoice(selected).provider)}…`
         }
         onSubmit={(text, options, how) => {
           if (!selected || !path) return;
@@ -403,7 +403,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   const settings = useStore((s) => s.settings);
   const { status, provider } = info;
   // The harness is fixed per thread; only its model can change.
-  const choices = modelChoices(providers, provider);
+  const choices = modelChoices(providers, settings, provider);
   const current = info.model ?? defaultModel(providers, settings, provider);
   const busy = status === "running" || status === "awaiting-approval";
   const lastItem = items.at(-1);
@@ -579,7 +579,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                 ? followUpMode === "queue"
                   ? "Working… messages wait for the turn to end (⌘↩ to send now)"
                   : "Working… messages go in right away (⌘↩ to queue)"
-                : `Ask ${PROVIDER_LABEL[provider]}…`
+                : `Ask ${harnessLabel(settings, provider)}…`
             }
             onSubmit={(text, options, how) => {
               // While the agent works, a message waits for the turn to end, or steers it; ⌘Enter flips that.
@@ -801,16 +801,17 @@ interface AssistantTurnProps {
 const AssistantTurn = memo(
   ({ items, provider, threadId, busy, last, className }: AssistantTurnProps) => {
     const ProviderLogo = PROVIDER_LOGO[provider];
+    const settings = useStore((s) => s.settings);
     const blocks = useMemo(() => toBlocks(items), [items]);
     const lastItem = items.at(-1);
     return (
       <Message from="assistant" className={className}>
-        <MessageAvatar className={PROVIDER_AVATAR_CLASS[provider]}>
+        <MessageAvatar className={harnessTint(settings, provider).avatar}>
           <ProviderLogo />
         </MessageAvatar>
         <MessageContent className="gap-3">
           <MessageHeader>
-            <span>{PROVIDER_LABEL[provider]}</span>
+            <span>{harnessLabel(settings, provider)}</span>
           </MessageHeader>
           {blocks.map((block) => (
             <AgentBlock

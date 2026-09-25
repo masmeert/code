@@ -11,6 +11,7 @@ import {
   type ProviderKind,
   type ProviderStatus,
 } from "@apcode/contracts";
+import { SettingsStore } from "../storage/SettingsStore.ts";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -19,14 +20,9 @@ import * as Predicate from "effect/Predicate";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { CodexNotification, connectCodex, type CodexRpc } from "./codexRpc.ts";
-import { resolveExecutable } from "./resolveExecutable.ts";
+import { claudeExtraArgs, harnessLaunch, type HarnessLaunch } from "./launch.ts";
 
 const exec = promisify(execFile);
-
-const BINARIES: Record<ProviderKind, { name: string; env: string }> = {
-  claude: { name: "claude", env: "APCODE_CLAUDE_PATH" },
-  codex: { name: "codex", env: "APCODE_CODEX_PATH" },
-};
 
 const unknown = (kind: ProviderKind, error: string | null = null): ProviderStatus => ({
   kind,
@@ -46,12 +42,14 @@ function message(cause: unknown) {
 
 // --- probes ------------------------------------------------------------------
 
-const probeClaude = async (): Promise<ProviderStatus> => {
-  const bin = resolveExecutable("claude", BINARIES.claude.env);
-  const version = firstLine((await exec(bin, ["--version"])).stdout);
+const probeClaude = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
+  const version = firstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
   const status = JSON.parse(
-    (await exec(bin, ["auth", "status"]).catch((e) => ({ stdout: e.stdout ?? "{}" }))).stdout ||
-      "{}",
+    (
+      await exec(launch.bin, ["auth", "status"], { env: launch.env }).catch((e) => ({
+        stdout: e.stdout ?? "{}",
+      }))
+    ).stdout || "{}",
   );
   const linked = status.loggedIn === true;
   let models: Array<ModelOption> = [];
@@ -59,7 +57,11 @@ const probeClaude = async (): Promise<ProviderStatus> => {
     // A prompt-less session answers the model catalog without starting a turn.
     const q = query({
       prompt: { [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => {}) }) },
-      options: { pathToClaudeCodeExecutable: bin },
+      options: {
+        pathToClaudeCodeExecutable: launch.bin,
+        extraArgs: claudeExtraArgs(launch.args),
+        env: launch.env,
+      },
     });
     try {
       // Drop the "Default (recommended)" alias row and star the concrete model it resolves to instead.
@@ -106,10 +108,9 @@ const probeClaude = async (): Promise<ProviderStatus> => {
   };
 };
 
-const probeCodex = async (): Promise<ProviderStatus> => {
-  const bin = resolveExecutable("codex", BINARIES.codex.env);
-  const version = firstLine((await exec(bin, ["--version"])).stdout);
-  const rpc = await connectCodex(undefined);
+const probeCodex = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
+  const version = firstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
+  const rpc = await connectCodex(undefined, {}, launch);
   try {
     const { account } = await rpc.request(
       "account/read",
@@ -168,12 +169,6 @@ const probeCodex = async (): Promise<ProviderStatus> => {
   }
 };
 
-const probe = (kind: ProviderKind) =>
-  (kind === "claude" ? probeClaude() : probeCodex()).catch((e) => {
-    const text = message(e);
-    return unknown(kind, text.includes("Could not find") ? null : text);
-  });
-
 // --- service -----------------------------------------------------------------
 
 /** Single listener (the session manager) that fans changes out to clients. */
@@ -196,6 +191,17 @@ export class ProviderRegistry extends Context.Service<
 >()("apcode/ProviderRegistry") {}
 
 const make = Effect.gen(function* () {
+  const settingsStore = yield* SettingsStore;
+  /** Throws when the CLI can't be found, like the spawns it feeds. */
+  const launchFor = async (kind: ProviderKind) =>
+    harnessLaunch(kind, (await Effect.runPromise(settingsStore.get)).providers[kind]);
+  const probe = (kind: ProviderKind) =>
+    launchFor(kind)
+      .then((launch) => (kind === "claude" ? probeClaude(launch) : probeCodex(launch)))
+      .catch((e) => {
+        const text = message(e);
+        return unknown(kind, text.includes("Could not find") ? null : text);
+      });
   let providers: Array<ProviderStatus> = [unknown("claude"), unknown("codex")];
   let listener: ProviderListener = { providers: () => {}, flow: () => {} };
   /** In-flight sign-in per harness. */
@@ -223,9 +229,12 @@ const make = Effect.gen(function* () {
     flow(kind, ok ? "done" : "failed", null, text);
   };
 
-  const linkClaude = () => {
-    const bin = resolveExecutable("claude", BINARIES.claude.env);
-    const child = spawn(bin, ["auth", "login", "--claudeai"], { stdio: ["pipe", "pipe", "pipe"] });
+  const linkClaude = async () => {
+    const launch = await launchFor("claude");
+    const child = spawn(launch.bin, ["auth", "login", "--claudeai"], {
+      env: launch.env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     flows.set("claude", { child });
     let output = "";
     let announced = false;
@@ -251,14 +260,18 @@ const make = Effect.gen(function* () {
   };
 
   const linkCodex = async () => {
-    const rpc = await connectCodex(undefined, {
-      onNotification: (notification) => {
-        if (!CodexNotification.guards["account/login/completed"](notification)) return;
-        rpc.close();
-        const { success, error } = notification.params;
-        void finish("codex", success, success ? null : (error ?? "Sign-in failed"));
+    const rpc = await connectCodex(
+      undefined,
+      {
+        onNotification: (notification) => {
+          if (!CodexNotification.guards["account/login/completed"](notification)) return;
+          rpc.close();
+          const { success, error } = notification.params;
+          void finish("codex", success, success ? null : (error ?? "Sign-in failed"));
+        },
       },
-    });
+      await launchFor("codex"),
+    );
     flows.set("codex", { rpc });
     const res = await rpc.request(
       "account/login/start",
@@ -300,7 +313,7 @@ const make = Effect.gen(function* () {
         cancel(kind);
         flow(kind, "starting");
         try {
-          if (kind === "claude") linkClaude();
+          if (kind === "claude") await linkClaude();
           else await linkCodex();
         } catch (e) {
           cancel(kind);
@@ -314,8 +327,10 @@ const make = Effect.gen(function* () {
     cancelLink: (kind) => Effect.sync(() => cancel(kind)),
     unlink: (kind) =>
       background(async () => {
-        const bin = resolveExecutable(BINARIES[kind].name, BINARIES[kind].env);
-        await exec(bin, kind === "claude" ? ["auth", "logout"] : ["logout"]).catch(() => {});
+        const launch = await launchFor(kind);
+        await exec(launch.bin, kind === "claude" ? ["auth", "logout"] : ["logout"], {
+          env: launch.env,
+        }).catch(() => {});
         await refreshOne(kind);
       }),
     setListener: (next) => {
