@@ -12,12 +12,11 @@ import {
   DropdownMenuTrigger,
 } from "@apcode/ui/components/dropdown-menu";
 import { Button } from "@apcode/ui/motion/button";
-import { Tooltip } from "@apcode/ui/motion/tooltip";
 import { cn } from "@apcode/ui/lib/utils";
 import { ProjectBadge } from "@/components/project-badge";
 import type { Project } from "@apcode/contracts";
 import { SlidersHorizontal } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 import { PROVIDER_LABEL } from "../lib/models.ts";
 import { DEFAULT_THREAD_LIST_VIEW, type ThreadListView } from "../lib/threadListView.ts";
 
@@ -25,8 +24,8 @@ function OptionMenu(props: { label: string; value: ReactNode; children: ReactNod
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
-        {props.label}
-        <span className="ml-auto min-w-0 truncate pl-4 text-muted-foreground">{props.value}</span>
+        <span className="shrink-0">{props.label}</span>
+        <span className="min-w-0 flex-1 truncate pl-4 text-right text-muted-foreground">{props.value}</span>
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent collisionPadding={8} className="max-h-(--radix-dropdown-menu-content-available-height) max-w-64 overflow-y-auto">
         {props.children}
@@ -60,19 +59,15 @@ export function ThreadListMenu(props: {
   onChange: (patch: Partial<ThreadListView>) => void;
 }) {
   const { view } = props;
-  const [open, setOpen] = useState(false);
   const filtered = view.status !== "active" || view.projects.length > 0 || view.provider !== "all" || view.activity !== "any";
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <Tooltip content="View options" side="bottom" open={open ? false : undefined}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" aria-label="View options" className="relative size-7">
-            <SlidersHorizontal className={cn("size-4", filtered && "text-foreground")} />
-            {filtered ? <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-foreground" /> : null}
-          </Button>
-        </DropdownMenuTrigger>
-      </Tooltip>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="View options" className={cn("size-7", filtered && "bg-muted/60 text-foreground")}>
+          <SlidersHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={8} collisionPadding={8} className="w-60">
         <ChoiceMenu
           label="Status"
