@@ -11,7 +11,7 @@ import type {
 } from "@apcode/contracts";
 
 export const PROVIDER_LABEL: Record<ProviderKind, string> = {
-  claude: "Claude Code",
+  claude: "Claude",
   codex: "Codex",
 };
 

@@ -209,9 +209,7 @@ export const DraftView = ({
         title="New thread"
       />
       <div className="flex flex-1 items-center justify-center px-6 text-center text-muted-foreground [-webkit-app-region:drag]">
-        {choices.length
-          ? "What should we work on?"
-          : "Link Claude Code or Codex in Settings to start."}
+        {choices.length ? "What should we work on?" : "Link Claude or Codex in Settings to start."}
       </div>
       <Composer
         // Stable across the project pick, so effort/permission choices carry over.
