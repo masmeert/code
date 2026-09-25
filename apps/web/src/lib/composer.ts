@@ -1,14 +1,14 @@
 import {
   type Attachment,
   AttachmentInput,
-  Effort,
-  PermissionLevel,
+  type Effort,
+  type PermissionLevel,
   type ProviderKind,
   type TurnOptions,
 } from "@apcode/contracts";
-import * as Schema from "effect/Schema";
 import { useEffect, useEffectEvent, useReducer, useRef } from "react";
 import { type DraftAttachment, getDraft, setDraft, useDraft } from "./drafts.ts";
+import { useStore } from "./store.ts";
 
 /** Effort levels each harness accepts, lowest first. */
 export const EFFORTS: Record<ProviderKind, ReadonlyArray<Effort>> = {
@@ -44,42 +44,7 @@ export interface TurnPrefs {
 }
 
 // --- prefs -----------------------------------------------------------------
-// Each thread keeps its own picks while the window is open; the last picks
-// (effort per harness) become the defaults for new chats.
-
-const PREFS_KEY = "apcode.composer";
-type Defaults = {
-  effort: Partial<Record<ProviderKind, Effort | null>>;
-  permission: PermissionLevel;
-};
-
-const readDefaults = (): Defaults => {
-  try {
-    const parsed = Schema.decodeUnknownSync(
-      Schema.fromJsonString(
-        Schema.NullOr(
-          Schema.Struct({
-            effort: Schema.optionalKey(
-              Schema.Struct({
-                claude: Schema.optionalKey(Schema.NullOr(Effort)),
-                codex: Schema.optionalKey(Schema.NullOr(Effort)),
-              }),
-            ),
-            permission: Schema.optionalKey(PermissionLevel),
-          }),
-        ),
-      ),
-    )(localStorage.getItem(PREFS_KEY) ?? "null");
-    if (parsed) return { effort: parsed.effort ?? {}, permission: parsed.permission ?? "ask" };
-  } catch {}
-  return { effort: {}, permission: "ask" };
-};
-
-const writeDefaults = (defaults: Defaults) => {
-  try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(defaults));
-  } catch {}
-};
+// Each thread keeps its own picks while the window is open; new ones start from Settings.
 
 const perThread = new Map<string, TurnPrefs>();
 
@@ -90,23 +55,17 @@ const fit = (prefs: TurnPrefs, provider: ProviderKind): TurnPrefs =>
 /** Effort and permission level for the composer identified by `key` (a thread id, or a draft's path). */
 export const useTurnPrefs = (key: string, provider: ProviderKind) => {
   const [, rerender] = useReducer((n: number) => n + 1, 0);
-  const defaults = readDefaults();
+  const settings = useStore((s) => s.settings);
   const prefs = fit(
     perThread.get(key) ?? {
-      effort: defaults.effort[provider] ?? null,
-      permission: defaults.permission,
+      effort: settings.newThreadEffort ?? null,
+      permission: settings.newThreadPermission ?? "ask",
     },
     provider,
   );
 
   const update = (patch: Partial<TurnPrefs>) => {
-    const next = { ...prefs, ...patch };
-    perThread.set(key, next);
-    const latest = readDefaults();
-    writeDefaults({
-      effort: { ...latest.effort, [provider]: next.effort },
-      permission: next.permission,
-    });
+    perThread.set(key, { ...prefs, ...patch });
     rerender();
   };
   return [prefs, update] as const;

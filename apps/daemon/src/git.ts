@@ -475,11 +475,26 @@ export const repoRoot = async (cwd: string) => {
  * Adds a worktree at `path` on a new branch `branch`, starting from what's checked out
  * in `cwd`. Resolves to an error message on failure.
  */
-export const addWorktree = async (cwd: string, path: string, branch: string) => {
+/** With `fromOrigin`, starts from origin's copy of the current branch when it has one, else from HEAD. */
+export const addWorktree = async (
+  cwd: string,
+  path: string,
+  branch: string,
+  fromOrigin: boolean,
+) => {
   await mkdir(dirname(path), { recursive: true });
   const hasHead = (await git(cwd, ["rev-parse", "--verify", "--quiet", "HEAD"])).ok;
   if (!hasHead) return "Worktrees need at least one commit";
-  const result = await gitLong(cwd, ["worktree", "add", "-b", branch, path, "HEAD"]);
+  const current = fromOrigin ? await readBranch(cwd) : null;
+  const fetched = current !== null && (await gitLong(cwd, ["fetch", "origin", current], 30000)).ok;
+  const result = await gitLong(cwd, [
+    "worktree",
+    "add",
+    "-b",
+    branch,
+    path,
+    fetched ? `origin/${current}` : "HEAD",
+  ]);
   return result.ok ? null : firstLines(result.stderr);
 };
 

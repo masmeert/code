@@ -697,7 +697,10 @@ const make = Effect.gen(function* () {
           .slice(0, 40) || "thread"
       }-${threadId.slice(0, 6)}`;
       const path = join(WORKTREES_DIR, basename(root), slug);
-      const error = yield* Effect.promise(() => addWorktree(projectPath, path, `apcode/${slug}`));
+      const { worktreeFromOrigin } = yield* settingsStore.get;
+      const error = yield* Effect.promise(() =>
+        addWorktree(projectPath, path, `apcode/${slug}`, worktreeFromOrigin === true),
+      );
       if (error) return yield* Effect.fail(fail(`Couldn't create a worktree: ${error}`));
       return join(path, relative(root, projectPath));
     });

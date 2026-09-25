@@ -74,7 +74,7 @@ import {
 } from "../lib/store.ts";
 import { readWidth } from "@apcode/ui/hooks/use-resizable";
 import { BrowserPanel } from "./BrowserPanel.tsx";
-import { Composer, useWorkspaceChoice } from "./Composer.tsx";
+import { Composer } from "./Composer.tsx";
 import { GitMenu } from "./GitMenu.tsx";
 import { hasTrafficLights } from "./Sidebar.tsx";
 
@@ -182,15 +182,21 @@ export const DraftView = ({
   const settings = useStore((s) => s.settings);
   const project = useStore((s) => s.projects.find((p) => p.path === path));
   const choices = modelChoices(providers, settings);
+  const saved = settings.newThreadModel;
   const lastModel = defaultModel(providers, settings, settings.lastProvider);
-  const preferred = lastModel ? encodeChoice(settings.lastProvider, lastModel) : undefined;
+  const preferred =
+    saved && choices.some((o) => o.value === saved)
+      ? saved
+      : lastModel
+        ? encodeChoice(settings.lastProvider, lastModel)
+        : undefined;
   const [choice, setChoice] = useState<string | undefined>(undefined);
   const selected =
     [choice, preferred].find((c) => c && choices.some((o) => o.value === c)) ?? choices[0]?.value;
   // Shift-click adds models: the prompt then starts one thread per model, each in its own worktree.
   const [extras, setExtras] = useState<Array<string>>([]);
   const extraModels = extras.filter((c) => c !== selected && choices.some((o) => o.value === c));
-  const workspace = useWorkspaceChoice();
+  const [workspace, setWorkspace] = useState(settings.workspace ?? "local");
 
   return (
     <>
@@ -227,7 +233,7 @@ export const DraftView = ({
             prev.includes(value) ? prev.filter((c) => c !== value) : [...prev, value],
           )
         }
-        workspace={workspace}
+        workspace={{ value: workspace, onChange: setWorkspace }}
         placeholder={
           !selected
             ? "No harness linked"
@@ -250,7 +256,7 @@ export const DraftView = ({
               model,
               text,
               options,
-              workspace: all.length > 1 ? "worktree" : workspace.value,
+              workspace: all.length > 1 ? "worktree" : workspace,
               open,
             });
           }

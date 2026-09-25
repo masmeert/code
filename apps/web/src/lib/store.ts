@@ -836,6 +836,8 @@ export const send = (command: ClientCommand) => {
   else queued.push(command);
 };
 
+export const getSettings = () => state.settings;
+
 /** Applies settings locally right away (theme etc. shouldn't wait on the daemon), then persists them. */
 export const updateSettings = (settings: Settings) => {
   setState({ ...state, settings });
@@ -1047,12 +1049,23 @@ export const isSeen = (info: ThreadInfo, seen: State["seen"]) =>
 /**
  * Settled threads need nothing from you: not working, not waiting on approval,
  * seen, and seen at least `delayMs` ago (so a thread you just watched finish
- * doesn't jump sections under you). A manual Settle skips the wait.
+ * doesn't jump sections under you). A manual Settle skips the wait. With
+ * `inactiveMs`, threads idle that long settle unread too, unless unsettled by hand.
  */
-export const isSettled = (info: ThreadInfo, seen: State["seen"], now: number, delayMs: number) => {
+export const isSettled = (
+  info: ThreadInfo,
+  seen: State["seen"],
+  now: number,
+  delayMs: number,
+  inactiveMs: number | null,
+) => {
   const mark = seen[info.id];
+  if (!canSettle(info)) return false;
+  if (isSeen(info, seen)) return mark?.manual === true || now - mark!.at >= delayMs;
   return (
-    canSettle(info) && isSeen(info, seen) && (mark?.manual === true || now - mark!.at >= delayMs)
+    inactiveMs !== null &&
+    now - info.updatedAt >= inactiveMs &&
+    !(mark?.manual === true && mark.rev === 0)
   );
 };
 

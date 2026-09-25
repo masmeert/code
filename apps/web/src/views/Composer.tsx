@@ -35,7 +35,7 @@ import { restoreStash, setDraft, stashDraft, useDraft, useStashes } from "../lib
 import { describe, KEYBINDINGS, useKeybinding } from "../lib/keybindings.ts";
 import { defaultEffort, type modelChoices, recommendedBadge } from "../lib/models.ts";
 import { addProject } from "../lib/projects.ts";
-import { send, updateSettings, useStore } from "../lib/store.ts";
+import { send, useStore } from "../lib/store.ts";
 import { ago, useNow } from "../lib/time.ts";
 
 const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {
@@ -405,16 +405,6 @@ const WorkspaceSelect = ({
     className="h-6 text-[11px]"
   />
 );
-
-/** The draft's workspace choice, remembered in settings for the next new thread. */
-export const useWorkspaceChoice = () => {
-  const settings = useStore((s) => s.settings);
-  const value = settings.workspace ?? "local";
-  return {
-    value,
-    onChange: (workspace: "local" | "worktree") => updateSettings({ ...settings, workspace }),
-  };
-};
 
 const ADD_PROJECT = "\u0000add-project";
 

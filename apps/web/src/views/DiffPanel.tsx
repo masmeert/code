@@ -7,11 +7,9 @@ import { cn } from "@apcode/ui/lib/utils";
 import { useResizable } from "@apcode/ui/hooks/use-resizable";
 import { IconButton } from "../components/icon-button.tsx";
 import { ClientCommand } from "@apcode/contracts";
-import { send, useStore } from "../lib/store.ts";
+import { getSettings, send, updateSettings, useStore } from "../lib/store.ts";
 import { ChangedFilesTree } from "./ChangedFilesTree.tsx";
 import { HIGHLIGHT, THEMES, useDiffWorkersReady, useResolvedTheme } from "./DiffWorkers.tsx";
-
-type DiffStyle = "unified" | "split";
 
 export const PANEL_WIDTH_KEY = "apcode.diffPanelWidth";
 export const defaultPanelWidth = () => Math.min(960, Math.round(window.innerWidth * 0.45));
@@ -22,7 +20,6 @@ const MIN_PANEL = 360;
 const MIN_TREE = 160;
 const MIN_DIFF = 320;
 
-const STYLE_KEY = "apcode.diffStyle";
 const TREE_KEY = "apcode.diffTree";
 
 const readTree = () => {
@@ -30,14 +27,6 @@ const readTree = () => {
     return localStorage.getItem(TREE_KEY) !== "0";
   } catch {
     return true;
-  }
-};
-
-const readStyle = (): DiffStyle => {
-  try {
-    return localStorage.getItem(STYLE_KEY) === "split" ? "split" : "unified";
-  } catch {
-    return "unified";
   }
 };
 
@@ -114,7 +103,7 @@ export const DiffPanel = ({
   );
   const theme = useResolvedTheme();
   const workersReady = useDiffWorkersReady();
-  const [style, setStyle] = useState<DiffStyle>(readStyle);
+  const style = useStore((s) => s.settings.diffLayout ?? "unified");
   const [showTree, setShowTree] = useState(readTree);
   const viewer = useRef<CodeViewHandle<undefined, undefined>>(null);
   const aside = useRef<HTMLElement>(null);
@@ -211,13 +200,6 @@ export const DiffPanel = ({
     } catch {}
   };
 
-  const pickStyle = (next: DiffStyle) => {
-    setStyle(next);
-    try {
-      localStorage.setItem(STYLE_KEY, next);
-    } catch {}
-  };
-
   return (
     <aside
       ref={aside}
@@ -265,13 +247,17 @@ export const DiffPanel = ({
             <ListTree className="size-3.5" />
           </IconButton>
           <IconButton
-            label="Unified"
+            label="Stacked"
             active={style === "unified"}
-            onClick={() => pickStyle("unified")}
+            onClick={() => updateSettings({ ...getSettings(), diffLayout: "unified" })}
           >
             <Rows2 className="size-3.5" />
           </IconButton>
-          <IconButton label="Split" active={style === "split"} onClick={() => pickStyle("split")}>
+          <IconButton
+            label="Split"
+            active={style === "split"}
+            onClick={() => updateSettings({ ...getSettings(), diffLayout: "split" })}
+          >
             <Columns2 className="size-3.5" />
           </IconButton>
           <IconButton label="Refresh" onClick={refresh}>

@@ -17,7 +17,7 @@ window.addEventListener("drop", (event) => {
 
 contextBridge.exposeInMainWorld("desktop", {
   daemonToken: () => ipcRenderer.invoke("daemon-token"),
-  pickFolder: (title) => ipcRenderer.invoke("pick-folder", title),
+  pickFolder: (title, defaultPath) => ipcRenderer.invoke("pick-folder", { title, defaultPath }),
   pickFiles: (title) => ipcRenderer.invoke("pick-files", title),
   setTheme: (theme) => ipcRenderer.invoke("set-theme", theme),
   onFileDrop: (listener) => {

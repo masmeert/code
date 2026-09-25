@@ -1,6 +1,7 @@
 import { BrowserAction, Theme } from "@apcode/contracts";
 import { BrowserWindow, dialog, ipcMain, nativeTheme } from "electron";
 import * as Schema from "effect/Schema";
+import { homedir } from "node:os";
 import { automateBrowser } from "./browserAutomation.ts";
 import { APP_URL } from "./renderer.ts";
 
@@ -21,12 +22,13 @@ export function registerBridge(daemonToken: string | null) {
   handle("daemon-token", Schema.Undefined, () => daemonToken);
   handle(
     "pick-folder",
-    Schema.String,
-    async (window, title) =>
+    Schema.Struct({ title: Schema.String, defaultPath: Schema.optional(Schema.String) }),
+    async (window, { title, defaultPath }) =>
       (
         await dialog.showOpenDialog(window, {
           title,
           message: title,
+          defaultPath: defaultPath?.replace(/^~(?=$|\/)/, homedir()) || homedir(),
           properties: ["openDirectory"],
         })
       ).filePaths[0] ?? null,

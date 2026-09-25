@@ -17,8 +17,11 @@ import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import { cn } from "@apcode/ui/lib/utils";
 import {
   ClientCommand,
+  DEFAULT_AUTO_SETTLE_DAYS,
   DEFAULT_SETTLE_DELAY_MINUTES,
+  Effort,
   HarnessColor,
+  PermissionLevel,
   ProviderKind,
   type ProviderStatus,
   Theme,
@@ -29,16 +32,20 @@ import {
   ArrowDown,
   ArrowUp,
   Bot,
+  Columns2,
   GitCommitHorizontal,
   Monitor,
   Moon,
   Palette,
+  Rows2,
   Settings2,
   Star,
   Sun,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { EFFORT_LABEL, EFFORTS, PERMISSION_LABEL } from "../lib/composer.ts";
 import {
+  decodeChoice,
   defaultModel,
   encodeChoice,
   harnessLabel,
@@ -104,6 +111,56 @@ const SettingsRow = ({
   </div>
 );
 
+/** A settings dropdown; `label` is what the closed trigger shows when an option's content isn't plain text. */
+function SettingsSelect(props: {
+  value: string;
+  onChange: (value: string) => void;
+  options: ReadonlyArray<{ value: string; label: string; icon?: React.ReactNode }>;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <Select
+      value={props.value}
+      onValueChange={props.onChange}
+      disabled={props.disabled}
+      className={props.className ?? "w-44"}
+    >
+      <SelectTrigger className="py-1.5 text-[13px] whitespace-nowrap">
+        <SelectValue className="min-w-0 truncate" />
+      </SelectTrigger>
+      <SelectContent>
+        {props.options.map((option) => (
+          <SelectItem
+            key={option.value}
+            value={option.value}
+            label={option.label}
+            className="text-[13px]"
+          >
+            {option.icon ? (
+              <span className="flex items-center gap-1.5">
+                {option.icon}
+                {option.label}
+              </span>
+            ) : (
+              option.label
+            )}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function RowLabel({ title, description }: { title: string; description: string }) {
+  return (
+    <>
+      <p>{title}</p>
+      <p className="text-xs text-muted-foreground">{description}</p>
+    </>
+  );
+}
+
 const SETTLE_DELAYS: Array<{ minutes: number; label: string }> = [
   { minutes: 0, label: "Right away" },
   { minutes: 1, label: "After 1 minute" },
@@ -112,6 +169,8 @@ const SETTLE_DELAYS: Array<{ minutes: number; label: string }> = [
   { minutes: 30, label: "After 30 minutes" },
   { minutes: 60, label: "After 1 hour" },
 ];
+
+const AUTO_SETTLE_DAYS = [1, 3, 7, 14, 30];
 
 const THEMES: Array<{ value: Theme; label: string; icon: typeof Sun }> = [
   { value: "system", label: "System", icon: Monitor },
@@ -178,71 +237,7 @@ function SettingsView() {
       </nav>
       <div className="min-w-0 flex-1 overflow-y-auto overscroll-contain p-5">
         {Match.value(page).pipe(
-          Match.when("general", () => (
-            <Section title="Threads">
-              <SettingsGroup>
-                <SettingsRow
-                  label={
-                    <>
-                      <p>Settle threads</p>
-                      <p className="text-xs text-muted-foreground">
-                        How long a finished thread stays in Active once seen
-                      </p>
-                    </>
-                  }
-                >
-                  <Select
-                    value={String(settings.settleDelayMinutes ?? DEFAULT_SETTLE_DELAY_MINUTES)}
-                    onValueChange={(v) =>
-                      updateSettings({ ...settings, settleDelayMinutes: Number(v) })
-                    }
-                    className="w-44"
-                  >
-                    <SelectTrigger className="py-1.5 text-[13px] whitespace-nowrap">
-                      <SelectValue className="min-w-0 truncate" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SETTLE_DELAYS.map(({ minutes, label }) => (
-                        <SelectItem key={minutes} value={String(minutes)} className="text-[13px]">
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </SettingsRow>
-                <SettingsRow
-                  label={
-                    <>
-                      <p>Sending while the agent works</p>
-                      <p className="text-xs text-muted-foreground">
-                        ⌘↩ does the opposite for one message
-                      </p>
-                    </>
-                  }
-                >
-                  <Select
-                    value={settings.followUp ?? "queue"}
-                    onValueChange={(v) =>
-                      updateSettings({ ...settings, followUp: v === "steer" ? "steer" : "queue" })
-                    }
-                    className="w-44"
-                  >
-                    <SelectTrigger className="py-1.5 text-[13px] whitespace-nowrap">
-                      <SelectValue className="min-w-0 truncate" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="queue" className="text-[13px]">
-                        Queue until done
-                      </SelectItem>
-                      <SelectItem value="steer" className="text-[13px]">
-                        Send immediately
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </SettingsRow>
-              </SettingsGroup>
-            </Section>
-          )),
+          Match.when("general", () => <GeneralPage />),
           Match.when("appearance", () => (
             <SettingsGroup>
               <SettingsRow label="Theme">
@@ -275,6 +270,273 @@ function SettingsView() {
   );
 }
 
+function GeneralPage() {
+  const settings = useStore((s) => s.settings);
+  const providers = useStore((s) => s.providers);
+  const linked = providers.filter((p) => p.linked && p.models.length);
+  const modelOptions = linked.flatMap((p) => {
+    const Logo = PROVIDER_LOGO[p.kind];
+    return visibleModels(p.models, settings.providers[p.kind]).map((m) => ({
+      value: encodeChoice(p.kind, m.id),
+      label: m.label,
+      icon: <Logo aria-label={harnessLabel(settings, p.kind)} className="size-3.5 shrink-0" />,
+    }));
+  });
+  const savedModel = settings.newThreadModel;
+  const modelValue =
+    savedModel && modelOptions.some((o) => o.value === savedModel) ? savedModel : "last";
+  const effortProvider =
+    modelValue === "last" ? settings.lastProvider : decodeChoice(modelValue).provider;
+  const savedEffort = settings.newThreadEffort;
+  const autoSettle = settings.autoSettle === true;
+
+  return (
+    <>
+      <Section title="New threads">
+        <SettingsGroup>
+          <SettingsRow label="Default model">
+            {linked.length ? (
+              <div className="flex gap-2">
+                <SettingsSelect
+                  value={modelValue}
+                  onChange={(value) =>
+                    updateSettings({
+                      ...settings,
+                      newThreadModel: value === "last" ? null : value,
+                    })
+                  }
+                  options={[{ value: "last", label: "Last used" }, ...modelOptions]}
+                />
+                <SettingsSelect
+                  value={
+                    savedEffort && EFFORTS[effortProvider].includes(savedEffort)
+                      ? savedEffort
+                      : "default"
+                  }
+                  onChange={(value) =>
+                    updateSettings({
+                      ...settings,
+                      newThreadEffort: Schema.is(Effort)(value) ? value : null,
+                    })
+                  }
+                  options={[
+                    { value: "default", label: "Model default" },
+                    ...EFFORTS[effortProvider].map((effort) => ({
+                      value: effort,
+                      label: EFFORT_LABEL[effort],
+                    })),
+                  ]}
+                  className="w-36"
+                />
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">Link a harness to pick one</p>
+            )}
+          </SettingsRow>
+          <SettingsRow
+            label={
+              <RowLabel
+                title="Default permissions"
+                description="What new threads may do without asking"
+              />
+            }
+          >
+            <SettingsSelect
+              value={settings.newThreadPermission ?? "ask"}
+              onChange={(value) =>
+                Schema.is(PermissionLevel)(value) &&
+                updateSettings({ ...settings, newThreadPermission: value })
+              }
+              options={PermissionLevel.literals.map((level) => ({
+                value: level,
+                label: PERMISSION_LABEL[level],
+              }))}
+            />
+          </SettingsRow>
+          <SettingsRow
+            label={<RowLabel title="Default workspace" description="Where new threads start" />}
+          >
+            <SettingsSelect
+              value={settings.workspace ?? "local"}
+              onChange={(value) =>
+                updateSettings({
+                  ...settings,
+                  workspace: value === "worktree" ? "worktree" : "local",
+                })
+              }
+              options={[
+                { value: "local", label: "Project folder" },
+                { value: "worktree", label: "New worktree" },
+              ]}
+            />
+          </SettingsRow>
+        </SettingsGroup>
+      </Section>
+      <Section title="Organization">
+        <SettingsGroup>
+          <SettingsRow
+            label={
+              <RowLabel
+                title="Settle threads"
+                description="How long a seen, finished thread stays active"
+              />
+            }
+          >
+            <SettingsSelect
+              value={String(settings.settleDelayMinutes ?? DEFAULT_SETTLE_DELAY_MINUTES)}
+              onChange={(value) =>
+                updateSettings({ ...settings, settleDelayMinutes: Number(value) })
+              }
+              options={SETTLE_DELAYS.map(({ minutes, label }) => ({
+                value: String(minutes),
+                label,
+              }))}
+            />
+          </SettingsRow>
+          <SettingsRow
+            label={
+              <RowLabel
+                title="Auto-settle inactive threads"
+                description="Idle threads settle, even unread"
+              />
+            }
+          >
+            <Switch
+              checked={autoSettle}
+              ariaLabel="Auto-settle inactive threads"
+              onCheckedChange={(checked) => updateSettings({ ...settings, autoSettle: checked })}
+              size="sm"
+            />
+          </SettingsRow>
+          <SettingsRow
+            label={
+              <p className={cn(!autoSettle && "text-muted-foreground")}>
+                Days of inactivity before auto-settle
+              </p>
+            }
+          >
+            <SettingsSelect
+              value={String(settings.autoSettleDays ?? DEFAULT_AUTO_SETTLE_DAYS)}
+              onChange={(value) => updateSettings({ ...settings, autoSettleDays: Number(value) })}
+              options={AUTO_SETTLE_DAYS.map((days) => ({
+                value: String(days),
+                label: days === 1 ? "1 day" : `${days} days`,
+              }))}
+              disabled={!autoSettle}
+            />
+          </SettingsRow>
+        </SettingsGroup>
+      </Section>
+      <Section title="Behavior">
+        <SettingsGroup>
+          <SettingsRow label="Diff layout">
+            <Tabs
+              value={settings.diffLayout ?? "unified"}
+              onValueChange={(value) =>
+                updateSettings({ ...settings, diffLayout: value === "split" ? "split" : "unified" })
+              }
+            >
+              <TabsList>
+                <TabsTrigger value="unified">
+                  <span className="flex items-center gap-1.5">
+                    <Rows2 className="size-3.5" />
+                    Stacked
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger value="split">
+                  <span className="flex items-center gap-1.5">
+                    <Columns2 className="size-3.5" />
+                    Split
+                  </span>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </SettingsRow>
+          <SettingsRow
+            label={<RowLabel title="Follow-up behavior" description="⌘↩ does the opposite once" />}
+          >
+            <SettingsSelect
+              value={settings.followUp ?? "queue"}
+              onChange={(value) =>
+                updateSettings({ ...settings, followUp: value === "steer" ? "steer" : "queue" })
+              }
+              options={[
+                { value: "queue", label: "Queue until done" },
+                { value: "steer", label: "Send immediately" },
+              ]}
+            />
+          </SettingsRow>
+        </SettingsGroup>
+      </Section>
+      <Section title="Projects & threads">
+        <SettingsGroup>
+          <SettingsRow
+            label={
+              <RowLabel
+                title="Start from origin"
+                description="Branch new worktrees from origin, not local"
+              />
+            }
+          >
+            <Switch
+              checked={settings.worktreeFromOrigin === true}
+              ariaLabel="Start new worktrees from origin"
+              onCheckedChange={(checked) =>
+                updateSettings({ ...settings, worktreeFromOrigin: checked })
+              }
+              size="sm"
+            />
+          </SettingsRow>
+          <SettingsRow
+            label={
+              <RowLabel
+                title="Add project starts in"
+                description="Where the Add Project browser opens"
+              />
+            }
+          >
+            <SettingsTextField
+              label="Add project starts in"
+              mono
+              value={settings.addProjectFolder ?? ""}
+              placeholder="~/"
+              onCommit={(folder) =>
+                updateSettings({ ...settings, addProjectFolder: folder || undefined })
+              }
+            />
+          </SettingsRow>
+        </SettingsGroup>
+      </Section>
+      <Section title="Confirmations">
+        <SettingsGroup>
+          <SettingsRow
+            label={<RowLabel title="Archive confirmation" description="Second click to archive" />}
+          >
+            <Switch
+              checked={settings.confirmArchive === true}
+              ariaLabel="Archive confirmation"
+              onCheckedChange={(checked) =>
+                updateSettings({ ...settings, confirmArchive: checked })
+              }
+              size="sm"
+            />
+          </SettingsRow>
+          <SettingsRow
+            label={<RowLabel title="Delete confirmation" description="Second click to delete" />}
+          >
+            <Switch
+              checked={settings.confirmDelete !== false}
+              ariaLabel="Delete confirmation"
+              onCheckedChange={(checked) => updateSettings({ ...settings, confirmDelete: checked })}
+              size="sm"
+            />
+          </SettingsRow>
+        </SettingsGroup>
+      </Section>
+    </>
+  );
+}
+
 /** Picks the model that writes commit messages left empty; "auto" follows the last harness's default model. */
 const CommitModelRow = () => {
   const settings = useStore((s) => s.settings);
@@ -297,50 +559,28 @@ const CommitModelRow = () => {
   return (
     <SettingsGroup>
       <SettingsRow
-        label={
-          <>
-            <p>Commit messages</p>
-            <p className="text-xs text-muted-foreground">
-              Writes the message when you commit without one
-            </p>
-          </>
-        }
+        label={<RowLabel title="Commit messages" description="Writes messages you leave empty" />}
       >
-        <Select
+        <SettingsSelect
           value={listed ? saved : "auto"}
-          onValueChange={(v) =>
-            updateSettings({ ...settings, commitModel: v === "auto" ? null : v })
+          onChange={(value) =>
+            updateSettings({ ...settings, commitModel: value === "auto" ? null : value })
           }
-          className="w-52"
-        >
-          <SelectTrigger className="py-1.5 text-[13px] whitespace-nowrap">
-            <SelectValue className="min-w-0 truncate" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="auto" className="text-[13px]">
-              Default model
-            </SelectItem>
-            {linked.flatMap((p) => {
+          options={[
+            { value: "auto", label: "Default model" },
+            ...linked.flatMap((p) => {
               const Logo = PROVIDER_LOGO[p.kind];
-              return visibleModels(p.models, settings.providers[p.kind]).map((m) => (
-                <SelectItem
-                  key={encodeChoice(p.kind, m.id)}
-                  value={encodeChoice(p.kind, m.id)}
-                  label={m.label}
-                  className="text-[13px]"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Logo
-                      aria-label={harnessLabel(settings, p.kind)}
-                      className="size-3.5 shrink-0"
-                    />
-                    {m.label}
-                  </span>
-                </SelectItem>
-              ));
-            })}
-          </SelectContent>
-        </Select>
+              return visibleModels(p.models, settings.providers[p.kind]).map((m) => ({
+                value: encodeChoice(p.kind, m.id),
+                label: m.label,
+                icon: (
+                  <Logo aria-label={harnessLabel(settings, p.kind)} className="size-3.5 shrink-0" />
+                ),
+              }));
+            }),
+          ]}
+          className="w-52"
+        />
       </SettingsRow>
     </SettingsGroup>
   );
@@ -660,6 +900,7 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
                         : [...hidden, model.id],
                     })
                   }
+                  size="sm"
                   className="ml-2"
                 />
               </div>

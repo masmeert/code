@@ -56,7 +56,7 @@ export type DesktopBrowserEvent = typeof DesktopBrowserEvent.Type;
 
 export interface DesktopBridge {
   readonly daemonToken: () => Promise<string | null>;
-  readonly pickFolder: (title: string) => Promise<string | null>;
+  readonly pickFolder: (title: string, defaultPath?: string) => Promise<string | null>;
   readonly pickFiles: (title: string) => Promise<ReadonlyArray<string>>;
   readonly setTheme: (theme: Theme) => Promise<void>;
   readonly onFileDrop: (listener: (paths: ReadonlyArray<string>) => void) => () => void;
@@ -143,13 +143,29 @@ export const Settings = Schema.Struct({
   settleDelayMinutes: Schema.optional(Schema.Number),
   /** A message sent while the agent works: held until the turn ends ("queue"), or sent into it right away ("steer"). */
   followUp: Schema.optional(Schema.Literals(["queue", "steer"])),
+  /** Model new threads start with, as `provider:model`; null/absent follows the last harness used. */
+  newThreadModel: Schema.optional(Schema.NullOr(Schema.String)),
+  /** Effort new threads start with; null/absent uses the model's own. */
+  newThreadEffort: Schema.optional(Schema.NullOr(Effort)),
+  newThreadPermission: Schema.optional(PermissionLevel),
   /** Where new threads start: the project folder, or a git worktree of their own. */
   workspace: Schema.optional(Schema.Literals(["local", "worktree"])),
+  /** Settles threads with no activity for `autoSettleDays`, read or not. */
+  autoSettle: Schema.optional(Schema.Boolean),
+  autoSettleDays: Schema.optional(Schema.Number),
+  diffLayout: Schema.optional(Schema.Literals(["unified", "split"])),
+  /** New worktrees branch from origin's copy of the current branch (fetched first) instead of the local one. */
+  worktreeFromOrigin: Schema.optional(Schema.Boolean),
+  /** Folder the Add Project picker opens in; absent opens the home folder. */
+  addProjectFolder: Schema.optional(Schema.String),
+  confirmArchive: Schema.optional(Schema.Boolean),
+  confirmDelete: Schema.optional(Schema.Boolean),
   /** Writes commit messages left empty, as `provider:model`; null/absent uses the last harness's default model. */
   commitModel: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export type Settings = typeof Settings.Type;
 export const DEFAULT_SETTLE_DELAY_MINUTES = 15;
+export const DEFAULT_AUTO_SETTLE_DAYS = 7;
 export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   lastProvider: "claude",

@@ -28,6 +28,7 @@ import { cn } from "@apcode/ui/lib/utils";
 import { isMac } from "@apcode/ui/lib/keys";
 import {
   ClientCommand,
+  DEFAULT_AUTO_SETTLE_DAYS,
   DEFAULT_SETTLE_DELAY_MINUTES,
   type Project,
   type ThreadInfo,
@@ -97,6 +98,11 @@ export const Sidebar = (props: {
   const seen = useStore((s) => s.seen);
   const settleDelayMs =
     useStore((s) => s.settings.settleDelayMinutes ?? DEFAULT_SETTLE_DELAY_MINUTES) * 60_000;
+  const inactiveMs = useStore((s) =>
+    s.settings.autoSettle
+      ? (s.settings.autoSettleDays ?? DEFAULT_AUTO_SETTLE_DAYS) * 86_400_000
+      : null,
+  );
   const [query, setQuery] = useState("");
   const [view, setView] = useThreadListView();
   const now = useNow();
@@ -134,14 +140,14 @@ export const Sidebar = (props: {
     const current = infos.filter((info) => info.archivedAt === null);
     return {
       infos,
-      active: current.filter((info) => !isSettled(info, seen, now, settleDelayMs)),
-      settled: current.filter((info) => isSettled(info, seen, now, settleDelayMs)),
+      active: current.filter((info) => !isSettled(info, seen, now, settleDelayMs, inactiveMs)),
+      settled: current.filter((info) => isSettled(info, seen, now, settleDelayMs, inactiveMs)),
       archived: infos.filter((info) => info.archivedAt !== null),
       projectGroups: [...new Set(infos.map((info) => info.projectId))].map((projectId) =>
         infos.filter((info) => info.projectId === projectId),
       ),
     };
-  }, [projects, threads, seen, query, view, now, settleDelayMs]);
+  }, [projects, threads, seen, query, view, now, settleDelayMs, inactiveMs]);
 
   const projectOf = (info: ThreadInfo) =>
     projects.find((p) => p.id === info.projectId) ?? {
@@ -169,7 +175,9 @@ export const Sidebar = (props: {
             project={projectOf(info)}
             active={info.id === props.activeId}
             unread={info.archivedAt === null && !isSeen(info, seen)}
-            settled={info.archivedAt !== null || isSettled(info, seen, now, settleDelayMs)}
+            settled={
+              info.archivedAt !== null || isSettled(info, seen, now, settleDelayMs, inactiveMs)
+            }
             now={now}
             onSelect={() => props.onSelect(info.id)}
           />
@@ -450,7 +458,9 @@ interface CardAction {
 
 /** One action list, shared by the ⋯ menu and the right-click menu. */
 const useThreadActions = (info: ThreadInfo, settled: boolean) => {
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null);
+  const confirmArchive = useStore((s) => s.settings.confirmArchive === true);
+  const confirmDelete = useStore((s) => s.settings.confirmDelete !== false);
   const archived = info.archivedAt !== null;
   const actions: Array<CardAction> = [
     ...(archived
@@ -476,38 +486,47 @@ const useThreadActions = (info: ThreadInfo, settled: boolean) => {
             onSelect: () => setSettled(info.id, !settled),
             disabled: !canSettle(info),
           },
-          {
-            key: "archive",
-            label: "Archive",
-            icon: Archive,
-            onSelect: () =>
-              send(
-                ClientCommand.cases["thread.archive"].make({
-                  threadId: info.id,
-                  archived: true,
-                }),
-              ),
-            disabled: !canSettle(info),
-          },
+          confirmArchive && confirming !== "archive"
+            ? {
+                key: "archive",
+                label: "Archive",
+                icon: Archive,
+                keepOpen: true,
+                onSelect: () => setConfirming("archive"),
+                disabled: !canSettle(info),
+              }
+            : {
+                key: "archive",
+                label: confirmArchive ? "Click again to archive" : "Archive",
+                icon: Archive,
+                onSelect: () =>
+                  send(
+                    ClientCommand.cases["thread.archive"].make({
+                      threadId: info.id,
+                      archived: true,
+                    }),
+                  ),
+                disabled: !canSettle(info),
+              },
         ]),
-    confirmDelete
+    confirmDelete && confirming !== "delete"
       ? {
-          key: "delete",
-          label: "Click again to delete",
-          icon: Trash2,
-          destructive: true,
-          onSelect: () => send(ClientCommand.cases["thread.close"].make({ threadId: info.id })),
-        }
-      : {
           key: "delete",
           label: "Delete",
           icon: Trash2,
           destructive: true,
           keepOpen: true,
-          onSelect: () => setConfirmDelete(true),
+          onSelect: () => setConfirming("delete"),
+        }
+      : {
+          key: "delete",
+          label: confirmDelete ? "Click again to delete" : "Delete",
+          icon: Trash2,
+          destructive: true,
+          onSelect: () => send(ClientCommand.cases["thread.close"].make({ threadId: info.id })),
         },
   ];
-  return { actions, resetConfirm: () => setConfirmDelete(false) };
+  return { actions, resetConfirm: () => setConfirming(null) };
 };
 
 const MenuRow = ({ action, onDone }: { action: CardAction; onDone: () => void }) => (

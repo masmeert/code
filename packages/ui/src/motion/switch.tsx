@@ -11,6 +11,7 @@ export interface SwitchProps {
   disabled?: boolean;
   label?: string;
   ariaLabel?: string;
+  size?: "default" | "sm";
   className?: string;
 }
 
@@ -20,6 +21,7 @@ export function Switch({
   disabled,
   label,
   ariaLabel,
+  size = "default",
   className,
 }: SwitchProps) {
   const id = useId();
@@ -58,7 +60,8 @@ export function Switch({
           initial={false}
           data-state={checked ? "checked" : "unchecked"}
           className={cn(
-            "group peer inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full px-1 transition-colors duration-200 outline-none",
+            "group peer inline-flex shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 outline-none",
+            size === "sm" ? "h-5 w-9 px-0.5" : "h-7 w-12 px-1",
             "focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             "disabled:cursor-not-allowed disabled:opacity-60",
             checked ? "justify-end bg-primary" : "justify-start bg-muted-foreground/60",
@@ -68,10 +71,18 @@ export function Switch({
             ref={thumbRef}
             layout
             animate={{ scale: squish ? 0.9 : 1 }}
-            className="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-md"
+            className={cn(
+              "pointer-events-none block rounded-full bg-background shadow-md",
+              size === "sm" ? "size-4" : "size-5",
+            )}
           >
             {/* Stretch toward the destination while active. */}
-            <div className={cn("size-5", squish && (checked ? "ml-1" : "mr-1"))} />
+            <div
+              className={cn(
+                size === "sm" ? "size-4" : "size-5",
+                squish && (checked ? "ml-1" : "mr-1"),
+              )}
+            />
           </motion.div>
         </motion.button>
         {label ? (
