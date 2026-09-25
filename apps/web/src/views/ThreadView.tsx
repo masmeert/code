@@ -17,7 +17,7 @@ import { ToolGroup, type ToolCall } from "@apcode/ui/agents/tool-group";
 import { ProjectBadge } from "@/components/project-badge";
 import { cn } from "@apcode/ui/lib/utils";
 import { PROVIDER_AVATAR_CLASS, PROVIDER_LOGO } from "@/components/provider-logo";
-import type { Attachment, Project, ProviderKind, TurnOptions } from "@apcode/contracts";
+import { type Attachment, ClientCommand, type Project, type ProviderKind } from "@apcode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
 import {
   ArrowUp,
@@ -567,7 +567,12 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             models={choices}
             model={current ? encodeChoice(provider, current) : undefined}
             onModelChange={(value) =>
-              send({ _tag: "thread.setModel", threadId, model: decodeChoice(value).model })
+              send(
+                ClientCommand.cases["thread.setModel"].make({
+                  threadId,
+                  model: decodeChoice(value).model,
+                }),
+              )
             }
             placeholder={
               busy
@@ -580,10 +585,10 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
               // While the agent works, a message waits for the turn to end, or steers it; ⌘Enter flips that.
               const steer = (followUpMode === "steer") !== how.alternate;
               if (busy && !steer) queueFollowUp(threadId, text, options);
-              else send({ _tag: "thread.send", threadId, text, options });
+              else send(ClientCommand.cases["thread.send"].make({ threadId, text, options }));
             }}
             onStop={() => {
-              send({ _tag: "thread.interrupt", threadId });
+              send(ClientCommand.cases["thread.interrupt"].make({ threadId }));
               returnToComposer(threadId, takeFollowUps(threadId));
             }}
           />
@@ -744,12 +749,13 @@ const EditFromHere = ({ item, threadId }: { item: UserItem; threadId: string }) 
           text: prev.text.trim() ? `${prev.text.trimEnd()}\n\n${item.text}` : item.text,
           attachments: [...prev.attachments, ...item.attachments.map(fromSent)],
         }));
-        send({
-          _tag: "thread.rewind",
-          threadId,
-          messageId: item.id,
-          restoreFiles: choice === "files",
-        });
+        send(
+          ClientCommand.cases["thread.rewind"].make({
+            threadId,
+            messageId: item.id,
+            restoreFiles: choice === "files",
+          }),
+        );
         focusComposer();
       }}
     />

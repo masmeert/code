@@ -4,9 +4,9 @@ import {
   MorphPopoverMenu,
 } from "@apcode/ui/motion/popover-morph";
 import { cn } from "@apcode/ui/lib/utils";
-import type { GitAction } from "@apcode/contracts";
+import { ClientCommand, type GitAction } from "@apcode/contracts";
 import { ArrowUp, ChevronDown, GitCommitHorizontal, LoaderCircle } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
 import { send, useStore } from "../lib/store.ts";
 
 type Panel = "menu" | "commit" | null;
@@ -58,12 +58,15 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
   const textarea = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => send({ _tag: "git.status", path: cwd }), 250);
+    const timer = window.setTimeout(
+      () => send(ClientCommand.cases["git.status"].make({ path: cwd })),
+      250,
+    );
     return () => window.clearTimeout(timer);
   }, [cwd, refreshKey]);
 
   // Any update carrying an action answers the one in flight (only one runs per repo at a time).
-  useEffect(() => {
+  const answerPending = useEffectEvent(() => {
     if (!repo?.action || !pending) return;
     setPending(null);
     setError(repo.error);
@@ -74,11 +77,12 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
       // The commit landed even though the push after it failed.
       setMessage("");
     }
-  }, [repo]);
+  });
+  useEffect(() => answerPending(), [repo]);
 
   useEffect(() => {
     if (panel === "commit") requestAnimationFrame(() => textarea.current?.focus());
-    if (panel) send({ _tag: "git.status", path: cwd });
+    if (panel) send(ClientCommand.cases["git.status"].make({ path: cwd }));
   }, [panel, cwd]);
 
   const status = repo?.status;
@@ -90,8 +94,15 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
   const run = (action: GitAction) => {
     setError(null);
     setPending(action);
-    if (action === "push") send({ _tag: "git.push", path: cwd });
-    else send({ _tag: "git.commit", path: cwd, message, push: action === "commit-push" });
+    if (action === "push") send(ClientCommand.cases["git.push"].make({ path: cwd }));
+    else
+      send(
+        ClientCommand.cases["git.commit"].make({
+          path: cwd,
+          message,
+          push: action === "commit-push",
+        }),
+      );
   };
   // With nothing to commit, the main button pushes instead.
   const primaryPushes = status.changes === 0 && canPush;

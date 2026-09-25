@@ -90,17 +90,12 @@ export interface CenterMorphModalTriggerProps {
 /** Wraps one interactive element and opens or closes the modal. */
 export function CenterMorphModalTrigger({ children }: CenterMorphModalTriggerProps) {
   const context = useCenterMorphModalContext("CenterMorphModalTrigger");
-  if (!isValidElement(children)) return children;
+  if (!isValidElement<React.HTMLAttributes<HTMLElement>>(children)) return children;
 
-  const child = children as ReactElement<Record<string, unknown>>;
-  const childOnClick = child.props.onClick as
-    | ((event: React.MouseEvent<HTMLElement>) => void)
-    | undefined;
-
-  return cloneElement(child, {
+  return cloneElement(children, {
     id: context.triggerId,
     onClick: (event: React.MouseEvent<HTMLElement>) => {
-      childOnClick?.(event);
+      children.props.onClick?.(event);
       if (!event.defaultPrevented) context.setOpen(!context.open);
     },
     "aria-haspopup": "dialog",
@@ -116,16 +111,11 @@ export interface CenterMorphModalCloseProps {
 /** Wraps one interactive element and closes the modal. */
 export function CenterMorphModalClose({ children }: CenterMorphModalCloseProps) {
   const context = useCenterMorphModalContext("CenterMorphModalClose");
-  if (!isValidElement(children)) return children;
+  if (!isValidElement<React.HTMLAttributes<HTMLElement>>(children)) return children;
 
-  const child = children as ReactElement<Record<string, unknown>>;
-  const childOnClick = child.props.onClick as
-    | ((event: React.MouseEvent<HTMLElement>) => void)
-    | undefined;
-
-  return cloneElement(child, {
+  return cloneElement(children, {
     onClick: (event: React.MouseEvent<HTMLElement>) => {
-      childOnClick?.(event);
+      children.props.onClick?.(event);
       if (!event.defaultPrevented) context.setOpen(false);
     },
   });

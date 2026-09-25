@@ -381,16 +381,16 @@ export function WheelPicker({
     (event: KeyboardEvent<HTMLDivElement>) => {
       if (disabled) return;
       const at = Math.round(scroll.current);
-      const map: Record<string, number> = {
-        ArrowUp: -1,
-        ArrowDown: 1,
-        Home: -at,
-        End: last - at,
-      };
-      if (event.key in map) {
+      const delta = new Map([
+        ["ArrowUp", -1],
+        ["ArrowDown", 1],
+        ["Home", -at],
+        ["End", last - at],
+      ]).get(event.key);
+      if (delta !== undefined) {
         event.preventDefault();
         if (sound) getPlayer().prepare();
-        step(map[event.key]);
+        step(delta);
       }
     },
     [disabled, sound, last, step, getPlayer],

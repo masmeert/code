@@ -4,6 +4,8 @@ import {
   cloneElement,
   type ComponentPropsWithRef,
   createContext,
+  type HTMLProps,
+  isValidElement,
   type ReactElement,
   type ReactNode,
   type Ref,
@@ -201,15 +203,11 @@ export function MessageBubbleContent({
     </>
   );
 
-  if (render) {
-    const child = render as ReactElement<
-      Record<string, unknown> & { className?: string; ref?: Ref<HTMLElement> }
-    >;
-
-    return cloneElement(child, {
+  if (isValidElement<HTMLProps<HTMLElement> & { "data-slot"?: string }>(render)) {
+    return cloneElement(render, {
       ...props,
-      ref: mergeRefs(child.props.ref, ref as Ref<HTMLElement> | undefined),
-      className: cn(classes, child.props.className),
+      ref: mergeRefs<HTMLElement>(render.props.ref, ref),
+      className: cn(classes, render.props.className),
       children: composedChildren,
       "data-slot": "message-bubble-content",
     });

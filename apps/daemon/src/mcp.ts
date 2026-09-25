@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import type { BrowserAction, BrowserResult } from "@apcode/contracts";
+import { BrowserAction, type BrowserResult } from "@apcode/contracts";
 import { z } from "zod";
 import { PORT } from "./port.ts";
 
@@ -57,7 +57,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       inputSchema: { url: z.string() },
       _meta: alwaysLoad,
     },
-    ({ url }) => run({ _tag: "navigate", url }),
+    ({ url }) => run(BrowserAction.cases.navigate.make({ url })),
   );
   server.registerTool(
     "snapshot",
@@ -67,7 +67,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       annotations: { readOnlyHint: true },
       _meta: alwaysLoad,
     },
-    () => run({ _tag: "snapshot" }),
+    () => run(BrowserAction.cases.snapshot.make({})),
   );
   server.registerTool(
     "click",
@@ -77,7 +77,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       inputSchema: { target: z.string() },
       _meta: alwaysLoad,
     },
-    ({ target }) => run({ _tag: "click", target }),
+    ({ target }) => run(BrowserAction.cases.click.make({ target })),
   );
   server.registerTool(
     "type",
@@ -87,7 +87,8 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       inputSchema: { target: z.string(), text: z.string(), submit: z.boolean().optional() },
       _meta: alwaysLoad,
     },
-    ({ target, text, submit }) => run({ _tag: "type", target, text, submit: submit ?? false }),
+    ({ target, text, submit }) =>
+      run(BrowserAction.cases.type.make({ target, text, submit: submit ?? false })),
   );
   server.registerTool(
     "press",
@@ -96,7 +97,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       inputSchema: { key: z.string() },
       _meta: alwaysLoad,
     },
-    ({ key }) => run({ _tag: "press", key }),
+    ({ key }) => run(BrowserAction.cases.press.make({ key })),
   );
   server.registerTool(
     "evaluate",
@@ -105,7 +106,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       inputSchema: { expression: z.string() },
       _meta: alwaysLoad,
     },
-    ({ expression }) => run({ _tag: "evaluate", expression }),
+    ({ expression }) => run(BrowserAction.cases.evaluate.make({ expression })),
   );
   server.registerTool(
     "console",
@@ -114,7 +115,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       annotations: { readOnlyHint: true },
       _meta: alwaysLoad,
     },
-    () => run({ _tag: "console" }),
+    () => run(BrowserAction.cases.console.make({})),
   );
   return server;
 }

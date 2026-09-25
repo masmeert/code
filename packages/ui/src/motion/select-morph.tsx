@@ -172,9 +172,10 @@ export interface MorphSelectValueProps {
 export function MorphSelectValue({ placeholder, className }: MorphSelectValueProps) {
   const ctx = useMorphContext("MorphSelectValue");
   // surface the placeholder so the morph header (rendered by content) matches
+  const { setPlaceholder } = ctx;
   useEffect(() => {
-    if (placeholder) ctx.setPlaceholder(placeholder);
-  }, [placeholder, ctx.setPlaceholder]);
+    if (placeholder) setPlaceholder(placeholder);
+  }, [placeholder, setPlaceholder]);
   const label = ctx.labelFor(ctx.value);
   return (
     <span className={cn(label ? "text-foreground" : "text-muted-foreground", className)}>
@@ -323,10 +324,11 @@ export function MorphSelectItem({
   const selected = ctx.value === value;
   const label = typeof children === "string" ? children : value;
 
+  const { register, unregister } = ctx;
   useLayoutEffect(() => {
-    ctx.register(value, label);
-    return () => ctx.unregister(value);
-  }, [ctx.register, ctx.unregister, value, label]);
+    register(value, label);
+    return () => unregister(value);
+  }, [register, unregister, value, label]);
 
   return (
     <motion.li variants={ctx.reduce ? undefined : ITEM}>

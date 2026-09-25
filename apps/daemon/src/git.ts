@@ -1,4 +1,5 @@
-import { execFile, type ExecFileOptions } from "node:child_process";
+import { execFile, type ExecFileException, type ExecFileOptions } from "node:child_process";
+import * as Predicate from "effect/Predicate";
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -27,7 +28,7 @@ const release = () => {
 };
 
 interface GitResult {
-  readonly error: (Error & { code?: unknown }) | null;
+  readonly error: ExecFileException | null;
   readonly stdout: string;
   readonly stderr: string;
 }
@@ -121,7 +122,7 @@ const gitRaw = async (cwd: string, args: ReadonlyArray<string>) => {
     maxBuffer: MAX_PATCH_BYTES * 2,
   });
   return {
-    code: error ? (typeof error.code === "number" ? error.code : -1) : 0,
+    code: error ? (Predicate.isNumber(error.code) ? error.code : -1) : 0,
     stdout,
     stderr: stderr.trim() || (error?.message ?? ""),
   };

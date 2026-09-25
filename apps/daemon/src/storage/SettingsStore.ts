@@ -2,7 +2,7 @@ import { DEFAULT_SETTINGS, Settings } from "@apcode/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { makeJsonFile } from "./jsonFile.ts";
+import { openJsonFile } from "./jsonFile.ts";
 
 export class SettingsStore extends Context.Service<
   SettingsStore,
@@ -13,7 +13,7 @@ export class SettingsStore extends Context.Service<
 >()("apcode/SettingsStore") {}
 
 const make = Effect.gen(function* () {
-  const file = yield* makeJsonFile("settings.json", Settings, DEFAULT_SETTINGS);
+  const file = yield* openJsonFile("settings.json", Settings, DEFAULT_SETTINGS);
   return SettingsStore.of({
     get: file.get,
     update: (settings) => file.set(settings).pipe(Effect.as(settings)),

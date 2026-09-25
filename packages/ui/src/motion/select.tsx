@@ -321,10 +321,11 @@ export function SelectItem({
   const selected = ctx.value === value;
   const label = labelProp ?? (typeof children === "string" ? children : value);
 
+  const { register, unregister } = ctx;
   useLayoutEffect(() => {
-    ctx.register(value, label);
-    return () => ctx.unregister(value);
-  }, [ctx.register, ctx.unregister, value, label]);
+    register(value, label);
+    return () => unregister(value);
+  }, [register, unregister, value, label]);
 
   return (
     <li>

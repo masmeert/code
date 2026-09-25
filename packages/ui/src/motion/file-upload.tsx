@@ -135,43 +135,43 @@ function fileKind(item: FileUploadItem) {
   return "FILE";
 }
 
-function getFileIcon(item: FileUploadItem) {
+function FileTypeIcon({ item, className }: { item: FileUploadItem; className: string }) {
   const extension = item.name.includes(".") ? item.name.split(".").pop()?.toLowerCase() : undefined;
   const type = item.type ?? "";
 
-  if (type.startsWith("image/")) return FileImage;
-  if (type.startsWith("video/")) return FileVideo;
-  if (type.startsWith("audio/")) return FileAudio;
+  if (type.startsWith("image/")) return <FileImage className={className} />;
+  if (type.startsWith("video/")) return <FileVideo className={className} />;
+  if (type.startsWith("audio/")) return <FileAudio className={className} />;
   if (
     type.includes("zip") ||
     type.includes("compressed") ||
     ["zip", "rar", "7z", "tar", "gz"].includes(extension ?? "")
   ) {
-    return FileArchive;
+    return <FileArchive className={className} />;
   }
   if (
     type.includes("spreadsheet") ||
     type.includes("excel") ||
     ["csv", "xls", "xlsx"].includes(extension ?? "")
   ) {
-    return FileSpreadsheet;
+    return <FileSpreadsheet className={className} />;
   }
   if (
     type.includes("pdf") ||
     type.startsWith("text/") ||
     ["pdf", "doc", "docx", "md", "txt"].includes(extension ?? "")
   ) {
-    return FileText;
+    return <FileText className={className} />;
   }
   if (
     ["css", "html", "js", "jsx", "json", "mdx", "ts", "tsx", "xml", "yaml", "yml"].includes(
       extension ?? "",
     )
   ) {
-    return FileCode2;
+    return <FileCode2 className={className} />;
   }
 
-  return FileIcon;
+  return <FileIcon className={className} />;
 }
 
 export function createFileUploadItem(file: File, index = 0): FileUploadItem {
@@ -230,7 +230,6 @@ function FileUploadRow({
   const progress = clampProgress(item.progress, status);
   const progressRatio = progress / 100;
   const showProgress = status === "uploading" || status === "success";
-  const LeadingIcon = getFileIcon(item);
 
   return (
     <motion.li
@@ -251,7 +250,7 @@ function FileUploadRow({
             classNames?.leading,
           )}
         >
-          <LeadingIcon className="h-5 w-5" />
+          <FileTypeIcon item={item} className="h-5 w-5" />
         </div>
 
         <div className={cn("min-w-0 flex-1", classNames?.content)}>

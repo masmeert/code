@@ -6,6 +6,7 @@ import { ResizeHandle } from "@apcode/ui/components/resize-handle";
 import { cn } from "@apcode/ui/lib/utils";
 import { useResizable } from "@apcode/ui/hooks/use-resizable";
 import { IconButton } from "../components/icon-button.tsx";
+import { ClientCommand } from "@apcode/contracts";
 import { send, useStore } from "../lib/store.ts";
 import { ChangedFilesTree } from "./ChangedFilesTree.tsx";
 import { HIGHLIGHT, THEMES, useDiffWorkersReady, useResolvedTheme } from "./DiffWorkers.tsx";
@@ -40,8 +41,13 @@ const readStyle = (): DiffStyle => {
   }
 };
 
+interface ParsedPatch {
+  readonly patch: string;
+  readonly files: Array<FileDiffMetadata>;
+}
+
 /** Last parse per patch string, so reopening the panel (or another thread in the same repo) skips the work. */
-let lastParse: { patch: string; files: Array<FileDiffMetadata> } = { patch: "", files: [] };
+let lastParse: ParsedPatch = { patch: "", files: [] };
 
 const parseFiles = (patch: string): Array<FileDiffMetadata> => {
   if (patch === lastParse.patch) return lastParse.files;
@@ -90,16 +96,21 @@ export const DiffPanel = ({
   onShowAll: () => void;
   onClose: () => void;
 }) => {
+  const turnThreadId = turn?.threadId;
+  const turnMessageId = turn?.messageId;
   const turnKey = turn ? `${turn.threadId}:${turn.messageId}` : null;
   const diff = useStore((s) => (turnKey ? s.turnDiffs[turnKey] : s.diffs[cwd]));
   const refresh = useCallback(
     () =>
       send(
-        turn
-          ? { _tag: "checkpoint.diff", threadId: turn.threadId, messageId: turn.messageId }
-          : { _tag: "git.diff", path: cwd },
+        turnThreadId !== undefined && turnMessageId !== undefined
+          ? ClientCommand.cases["checkpoint.diff"].make({
+              threadId: turnThreadId,
+              messageId: turnMessageId,
+            })
+          : ClientCommand.cases["git.diff"].make({ path: cwd }),
       ),
-    [cwd, turn?.threadId, turn?.messageId],
+    [cwd, turnThreadId, turnMessageId],
   );
   const theme = useResolvedTheme();
   const workersReady = useDiffWorkersReady();
@@ -130,10 +141,11 @@ export const DiffPanel = ({
   );
 
   // Agents edit in bursts; wait for a short lull before re-reading. A finished turn's changes don't change.
+  const changesKey = turnKey ? null : refreshKey;
   useEffect(() => {
     const timer = window.setTimeout(refresh, turnKey ? 0 : 250);
     return () => window.clearTimeout(timer);
-  }, [refresh, turnKey ? null : refreshKey]);
+  }, [refresh, turnKey, changesKey]);
 
   const files = useMemo(() => parseFiles(diff?.patch ?? ""), [diff?.patch]);
   // CodeView reconciles by id; a file whose content changed keeps its id, so its version must go up.

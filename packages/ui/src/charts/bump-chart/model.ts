@@ -17,20 +17,20 @@ export const PLOT = { width: 560, left: 32, right: 100, top: 28, bottom: 36, row
 
 export function buildBumpChart(series: readonly BumpSeries[], periodCount: number) {
   const seen = new Set<string>();
-  const rows = series
-    .filter((row) => {
-      if (seen.has(row.id)) return false;
-      seen.add(row.id);
-      return true;
-    })
-    .map((row, index) => ({
-      ...row,
-      color: row.color ?? BUMP_COLORS[index % BUMP_COLORS.length],
-      ranks: Array.from({ length: periodCount }, (_, i) => {
-        const rank = row.ranks[i];
-        return rank != null && Number.isSafeInteger(rank) && rank > 0 ? rank : null;
-      }),
-    }));
+  const rows = series.flatMap((row) => {
+    if (seen.has(row.id)) return [];
+    seen.add(row.id);
+    return [
+      {
+        ...row,
+        color: row.color ?? BUMP_COLORS[(seen.size - 1) % BUMP_COLORS.length],
+        ranks: Array.from({ length: periodCount }, (_, i) => {
+          const rank = row.ranks[i];
+          return rank != null && Number.isSafeInteger(rank) && rank > 0 ? rank : null;
+        }),
+      },
+    ];
+  });
   const ranks = [
     ...new Set(rows.flatMap((row) => row.ranks.filter((rank): rank is number => rank != null))),
   ].sort((a, b) => a - b);

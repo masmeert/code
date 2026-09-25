@@ -1,4 +1,5 @@
-import type { AttachmentInput } from "@apcode/contracts";
+import { AttachmentInput } from "@apcode/contracts";
+import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
 import type { PromptAttachment } from "@apcode/ui/agents/prompt-input";
 
@@ -67,10 +68,30 @@ export interface Stash {
 }
 
 const STASH_KEY = "apcode.stash";
+const decodeStashes = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        text: Schema.String,
+        attachments: Schema.Array(
+          Schema.Struct({
+            id: Schema.String,
+            name: Schema.String,
+            preview: Schema.optionalKey(Schema.String),
+            image: Schema.optionalKey(Schema.Boolean),
+            input: AttachmentInput,
+          }),
+        ),
+        at: Schema.Number,
+      }),
+    ),
+  ),
+);
 const stashListeners = new Set<() => void>();
 let stashes: ReadonlyArray<Stash> = (() => {
   try {
-    return JSON.parse(localStorage.getItem(STASH_KEY) ?? "[]") as Array<Stash>;
+    return decodeStashes(localStorage.getItem(STASH_KEY) ?? "[]");
   } catch {
     return [];
   }
@@ -96,7 +117,7 @@ export const useStashes = () =>
 /** Moves a composer's draft into the stash; false if there's nothing to keep. */
 export const stashDraft = (key: string) => {
   const draft = getDraft(key);
-  const attachments = draft.attachments.filter((a) => a.input._tag === "path");
+  const attachments = draft.attachments.filter((a) => AttachmentInput.guards.path(a.input));
   if (!draft.text.trim() && !attachments.length) return false;
   writeStashes([
     { id: crypto.randomUUID(), text: draft.text, attachments, at: Date.now() },
@@ -123,7 +144,7 @@ export const dropStash = (id: string) => writeStashes(stashes.filter((s) => s.id
 window.addEventListener("storage", (e) => {
   if (e.key !== STASH_KEY) return;
   try {
-    stashes = JSON.parse(e.newValue ?? "[]") as Array<Stash>;
+    stashes = decodeStashes(e.newValue ?? "[]");
   } catch {
     stashes = [];
   }

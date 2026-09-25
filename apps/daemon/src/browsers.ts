@@ -1,4 +1,4 @@
-import type { BrowserAction, BrowserResult, ServerFrame } from "@apcode/contracts";
+import { ServerFrame, type BrowserAction, type BrowserResult } from "@apcode/contracts";
 
 export interface BrowserHost {
   send(frame: ServerFrame): void;
@@ -61,7 +61,7 @@ export function createBrowsers() {
           60_000,
         );
         pending.set(requestId, { host, resolve, reject, timer });
-        host.send({ _tag: "browser.request", requestId, threadId, action });
+        host.send(ServerFrame.cases["browser.request"].make({ requestId, threadId, action }));
       });
     },
   };

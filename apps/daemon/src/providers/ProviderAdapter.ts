@@ -3,12 +3,14 @@ import type {
   Attachment,
   Effort,
   PermissionLevel,
-  ProviderEvent,
   ProviderKind,
+  RuntimeEvent,
   SlashCommand,
 } from "@apcode/contracts";
 import type * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import type { UUID } from "node:crypto";
 import type { McpServerAccess } from "../mcp.ts";
 
 export class ProviderError extends Schema.TaggedError<ProviderError>()("ProviderError", {
@@ -17,6 +19,8 @@ export class ProviderError extends Schema.TaggedError<ProviderError>()("Provider
 }) {}
 
 export interface StartSessionInput {
+  /** The thread the session belongs to; every event the adapter emits carries it. */
+  readonly threadId: string;
   readonly cwd: string;
   readonly model?: string | undefined;
   /** Provider-side conversation id from a previous session; the adapter resumes it instead of starting fresh. */
@@ -26,15 +30,15 @@ export interface StartSessionInput {
   readonly permission: PermissionLevel;
   /** Called whenever the provider-side conversation id becomes known (persist it to resume later). */
   readonly onResumeToken: (token: string) => void;
-  /** Adapters push normalized events here; the session manager stamps the thread id. */
-  readonly emit: (event: ProviderEvent) => void;
+  /** Adapters push normalized events for `threadId` here. */
+  readonly emit: (event: RuntimeEvent) => void;
   readonly mcpServer: McpServerAccess;
 }
 
 /** One user message plus the composer settings it was sent with. */
 export interface TurnInput {
   /** Our id for the message; providers that take one record it, so a rewind can find it. */
-  readonly messageId: string;
+  readonly messageId: UUID;
   readonly text: string;
   /** Files on disk; images go to the model as images, the rest are listed as paths. */
   readonly attachments: ReadonlyArray<Attachment>;
@@ -85,28 +89,30 @@ export interface ProviderAdapter {
 }
 
 /** One-line human summary of a tool input, for the transcript. */
-export const summarizeToolInput = (input: unknown): string => {
-  if (input === null || typeof input !== "object") return String(input ?? "");
-  const record = input as Record<string, unknown>;
-  if (Object.keys(record).length === 0) return "";
-  for (const key of [
-    "command",
-    "file_path",
-    "path",
-    "pattern",
-    "url",
-    "query",
-    "description",
-    "target",
-    "key",
-    "expression",
-  ]) {
-    const value = record[key];
-    if (typeof value === "string") return value;
-  }
+export function summarizeToolInput(input: Schema.Json): string {
+  if (input === null) return "";
+  if (!Predicate.isObjectOrArray(input)) return String(input);
+  if (Object.keys(input).length === 0) return "";
+  const summary = Schema.is(Schema.JsonObject)(input)
+    ? [
+        "command",
+        "file_path",
+        "path",
+        "pattern",
+        "url",
+        "query",
+        "description",
+        "target",
+        "key",
+        "expression",
+      ]
+        .map((field) => input[field])
+        .find(Predicate.isString)
+    : undefined;
+  if (summary !== undefined) return summary;
   const json = JSON.stringify(input);
   return json.length > 200 ? `${json.slice(0, 200)}…` : json;
-};
+}
 
 /** The message text with non-image attachments listed as paths for the agent to read. */
 export const textWithFiles = (turn: TurnInput) => {

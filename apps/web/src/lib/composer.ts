@@ -1,12 +1,13 @@
-import type {
-  Attachment,
+import {
+  type Attachment,
   AttachmentInput,
   Effort,
   PermissionLevel,
-  ProviderKind,
-  TurnOptions,
+  type ProviderKind,
+  type TurnOptions,
 } from "@apcode/contracts";
-import { useEffect, useReducer, useRef } from "react";
+import * as Schema from "effect/Schema";
+import { useEffect, useEffectEvent, useReducer, useRef } from "react";
 import { type DraftAttachment, getDraft, setDraft, useDraft } from "./drafts.ts";
 
 /** Effort levels each harness accepts, lowest first. */
@@ -54,9 +55,22 @@ type Defaults = {
 
 const readDefaults = (): Defaults => {
   try {
-    const parsed = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "null") as Defaults | null;
-    if (parsed && typeof parsed === "object")
-      return { effort: parsed.effort ?? {}, permission: parsed.permission ?? "ask" };
+    const parsed = Schema.decodeUnknownSync(
+      Schema.fromJsonString(
+        Schema.NullOr(
+          Schema.Struct({
+            effort: Schema.optionalKey(
+              Schema.Struct({
+                claude: Schema.optionalKey(Schema.NullOr(Effort)),
+                codex: Schema.optionalKey(Schema.NullOr(Effort)),
+              }),
+            ),
+            permission: Schema.optionalKey(PermissionLevel),
+          }),
+        ),
+      ),
+    )(localStorage.getItem(PREFS_KEY) ?? "null");
+    if (parsed) return { effort: parsed.effort ?? {}, permission: parsed.permission ?? "ask" };
   } catch {}
   return { effort: {}, permission: "ask" };
 };
@@ -107,7 +121,7 @@ export const fromPath = (path: string): DraftAttachment => ({
   id: crypto.randomUUID(),
   name: fileName(path),
   image: IMAGE_NAME.test(path),
-  input: { _tag: "path", path },
+  input: AttachmentInput.cases.path.make({ path }),
 });
 
 const readBase64 = (file: File) =>
@@ -127,12 +141,11 @@ const fromFile = async (file: File): Promise<DraftAttachment> => {
     name,
     image,
     preview: image ? URL.createObjectURL(file) : undefined,
-    input: {
-      _tag: "data",
+    input: AttachmentInput.cases.data.make({
       name,
       mediaType: file.type || "application/octet-stream",
       data: await readBase64(file),
-    },
+    }),
   };
 };
 
@@ -157,7 +170,7 @@ export const fromText = (text: string): DraftAttachment => {
     id: crypto.randomUUID(),
     name,
     image: false,
-    input: { _tag: "data", name, mediaType: "text/plain", data: toBase64(text) },
+    input: AttachmentInput.cases.data.make({ name, mediaType: "text/plain", data: toBase64(text) }),
   };
 };
 
@@ -209,10 +222,11 @@ export const useAttachments = ({ key, acceptDrops }: { key: string; acceptDrops:
     return current.map((a) => a.input);
   };
 
+  const addDropped = useEffectEvent((paths: ReadonlyArray<string>) => add(paths.map(fromPath)));
   useEffect(() => {
     if (!acceptDrops) return;
-    return window.desktop?.onFileDrop((paths) => add(paths.map(fromPath)));
-  }, [acceptDrops, key]);
+    return window.desktop?.onFileDrop((paths) => addDropped(paths));
+  }, [acceptDrops]);
 
   return { attachments, add, pick, addFiles, remove, take };
 };

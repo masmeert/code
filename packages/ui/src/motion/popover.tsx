@@ -399,70 +399,70 @@ export interface PopoverTriggerProps {
   children: ReactElement;
 }
 
+function compose<Event extends { defaultPrevented: boolean }>(
+  childHandler: ((event: Event) => void) | undefined,
+  handler: (event: Event) => void,
+) {
+  return (event: Event) => {
+    childHandler?.(event);
+    if (!event.defaultPrevented) handler(event);
+  };
+}
+
+// Observation, not action. `compose` steps aside for a child that handled
+// the event itself, which is right for anything that *does* something — but
+// a child preventing the pointerdown default (to hold focus, say) has not
+// said the gesture didn't happen. Skipping the record there left the panel
+// reading whatever the gesture before it had put in.
+function observe<Event>(
+  childHandler: ((event: Event) => void) | undefined,
+  handler: (event: Event) => void,
+) {
+  return (event: Event) => {
+    childHandler?.(event);
+    handler(event);
+  };
+}
+
 export function PopoverTrigger({ children }: PopoverTriggerProps) {
   const ctx = usePopoverContext("PopoverTrigger");
   // What the last gesture on the trigger was, and whether the panel was
   // already open when it started. A click reports neither.
   const tap = useTapGesture<boolean>();
 
-  if (!isValidElement(children)) return children;
+  if (!isValidElement<React.HTMLProps<HTMLElement> & { "data-state"?: string }>(children))
+    return children;
 
-  const child = children as ReactElement<Record<string, unknown>>;
-  const childProps = child.props;
-  const childRef = (childProps as { ref?: Ref<HTMLElement> }).ref;
+  const childProps = children.props;
 
-  const compose =
-    <E extends { defaultPrevented?: boolean }>(name: string, handler: (event: E) => void) =>
-    (event: E) => {
-      (childProps[name] as ((e: unknown) => void) | undefined)?.(event);
-      if (!event.defaultPrevented) handler(event);
-    };
-
-  // Observation, not action. `compose` steps aside for a child that handled
-  // the event itself, which is right for anything that *does* something — but
-  // a child preventing the pointerdown default (to hold focus, say) has not
-  // said the gesture didn't happen. Skipping the record there left the panel
-  // reading whatever the gesture before it had put in.
-  const observe =
-    <E,>(name: string, handler: (event: E) => void) =>
-    (event: E) => {
-      (childProps[name] as ((e: unknown) => void) | undefined)?.(event);
-      handler(event);
-    };
-
-  // The hover trigger keeps its hover path and *adds* a tap one, rather than
-  // swapping mode on a device that reports a touchscreen: a touchscreen laptop
-  // has both inputs and the mouse must keep working. A hovering pointer has
-  // already opened the panel on its way in, and a keyboard press arrives with
-  // no pointerdown behind it, so only a tap toggles here. Which panel state
-  // the tap acts on is read from the gesture's start, because a browser that
-  // focuses the trigger on contact would otherwise open it mid-gesture and let
-  // the click close it again.
-  const handlers: Record<string, unknown> =
-    ctx.triggerMode === "hover"
+  return cloneElement(children, {
+    // The hover trigger keeps its hover path and *adds* a tap one, rather than
+    // swapping mode on a device that reports a touchscreen: a touchscreen laptop
+    // has both inputs and the mouse must keep working. A hovering pointer has
+    // already opened the panel on its way in, and a keyboard press arrives with
+    // no pointerdown behind it, so only a tap toggles here. Which panel state
+    // the tap acts on is read from the gesture's start, because a browser that
+    // focuses the trigger on contact would otherwise open it mid-gesture and let
+    // the click close it again.
+    ...(ctx.triggerMode === "hover"
       ? {
-          onFocus: compose("onFocus", ctx.openHover),
-          onBlur: compose("onBlur", ctx.scheduleClose),
-          onPointerDown: observe<React.PointerEvent>("onPointerDown", (event) =>
-            tap.start(event, ctx.open),
-          ),
-          onPointerCancel: observe("onPointerCancel", tap.drop),
-          onKeyDown: observe("onKeyDown", tap.drop),
-          onClick: compose("onClick", () => {
+          onFocus: compose(childProps.onFocus, ctx.openHover),
+          onBlur: compose(childProps.onBlur, ctx.scheduleClose),
+          onPointerDown: observe(childProps.onPointerDown, (event) => tap.start(event, ctx.open)),
+          onPointerCancel: observe(childProps.onPointerCancel, tap.drop),
+          onKeyDown: observe(childProps.onKeyDown, tap.drop),
+          onClick: compose(childProps.onClick, () => {
             const gesture = tap.take();
             if (!gesture || gesture.pointerType === "mouse") return;
             ctx.setOpen(!gesture.state);
           }),
         }
-      : { onClick: compose("onClick", ctx.toggle) };
-
-  return cloneElement(child, {
-    ...handlers,
-    ref: mergeRefs(childRef, (node: HTMLElement | null) => {
+      : { onClick: compose(childProps.onClick, ctx.toggle) }),
+    ref: mergeRefs(childProps.ref, (node: HTMLElement | null) => {
       ctx.triggerRef.current = node;
     }),
     // Above the goo layer (z-[-1]) so the neck reads behind it.
-    className: cn("relative z-0", childProps.className as string | undefined),
+    className: cn("relative z-0", childProps.className),
     "aria-haspopup": "dialog",
     "aria-expanded": ctx.open,
     "aria-controls": ctx.open ? ctx.contentId : undefined,

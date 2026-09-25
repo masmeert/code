@@ -1,4 +1,4 @@
-import { ClientCommand, isTranscriptEvent, type ServerFrame } from "@apcode/contracts";
+import { ClientCommand, isTranscriptEvent, ServerFrame } from "@apcode/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
@@ -71,14 +71,24 @@ export const serve = (port: number) =>
         Effect.gen(function* () {
           const { dataId, settings, projects, providers, threads, terminals, live } =
             yield* manager.subscribe;
-          send(ws, { _tag: "shell", dataId, settings, projects, providers, threads, terminals });
+          send(
+            ws,
+            ServerFrame.cases.shell.make({
+              dataId,
+              settings,
+              projects,
+              providers,
+              threads,
+              terminals,
+            }),
+          );
           yield* Stream.runForEach(live, ({ seq, id, event }) =>
             Effect.sync(() => {
               if (isTranscriptEvent(event)) {
                 const since = ws.data.threads.get(event.threadId);
                 if (since === undefined || seq <= since) return;
               }
-              send(ws, { _tag: "event", id, event });
+              send(ws, ServerFrame.cases.event.make({ id, event }));
             }),
           );
         }),
@@ -86,76 +96,90 @@ export const serve = (port: number) =>
 
     /** Transcript subscriptions are per connection, so they're handled here rather than by the manager. */
     const handle = (ws: ServerWebSocket<ConnectionData>, command: ClientCommand) =>
-      Effect.suspend(() => {
-        switch (command._tag) {
-          case "thread.subscribe": {
-            const read = manager.readThread(command.threadId, command.after, command.turnLimit);
-            if (!read) return Effect.void;
-            ws.data.threads.set(command.threadId, read.seq);
-            const { seq: _seq, ...frame } = read;
-            send(ws, { ...frame, threadId: command.threadId });
-            return Effect.void;
-          }
-          case "search":
-            send(ws, {
-              _tag: "search.results",
-              requestId: command.requestId,
-              hits: [...manager.search(command.query)],
-            });
-            return Effect.void;
-          case "thread.unsubscribe":
-            ws.data.threads.delete(command.threadId);
-            return Effect.void;
-          case "thread.loadOlder": {
-            const older = manager.readOlder(command.threadId, command.before, command.turnLimit);
-            if (older) send(ws, { _tag: "thread.page", threadId: command.threadId, ...older });
-            return Effect.void;
-          }
-          case "terminal.open":
-            if (ws.data.viewer)
-              manager.terminals.attach(
-                command.threadId,
-                command.terminalId,
-                command.columns,
-                command.rows,
-                ws.data.viewer,
+      Effect.suspend(() =>
+        ClientCommand.matchOrElse(
+          command,
+          {
+            "thread.subscribe": (command) => {
+              const read = manager.readThread(command.threadId, command.after, command.turnLimit);
+              if (!read) return Effect.void;
+              ws.data.threads.set(command.threadId, read.seq);
+              send(ws, read.frame);
+              return Effect.void;
+            },
+            search: (command) => {
+              send(
+                ws,
+                ServerFrame.cases["search.results"].make({
+                  requestId: command.requestId,
+                  hits: manager.search(command.query),
+                }),
               );
-            return Effect.void;
-          case "terminal.detach":
-            if (ws.data.viewer)
-              manager.terminals.detach(command.threadId, command.terminalId, ws.data.viewer);
-            return Effect.void;
-          case "terminal.acknowledge":
-            if (ws.data.viewer)
-              manager.terminals.acknowledge(
-                command.threadId,
-                command.terminalId,
-                ws.data.viewer,
-                command.characters,
-              );
-            return Effect.void;
-          case "browser.host":
-            if (!ws.data.browserHost) {
-              ws.data.browserHost = {
-                send: (frame) => send(ws, frame),
-                shows: (threadId) => ws.data.threads.has(threadId),
-              };
-              manager.browsers.attach(ws.data.browserHost);
-            }
-            return Effect.void;
-          case "browser.respond":
-            if (ws.data.browserHost)
-              manager.browsers.respond(
-                ws.data.browserHost,
-                command.requestId,
-                command.result,
-                command.error,
-              );
-            return Effect.void;
-          default:
-            return manager.dispatch(command);
-        }
-      });
+              return Effect.void;
+            },
+            "thread.unsubscribe": (command) => {
+              ws.data.threads.delete(command.threadId);
+              return Effect.void;
+            },
+            "thread.loadOlder": (command) => {
+              const older = manager.readOlder(command.threadId, command.before, command.turnLimit);
+              if (older)
+                send(
+                  ws,
+                  ServerFrame.cases["thread.page"].make({ threadId: command.threadId, ...older }),
+                );
+              return Effect.void;
+            },
+            "terminal.open": (command) => {
+              if (ws.data.viewer)
+                manager.terminals.attach(
+                  command.threadId,
+                  command.terminalId,
+                  command.columns,
+                  command.rows,
+                  ws.data.viewer,
+                );
+              return Effect.void;
+            },
+            "terminal.detach": (command) => {
+              if (ws.data.viewer)
+                manager.terminals.detach(command.threadId, command.terminalId, ws.data.viewer);
+              return Effect.void;
+            },
+            "terminal.acknowledge": (command) => {
+              if (ws.data.viewer)
+                manager.terminals.acknowledge(
+                  command.threadId,
+                  command.terminalId,
+                  ws.data.viewer,
+                  command.characters,
+                );
+              return Effect.void;
+            },
+            "browser.host": () => {
+              if (!ws.data.browserHost) {
+                ws.data.browserHost = {
+                  send: (frame) => send(ws, frame),
+                  shows: (threadId) => ws.data.threads.has(threadId),
+                };
+                manager.browsers.attach(ws.data.browserHost);
+              }
+              return Effect.void;
+            },
+            "browser.respond": (command) => {
+              if (ws.data.browserHost)
+                manager.browsers.respond(
+                  ws.data.browserHost,
+                  command.requestId,
+                  command.result,
+                  command.error,
+                );
+              return Effect.void;
+            },
+          },
+          (command) => manager.dispatch(command),
+        ),
+      );
 
     const server = yield* Effect.acquireRelease(
       Effect.sync(() =>
@@ -184,7 +208,7 @@ export const serve = (port: number) =>
             },
             message(ws, raw) {
               Effect.runFork(
-                decodeCommand(typeof raw === "string" ? raw : raw.toString()).pipe(
+                decodeCommand(raw.toString()).pipe(
                   Effect.flatMap((command) => handle(ws, command)),
                   Effect.catch((error) => Effect.logWarning("command failed", error)),
                 ),

@@ -8,19 +8,21 @@ import {
   type Settings,
   type ApprovalDecision,
   type Attachment,
-  type ClientCommand,
+  ClientCommand,
   type GitAction,
   type PageInfo,
   type RepoStatus,
-  type RuntimeEvent,
+  RuntimeEvent,
   type SearchHit,
-  type ServerFrame,
+  ServerFrame,
   type SlashCommand,
   type StoredEvent,
   type ThreadInfo,
   type TurnOptions,
   isTranscriptEvent,
 } from "@apcode/contracts";
+import * as Match from "effect/Match";
+import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
 import { performBrowserAction } from "./browser.ts";
 import { loadShell, loadTranscript, removeTranscript, saveShell, saveTranscript } from "./cache.ts";
@@ -145,11 +147,12 @@ export interface BranchList {
  * What you last saw of a thread: its `updatedAt` then (`rev`) and when (`at`).
  * `manual` is a Settle/Unsettle from the menu, which skips the settle delay.
  */
-export interface SeenMark {
-  readonly rev: number;
-  readonly at: number;
-  readonly manual?: boolean;
-}
+export const SeenMark = Schema.Struct({
+  rev: Schema.Number,
+  at: Schema.Number,
+  manual: Schema.optionalKey(Schema.Boolean),
+});
+export type SeenMark = typeof SeenMark.Type;
 
 const SEEN_KEY = "apcode.seen";
 const hasSeenKey = () => {
@@ -166,10 +169,9 @@ const writeSeen = (seen: Record<string, SeenMark>) => {
 };
 const readSeen = (): Record<string, SeenMark> => {
   try {
-    const raw = JSON.parse(localStorage.getItem(SEEN_KEY) ?? "{}") as Record<
-      string,
-      number | SeenMark
-    >;
+    const raw = Schema.decodeUnknownSync(
+      Schema.fromJsonString(Schema.Record(Schema.String, Schema.Union([Schema.Number, SeenMark]))),
+    )(localStorage.getItem(SEEN_KEY) ?? "{}");
     // Marks used to be the bare `updatedAt`.
     return Object.fromEntries(
       Object.entries(raw).map(([id, mark]) => [
@@ -230,18 +232,19 @@ const reduceItems = (
   items: ReadonlyArray<TranscriptItem>,
   event: RuntimeEvent,
   id: number | null,
-): ReadonlyArray<TranscriptItem> => {
-  switch (event._tag) {
-    case "user.message":
-      return upsert(items, event.messageId, () => ({
+): ReadonlyArray<TranscriptItem> =>
+  Match.value(event).pipe(
+    Match.withReturnType<ReadonlyArray<TranscriptItem>>(),
+    Match.tag("user.message", (message) =>
+      upsert(items, message.messageId, () => ({
         kind: "user",
-        id: event.messageId,
-        text: event.text,
-        attachments: event.attachments ?? [],
-        steer: event.steer === true,
-      }));
-    case "turn.checkpoint": {
-      const { messageId, files, additions, deletions } = event;
+        id: message.messageId,
+        text: message.text,
+        attachments: message.attachments ?? [],
+        steer: message.steer === true,
+      })),
+    ),
+    Match.tag("turn.checkpoint", ({ messageId, files, additions, deletions }) => {
       const item: TranscriptItem = {
         kind: "checkpoint",
         id: `checkpoint:${messageId}`,
@@ -263,61 +266,65 @@ const reduceItems = (
         item,
         ...items.slice(next).filter((i) => i.id !== item.id),
       ];
-    }
-    case "thread.rewound": {
-      const index = items.findIndex((item) => item.id === event.messageId);
+    }),
+    Match.tag("thread.rewound", (rewound) => {
+      const index = items.findIndex((item) => item.id === rewound.messageId);
       return index === -1 ? items : items.slice(0, index);
-    }
-    case "assistant.delta":
-      return upsert(items, event.messageId, (prev) => ({
+    }),
+    Match.tag("assistant.delta", (delta) =>
+      upsert(items, delta.messageId, (prev) => ({
         kind: "assistant",
-        id: event.messageId,
-        text: (prev?.kind === "assistant" ? prev.text : "") + event.delta,
-      }));
-    case "assistant.completed":
-      return upsert(items, event.messageId, () => ({
+        id: delta.messageId,
+        text: (prev?.kind === "assistant" ? prev.text : "") + delta.delta,
+      })),
+    ),
+    Match.tag("assistant.completed", (completed) =>
+      upsert(items, completed.messageId, () => ({
         kind: "assistant",
-        id: event.messageId,
-        text: event.text,
-      }));
-    case "tool.started":
-      return upsert(items, event.toolId, () => ({
+        id: completed.messageId,
+        text: completed.text,
+      })),
+    ),
+    Match.tag("tool.started", (tool) =>
+      upsert(items, tool.toolId, () => ({
         kind: "tool",
-        id: event.toolId,
-        name: event.name,
-        summary: event.summary,
+        id: tool.toolId,
+        name: tool.name,
+        summary: tool.summary,
         output: null,
         isError: false,
-      }));
-    case "tool.completed":
-      return items.map((item) =>
-        item.id === event.toolId && item.kind === "tool"
-          ? { ...item, output: event.output, isError: event.isError }
+      })),
+    ),
+    Match.tag("tool.completed", (tool) =>
+      items.map((item) =>
+        item.id === tool.toolId && item.kind === "tool"
+          ? { ...item, output: tool.output, isError: tool.isError }
           : item,
-      );
-    case "approval.requested":
-      return upsert(items, event.requestId, () => ({
+      ),
+    ),
+    Match.tag("approval.requested", (approval) =>
+      upsert(items, approval.requestId, () => ({
         kind: "approval",
-        id: event.requestId,
-        title: event.title,
-        detail: event.detail,
+        id: approval.requestId,
+        title: approval.title,
+        detail: approval.detail,
         resolved: false,
         decision: null,
-      }));
-    case "approval.resolved":
-      return items.map((item) =>
-        item.id === event.requestId && item.kind === "approval"
+      })),
+    ),
+    Match.tag("approval.resolved", (approval) =>
+      items.map((item) =>
+        item.id === approval.requestId && item.kind === "approval"
           ? { ...item, resolved: true }
           : item,
-      );
-    case "error": {
+      ),
+    ),
+    Match.tag("error", (error) => {
       const key = id === null ? crypto.randomUUID() : `error:${id}`;
-      return upsert(items, key, () => ({ kind: "error", id: key, text: event.message }));
-    }
-    default:
-      return items;
-  }
-};
+      return upsert(items, key, () => ({ kind: "error", id: key, text: error.message }));
+    }),
+    Match.orElse(() => items),
+  );
 
 const foldStored = (
   items: ReadonlyArray<TranscriptItem>,
@@ -336,7 +343,7 @@ const applyStreaming = (
 ) => {
   const texts = new Map<string, string>();
   for (const event of deltas)
-    if (event._tag === "assistant.delta")
+    if (RuntimeEvent.guards["assistant.delta"](event))
       texts.set(event.messageId, (texts.get(event.messageId) ?? "") + event.delta);
   let next = items;
   for (const [messageId, text] of texts)
@@ -345,59 +352,54 @@ const applyStreaming = (
 };
 
 /** Everything but transcripts: the thread list, settings, projects, git state… */
-const reduceShell = (state: State, event: RuntimeEvent): State => {
-  switch (event._tag) {
-    case "settings.updated":
-      return { ...state, settings: event.settings };
-    case "project.added":
+const reduceShell = (state: State, event: RuntimeEvent): State =>
+  Match.value(event).pipe(
+    Match.withReturnType<State>(),
+    Match.tag("settings.updated", ({ settings }) => ({ ...state, settings })),
+    Match.tag("project.added", ({ project }) => ({
+      ...state,
+      projects: [...state.projects.filter((p) => p.id !== project.id), project],
+    })),
+    Match.tag("project.removed", ({ projectId }) => ({
+      ...state,
+      projects: state.projects.filter((p) => p.id !== projectId),
+    })),
+    Match.tag("providers.updated", ({ providers }) => ({ ...state, providers })),
+    Match.tag("git.branches", ({ path, current, branches, error }) => ({
+      ...state,
+      branches: { ...state.branches, [path]: { current, branches, error } },
+    })),
+    Match.tag("git.diff", ({ path, patch, truncated, error }) => ({
+      ...state,
+      diffs: { ...state.diffs, [path]: { patch, truncated, error } },
+    })),
+    Match.tag("thread.commands", ({ threadId, commands }) => ({
+      ...state,
+      commands: { ...state.commands, [threadId]: commands },
+    })),
+    Match.tag("checkpoint.diff", ({ threadId, messageId, patch, truncated, error }) => ({
+      ...state,
+      turnDiffs: { ...state.turnDiffs, [`${threadId}:${messageId}`]: { patch, truncated, error } },
+    })),
+    Match.tag("git.status", ({ path, status, action, error }) => ({
+      ...state,
+      repos: { ...state.repos, [path]: { status, action, error } },
+    })),
+    Match.tag("auth.flow", ({ flow }) => ({
+      ...state,
+      authFlows: { ...state.authFlows, [flow.provider]: flow },
+    })),
+    Match.tag("thread.created", ({ thread, requestId }) => {
+      const mine = requestId !== null && ownRequests.delete(requestId);
       return {
         ...state,
-        projects: [...state.projects.filter((p) => p.id !== event.project.id), event.project],
-      };
-    case "project.removed":
-      return { ...state, projects: state.projects.filter((p) => p.id !== event.projectId) };
-    case "providers.updated":
-      return { ...state, providers: event.providers };
-    case "git.branches": {
-      const { current, branches, error } = event;
-      return {
-        ...state,
-        branches: { ...state.branches, [event.path]: { current, branches, error } },
-      };
-    }
-    case "git.diff": {
-      const { patch, truncated, error } = event;
-      return { ...state, diffs: { ...state.diffs, [event.path]: { patch, truncated, error } } };
-    }
-    case "thread.commands":
-      return { ...state, commands: { ...state.commands, [event.threadId]: event.commands } };
-    case "checkpoint.diff": {
-      const { patch, truncated, error } = event;
-      return {
-        ...state,
-        turnDiffs: {
-          ...state.turnDiffs,
-          [`${event.threadId}:${event.messageId}`]: { patch, truncated, error },
-        },
-      };
-    }
-    case "git.status": {
-      const { status, action, error } = event;
-      return { ...state, repos: { ...state.repos, [event.path]: { status, action, error } } };
-    }
-    case "auth.flow":
-      return { ...state, authFlows: { ...state.authFlows, [event.flow.provider]: event.flow } };
-    case "thread.created": {
-      const mine = event.requestId !== null && ownRequests.delete(event.requestId);
-      return {
-        ...state,
-        createdHere: mine ? { threadId: event.thread.id } : state.createdHere,
-        order: [event.thread.id, ...state.order.filter((id) => id !== event.thread.id)],
-        threads: { ...state.threads, [event.thread.id]: event.thread },
+        createdHere: mine ? { threadId: thread.id } : state.createdHere,
+        order: [thread.id, ...state.order.filter((id) => id !== thread.id)],
+        threads: { ...state.threads, [thread.id]: thread },
         // Brand new: nothing to fetch, it's live from its first event.
         transcripts: {
           ...state.transcripts,
-          [event.thread.id]: {
+          [thread.id]: {
             items: [],
             cursor: 0,
             page: null,
@@ -406,52 +408,57 @@ const reduceShell = (state: State, event: RuntimeEvent): State => {
           },
         },
       };
-    }
-    case "thread.removed": {
-      const { [event.threadId]: _thread, ...threads } = state.threads;
-      const { [event.threadId]: _transcript, ...transcripts } = state.transcripts;
-      const { [event.threadId]: _terminals, ...terminals } = state.terminals;
-      const { [event.threadId]: _activeTerminal, ...activeTerminals } = state.activeTerminals;
-      if (state.dataId) removeTranscript(state.dataId, event.threadId);
+    }),
+    Match.tag("thread.removed", ({ threadId }) => {
+      const { [threadId]: _thread, ...threads } = state.threads;
+      const { [threadId]: _transcript, ...transcripts } = state.transcripts;
+      const { [threadId]: _terminals, ...terminals } = state.terminals;
+      const { [threadId]: _activeTerminal, ...activeTerminals } = state.activeTerminals;
+      if (state.dataId) removeTranscript(state.dataId, threadId);
       return {
         ...state,
-        order: state.order.filter((id) => id !== event.threadId),
+        order: state.order.filter((id) => id !== threadId),
         threads,
         transcripts,
         terminals,
         activeTerminals,
       };
-    }
-    case "terminal.opened": {
-      const terminalIds = state.terminals[event.threadId] ?? [];
-      if (terminalIds.includes(event.terminalId)) return state;
+    }),
+    Match.tag("terminal.opened", ({ threadId, terminalId }) => {
+      const terminalIds = state.terminals[threadId] ?? [];
+      if (terminalIds.includes(terminalId)) return state;
       return {
         ...state,
-        terminals: { ...state.terminals, [event.threadId]: [...terminalIds, event.terminalId] },
+        terminals: { ...state.terminals, [threadId]: [...terminalIds, terminalId] },
       };
-    }
-    case "terminal.closed":
-      return withoutTerminal(state, event.threadId, event.terminalId);
-    case "thread.status":
-    case "thread.model":
-    case "thread.archived":
-    case "thread.meta": {
-      const info = state.threads[event.threadId];
-      if (!info) return state;
-      const next: ThreadInfo =
-        event._tag === "thread.status"
-          ? { ...info, status: event.status }
-          : event._tag === "thread.model"
-            ? { ...info, model: event.model }
-            : event._tag === "thread.archived"
-              ? { ...info, archivedAt: event.archivedAt }
-              : { ...info, title: event.title, updatedAt: event.updatedAt, branch: event.branch };
-      return { ...state, threads: { ...state.threads, [event.threadId]: next } };
-    }
-    default:
-      return state;
-  }
-};
+    }),
+    Match.tag("terminal.closed", ({ threadId, terminalId }) =>
+      withoutTerminal(state, threadId, terminalId),
+    ),
+    Match.tag("thread.status", ({ threadId, status }) =>
+      updateThreadInfo(state, threadId, (info) => ({ ...info, status })),
+    ),
+    Match.tag("thread.model", ({ threadId, model }) =>
+      updateThreadInfo(state, threadId, (info) => ({ ...info, model })),
+    ),
+    Match.tag("thread.archived", ({ threadId, archivedAt }) =>
+      updateThreadInfo(state, threadId, (info) => ({ ...info, archivedAt })),
+    ),
+    Match.tag("thread.meta", ({ threadId, title, updatedAt, branch }) =>
+      updateThreadInfo(state, threadId, (info) => ({ ...info, title, updatedAt, branch })),
+    ),
+    Match.orElse(() => state),
+  );
+
+function updateThreadInfo(
+  state: State,
+  threadId: string,
+  update: (info: ThreadInfo) => ThreadInfo,
+): State {
+  const info = state.threads[threadId];
+  if (!info) return state;
+  return { ...state, threads: { ...state.threads, [threadId]: update(info) } };
+}
 
 const setTranscript = (state: State, threadId: string, transcript: Transcript): State => ({
   ...state,
@@ -574,12 +581,9 @@ const subscribe = (threadId: string) => {
   }
   const after = transcript && transcript.items.length > 0 ? transcript.cursor : null;
   socket!.send(
-    JSON.stringify({
-      _tag: "thread.subscribe",
-      threadId,
-      after,
-      turnLimit: TURN_LIMIT,
-    } satisfies ClientCommand),
+    JSON.stringify(
+      ClientCommand.cases["thread.subscribe"].make({ threadId, after, turnLimit: TURN_LIMIT }),
+    ),
   );
 };
 
@@ -637,32 +641,31 @@ const onShell = (frame: Extract<ServerFrame, { _tag: "shell" }>) => {
   for (const screen of screens.values()) openScreen(screen);
 };
 
-const onFrame = (frame: ServerFrame) => {
-  switch (frame._tag) {
-    case "shell":
-      return onShell(frame);
-    case "thread.snapshot": {
-      const items = applyStreaming(foldStored([], frame.events, 0), frame.streaming);
-      return setState(
-        setTranscript(state, frame.threadId, {
+const onFrame = (frame: ServerFrame) =>
+  ServerFrame.match(frame, {
+    shell: onShell,
+    "thread.snapshot": (snapshot) => {
+      const items = applyStreaming(foldStored([], snapshot.events, 0), snapshot.streaming);
+      setState(
+        setTranscript(state, snapshot.threadId, {
           items,
-          cursor: frame.cursor,
-          page: frame.page,
+          cursor: snapshot.cursor,
+          page: snapshot.page,
           status: "live",
           loadingOlder: false,
         }),
       );
-    }
-    case "thread.replay": {
-      const prev = state.transcripts[frame.threadId];
+    },
+    "thread.replay": (replay) => {
+      const prev = state.transcripts[replay.threadId];
       const base = prev?.items ?? [];
       const items = applyStreaming(
-        foldStored(base, frame.events, prev?.cursor ?? 0),
-        frame.streaming,
+        foldStored(base, replay.events, prev?.cursor ?? 0),
+        replay.streaming,
       );
-      const cursor = Math.max(prev?.cursor ?? 0, frame.cursor);
-      return setState(
-        setTranscript(state, frame.threadId, {
+      const cursor = Math.max(prev?.cursor ?? 0, replay.cursor);
+      setState(
+        setTranscript(state, replay.threadId, {
           items,
           cursor,
           page: prev?.page ?? null,
@@ -670,77 +673,71 @@ const onFrame = (frame: ServerFrame) => {
           loadingOlder: false,
         }),
       );
-    }
-    case "thread.page": {
-      const prev = state.transcripts[frame.threadId];
+    },
+    "thread.page": (page) => {
+      const prev = state.transcripts[page.threadId];
       if (!prev) return;
       const known = new Set(prev.items.map((item) => item.id));
-      const older = foldStored([], frame.events, 0).filter((item) => !known.has(item.id));
-      return setState(
-        setTranscript(state, frame.threadId, {
+      const older = foldStored([], page.events, 0).filter((item) => !known.has(item.id));
+      setState(
+        setTranscript(state, page.threadId, {
           ...prev,
           items: [...older, ...prev.items],
-          page: frame.page,
+          page: page.page,
           loadingOlder: false,
         }),
       );
-    }
-    case "search.results":
-      searches.get(frame.requestId)?.(frame.hits);
-      searches.delete(frame.requestId);
-      return;
-    case "terminal.snapshot":
-      return screens.get(screenKey(frame.threadId, frame.terminalId))?.reset(frame.data);
-    case "terminal.output":
-      return screens.get(screenKey(frame.threadId, frame.terminalId))?.write(frame.data);
-    case "terminal.error":
-      return screens.get(screenKey(frame.threadId, frame.terminalId))?.fail(frame.message);
-    case "browser.request":
-      performBrowserAction(frame.threadId, frame.action).then(
+    },
+    "search.results": ({ requestId, hits }) => {
+      searches.get(requestId)?.(hits);
+      searches.delete(requestId);
+    },
+    "terminal.snapshot": ({ threadId, terminalId, data }) =>
+      screens.get(screenKey(threadId, terminalId))?.reset(data),
+    "terminal.output": ({ threadId, terminalId, data }) =>
+      screens.get(screenKey(threadId, terminalId))?.write(data),
+    "terminal.error": ({ threadId, terminalId, message }) =>
+      screens.get(screenKey(threadId, terminalId))?.fail(message),
+    "browser.request": ({ threadId, requestId, action }) =>
+      void performBrowserAction(threadId, action).then(
         (result) =>
-          send({ _tag: "browser.respond", requestId: frame.requestId, result, error: null }),
-        (error: unknown) =>
-          send({
-            _tag: "browser.respond",
-            requestId: frame.requestId,
-            result: null,
-            error: error instanceof Error ? error.message : String(error),
-          }),
-      );
-      return;
-    case "event": {
-      const { event, id } = frame;
-      if (!isTranscriptEvent(event)) {
-        // The guard's false branch over-narrows: thread events that aren't transcript ones land here too.
-        const shellEvent = event as RuntimeEvent;
-        const before =
-          shellEvent._tag === "thread.status"
-            ? state.threads[shellEvent.threadId]?.status
-            : undefined;
-        setState(reduceShell(state, shellEvent));
-        // The turn ended: the next held message goes out.
-        if (
-          shellEvent._tag === "thread.status" &&
-          shellEvent.status === "idle" &&
-          before !== "idle"
-        )
-          sendNextFollowUp(shellEvent.threadId);
-        return;
-      }
+          send(ClientCommand.cases["browser.respond"].make({ requestId, result, error: null })),
+        (error) =>
+          send(
+            ClientCommand.cases["browser.respond"].make({
+              requestId,
+              result: null,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          ),
+      ),
+    event: ({ event, id }) => {
+      if (!isTranscriptEvent(event)) return applyShellEvent(event);
       const transcript = state.transcripts[event.threadId];
       // Not following this thread, or already have it (a replay can overlap live events).
       if (!transcript || (id !== null && id <= transcript.cursor)) return;
       const items = reduceItems(transcript.items, event, id);
-      return setState(
+      setState(
         setTranscript(state, event.threadId, {
           ...transcript,
           items,
           cursor: id ?? transcript.cursor,
         }),
       );
-    }
-  }
-};
+    },
+  });
+
+function applyShellEvent(event: RuntimeEvent) {
+  const before = state;
+  setState(reduceShell(state, event));
+  // The turn ended: the next held message goes out.
+  if (
+    RuntimeEvent.guards["thread.status"](event) &&
+    event.status === "idle" &&
+    before.threads[event.threadId]?.status !== "idle"
+  )
+    sendNextFollowUp(event.threadId);
+}
 
 /**
  * The daemon's per-launch secret, from the desktop shell. Null in dev, where the daemon
@@ -763,10 +760,11 @@ const connect = async () => {
   );
   socket = ws;
   ws.onopen = () => {
-    if (window.desktop) ws.send(JSON.stringify({ _tag: "browser.host" } satisfies ClientCommand));
+    if (window.desktop) ws.send(JSON.stringify(ClientCommand.cases["browser.host"].make({})));
     for (const command of queued.splice(0)) ws.send(JSON.stringify(command));
   };
-  ws.onmessage = (message) => onFrame(JSON.parse(message.data as string) as ServerFrame);
+  ws.onmessage = (message) =>
+    onFrame(Schema.decodeUnknownSync(Schema.fromJsonString(ServerFrame))(message.data));
   ws.onclose = () => {
     // Keep everything on screen; transcripts fall back to cached until the next connect catches them up.
     const transcripts = Object.fromEntries(
@@ -801,7 +799,7 @@ const closeThread = (threadId: string) => {
   wanted.delete(threadId);
   // The transcript stays in memory; reopening replays only what it missed.
   if (socketOpen())
-    socket!.send(JSON.stringify({ _tag: "thread.unsubscribe", threadId } satisfies ClientCommand));
+    socket!.send(JSON.stringify(ClientCommand.cases["thread.unsubscribe"].make({ threadId })));
 };
 
 /** A thread's transcript, followed live while the calling component is mounted. */
@@ -819,12 +817,13 @@ export const loadOlder = (threadId: string) => {
   if (!transcript?.page?.hasMore || transcript.loadingOlder || !socketOpen()) return;
   setState(setTranscript(state, threadId, { ...transcript, loadingOlder: true }));
   socket!.send(
-    JSON.stringify({
-      _tag: "thread.loadOlder",
-      threadId,
-      before: transcript.page.before,
-      turnLimit: TURN_LIMIT,
-    } satisfies ClientCommand),
+    JSON.stringify(
+      ClientCommand.cases["thread.loadOlder"].make({
+        threadId,
+        before: transcript.page.before,
+        turnLimit: TURN_LIMIT,
+      }),
+    ),
   );
 };
 
@@ -839,7 +838,7 @@ export const send = (command: ClientCommand) => {
 /** Applies settings locally right away (theme etc. shouldn't wait on the daemon), then persists them. */
 export const updateSettings = (settings: Settings) => {
   setState({ ...state, settings });
-  send({ _tag: "settings.update", settings });
+  send(ClientCommand.cases["settings.update"].make({ settings }));
 };
 
 /**
@@ -858,7 +857,7 @@ export const createThread = (input: {
   const { open = true, ...command } = input;
   const requestId = crypto.randomUUID();
   if (open) ownRequests.add(requestId);
-  send({ _tag: "thread.create", requestId, ...command });
+  send(ClientCommand.cases["thread.create"].make({ requestId, ...command }));
 };
 
 // --- follow-ups ----------------------------------------------------------------
@@ -882,7 +881,13 @@ export const sendFollowUpNow = (threadId: string, id: string) => {
     threadId,
     (state.followUps[threadId] ?? []).filter((f) => f.id !== id),
   );
-  send({ _tag: "thread.send", threadId, text: followUp.text, options: followUp.options });
+  send(
+    ClientCommand.cases["thread.send"].make({
+      threadId,
+      text: followUp.text,
+      options: followUp.options,
+    }),
+  );
 };
 
 /** Takes held messages back out of the queue (all of them without `id`), for the composer. */
@@ -897,7 +902,9 @@ const sendNextFollowUp = (threadId: string) => {
   const [next, ...rest] = state.followUps[threadId] ?? [];
   if (!next) return;
   setFollowUps(threadId, rest);
-  send({ _tag: "thread.send", threadId, text: next.text, options: next.options });
+  send(
+    ClientCommand.cases["thread.send"].make({ threadId, text: next.text, options: next.options }),
+  );
 };
 
 // --- search --------------------------------------------------------------------
@@ -910,7 +917,7 @@ export const searchMessages = (query: string) =>
     if (!socketOpen()) return resolve([]);
     const requestId = crypto.randomUUID();
     searches.set(requestId, resolve);
-    send({ _tag: "search", query, requestId });
+    send(ClientCommand.cases.search.make({ query, requestId }));
     // An answer that never comes (the connection dropped) shouldn't hold a caller forever.
     setTimeout(() => {
       if (searches.delete(requestId)) resolve([]);
@@ -935,12 +942,13 @@ function screenKey(threadId: string, terminalId: string) {
 }
 
 function openScreen(screen: TerminalScreen) {
-  sendIfConnected({
-    _tag: "terminal.open",
-    threadId: screen.threadId,
-    terminalId: screen.terminalId,
-    ...screen.size(),
-  });
+  sendIfConnected(
+    ClientCommand.cases["terminal.open"].make({
+      threadId: screen.threadId,
+      terminalId: screen.terminalId,
+      ...screen.size(),
+    }),
+  );
 }
 
 export function sendIfConnected(command: ClientCommand) {
@@ -954,11 +962,12 @@ export function attachTerminal(screen: TerminalScreen) {
   return () => {
     if (screens.get(key) !== screen) return;
     screens.delete(key);
-    sendIfConnected({
-      _tag: "terminal.detach",
-      threadId: screen.threadId,
-      terminalId: screen.terminalId,
-    });
+    sendIfConnected(
+      ClientCommand.cases["terminal.detach"].make({
+        threadId: screen.threadId,
+        terminalId: screen.terminalId,
+      }),
+    );
   };
 }
 
@@ -989,7 +998,7 @@ export function showTerminal(threadId: string, terminalId: string) {
 }
 
 export function closeTerminal(threadId: string, terminalId: string) {
-  send({ _tag: "terminal.close", threadId, terminalId });
+  send(ClientCommand.cases["terminal.close"].make({ threadId, terminalId }));
   setState(withoutTerminal(state, threadId, terminalId));
 }
 
@@ -1052,7 +1061,7 @@ export const respondApproval = (
     );
     setState(setTranscript(state, threadId, { ...transcript, items }));
   }
-  send({ _tag: "approval.respond", threadId, requestId, decision });
+  send(ClientCommand.cases["approval.respond"].make({ threadId, requestId, decision }));
 };
 
 export const useStore = <A>(select: (state: State) => A): A =>

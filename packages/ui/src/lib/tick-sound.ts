@@ -14,12 +14,15 @@ const MODES = [
 
 type AudioContextCtor = typeof AudioContext;
 
+declare global {
+  interface Window {
+    webkitAudioContext?: AudioContextCtor;
+  }
+}
+
 function getAudioContextCtor(): AudioContextCtor | undefined {
   if (typeof window === "undefined") return undefined;
-  return (
-    window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: AudioContextCtor }).webkitAudioContext
-  );
+  return window.AudioContext ?? window.webkitAudioContext;
 }
 
 // One shared context/buffer/gain for the whole page, ref-counted across every

@@ -100,7 +100,7 @@ export function BottomSheet({
     };
   }, [open, onOpenChange]);
 
-  const onDragEnd = (_: unknown, info: PanInfo) => {
+  const onDragEnd = (_event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     const velocity = info.velocity.y;
     const offset = info.offset.y;
 

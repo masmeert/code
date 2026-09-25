@@ -20,6 +20,7 @@ export const recommendedBadge = () =>
 export const encodeChoice = (provider: ProviderKind, model: string) => `${provider}:${model}`;
 export const decodeChoice = (value: string) => {
   const index = value.indexOf(":");
+  // SAFETY: every choice is built by encodeChoice, and provider kinds hold no ":".
   return { provider: value.slice(0, index) as ProviderKind, model: value.slice(index + 1) };
 };
 

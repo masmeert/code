@@ -2,9 +2,10 @@
  * Writes a commit message for the working tree with a one-shot model call, for
  * commits made without one. Runs on the harness the user picked in settings.
  */
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import type { ProviderKind } from "@apcode/contracts";
-import { connectCodex } from "./providers/codexRpc.ts";
+import * as Schema from "effect/Schema";
+import { CodexNotification, connectCodex, ThreadResponse } from "./providers/codexRpc.ts";
 import { resolveExecutable } from "./providers/resolveExecutable.ts";
 
 /** Enough of the patch to describe it; the model doesn't need every line of a big change. */
@@ -33,20 +34,18 @@ const clean = (text: string) =>
     .trim();
 
 const withClaude = async (cwd: string, model: string | undefined, prompt: string) => {
-  const q = query({
-    prompt,
-    options: {
-      cwd,
-      ...(model ? { model } : {}),
-      // Thinking is most of the wait on a message this short.
-      thinking: { type: "disabled" },
-      maxTurns: 1,
-      tools: [],
-      settingSources: [],
-      persistSession: false,
-      pathToClaudeCodeExecutable: resolveExecutable("claude", "APCODE_CLAUDE_PATH"),
-    },
-  });
+  const options: Options = {
+    cwd,
+    // Thinking is most of the wait on a message this short.
+    thinking: { type: "disabled" },
+    maxTurns: 1,
+    tools: [],
+    settingSources: [],
+    persistSession: false,
+    pathToClaudeCodeExecutable: resolveExecutable("claude", "APCODE_CLAUDE_PATH"),
+  };
+  if (model) options.model = model;
+  const q = query({ prompt, options });
   try {
     for await (const msg of q) {
       if (msg.type !== "result") continue;
@@ -65,30 +64,46 @@ const withCodex = async (cwd: string, model: string | undefined, prompt: string)
   const done = new Promise<string>((resolve, reject) => ((finish = resolve), (abort = reject)));
   let text = "";
   const rpc = await connectCodex(cwd, {
-    onNotification: (method, params) => {
-      if (method === "item/completed" && params.item?.type === "agentMessage")
-        text = params.item.text;
-      else if (method === "turn/completed")
-        params.turn?.status === "failed"
-          ? abort(new Error(params.turn.error?.message ?? "Codex turn failed"))
-          : finish(text);
-      else if (method === "error" && !params.willRetry)
-        abort(new Error(params.error?.message ?? "Codex error"));
-    },
+    onNotification: (notification) =>
+      CodexNotification.matchOrElse(
+        notification,
+        {
+          "item/completed": ({ params }) => {
+            if (params.item.type === "agentMessage") text = params.item.text;
+          },
+          "turn/completed": ({ params }) => {
+            if (params.turn.status === "failed")
+              abort(new Error(params.turn.error?.message ?? "Codex turn failed"));
+            else finish(text);
+          },
+          error: ({ params }) => {
+            if (!params.willRetry) abort(new Error(params.error.message));
+          },
+        },
+        () => {},
+      ),
     onExit: (code, stderr) => abort(new Error(`codex exited (${code}): ${stderr}`)),
   });
   try {
-    const started = await rpc.request("thread/start", {
-      cwd,
-      ...(model ? { model } : {}),
-      config: { model_reasoning_effort: "low" },
-      approvalPolicy: "never",
-      sandbox: "read-only",
-    });
-    await rpc.request("turn/start", {
-      threadId: started.thread.id,
-      input: [{ type: "text", text: prompt, text_elements: [] }],
-    });
+    const started = await rpc.request(
+      "thread/start",
+      {
+        cwd,
+        model: model || null,
+        config: { model_reasoning_effort: "low" },
+        approvalPolicy: "never",
+        sandbox: "read-only",
+      },
+      ThreadResponse,
+    );
+    await rpc.request(
+      "turn/start",
+      {
+        threadId: started.thread.id,
+        input: [{ type: "text", text: prompt, text_elements: [] }],
+      },
+      Schema.Unknown,
+    );
     return await done;
   } finally {
     rpc.close();

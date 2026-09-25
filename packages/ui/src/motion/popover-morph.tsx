@@ -166,17 +166,15 @@ function mergeRefs<T>(...refs: Array<Ref<T> | undefined>) {
 /** Wraps a single element, toggling the popover on click. */
 export function MorphPopoverTrigger({ children }: MorphPopoverTriggerProps) {
   const ctx = useMorphContext("MorphPopoverTrigger");
-  if (!isValidElement(children)) return children;
+  if (!isValidElement<React.HTMLProps<HTMLElement>>(children)) return children;
 
-  const child = children as ReactElement<Record<string, unknown>>;
-  const childOnClick = child.props.onClick as ((e: unknown) => void) | undefined;
-  const childRef = (child.props as { ref?: Ref<HTMLElement> }).ref;
+  const childProps = children.props;
 
-  return cloneElement(child, {
+  return cloneElement(children, {
     id: ctx.triggerId,
-    ref: mergeRefs(childRef, ctx.registerTrigger),
-    onClick: (e: unknown) => {
-      childOnClick?.(e);
+    ref: mergeRefs(childProps.ref, ctx.registerTrigger),
+    onClick: (event: React.MouseEvent<HTMLElement>) => {
+      childProps.onClick?.(event);
       ctx.toggle();
     },
     "aria-haspopup": "dialog",
@@ -250,7 +248,8 @@ export function MorphPopoverContent({
       [width, layout.content.width],
       [height, layout.content.height],
     ] as const)
-      animate ? value.set(target) : value.jump(target);
+      if (animate) value.set(target);
+      else value.jump(target);
   }, [layout, ctx.open, reduce, width, height]);
 
   // Anchor the edges nearest the trigger (right for "end", bottom for "top"),

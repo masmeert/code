@@ -118,19 +118,19 @@ export function useSlider({
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
       if (disabled) return;
-      const map: Record<string, number> = {
-        ArrowRight: current + stride,
-        ArrowUp: current + stride,
-        ArrowLeft: current - stride,
-        ArrowDown: current - stride,
-        PageUp: current + stride * 10,
-        PageDown: current - stride * 10,
-        Home: lo,
-        End: hi,
-      };
-      if (event.key in map) {
+      const target = new Map([
+        ["ArrowRight", current + stride],
+        ["ArrowUp", current + stride],
+        ["ArrowLeft", current - stride],
+        ["ArrowDown", current - stride],
+        ["PageUp", current + stride * 10],
+        ["PageDown", current - stride * 10],
+        ["Home", lo],
+        ["End", hi],
+      ]).get(event.key);
+      if (target !== undefined) {
         event.preventDefault();
-        commit(map[event.key]);
+        commit(target);
       }
     },
     [disabled, current, stride, lo, hi, commit],

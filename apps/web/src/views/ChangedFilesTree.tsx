@@ -11,17 +11,6 @@ const STATUS: Record<FileDiffMetadata["type"], GitStatus> = {
   deleted: "deleted",
 };
 
-/** Match the app's palette; the tree follows `color-scheme` for everything left unset. */
-const TREE_STYLE = {
-  height: "100%",
-  // Opaque on purpose: the middle-truncation "…" masks clipped text with this color.
-  "--trees-bg-override": "var(--background)",
-  "--trees-fg-override": "var(--foreground)",
-  "--trees-fg-muted-override": "var(--muted-foreground)",
-  "--trees-border-color-override": "var(--border)",
-  "--trees-selected-bg-override": "var(--muted)",
-} as React.CSSProperties;
-
 /**
  * The files in the current diff, as a tree with git status.
  * Selecting a file reports it so the diff view can scroll there.
@@ -68,5 +57,12 @@ export const ChangedFilesTree = ({
     model.setGitStatus(status);
   }, [model, prepared, status]);
 
-  return <FileTree model={model} style={TREE_STYLE} />;
+  // Match the app's palette; the tree follows `color-scheme` for everything left unset. The
+  // background is opaque on purpose: the middle-truncation "…" masks clipped text with it.
+  return (
+    <FileTree
+      model={model}
+      className="h-full [--trees-bg-override:var(--background)] [--trees-border-color-override:var(--border)] [--trees-fg-muted-override:var(--muted-foreground)] [--trees-fg-override:var(--foreground)] [--trees-selected-bg-override:var(--muted)]"
+    />
+  );
 };

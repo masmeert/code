@@ -83,7 +83,7 @@ export function clampRange(
   end: string,
   options: TimeOption[],
   changed: "start" | "end" = "start",
-): { start: string; end: string } {
+) {
   const slots = options.map((o) => toMinutes(o.value));
   if (slots.length === 0) return { start, end };
 

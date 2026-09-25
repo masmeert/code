@@ -1,4 +1,5 @@
 import {
+  isTranscriptEvent,
   RuntimeEvent,
   type PageInfo,
   type ProviderKind,
@@ -10,6 +11,7 @@ import { Database } from "bun:sqlite";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -20,20 +22,12 @@ export interface StoredThread {
   readonly resumeToken: string | null;
 }
 
-/** Events worth replaying after a restart. Deltas are folded into `assistant.completed`; status is live-only. */
-export const isPersisted = (event: RuntimeEvent) =>
-  event._tag !== "assistant.delta" &&
-  event._tag !== "thread.status" &&
-  event._tag !== "thread.model" &&
-  event._tag !== "thread.meta" &&
-  event._tag !== "thread.archived" &&
-  event._tag !== "thread.removed" &&
-  event._tag !== "thread.commands" &&
-  event._tag !== "checkpoint.diff" &&
-  event._tag !== "terminal.opened" &&
-  event._tag !== "terminal.closed" &&
-  "threadId" in event &&
-  event.threadId !== null;
+/** Events worth replaying after a restart: the transcript, with deltas folded into `assistant.completed`. */
+export function isPersisted(
+  event: RuntimeEvent,
+): event is Extract<RuntimeEvent, { threadId: string }> {
+  return isTranscriptEvent(event) && !RuntimeEvent.guards["assistant.delta"](event);
+}
 
 export class ThreadStore extends Context.Service<
   ThreadStore,
@@ -136,7 +130,12 @@ const make = Effect.acquireRelease(
         for (const row of untagged)
           setKind.run({
             seq: row.seq,
-            kind: (JSON.parse(row.json) as { _tag?: string })._tag ?? "",
+            kind:
+              Option.getOrUndefined(
+                Schema.decodeUnknownOption(
+                  Schema.fromJsonString(Schema.Struct({ _tag: Schema.optional(Schema.String) })),
+                )(row.json),
+              )?._tag ?? "",
           });
       })();
     }
@@ -213,10 +212,12 @@ const make = Effect.acquireRelease(
       .query<{ value: string }, []>("SELECT value FROM meta WHERE key = 'data_id'")
       .get()!.value;
     const toStored = (rows: ReadonlyArray<{ seq: number; json: string }>): Array<StoredEvent> =>
-      rows.flatMap((row) => {
-        const decoded = decodeEvent(row.json);
-        return decoded._tag === "Some" ? [{ id: row.seq, event: decoded.value }] : [];
-      });
+      rows.flatMap((row) =>
+        Option.match(decodeEvent(row.json), {
+          onNone: () => [],
+          onSome: (event) => [{ id: row.seq, event }],
+        }),
+      );
     const selectAfter = db.prepare<
       { seq: number; json: string },
       { threadId: string; after: number }
@@ -295,7 +296,12 @@ const make = Effect.acquireRelease(
       unresolvedApprovals: () => {
         const pending = new Map<string, string>();
         for (const row of selectApprovals.all()) {
-          const { requestId } = JSON.parse(row.json) as { requestId: string };
+          const requestId = Option.getOrUndefined(
+            Schema.decodeUnknownOption(
+              Schema.fromJsonString(Schema.Struct({ requestId: Schema.String })),
+            )(row.json),
+          )?.requestId;
+          if (requestId === undefined) continue;
           if (row.kind === "approval.requested") pending.set(requestId, row.thread_id);
           else pending.delete(requestId);
         }
@@ -303,7 +309,14 @@ const make = Effect.acquireRelease(
       },
       firstUserMessage: (threadId) => {
         const row = selectFirstUser.get({ threadId });
-        return row ? (JSON.parse(row.json) as { text: string }).text : null;
+        if (!row) return null;
+        return (
+          Option.getOrUndefined(
+            Schema.decodeUnknownOption(
+              Schema.fromJsonString(Schema.Struct({ text: Schema.String })),
+            )(row.json),
+          )?.text ?? null
+        );
       },
       cursor: (threadId) => selectCursor.get({ threadId })?.seq ?? 0,
       measureAfter: (threadId, after) => {
@@ -349,15 +362,15 @@ const make = Effect.acquireRelease(
           appendEvent.run({ threadId, kind: event._tag, json: JSON.stringify(event) })
             .lastInsertRowid,
         );
-        if ((event._tag === "user.message" || event._tag === "assistant.completed") && event.text) {
-          const sender = event._tag === "user.message" ? "user" : "assistant";
+        if (RuntimeEvent.isAnyOf(["user.message", "assistant.completed"])(event) && event.text) {
+          const sender = RuntimeEvent.guards["user.message"](event) ? "user" : "assistant";
           indexMessage.run({ text: event.text, threadId, messageId: event.messageId, sender, seq });
         }
         return seq;
       },
       findUserMessage: (threadId, messageId) => {
         const messages = toStored(selectUserMessages.all({ threadId })).flatMap(({ id, event }) =>
-          event._tag === "user.message" ? [{ seq: id, event }] : [],
+          RuntimeEvent.guards["user.message"](event) ? [{ seq: id, event }] : [],
         );
         const index = messages.findIndex((m) => m.event.messageId === messageId);
         if (index === -1) return null;

@@ -1,7 +1,14 @@
 import { PromptInput, PromptSelect, PromptSlider } from "@apcode/ui/agents/prompt-input";
 import { ProjectBadge } from "@/components/project-badge";
 import { cn } from "@apcode/ui/lib/utils";
-import type { PermissionLevel, ProviderKind, TurnOptions } from "@apcode/contracts";
+import {
+  ClientCommand,
+  Effort,
+  PermissionLevel,
+  type ProviderKind,
+  type TurnOptions,
+} from "@apcode/contracts";
+import * as Schema from "effect/Schema";
 import {
   Archive,
   FilePen,
@@ -37,17 +44,15 @@ const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {
   "full-access": LockOpen,
 };
 
-const PERMISSION_OPTIONS = (Object.keys(PERMISSION_LABEL) as Array<PermissionLevel>).map(
-  (level) => {
-    const Icon = PERMISSION_ICON[level];
-    return {
-      value: level,
-      label: PERMISSION_LABEL[level],
-      description: PERMISSION_DESCRIPTION[level],
-      icon: <Icon />,
-    };
-  },
-);
+const PERMISSION_OPTIONS = PermissionLevel.literals.map((level) => {
+  const Icon = PERMISSION_ICON[level];
+  return {
+    value: level,
+    label: PERMISSION_LABEL[level],
+    description: PERMISSION_DESCRIPTION[level],
+    icon: <Icon />,
+  };
+});
 
 export interface ComposerProps {
   /** Whose draft, and effort/permission picks, these are: a thread id, or "draft:new". */
@@ -132,16 +137,17 @@ export const Composer = (props: ComposerProps) => {
             name: "compact",
             description: "Summarize the conversation so far to free up context",
             hint: "",
-            run: () => threadId && send({ _tag: "thread.compact", threadId }),
+            run: () => threadId && send(ClientCommand.cases["thread.compact"].make({ threadId })),
           },
           ...(commands ?? [])
             .filter((c) => c.name !== "compact")
             .map((c) => ({ name: c.name, description: c.description, hint: c.argumentHint })),
         ].filter((item) => item.name.toLowerCase().startsWith(slashQuery));
   const slashOpen = slashItems.length > 0;
+  const slashTyped = slashQuery !== null;
   useEffect(() => {
-    if (slashQuery !== null && threadId) send({ _tag: "thread.listCommands", threadId });
-  }, [slashQuery !== null, threadId]);
+    if (slashTyped && threadId) send(ClientCommand.cases["thread.listCommands"].make({ threadId }));
+  }, [slashTyped, threadId]);
   useEffect(() => setSlashIndex(0), [slashQuery]);
 
   const pickSlash = (item: SlashItem) => {
@@ -237,10 +243,8 @@ export const Composer = (props: ComposerProps) => {
               options={effortOptions}
               value={prefs.effort ?? fallbackEffort}
               onChange={(value) =>
-                setPrefs({
-                  effort:
-                    value === fallbackEffort ? null : (value as NonNullable<typeof prefs.effort>),
-                })
+                Schema.is(Effort)(value) &&
+                setPrefs({ effort: value === fallbackEffort ? null : value })
               }
               placeholder="Default effort"
               disabled={props.disabled}
@@ -251,7 +255,9 @@ export const Composer = (props: ComposerProps) => {
               title="Permissions"
               options={PERMISSION_OPTIONS}
               value={prefs.permission}
-              onChange={(value) => setPrefs({ permission: value as PermissionLevel })}
+              onChange={(value) =>
+                Schema.is(PermissionLevel)(value) && setPrefs({ permission: value })
+              }
               disabled={props.disabled}
               shortcut={KEYBINDINGS["picker.permission"]}
               showOptionIcon
@@ -392,7 +398,7 @@ const WorkspaceSelect = ({
     title="Workspace"
     options={WORKSPACE_OPTIONS}
     value={value}
-    onChange={(next) => onChange(next as "local" | "worktree")}
+    onChange={(next) => onChange(next === "worktree" ? "worktree" : "local")}
     shortcut={KEYBINDINGS["picker.workspace"]}
     showOptionIcon
     width="w-72"
@@ -452,7 +458,7 @@ const ProjectSelect = ({
 /** Current branch of the project folder; picking another checks it out. */
 const BranchPicker = ({ cwd, disabled }: { cwd: string; disabled: boolean }) => {
   const list = useStore((s) => s.branches[cwd]);
-  useEffect(() => send({ _tag: "git.listBranches", path: cwd }), [cwd]);
+  useEffect(() => send(ClientCommand.cases["git.listBranches"].make({ path: cwd })), [cwd]);
 
   if (!list) return null;
   if (!list.current && !list.branches.length)
@@ -462,7 +468,9 @@ const BranchPicker = ({ cwd, disabled }: { cwd: string; disabled: boolean }) => 
       title="Switch branch"
       icon={<GitBranch />}
       searchPlaceholder="Find or create a branch…"
-      onCreate={(branch) => send({ _tag: "git.createBranch", path: cwd, branch })}
+      onCreate={(branch) =>
+        send(ClientCommand.cases["git.createBranch"].make({ path: cwd, branch }))
+      }
       createLabel={(branch) => (
         <>
           Create <span className="font-mono">{branch}</span>
@@ -472,9 +480,12 @@ const BranchPicker = ({ cwd, disabled }: { cwd: string; disabled: boolean }) => 
       value={list.current ?? undefined}
       placeholder="Detached"
       onChange={(branch) =>
-        branch !== list.current && send({ _tag: "git.checkout", path: cwd, branch })
+        branch !== list.current &&
+        send(ClientCommand.cases["git.checkout"].make({ path: cwd, branch }))
       }
-      onOpenChange={(open) => open && send({ _tag: "git.listBranches", path: cwd })}
+      onOpenChange={(open) =>
+        open && send(ClientCommand.cases["git.listBranches"].make({ path: cwd }))
+      }
       disabled={disabled}
       shortcut={KEYBINDINGS["picker.branch"]}
       note={

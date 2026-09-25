@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { stat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import { makeJsonFile } from "./jsonFile.ts";
+import { openJsonFile } from "./jsonFile.ts";
 
 export class ProjectNotFound extends Schema.TaggedError<ProjectNotFound>()("ProjectNotFound", {
   message: Schema.String,
@@ -25,7 +25,7 @@ export class ProjectsStore extends Context.Service<
 >()("apcode/ProjectsStore") {}
 
 const make = Effect.gen(function* () {
-  const file = yield* makeJsonFile("projects.json", Schema.Array(Project), []);
+  const file = yield* openJsonFile("projects.json", Schema.Array(Project), []);
   // Serializes read-modify-write so concurrent commands can't register the same folder twice.
   const lock = yield* Semaphore.make(1);
 

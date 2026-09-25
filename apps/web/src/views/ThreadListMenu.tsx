@@ -15,6 +15,7 @@ import { Button } from "@apcode/ui/motion/button";
 import { cn } from "@apcode/ui/lib/utils";
 import { ProjectBadge } from "@/components/project-badge";
 import type { Project } from "@apcode/contracts";
+import * as Match from "effect/Match";
 import { SlidersHorizontal } from "lucide-react";
 import type { ReactNode } from "react";
 import { PROVIDER_LABEL } from "../lib/models.ts";
@@ -49,6 +50,7 @@ function ChoiceMenu<Value extends string>(props: {
     <OptionMenu label={props.label} value={props.labels[props.value]}>
       <DropdownMenuRadioGroup
         value={props.value}
+        // SAFETY: the radio items below are rendered from the keys of `labels`, which are all `Value`s.
         onValueChange={(value) => props.onChange(value as Value)}
       >
         {Object.entries<string>(props.labels).map(([value, label]) => (
@@ -94,13 +96,14 @@ export function ThreadListMenu(props: {
         />
         <OptionMenu
           label="Project"
-          value={
-            view.projects.length === 0
-              ? "All"
-              : view.projects.length === 1
-                ? props.projects.find((project) => project.id === view.projects[0])?.name
-                : `${view.projects.length} projects`
-          }
+          value={Match.value(view.projects.length).pipe(
+            Match.when(0, () => "All"),
+            Match.when(
+              1,
+              () => props.projects.find((project) => project.id === view.projects[0])?.name,
+            ),
+            Match.orElse((count) => `${count} projects`),
+          )}
         >
           <DropdownMenuCheckboxItem
             checked={view.projects.length === 0}

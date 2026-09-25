@@ -1,4 +1,4 @@
-import type { ServerFrame, TerminalInfo } from "@apcode/contracts";
+import { ServerFrame, type TerminalInfo } from "@apcode/contracts";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal as HeadlessTerminal } from "@xterm/headless";
@@ -48,10 +48,10 @@ export function createTerminals(options: {
     terminalId: string,
     columns: number,
     rows: number,
-  ): TerminalSession | string {
+  ): TerminalSession | Error {
     const folder = options.folderOf(threadId);
-    if (folder === null) return "This thread is gone.";
-    if (!existsSync(folder)) return `The thread's folder is gone: ${folder}`;
+    if (folder === null) return new Error("This thread is gone.");
+    if (!existsSync(folder)) return new Error(`The thread's folder is gone: ${folder}`);
     const shellPath =
       [process.env.SHELL, "/bin/zsh", "/bin/bash", "/bin/sh"].find((candidate) => {
         if (!candidate) return false;
@@ -123,7 +123,9 @@ export function createTerminals(options: {
       return session;
     } catch (error) {
       screen.dispose();
-      return `Couldn't start ${shellPath}: ${error instanceof Error ? error.message : String(error)}`;
+      return new Error(
+        `Couldn't start ${shellPath}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -160,12 +162,13 @@ export function createTerminals(options: {
       attachment.inFlightCharacters < IN_FLIGHT_CHARACTER_LIMIT
     ) {
       attachment.inFlightCharacters += data.length;
-      viewer.send({
-        _tag: "terminal.output",
-        threadId: session.threadId,
-        terminalId: session.terminalId,
-        data,
-      });
+      viewer.send(
+        ServerFrame.cases["terminal.output"].make({
+          threadId: session.threadId,
+          terminalId: session.terminalId,
+          data,
+        }),
+      );
       return;
     }
     attachment.queued.push(data);
@@ -185,12 +188,13 @@ export function createTerminals(options: {
       if (session.viewers.get(viewer) !== attachment) return;
       const data = session.serializer.serialize();
       Object.assign(attachment, { waitingForSnapshot: false, inFlightCharacters: data.length });
-      viewer.send({
-        _tag: "terminal.snapshot",
-        threadId: session.threadId,
-        terminalId: session.terminalId,
-        data,
-      });
+      viewer.send(
+        ServerFrame.cases["terminal.snapshot"].make({
+          threadId: session.threadId,
+          terminalId: session.terminalId,
+          data,
+        }),
+      );
     });
   }
 
@@ -232,8 +236,14 @@ export function createTerminals(options: {
       const existing = sessions.get(keyOf(threadId, terminalId));
       if (existing) resize(existing, columns, rows);
       const session = existing ?? start(threadId, terminalId, columns, rows);
-      if (typeof session === "string")
-        return viewer.send({ _tag: "terminal.error", threadId, terminalId, message: session });
+      if (session instanceof Error)
+        return viewer.send(
+          ServerFrame.cases["terminal.error"].make({
+            threadId,
+            terminalId,
+            message: session.message,
+          }),
+        );
       flush(session);
       const attachment: Attachment = {
         inFlightCharacters: 0,
@@ -272,7 +282,7 @@ export function createTerminals(options: {
         queuedCharacters: 0,
         inFlightCharacters: attachment.inFlightCharacters + data.length,
       });
-      viewer.send({ _tag: "terminal.output", threadId, terminalId, data });
+      viewer.send(ServerFrame.cases["terminal.output"].make({ threadId, terminalId, data }));
     },
     write(threadId: string, terminalId: string, data: string) {
       sessions.get(keyOf(threadId, terminalId))?.shell.terminal?.write(data);

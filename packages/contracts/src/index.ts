@@ -35,7 +35,7 @@ export const BrowserAction = Schema.Union([
   Schema.TaggedStruct("press", { key: Schema.String }),
   Schema.TaggedStruct("evaluate", { expression: Schema.String }),
   Schema.TaggedStruct("console", {}),
-]);
+]).pipe(Schema.toTaggedUnion("_tag"));
 export type BrowserAction = typeof BrowserAction.Type;
 
 export const BrowserResult = Schema.Struct({
@@ -46,9 +46,13 @@ export const BrowserResult = Schema.Struct({
 });
 export type BrowserResult = typeof BrowserResult.Type;
 
-export type DesktopBrowserEvent =
-  | { readonly _tag: "open-tab"; readonly webContentsId: number; readonly url: string }
-  | { readonly _tag: "new-tab" | "close-tab" | "focus-address"; readonly webContentsId: number };
+export const DesktopBrowserEvent = Schema.TaggedUnion({
+  "open-tab": { webContentsId: Schema.Number, url: Schema.String },
+  "new-tab": { webContentsId: Schema.Number },
+  "close-tab": { webContentsId: Schema.Number },
+  "focus-address": { webContentsId: Schema.Number },
+});
+export type DesktopBrowserEvent = typeof DesktopBrowserEvent.Type;
 
 export interface DesktopBridge {
   readonly daemonToken: () => Promise<string | null>;
@@ -79,7 +83,7 @@ export const AttachmentInput = Schema.Union([
     mediaType: Schema.String,
     data: Schema.String,
   }),
-]);
+]).pipe(Schema.toTaggedUnion("_tag"));
 export type AttachmentInput = typeof AttachmentInput.Type;
 
 /** An attachment as sent; pasted data has been written to disk by then. */
@@ -352,15 +356,8 @@ export const RuntimeEvent = Schema.Union([
   Schema.TaggedStruct("auth.flow", { flow: AuthFlow }),
   Schema.TaggedStruct("terminal.opened", { threadId: Schema.String, terminalId: Schema.String }),
   Schema.TaggedStruct("terminal.closed", { threadId: Schema.String, terminalId: Schema.String }),
-]);
+]).pipe(Schema.toTaggedUnion("_tag"));
 export type RuntimeEvent = typeof RuntimeEvent.Type;
-
-/** Distributive Omit over the event union (drops `threadId` so adapters stay thread-agnostic). */
-export type ProviderEvent = RuntimeEvent extends infer E
-  ? E extends { threadId: unknown }
-    ? Omit<E, "threadId">
-    : never
-  : never;
 
 // ---------------------------------------------------------------------------
 // Client -> daemon commands
@@ -488,7 +485,7 @@ export const ClientCommand = Schema.Union([
     result: Schema.NullOr(BrowserResult),
     error: Schema.NullOr(Schema.String),
   }),
-]);
+]).pipe(Schema.toTaggedUnion("_tag"));
 export type ClientCommand = typeof ClientCommand.Type;
 
 // ---------------------------------------------------------------------------
@@ -507,27 +504,25 @@ export type PageInfo = typeof PageInfo.Type;
  * Transcript events: they only reach clients subscribed to that thread. Everything else
  * (thread list, status, settings, projects…) goes to every client.
  */
-export const isTranscriptEvent = (
+export function isTranscriptEvent(
   event: RuntimeEvent,
-): event is Extract<RuntimeEvent, { threadId: string }> => {
-  switch (event._tag) {
-    case "user.message":
-    case "assistant.delta":
-    case "assistant.completed":
-    case "tool.started":
-    case "tool.completed":
-    case "approval.requested":
-    case "approval.resolved":
-    case "turn.completed":
-    case "turn.checkpoint":
-    case "thread.rewound":
-      return true;
-    case "error":
-      return event.threadId !== null;
-    default:
-      return false;
-  }
-};
+): event is Extract<RuntimeEvent, { threadId: string }> {
+  return (
+    RuntimeEvent.isAnyOf([
+      "user.message",
+      "assistant.delta",
+      "assistant.completed",
+      "tool.started",
+      "tool.completed",
+      "approval.requested",
+      "approval.resolved",
+      "turn.completed",
+      "turn.checkpoint",
+      "thread.rewound",
+    ])(event) ||
+    (RuntimeEvent.guards.error(event) && event.threadId !== null)
+  );
+}
 
 export const ServerFrame = Schema.Union([
   /**
@@ -591,5 +586,5 @@ export const ServerFrame = Schema.Union([
     threadId: Schema.String,
     action: BrowserAction,
   }),
-]);
+]).pipe(Schema.toTaggedUnion("_tag"));
 export type ServerFrame = typeof ServerFrame.Type;

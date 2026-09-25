@@ -17,26 +17,26 @@ export interface ToolCall {
 
 type Category = "run" | "read" | "edit" | "search" | "web" | "agent" | "todo" | "browser" | "other";
 
-const CATEGORY: Record<string, Category> = {
-  Bash: "run",
-  shell: "run",
-  Read: "read",
-  Edit: "edit",
-  MultiEdit: "edit",
-  Write: "edit",
-  NotebookEdit: "edit",
-  edit: "edit",
-  Grep: "search",
-  Glob: "search",
-  WebFetch: "web",
-  WebSearch: "web",
-  Task: "agent",
-  Agent: "agent",
-  TodoWrite: "todo",
-};
+const CATEGORY = new Map<string, Category>([
+  ["Bash", "run"],
+  ["shell", "run"],
+  ["Read", "read"],
+  ["Edit", "edit"],
+  ["MultiEdit", "edit"],
+  ["Write", "edit"],
+  ["NotebookEdit", "edit"],
+  ["edit", "edit"],
+  ["Grep", "search"],
+  ["Glob", "search"],
+  ["WebFetch", "web"],
+  ["WebSearch", "web"],
+  ["Task", "agent"],
+  ["Agent", "agent"],
+  ["TodoWrite", "todo"],
+]);
 
 const categoryOf = (name: string): Category =>
-  name.startsWith("mcp__browser__") ? "browser" : (CATEGORY[name] ?? "other");
+  name.startsWith("mcp__browser__") ? "browser" : (CATEGORY.get(name) ?? "other");
 
 const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 

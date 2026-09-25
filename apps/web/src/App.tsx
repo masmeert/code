@@ -71,12 +71,7 @@ export const App = () => {
   }, [createdHere]);
 
   const draft = (path: string | null) => setView({ kind: "draft", path });
-  const currentPath =
-    view.kind === "thread"
-      ? (threads[view.id]?.cwd ?? null)
-      : view.kind === "draft"
-        ? view.path
-        : null;
+  const currentPath = view.kind === "thread" ? (threads[view.id]?.cwd ?? null) : view.path;
 
   // Like Claude Code: a new thread starts in the project on screen, if any.
   useShortcut("n", () => draft(currentPath));

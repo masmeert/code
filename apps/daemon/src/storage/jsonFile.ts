@@ -11,7 +11,7 @@ export const DATA_DIR = process.env.APCODE_DATA_DIR ?? join(homedir(), ".apcode"
  * A schema-validated JSON file held in memory and written through on every change.
  * A missing or invalid file starts from `fallback`.
  */
-export const makeJsonFile = <A, I>(fileName: string, schema: Schema.Codec<A, I>, fallback: A) =>
+export const openJsonFile = <A, I>(fileName: string, schema: Schema.Codec<A, I>, fallback: A) =>
   Effect.gen(function* () {
     const path = join(DATA_DIR, fileName);
     const initial = yield* Effect.tryPromise(() => readFile(path, "utf8")).pipe(

@@ -15,9 +15,10 @@ import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Predicate from "effect/Predicate";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
-import { connectCodex, type CodexRpc } from "./codexRpc.ts";
+import { CodexNotification, connectCodex, type CodexRpc } from "./codexRpc.ts";
 import { resolveExecutable } from "./resolveExecutable.ts";
 
 const exec = promisify(execFile);
@@ -38,10 +39,10 @@ const unknown = (kind: ProviderKind, error: string | null = null): ProviderStatu
   error,
 });
 
-const isEffort = Schema.is(Effort);
-
 const firstLine = (text: string) => text.trim().split("\n")[0] ?? "";
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+function message(cause: unknown) {
+  return cause instanceof Error ? cause.message : String(cause);
+}
 
 // --- probes ------------------------------------------------------------------
 
@@ -57,9 +58,7 @@ const probeClaude = async (): Promise<ProviderStatus> => {
   if (linked) {
     // A prompt-less session answers the model catalog without starting a turn.
     const q = query({
-      prompt: (async function* () {
-        await new Promise(() => {});
-      })(),
+      prompt: { [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => {}) }) },
       options: { pathToClaudeCodeExecutable: bin },
     });
     try {
@@ -69,21 +68,26 @@ const probeClaude = async (): Promise<ProviderStatus> => {
       const rows = all.filter((m) => m.value !== "default");
       const starred = rows.find((m) => fallback && m.resolvedModel === fallback);
       // The catalog doesn't carry default efforts; the session reports the one it would apply after each model switch.
-      // `getSettings` is untyped in the SDK, so failures just leave the default unknown.
-      const settings = q as unknown as {
-        getSettings: () => Promise<{ applied?: { effort?: unknown } }>;
-      };
+      // `getSettings` is untyped in the SDK, so its answer is decoded and failures just leave the default unknown.
       for (const m of rows) {
         const effort = await q
           .setModel(m.value)
-          .then(() => settings.getSettings())
-          .then((s) => s.applied?.effort)
+          .then(() =>
+            "getSettings" in q && Predicate.isFunction(q.getSettings)
+              ? Schema.decodeUnknownPromise(
+                  Schema.Struct({
+                    applied: Schema.optional(Schema.Struct({ effort: Schema.optional(Effort) })),
+                  }),
+                )(q.getSettings())
+              : undefined,
+          )
+          .then((settings) => settings?.applied?.effort)
           .catch(() => undefined);
         models.push({
           id: m.value,
           label: m.displayName,
-          ...(m === starred ? { recommended: true } : {}),
-          ...(isEffort(effort) ? { defaultEffort: effort } : {}),
+          recommended: m === starred || undefined,
+          defaultEffort: effort,
         });
       }
     } finally {
@@ -107,18 +111,46 @@ const probeCodex = async (): Promise<ProviderStatus> => {
   const version = firstLine((await exec(bin, ["--version"])).stdout);
   const rpc = await connectCodex(undefined);
   try {
-    const { account } = await rpc.request("account/read", {});
+    const { account } = await rpc.request(
+      "account/read",
+      {},
+      Schema.Struct({
+        account: Schema.NullOr(
+          Schema.Struct({
+            type: Schema.String,
+            email: Schema.optional(Schema.NullOr(Schema.String)),
+            planType: Schema.optional(Schema.NullOr(Schema.String)),
+          }),
+        ),
+      }),
+    );
     const linked = account !== null;
     const models: Array<ModelOption> = linked
-      ? ((await rpc.request("model/list", {})).data as Array<any>)
+      ? (
+          await rpc.request(
+            "model/list",
+            {},
+            Schema.Struct({
+              data: Schema.Array(
+                Schema.Struct({
+                  id: Schema.String,
+                  displayName: Schema.String,
+                  hidden: Schema.Boolean,
+                  isDefault: Schema.Boolean,
+                  defaultReasoningEffort: Schema.String,
+                }),
+              ),
+            }),
+          )
+        ).data
           .filter((m) => !m.hidden)
           .map((m) => ({
             id: m.id,
             label: m.displayName,
-            ...(m.isDefault ? { recommended: true } : {}),
-            ...(isEffort(m.defaultReasoningEffort)
-              ? { defaultEffort: m.defaultReasoningEffort }
-              : {}),
+            recommended: m.isDefault || undefined,
+            defaultEffort: Schema.is(Effort)(m.defaultReasoningEffort)
+              ? m.defaultReasoningEffort
+              : undefined,
           }))
       : [];
     return {
@@ -144,6 +176,12 @@ const probe = (kind: ProviderKind) =>
 
 // --- service -----------------------------------------------------------------
 
+/** Single listener (the session manager) that fans changes out to clients. */
+interface ProviderListener {
+  readonly providers: (providers: ReadonlyArray<ProviderStatus>) => void;
+  readonly flow: (flow: AuthFlow) => void;
+}
+
 export class ProviderRegistry extends Context.Service<
   ProviderRegistry,
   {
@@ -153,17 +191,13 @@ export class ProviderRegistry extends Context.Service<
     readonly submitCode: (kind: ProviderKind, code: string) => Effect.Effect<void>;
     readonly cancelLink: (kind: ProviderKind) => Effect.Effect<void>;
     readonly unlink: (kind: ProviderKind) => Effect.Effect<void>;
-    /** Single listener (the session manager) that fans changes out to clients. */
-    readonly setListener: (listener: {
-      readonly providers: (providers: ReadonlyArray<ProviderStatus>) => void;
-      readonly flow: (flow: AuthFlow) => void;
-    }) => void;
+    readonly setListener: (listener: ProviderListener) => void;
   }
 >()("apcode/ProviderRegistry") {}
 
 const make = Effect.gen(function* () {
   let providers: Array<ProviderStatus> = [unknown("claude"), unknown("codex")];
-  let listener = { providers: (_: ReadonlyArray<ProviderStatus>) => {}, flow: (_: AuthFlow) => {} };
+  let listener: ProviderListener = { providers: () => {}, flow: () => {} };
   /** In-flight sign-in per harness. */
   const flows = new Map<ProviderKind, { child?: ChildProcess; rpc?: CodexRpc; loginId?: string }>();
 
@@ -179,7 +213,9 @@ const make = Effect.gen(function* () {
     providers = providers.map((p) => (p.kind === kind ? next : p));
     listener.providers(providers);
   };
-  const refreshAll = () => Promise.all([refreshOne("claude"), refreshOne("codex")]);
+  async function refreshAll() {
+    await Promise.all([refreshOne("claude"), refreshOne("codex")]);
+  }
 
   const finish = async (kind: ProviderKind, ok: boolean, text: string | null) => {
     flows.delete(kind);
@@ -196,7 +232,7 @@ const make = Effect.gen(function* () {
     const onData = (chunk: Buffer) => {
       output += chunk.toString();
       // The CLI opens the browser itself and prints the URL wrapped in an OSC-8 hyperlink.
-      const url = output.match(/https:\/\/[^\s\u0007\u001b]+/)?.[0];
+      const url = output.match(new RegExp(String.raw`https://[^\s\u0007\u001b]+`))?.[0];
       if (url && !announced) {
         announced = true;
         flow("claude", "awaiting-code", url);
@@ -216,18 +252,19 @@ const make = Effect.gen(function* () {
 
   const linkCodex = async () => {
     const rpc = await connectCodex(undefined, {
-      onNotification: (method, params) => {
-        if (method !== "account/login/completed") return;
+      onNotification: (notification) => {
+        if (!CodexNotification.guards["account/login/completed"](notification)) return;
         rpc.close();
-        void finish(
-          "codex",
-          params.success === true,
-          params.success ? null : (params.error ?? "Sign-in failed"),
-        );
+        const { success, error } = notification.params;
+        void finish("codex", success, success ? null : (error ?? "Sign-in failed"));
       },
     });
     flows.set("codex", { rpc });
-    const res = await rpc.request("account/login/start", { type: "chatgpt" });
+    const res = await rpc.request(
+      "account/login/start",
+      { type: "chatgpt" },
+      Schema.Struct({ loginId: Schema.String, authUrl: Schema.String }),
+    );
     flows.set("codex", { rpc, loginId: res.loginId });
     // Codex listens on a local callback, so opening the page is all that's needed.
     spawn("open", [res.authUrl], { stdio: "ignore", detached: true }).unref();
@@ -239,11 +276,13 @@ const make = Effect.gen(function* () {
     flows.delete(kind);
     active?.child?.kill();
     if (active?.rpc && active.loginId)
-      void active.rpc.request("account/login/cancel", { loginId: active.loginId }).catch(() => {});
+      void active.rpc
+        .request("account/login/cancel", { loginId: active.loginId }, Schema.Unknown)
+        .catch(() => {});
     active?.rpc?.close();
   };
 
-  const background = (run: () => Promise<unknown>) =>
+  const background = (run: () => Promise<void>) =>
     Effect.sync(() => {
       void run().catch((e) =>
         Effect.runFork(Effect.logWarning("provider task failed", message(e))),

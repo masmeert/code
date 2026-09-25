@@ -302,8 +302,12 @@ function ChartLegendContent({
 }
 
 // Helper to extract item config from a payload.
-function getPayloadConfigFromPayload(config: ChartConfig, payload: unknown, key: string) {
-  if (typeof payload !== "object" || payload === null) {
+function getPayloadConfigFromPayload(
+  config: ChartConfig,
+  payload: RechartsPrimitive.TooltipPayloadEntry | RechartsPrimitive.LegendPayload | undefined,
+  key: string,
+) {
+  if (payload === undefined) {
     return undefined;
   }
 

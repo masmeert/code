@@ -191,9 +191,6 @@ function AddressBar({
     if (!editing) setDraft(tab.url);
   }, [tab.url, editing]);
   useEffect(() => registerAddressInput(threadId, input.current!), [threadId]);
-  useEffect(() => {
-    if (!tab.url) input.current?.focus();
-  }, []);
 
   return (
     <form
@@ -231,6 +228,7 @@ function AddressBar({
       ) : null}
       <Input
         ref={input}
+        autoFocus={!tab.url}
         value={draft}
         onChange={(value) => {
           setDraft(value);

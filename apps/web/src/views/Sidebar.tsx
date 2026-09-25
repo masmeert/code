@@ -25,7 +25,12 @@ import { Separator } from "@apcode/ui/components/separator";
 import { ProjectBadge } from "@/components/project-badge";
 import { PROVIDER_LOGO } from "@/components/provider-logo";
 import { cn } from "@apcode/ui/lib/utils";
-import { DEFAULT_SETTLE_DELAY_MINUTES, type Project, type ThreadInfo } from "@apcode/contracts";
+import {
+  ClientCommand,
+  DEFAULT_SETTLE_DELAY_MINUTES,
+  type Project,
+  type ThreadInfo,
+} from "@apcode/contracts";
 import {
   Archive,
   ArchiveRestore,
@@ -440,7 +445,10 @@ const useThreadActions = (info: ThreadInfo, settled: boolean) => {
             key: "unarchive",
             label: "Unarchive",
             icon: ArchiveRestore,
-            onSelect: () => send({ _tag: "thread.archive", threadId: info.id, archived: false }),
+            onSelect: () =>
+              send(
+                ClientCommand.cases["thread.archive"].make({ threadId: info.id, archived: false }),
+              ),
           },
         ]
       : [
@@ -455,7 +463,10 @@ const useThreadActions = (info: ThreadInfo, settled: boolean) => {
             key: "archive",
             label: "Archive",
             icon: Archive,
-            onSelect: () => send({ _tag: "thread.archive", threadId: info.id, archived: true }),
+            onSelect: () =>
+              send(
+                ClientCommand.cases["thread.archive"].make({ threadId: info.id, archived: true }),
+              ),
             disabled: !canSettle(info),
           },
         ]),
@@ -465,7 +476,7 @@ const useThreadActions = (info: ThreadInfo, settled: boolean) => {
           label: "Click again to delete",
           icon: Trash2,
           destructive: true,
-          onSelect: () => send({ _tag: "thread.close", threadId: info.id }),
+          onSelect: () => send(ClientCommand.cases["thread.close"].make({ threadId: info.id })),
         }
       : {
           key: "delete",

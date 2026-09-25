@@ -76,9 +76,11 @@ export type ShaderBackgroundProps = {
   [K in ShaderBackgroundVariant]: { variant: K } & ShaderVariantProps[K];
 }[ShaderBackgroundVariant];
 
-const VARIANT_COMPONENTS: {
+type ShaderVariantComponents = {
   [K in ShaderBackgroundVariant]: ComponentType<ShaderVariantProps[K]>;
-} = {
+};
+
+const VARIANT_COMPONENTS: ShaderVariantComponents = {
   "mesh-gradient": MeshGradient,
   "grain-gradient": GrainGradient,
   "dot-grid": DotGrid,
@@ -112,9 +114,11 @@ export const SHADER_BACKGROUND_VARIANTS = Object.keys(
  */
 export function ShaderBackground({ variant, className, ...rest }: ShaderBackgroundProps) {
   const reducedMotion = useReducedMotion();
-  const Shader = VARIANT_COMPONENTS[variant] as ComponentType<Record<string, unknown>>;
-  const props = rest as Record<string, unknown>;
-  const speedProps = reducedMotion && "speed" in props ? { speed: 0 } : {};
+  // TypeScript can't correlate `variant` with `rest` through the lookup; they come from the same union member.
+  const Shader = VARIANT_COMPONENTS[variant] as ComponentType<
+    ShaderVariantProps[ShaderBackgroundVariant]
+  >;
+  const speedProps = reducedMotion && "speed" in rest ? { speed: 0 } : {};
 
-  return <Shader {...props} {...speedProps} className={cn("h-full w-full", className)} />;
+  return <Shader {...rest} {...speedProps} className={cn("h-full w-full", className)} />;
 }

@@ -75,7 +75,7 @@ export interface AISidebarProps {
   onItemsChange?: (items: SidebarResource[]) => void;
   /** Reject the promise to roll the optimistic move back. */
   onMove?: (move: SidebarResourceMove) => void | Promise<void>;
-  onMoveError?: (error: unknown, move: SidebarResourceMove) => void;
+  onMoveError?: (cause: unknown, move: SidebarResourceMove) => void;
   onRename?: (item: SidebarResource, label: string) => void | Promise<void>;
   activeId?: string | null;
   defaultActiveId?: string | null;
@@ -132,10 +132,7 @@ function containsResource(item: SidebarResource, id: string): boolean {
   return item.id === id || item.children?.some((child) => containsResource(child, id)) === true;
 }
 
-function removeResource(
-  items: SidebarResource[],
-  id: string,
-): { items: SidebarResource[]; removed?: SidebarResource } {
+function removeResource(items: SidebarResource[], id: string) {
   let removed: SidebarResource | undefined;
   const next: SidebarResource[] = [];
 

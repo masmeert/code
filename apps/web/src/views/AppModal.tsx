@@ -11,11 +11,14 @@ import { Tabs, TabsList, TabsTrigger } from "@apcode/ui/motion/tabs";
 import { PROVIDER_AVATAR_CLASS, PROVIDER_LOGO } from "@/components/provider-logo";
 import { cn } from "@apcode/ui/lib/utils";
 import {
+  ClientCommand,
   DEFAULT_SETTLE_DELAY_MINUTES,
   type ProviderKind,
   type ProviderStatus,
-  type Theme,
+  Theme,
 } from "@apcode/contracts";
+import * as Match from "effect/Match";
+import * as Schema from "effect/Schema";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { defaultModel, encodeChoice, PROVIDER_LABEL, recommendedBadge } from "../lib/models.ts";
@@ -97,7 +100,7 @@ const SettingsView = () => {
   const providers = useStore((s) => s.providers);
 
   // Sign-in state can change outside the app (e.g. `claude auth logout` in a terminal).
-  useEffect(() => send({ _tag: "providers.refresh" }), []);
+  useEffect(() => send(ClientCommand.cases["providers.refresh"].make({})), []);
 
   return (
     <>
@@ -107,7 +110,9 @@ const SettingsView = () => {
           <SettingsRow label="Theme">
             <Tabs
               value={settings.theme}
-              onValueChange={(v) => updateSettings({ ...settings, theme: v as Theme })}
+              onValueChange={(v) =>
+                Schema.is(Theme)(v) && updateSettings({ ...settings, theme: v })
+              }
             >
               <TabsList>
                 {THEMES.map(({ value, label, icon: Icon }) => (
@@ -165,7 +170,7 @@ const SettingsView = () => {
             <Select
               value={settings.followUp ?? "queue"}
               onValueChange={(v) =>
-                updateSettings({ ...settings, followUp: v as "queue" | "steer" })
+                updateSettings({ ...settings, followUp: v === "steer" ? "steer" : "queue" })
               }
               className="w-44"
             >
@@ -282,20 +287,21 @@ const ProviderCard = ({
         : "Not signed in";
 
   const setDefault = (model: string) =>
-    send({
-      _tag: "settings.update",
-      settings: {
-        ...settings,
-        providers: { ...settings.providers, [kind]: { defaultModel: model } },
-      },
-    });
+    send(
+      ClientCommand.cases["settings.update"].make({
+        settings: {
+          ...settings,
+          providers: { ...settings.providers, [kind]: { defaultModel: model } },
+        },
+      }),
+    );
 
   const action = !status?.installed ? null : inFlow ? (
     <Button
       size="sm"
       variant="ghost"
       className="h-7 rounded-lg"
-      onClick={() => send({ _tag: "provider.linkCancel", provider: kind })}
+      onClick={() => send(ClientCommand.cases["provider.linkCancel"].make({ provider: kind }))}
     >
       Cancel
     </Button>
@@ -316,7 +322,7 @@ const ProviderCard = ({
           className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
           onClick={() => {
             setConfirmUnlink(false);
-            send({ _tag: "provider.unlink", provider: kind });
+            send(ClientCommand.cases["provider.unlink"].make({ provider: kind }));
           }}
         >
           Sign out
@@ -336,7 +342,7 @@ const ProviderCard = ({
     <Button
       size="sm"
       className="h-7 rounded-lg"
-      onClick={() => send({ _tag: "provider.link", provider: kind })}
+      onClick={() => send(ClientCommand.cases["provider.link"].make({ provider: kind }))}
     >
       Link
     </Button>
@@ -397,35 +403,39 @@ const ProviderCard = ({
 
       {inFlow ? (
         <div className="px-3 py-2.5 text-xs text-muted-foreground">
-          {flow.stage === "starting" ? (
-            "Starting sign-in…"
-          ) : flow.stage === "browser" ? (
-            "Finish signing in in your browser."
-          ) : (
-            <>
-              <p className="mb-2">Sign in in your browser, then paste the code it shows.</p>
-              <div className="flex gap-2">
-                <input
-                  autoFocus
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && code.trim())
-                      send({ _tag: "provider.linkCode", provider: kind, code });
-                  }}
-                  placeholder="Paste code"
-                  className="selectable h-7 min-w-0 flex-1 rounded-lg border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-ring"
-                />
-                <Button
-                  size="sm"
-                  className="h-7 rounded-lg"
-                  disabled={!code.trim()}
-                  onClick={() => send({ _tag: "provider.linkCode", provider: kind, code })}
-                >
-                  Submit
-                </Button>
-              </div>
-            </>
+          {Match.value(flow.stage).pipe(
+            Match.when("starting", () => "Starting sign-in…"),
+            Match.when("browser", () => "Finish signing in in your browser."),
+            Match.orElse(() => (
+              <>
+                <p className="mb-2">Sign in in your browser, then paste the code it shows.</p>
+                <div className="flex gap-2">
+                  <input
+                    autoFocus
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && code.trim())
+                        send(
+                          ClientCommand.cases["provider.linkCode"].make({ provider: kind, code }),
+                        );
+                    }}
+                    placeholder="Paste code"
+                    className="selectable h-7 min-w-0 flex-1 rounded-lg border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-ring"
+                  />
+                  <Button
+                    size="sm"
+                    className="h-7 rounded-lg"
+                    disabled={!code.trim()}
+                    onClick={() =>
+                      send(ClientCommand.cases["provider.linkCode"].make({ provider: kind, code }))
+                    }
+                  >
+                    Submit
+                  </Button>
+                </div>
+              </>
+            )),
           )}
           {flow.url ? (
             <a

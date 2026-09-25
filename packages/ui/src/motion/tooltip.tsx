@@ -1,5 +1,6 @@
 import { AnimatePresence } from "motion/react";
 import {
+  type AriaAttributes,
   cloneElement,
   isValidElement,
   type PointerEvent,
@@ -211,8 +212,8 @@ export function Tooltip({
   // ThemeToggle does — then runs the tooltip's instead of its own. Composing
   // with `props.onClick` cannot save it either, because a component element's
   // props hold nothing the component does internally.
-  const trigger = isValidElement(children)
-    ? cloneElement(children as ReactElement<Record<string, unknown>>, {
+  const trigger = isValidElement<AriaAttributes>(children)
+    ? cloneElement(children, {
         "aria-describedby": id,
       })
     : null;

@@ -341,6 +341,7 @@ function MobileSidebar({
     body.style.right = "0";
     body.style.overflow = "hidden";
 
+    const trigger = context.triggerRef.current;
     const focusFrame = requestAnimationFrame(() => {
       const firstFocusable = panelRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
       (firstFocusable ?? panelRef.current)?.focus({ preventScroll: true });
@@ -354,7 +355,7 @@ function MobileSidebar({
       body.style.right = previousBodyStyles.right;
       body.style.overflow = previousBodyStyles.overflow;
       window.scrollTo(0, scrollY);
-      context.triggerRef.current?.focus({ preventScroll: true });
+      trigger?.focus({ preventScroll: true });
     };
   }, [context.openMobile, context.triggerRef]);
 

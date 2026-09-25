@@ -39,7 +39,7 @@ const open = () =>
     const req = indexedDB.open(DB, VERSION);
     req.onupgradeneeded = () => {
       // Stores from older versions hold shapes we no longer read.
-      for (const name of [...req.result.objectStoreNames]) req.result.deleteObjectStore(name);
+      for (const name of req.result.objectStoreNames) req.result.deleteObjectStore(name);
       req.result.createObjectStore(SHELL);
       req.result.createObjectStore(THREADS);
     };
@@ -58,6 +58,7 @@ const get = async <A extends { version: number }>(
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
+    // SAFETY: only saveShell/saveTranscript write these stores, and a record from another version is dropped below.
     const record = value as A | undefined;
     return record?.version === VERSION ? record : null;
   } catch {
@@ -73,7 +74,10 @@ export const loadTranscript = (dataId: string, threadId: string) =>
 
 // Writes are debounced (streaming deltas arrive many times a second) and only the
 // latest value per key is kept.
-const pending = new Map<string, { readonly store: string; readonly value: unknown }>();
+const pending = new Map<
+  string,
+  { readonly store: string; readonly value: CachedShell | CachedTranscript | undefined }
+>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 const flush = async () => {
@@ -93,7 +97,7 @@ const flush = async () => {
   } catch {}
 };
 
-const queue = (store: string, id: string, value: unknown) => {
+const queue = (store: string, id: string, value: CachedShell | CachedTranscript | undefined) => {
   pending.set(`${store}:${id}`, { store, value });
   timer ??= setTimeout(flush, 500);
 };

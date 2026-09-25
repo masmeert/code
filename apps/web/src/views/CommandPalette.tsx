@@ -156,7 +156,7 @@ const Palette = (props: PaletteProps) => {
         section: "Actions",
         icon: action.icon,
         label: action.label,
-        ...(action.hint ? { hint: action.hint } : {}),
+        hint: action.hint,
         run: choose(latest, () => action.run()),
       })),
     [props.actions, needle],

@@ -23,7 +23,7 @@ export type LoaderVariant =
   | "percent";
 
 // Terminal-style frame sets — the loaders CLI AI agents cycle through.
-const ASCII_SETS: Record<string, string[]> = {
+const ASCII_SETS: Partial<Record<LoaderVariant, string[]>> = {
   ascii: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
   "ascii-line": ["|", "/", "-", "\\"],
   "ascii-braille": ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"],
@@ -348,15 +348,15 @@ function Newton({ size, speed, reduce }: PartProps) {
   // Only the end balls move: the left slides out and back on the first half,
   // then the right on the second half — the impact appears to jump the three
   // still middle balls. Pure horizontal slide, no swing, no strings.
-  const moves: Record<number, { x: number[]; times: number[] }> = {
-    0: { x: [0, -out, 0, 0], times: [0, 0.28, 0.5, 1] },
-    4: { x: [0, 0, out, 0], times: [0, 0.5, 0.78, 1] },
-  };
+  const moves = new Map([
+    [0, { x: [0, -out, 0, 0], times: [0, 0.28, 0.5, 1] }],
+    [4, { x: [0, 0, out, 0], times: [0, 0.5, 0.78, 1] }],
+  ]);
 
   return (
     <span className="flex items-center justify-center" style={{ height: d }}>
       {NEWTON_BALLS.map((i) => {
-        const move = moves[i];
+        const move = moves.get(i);
         return (
           <motion.span
             key={i}

@@ -1,5 +1,5 @@
 import { Script } from "node:vm";
-import type { BrowserAction, BrowserResult } from "@apcode/contracts";
+import { BrowserAction, type BrowserResult } from "@apcode/contracts";
 import { type BrowserWindow, type WebContents, webContents } from "electron";
 
 const consoleLines = new Map<number, Array<string>>();
@@ -34,13 +34,13 @@ function snapshotPage() {
     "spinbutton",
     "treeitem",
   ]);
-  const implicitRole: Record<string, string> = {
-    A: "link",
-    BUTTON: "button",
-    TEXTAREA: "textbox",
-    SELECT: "combobox",
-    SUMMARY: "button",
-  };
+  const implicitRole = new Map([
+    ["A", "link"],
+    ["BUTTON", "button"],
+    ["TEXTAREA", "textbox"],
+    ["SELECT", "combobox"],
+    ["SUMMARY", "button"],
+  ]);
   for (const element of document.querySelectorAll("[data-apcode-ref]"))
     element.removeAttribute("data-apcode-ref");
   const lines: Array<string> = [];
@@ -57,7 +57,8 @@ function snapshotPage() {
           : null) ??
       (inputType
         ? "textbox"
-        : (implicitRole[element.tagName] ?? (element.isContentEditable ? "textbox" : "generic")));
+        : (implicitRole.get(element.tagName) ??
+          (element.isContentEditable ? "textbox" : "generic")));
     if (element.hasAttribute("role") && !roles.has(role)) continue;
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
@@ -182,23 +183,24 @@ function pressKey(guest: WebContents, key: string) {
   guest.sendInputEvent({ type: "keyUp", keyCode });
 }
 
-async function run(guest: WebContents, action: BrowserAction): Promise<string> {
-  switch (action._tag) {
-    case "navigate":
-      await withTimeout(guest.loadURL(action.url), 30_000, `Timed out loading ${action.url}`).catch(
-        (error: unknown) => {
-          if (!String(error).includes("ERR_ABORTED")) throw error;
+function run(guest: WebContents, action: BrowserAction): Promise<string> {
+  return BrowserAction.match(action, {
+    navigate: async ({ url }) => {
+      await withTimeout(guest.loadURL(url), 30_000, `Timed out loading ${url}`).catch(
+        (cause: unknown) => {
+          if (!String(cause).includes("ERR_ABORTED")) throw cause;
         },
       );
       return `Loaded ${guest.getURL()}`;
-    case "status":
+    },
+    status: async () => {
       await settle(guest, 30_000);
       return guest.isLoading() ? "Still loading" : `Loaded ${guest.getURL()}`;
-    case "snapshot":
-      return guest.executeJavaScript(`(${snapshotPage.toString()})()`, true);
-    case "click": {
+    },
+    snapshot: () => guest.executeJavaScript(`(${snapshotPage.toString()})()`, true),
+    click: async ({ target }) => {
       const point = await guest.executeJavaScript(
-        `(${targetElement.toString()})("point", ${JSON.stringify(action.target)})`,
+        `(${targetElement.toString()})("point", ${JSON.stringify(target)})`,
         true,
       );
       if ("error" in point) throw new Error(point.error);
@@ -218,36 +220,36 @@ async function run(guest: WebContents, action: BrowserAction): Promise<string> {
         clickCount: 1,
       });
       await settle(guest, 10_000);
-      return `Clicked ${action.target}`;
-    }
-    case "type": {
+      return `Clicked ${target}`;
+    },
+    type: async ({ target, text, submit }) => {
       const focused = await guest.executeJavaScript(
-        `(${targetElement.toString()})("focus", ${JSON.stringify(action.target)})`,
+        `(${targetElement.toString()})("focus", ${JSON.stringify(target)})`,
         true,
       );
       if ("error" in focused) throw new Error(focused.error);
-      await guest.insertText(action.text);
-      if (action.submit) pressKey(guest, "Enter");
+      await guest.insertText(text);
+      if (submit) pressKey(guest, "Enter");
       await settle(guest, 10_000);
-      return `Typed into ${action.target}${action.submit ? " and pressed Enter" : ""}`;
-    }
-    case "press":
-      pressKey(guest, action.key);
+      return `Typed into ${target}${submit ? " and pressed Enter" : ""}`;
+    },
+    press: async ({ key }) => {
+      pressKey(guest, key);
       await settle(guest, 10_000);
-      return `Pressed ${action.key}`;
-    case "evaluate": {
-      const outcome: { value?: unknown; error?: string } = isExpression(action.expression)
+      return `Pressed ${key}`;
+    },
+    evaluate: async ({ expression }) => {
+      const outcome: { value?: unknown; error?: string } = isExpression(expression)
         ? await guest.executeJavaScript(
-            `(async () => { try { return { value: await (${action.expression}\n) }; } catch (error) { return { error: String(error instanceof Error ? (error.stack ?? error.message) : error) }; } })()`,
+            `(async () => { try { return { value: await (${expression}\n) }; } catch (error) { return { error: String(error instanceof Error ? (error.stack ?? error.message) : error) }; } })()`,
             true,
           )
-        : { value: await guest.executeJavaScript(action.expression, true) };
+        : { value: await guest.executeJavaScript(expression, true) };
       if (outcome.error !== undefined) throw new Error(outcome.error);
       return (JSON.stringify(outcome.value, null, 2) ?? "undefined").slice(0, 20_000);
-    }
-    case "console":
-      return consoleLines.get(guest.id)?.join("\n") || "No console messages yet";
-  }
+    },
+    console: async () => consoleLines.get(guest.id)?.join("\n") || "No console messages yet",
+  });
 }
 
 export async function automateBrowser(
@@ -269,6 +271,6 @@ export async function automateBrowser(
     url: guest.getURL(),
     title: guest.getTitle(),
     text,
-    screenshot: action._tag === "snapshot" ? await capture(guest) : null,
+    screenshot: BrowserAction.guards.snapshot(action) ? await capture(guest) : null,
   };
 }

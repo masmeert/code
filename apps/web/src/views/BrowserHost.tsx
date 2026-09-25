@@ -1,4 +1,4 @@
-import { BROWSER_PARTITION } from "@apcode/contracts";
+import { BROWSER_PARTITION, DesktopBrowserEvent } from "@apcode/contracts";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -28,10 +28,12 @@ export function BrowserHost() {
       window.desktop?.onBrowserEvent((event) => {
         const owner = tabForWebContents(event.webContentsId);
         if (!owner) return;
-        if (event._tag === "open-tab") openTab(owner.threadId, event.url);
-        else if (event._tag === "new-tab") openTab(owner.threadId);
-        else if (event._tag === "close-tab") closeTab(owner.threadId, owner.tabId);
-        else focusAddress(owner.threadId);
+        DesktopBrowserEvent.match(event, {
+          "open-tab": ({ url }) => openTab(owner.threadId, url),
+          "new-tab": () => openTab(owner.threadId),
+          "close-tab": () => closeTab(owner.threadId, owner.tabId),
+          "focus-address": () => focusAddress(owner.threadId),
+        });
       }),
     [],
   );
@@ -57,6 +59,15 @@ export function BrowserHost() {
   );
 }
 
+/** Fields Electron sets on the `<webview>` events handled here. */
+interface WebviewEvent extends Event {
+  readonly url: string;
+  readonly title: string;
+  readonly isMainFrame: boolean;
+  readonly errorDescription: string;
+  readonly favicons: ReadonlyArray<string>;
+}
+
 function HostedTab({
   threadId,
   tab,
@@ -74,9 +85,11 @@ function HostedTab({
   const webview = useRef<Webview>(null);
   const crashedAt = useRef(0);
 
+  const width = rect?.width;
+  const height = rect?.height;
   useEffect(() => {
-    if (rect) setHiddenSize({ width: rect.width, height: rect.height });
-  }, [rect?.width, rect?.height]);
+    if (width !== undefined && height !== undefined) setHiddenSize({ width, height });
+  }, [width, height]);
 
   useLayoutEffect(() => {
     const element = webview.current!;
@@ -88,28 +101,29 @@ function HostedTab({
         });
       } catch {}
     }
-    const handlers: Record<string, (event: Event & Record<string, unknown>) => void> = {
+    const handlers = {
       "dom-ready": syncHistory,
       "did-start-loading": () => updateActivity(tab.id, { loading: true, error: null }),
       "did-stop-loading": () => {
         updateActivity(tab.id, { loading: false });
         syncHistory();
       },
-      "did-navigate": (event) => {
-        updateTab(threadId, tab.id, { url: String(event.url) });
+      "did-navigate": (event: WebviewEvent) => {
+        updateTab(threadId, tab.id, { url: event.url });
         syncHistory();
       },
-      "did-navigate-in-page": (event) => {
+      "did-navigate-in-page": (event: WebviewEvent) => {
         if (!event.isMainFrame) return;
-        updateTab(threadId, tab.id, { url: String(event.url) });
+        updateTab(threadId, tab.id, { url: event.url });
         syncHistory();
       },
-      "page-title-updated": (event) => updateTab(threadId, tab.id, { title: String(event.title) }),
-      "page-favicon-updated": (event) =>
-        updateActivity(tab.id, { favicon: (event.favicons as ReadonlyArray<string>)[0] ?? null }),
-      "did-fail-load": (event) => {
+      "page-title-updated": (event: WebviewEvent) =>
+        updateTab(threadId, tab.id, { title: event.title }),
+      "page-favicon-updated": (event: WebviewEvent) =>
+        updateActivity(tab.id, { favicon: event.favicons[0] ?? null }),
+      "did-fail-load": (event: WebviewEvent) => {
         if (event.isMainFrame && event.errorDescription !== "ERR_ABORTED") {
-          updateActivity(tab.id, { loading: false, error: String(event.errorDescription) });
+          updateActivity(tab.id, { loading: false, error: event.errorDescription });
         }
       },
       "render-process-gone": () => {
@@ -120,15 +134,15 @@ function HostedTab({
       },
       focus: () => element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })),
     };
-    for (const [name, handler] of Object.entries(handlers))
-      element.addEventListener(name, handler as EventListener);
+    // SAFETY: Electron dispatches each of these events with the WebviewEvent fields its handler reads.
+    const listeners = Object.entries(handlers) as Array<[string, EventListener]>;
+    for (const [name, listener] of listeners) element.addEventListener(name, listener);
     const unregister = registerWebview(tab.id, element);
     return () => {
-      for (const [name, handler] of Object.entries(handlers))
-        element.removeEventListener(name, handler as EventListener);
+      for (const [name, listener] of listeners) element.removeEventListener(name, listener);
       unregister();
     };
-  }, [generation]);
+  }, [generation, threadId, tab.id]);
 
   return (
     <webview
@@ -136,7 +150,8 @@ function HostedTab({
       ref={webview}
       src={generation === 0 ? initialUrl : tab.url}
       partition={BROWSER_PARTITION}
-      {...({ allowpopups: "true" } as unknown as { allowpopups?: boolean })}
+      // SAFETY: Electron only checks that the attribute exists, and React drops a boolean one; its typings say boolean.
+      allowpopups={"true" as never}
       aria-hidden={rect ? undefined : true}
       className="fixed z-10 bg-white"
       style={

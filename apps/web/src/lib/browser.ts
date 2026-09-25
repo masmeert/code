@@ -1,4 +1,4 @@
-import type { BrowserAction, BrowserResult } from "@apcode/contracts";
+import { BrowserAction, type BrowserResult } from "@apcode/contracts";
 import { useSyncExternalStore } from "react";
 
 export interface Webview extends HTMLElement {
@@ -295,8 +295,9 @@ export async function performBrowserAction(
 ): Promise<BrowserResult> {
   const desktop = window.desktop;
   if (!desktop) throw new Error("The browser is only available in the APCode desktop app");
-  const url = action._tag === "navigate" ? normalizeUrl(action.url) : null;
-  if (action._tag === "navigate" && !url) throw new Error(`Not a web address: ${action.url}`);
+  const url = BrowserAction.guards.navigate(action) ? normalizeUrl(action.url) : null;
+  if (BrowserAction.guards.navigate(action) && !url)
+    throw new Error(`Not a web address: ${action.url}`);
   const current = activeTab(threadId);
   if (!current?.url && !url)
     throw new Error("No page is open in the browser; navigate to one first");
@@ -311,7 +312,11 @@ export async function performBrowserAction(
     const webview = await attachedWebview(tab.id);
     return await desktop.automateBrowser(
       webview.getWebContentsId(),
-      !current?.url ? { _tag: "status" } : url ? { _tag: "navigate", url } : action,
+      !current?.url
+        ? BrowserAction.cases.status.make({})
+        : url
+          ? BrowserAction.cases.navigate.make({ url })
+          : action,
     );
   } catch (error) {
     throw new Error(

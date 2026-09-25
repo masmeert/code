@@ -8,15 +8,20 @@ import {
   query,
   type CanUseTool,
   type EffortLevel,
+  type Options,
   type PermissionMode,
   type PermissionResult,
   type PermissionUpdate,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
+  type SessionMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { Effort, PermissionLevel } from "@apcode/contracts";
+import { RuntimeEvent, type Effort, type PermissionLevel } from "@apcode/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import {
@@ -62,7 +67,7 @@ const makeInbox = <A>() => {
 };
 
 interface PendingApproval {
-  readonly input: Record<string, unknown>;
+  readonly input: Parameters<CanUseTool>[1];
   readonly suggestions: Array<PermissionUpdate> | undefined;
   readonly resolve: (result: PermissionResult) => void;
 }
@@ -78,28 +83,32 @@ const PERMISSION_MODE = {
 /** Claude has no "minimal"; everything else maps one to one. */
 const toEffortLevel = (effort: Effort): EffortLevel => (effort === "minimal" ? "low" : effort);
 
-const IMAGE_TYPES: Record<string, "image/png" | "image/jpeg" | "image/gif" | "image/webp"> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-};
+const IMAGE_TYPES = new Map<string, "image/png" | "image/jpeg" | "image/gif" | "image/webp">([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".gif", "image/gif"],
+  [".webp", "image/webp"],
+]);
+
+/** Tool inputs come from the model as JSON; anything else gets an empty summary. */
+const decodeToolInput = Schema.decodeUnknownOption(Schema.Json);
 
 /** Images inline as base64 blocks, then the text (with other files listed as paths). */
 const toContent = async (turn: TurnInput): Promise<SDKUserMessage["message"]["content"]> => {
   const text = textWithFiles(turn);
-  const images = turn.attachments.filter(
-    (a) => a.isImage && IMAGE_TYPES[extname(a.path).toLowerCase()],
-  );
+  const images = turn.attachments.flatMap((a) => {
+    const mediaType = IMAGE_TYPES.get(extname(a.path).toLowerCase());
+    return a.isImage && mediaType ? [{ path: a.path, mediaType }] : [];
+  });
   if (!images.length) return text;
   const blocks = await Promise.all(
-    images.map(async (a) => ({
+    images.map(async (image) => ({
       type: "image" as const,
       source: {
         type: "base64" as const,
-        media_type: IMAGE_TYPES[extname(a.path).toLowerCase()]!,
-        data: (await readFile(a.path)).toString("base64"),
+        media_type: image.mediaType,
+        data: (await readFile(image.path)).toString("base64"),
       },
     })),
   );
@@ -107,6 +116,7 @@ const toContent = async (turn: TurnInput): Promise<SDKUserMessage["message"]["co
 };
 
 const start = ({
+  threadId,
   cwd,
   model,
   resumeToken,
@@ -128,44 +138,44 @@ const start = ({
           pending.set(requestId, { input, suggestions, resolve });
           signal.addEventListener("abort", () => {
             if (pending.delete(requestId)) {
-              emit({ _tag: "approval.resolved", requestId });
+              emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
               resolve({ behavior: "deny", message: "Aborted" });
             }
           });
-          emit({ _tag: "thread.status", status: "awaiting-approval" });
-          emit({
-            _tag: "approval.requested",
-            requestId,
-            title: toolName,
-            detail: summarizeToolInput(input),
-          });
+          emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "awaiting-approval" }));
+          emit(
+            RuntimeEvent.cases["approval.requested"].make({
+              threadId,
+              requestId,
+              title: toolName,
+              detail: summarizeToolInput(Option.getOrNull(decodeToolInput(input))),
+            }),
+          );
         });
 
-      const q: Query = query({
-        prompt: inbox.iterable,
-        options: {
-          cwd,
-          ...(model ? { model } : {}),
-          ...(resumeToken ? { resume: resumeToken } : {}),
-          ...(initialEffort ? { effort: toEffortLevel(initialEffort) } : {}),
-          permissionMode: PERMISSION_MODE[initialPermission],
-          // Only lets the composer switch to "Full access" later; the mode above still applies.
-          allowDangerouslySkipPermissions: true,
-          pathToClaudeCodeExecutable: resolveExecutable("claude", "APCODE_CLAUDE_PATH"),
-          settingSources: ["user", "project", "local"],
-          includePartialMessages: true,
-          canUseTool,
-          env: { ...process.env, APCODE_MCP_TOKEN: mcpServer.token },
-          mcpServers: {
-            browser: {
-              type: "http",
-              url: mcpServer.url,
-              headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
-            },
+      const options: Options = {
+        cwd,
+        permissionMode: PERMISSION_MODE[initialPermission],
+        // Only lets the composer switch to "Full access" later; the mode above still applies.
+        allowDangerouslySkipPermissions: true,
+        pathToClaudeCodeExecutable: resolveExecutable("claude", "APCODE_CLAUDE_PATH"),
+        settingSources: ["user", "project", "local"],
+        includePartialMessages: true,
+        canUseTool,
+        env: { ...process.env, APCODE_MCP_TOKEN: mcpServer.token },
+        mcpServers: {
+          browser: {
+            type: "http",
+            url: mcpServer.url,
+            headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
           },
-          allowedTools: ["mcp__browser__snapshot", "mcp__browser__console"],
         },
-      });
+        allowedTools: ["mcp__browser__snapshot", "mcp__browser__console"],
+      };
+      if (model) options.model = model;
+      if (resumeToken) options.resume = resumeToken;
+      if (initialEffort) options.effort = toEffortLevel(initialEffort);
+      const q: Query = query({ prompt: inbox.iterable, options });
 
       // Message ids that streamed partial deltas, so we don't re-emit their full text.
       const streamed = new Set<string>();
@@ -177,11 +187,7 @@ const start = ({
       let effort = initialEffort;
 
       const handle = (msg: SDKMessage) => {
-        if (
-          "session_id" in msg &&
-          typeof msg.session_id === "string" &&
-          msg.session_id !== sessionId
-        ) {
+        if (msg.session_id !== undefined && msg.session_id !== sessionId) {
           sessionId = msg.session_id;
           onResumeToken(sessionId);
         }
@@ -194,10 +200,22 @@ const start = ({
             if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
               streamed.add(currentMessageId);
               blocks.set(blockId, (blocks.get(blockId) ?? "") + event.delta.text);
-              emit({ _tag: "assistant.delta", messageId: blockId, delta: event.delta.text });
+              emit(
+                RuntimeEvent.cases["assistant.delta"].make({
+                  threadId,
+                  messageId: blockId,
+                  delta: event.delta.text,
+                }),
+              );
             }
             if (event.type === "content_block_stop" && blocks.has(blockId)) {
-              emit({ _tag: "assistant.completed", messageId: blockId, text: blocks.get(blockId)! });
+              emit(
+                RuntimeEvent.cases["assistant.completed"].make({
+                  threadId,
+                  messageId: blockId,
+                  text: blocks.get(blockId)!,
+                }),
+              );
               blocks.delete(blockId);
             }
             return;
@@ -206,42 +224,54 @@ const start = ({
             if (msg.parent_tool_use_id) return;
             for (const block of msg.message.content) {
               if (block.type === "text" && !streamed.has(msg.message.id)) {
-                emit({ _tag: "assistant.completed", messageId: msg.message.id, text: block.text });
+                emit(
+                  RuntimeEvent.cases["assistant.completed"].make({
+                    threadId,
+                    messageId: msg.message.id,
+                    text: block.text,
+                  }),
+                );
               } else if (block.type === "tool_use") {
-                emit({
-                  _tag: "tool.started",
-                  toolId: block.id,
-                  name: block.name,
-                  summary: summarizeToolInput(block.input),
-                });
+                emit(
+                  RuntimeEvent.cases["tool.started"].make({
+                    threadId,
+                    toolId: block.id,
+                    name: block.name,
+                    summary: summarizeToolInput(Option.getOrNull(decodeToolInput(block.input))),
+                  }),
+                );
               }
             }
             return;
           }
           case "user": {
-            if (msg.parent_tool_use_id || typeof msg.message.content === "string") return;
+            if (msg.parent_tool_use_id || !Array.isArray(msg.message.content)) return;
             for (const block of msg.message.content) {
               if (block.type !== "tool_result") continue;
-              const output =
-                typeof block.content === "string"
-                  ? block.content
-                  : (block.content ?? [])
-                      .map((part) => (part.type === "text" ? part.text : `[${part.type}]`))
-                      .join("\n");
-              emit({
-                _tag: "tool.completed",
-                toolId: block.tool_use_id,
-                output,
-                isError: block.is_error === true,
-              });
+              emit(
+                RuntimeEvent.cases["tool.completed"].make({
+                  threadId,
+                  toolId: block.tool_use_id,
+                  output: Array.isArray(block.content)
+                    ? block.content
+                        .map((part) => (part.type === "text" ? part.text : `[${part.type}]`))
+                        .join("\n")
+                    : (block.content ?? ""),
+                  isError: block.is_error === true,
+                }),
+              );
             }
             return;
           }
           case "result": {
             if (msg.subtype !== "success")
-              emit({ _tag: "error", message: `Turn ended: ${msg.subtype}` });
-            emit({ _tag: "turn.completed", durationMs: msg.duration_ms });
-            emit({ _tag: "thread.status", status: "idle" });
+              emit(
+                RuntimeEvent.cases.error.make({ threadId, message: `Turn ended: ${msg.subtype}` }),
+              );
+            emit(
+              RuntimeEvent.cases["turn.completed"].make({ threadId, durationMs: msg.duration_ms }),
+            );
+            emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
             return;
           }
           default:
@@ -252,10 +282,15 @@ const start = ({
       void (async () => {
         try {
           for await (const msg of q) handle(msg);
-          emit({ _tag: "thread.status", status: "closed" });
+          emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "closed" }));
         } catch (error) {
-          emit({ _tag: "error", message: error instanceof Error ? error.message : String(error) });
-          emit({ _tag: "thread.status", status: "error" });
+          emit(
+            RuntimeEvent.cases.error.make({
+              threadId,
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          );
+          emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "error" }));
         }
       })();
 
@@ -263,7 +298,7 @@ const start = ({
         send: (turn) =>
           Effect.tryPromise({
             try: async () => {
-              emit({ _tag: "thread.status", status: "running" });
+              emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
               if (turn.permission !== permission) {
                 await q.setPermissionMode(PERMISSION_MODE[turn.permission]);
                 permission = turn.permission;
@@ -277,7 +312,7 @@ const start = ({
                 type: "user",
                 message: { role: "user", content },
                 parent_tool_use_id: null,
-                uuid: turn.messageId as UUID,
+                uuid: turn.messageId,
               });
             },
             catch: (e) => fail(e instanceof Error ? e.message : String(e)),
@@ -291,14 +326,14 @@ const start = ({
                 type: "user",
                 message: { role: "user", content },
                 parent_tool_use_id: null,
-                uuid: turn.messageId as UUID,
+                uuid: turn.messageId,
                 priority: "now",
               });
             },
             catch: (e) => fail(e instanceof Error ? e.message : String(e)),
           }),
         compact: Effect.sync(() => {
-          emit({ _tag: "thread.status", status: "running" });
+          emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
           inbox.push({
             type: "user",
             message: { role: "user", content: "/compact" },
@@ -323,19 +358,16 @@ const start = ({
             const entry = pending.get(requestId);
             if (!entry) return Effect.fail(fail(`Unknown approval request ${requestId}`));
             pending.delete(requestId);
-            entry.resolve(
-              decision === "deny"
-                ? { behavior: "deny", message: "Denied by user" }
-                : {
-                    behavior: "allow",
-                    updatedInput: entry.input,
-                    ...(decision === "allow-session" && entry.suggestions
-                      ? { updatedPermissions: entry.suggestions }
-                      : {}),
-                  },
-            );
-            emit({ _tag: "approval.resolved", requestId });
-            emit({ _tag: "thread.status", status: "running" });
+            if (decision === "deny") entry.resolve({ behavior: "deny", message: "Denied by user" });
+            else if (decision === "allow-session" && entry.suggestions)
+              entry.resolve({
+                behavior: "allow",
+                updatedInput: entry.input,
+                updatedPermissions: entry.suggestions,
+              });
+            else entry.resolve({ behavior: "allow", updatedInput: entry.input });
+            emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
+            emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
             return Effect.void;
           }),
         setModel: (next) =>
@@ -353,18 +385,25 @@ const start = ({
     catch: (e) => fail(e instanceof Error ? e.message : String(e)),
   });
 
-type UUID = `${string}-${string}-${string}-${string}-${string}`;
-
 /** A real prompt in the session log, rather than a tool result or something injected. */
-const isPrompt = (entry: { type: string; parent_tool_use_id: string | null; message: unknown }) => {
+function isPrompt(entry: SessionMessage) {
   if (entry.type !== "user" || entry.parent_tool_use_id) return false;
-  const content = (entry.message as { content?: unknown } | null)?.content;
-  if (typeof content === "string") return true;
-  return (
-    Array.isArray(content) &&
-    !content.some((block) => (block as { type?: string }).type === "tool_result")
+  return Option.match(
+    Schema.decodeUnknownOption(
+      Schema.Struct({
+        content: Schema.Union([
+          Schema.String,
+          Schema.Array(Schema.Struct({ type: Schema.optional(Schema.String) })),
+        ]),
+      }),
+    )(entry.message),
+    {
+      onNone: () => false,
+      onSome: ({ content }) =>
+        Predicate.isString(content) || !content.some((block) => block.type === "tool_result"),
+    },
   );
-};
+}
 
 /**
  * Forks the session just before the message: the original stays intact, and the fork

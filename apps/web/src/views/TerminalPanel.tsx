@@ -1,3 +1,4 @@
+import { ClientCommand } from "@apcode/contracts";
 import { ResizeHandle } from "@apcode/ui/components/resize-handle";
 import { cn } from "@apcode/ui/lib/utils";
 import { FitAddon } from "@xterm/addon-fit";
@@ -226,7 +227,9 @@ function TerminalView({ threadId, terminalId }: { threadId: string; terminalId: 
 
         let replaying = false;
         function acknowledge(characters: number) {
-          sendIfConnected({ _tag: "terminal.acknowledge", threadId, terminalId, characters });
+          sendIfConnected(
+            ClientCommand.cases["terminal.acknowledge"].make({ threadId, terminalId, characters }),
+          );
         }
         const detach = attachTerminal({
           threadId,
@@ -244,10 +247,20 @@ function TerminalView({ threadId, terminalId }: { threadId: string; terminalId: 
           fail: (message) => terminal.write(`\r\n\x1b[31m${message}\x1b[0m\r\n`),
         });
         terminal.onData((data) => {
-          if (!replaying) sendIfConnected({ _tag: "terminal.write", threadId, terminalId, data });
+          if (!replaying)
+            sendIfConnected(
+              ClientCommand.cases["terminal.write"].make({ threadId, terminalId, data }),
+            );
         });
         terminal.onResize(({ cols, rows }) =>
-          sendIfConnected({ _tag: "terminal.resize", threadId, terminalId, columns: cols, rows }),
+          sendIfConnected(
+            ClientCommand.cases["terminal.resize"].make({
+              threadId,
+              terminalId,
+              columns: cols,
+              rows,
+            }),
+          ),
         );
 
         let frame = 0;

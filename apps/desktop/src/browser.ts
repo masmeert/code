@@ -1,4 +1,4 @@
-import { BROWSER_PARTITION, type DesktopBrowserEvent } from "@apcode/contracts";
+import { BROWSER_PARTITION, DesktopBrowserEvent } from "@apcode/contracts";
 import { type BrowserWindow, clipboard, Menu, session, shell, type WebContents } from "electron";
 import { recordConsole } from "./browserAutomation.ts";
 
@@ -50,7 +50,10 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
         },
       };
     }
-    sendToHost(window, { _tag: "open-tab", webContentsId: guest.id, url });
+    sendToHost(
+      window,
+      DesktopBrowserEvent.cases["open-tab"].make({ webContentsId: guest.id, url }),
+    );
     return { action: "deny" };
   });
   guest.on("did-create-window", (popup) =>
@@ -63,7 +66,7 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
     if (shortcut === "reload") guest.reload();
     else if (shortcut === "back") guest.navigationHistory.goBack();
     else if (shortcut === "forward") guest.navigationHistory.goForward();
-    else sendToHost(window, { _tag: shortcut, webContentsId: guest.id });
+    else sendToHost(window, DesktopBrowserEvent.cases[shortcut].make({ webContentsId: guest.id }));
   });
   guest.on("context-menu", (_event, params) => {
     guest.focus();
@@ -73,11 +76,13 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
             {
               label: "Open Link in New Tab",
               click: () =>
-                sendToHost(window, {
-                  _tag: "open-tab",
-                  webContentsId: guest.id,
-                  url: params.linkURL,
-                }),
+                sendToHost(
+                  window,
+                  DesktopBrowserEvent.cases["open-tab"].make({
+                    webContentsId: guest.id,
+                    url: params.linkURL,
+                  }),
+                ),
             },
             {
               label: "Open Link in Default Browser",

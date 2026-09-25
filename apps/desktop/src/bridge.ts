@@ -4,12 +4,12 @@ import * as Schema from "effect/Schema";
 import { automateBrowser } from "./browserAutomation.ts";
 import { APP_URL } from "./renderer.ts";
 
-function handle<S extends Schema.ConstraintDecoder<unknown>>(
+function handle<S extends Schema.ConstraintDecoder<unknown>, Result>(
   channel: string,
   schema: S,
-  listener: (window: BrowserWindow, arg: S["Type"]) => unknown,
+  listener: (window: BrowserWindow, arg: S["Type"]) => Result,
 ) {
-  ipcMain.handle(channel, (event, arg: unknown) => {
+  ipcMain.handle(channel, (event, arg) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (!window || !event.senderFrame?.url.startsWith(APP_URL))
       throw new Error(`${channel} is only available to APCode windows`);
