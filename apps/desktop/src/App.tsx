@@ -100,18 +100,17 @@ export const App = () => {
           )}
         </AnimatedSidebarInset>
         <AppModal view={modal} onView={setModal} />
-        {palette ? (
-          <CommandPalette
-            onClose={() => setPalette(false)}
-            onOpenThread={(id) => setView({ kind: "thread", id })}
-            onNewThreadIn={(path) => draft(path)}
-            actions={[
-              { id: "thread.new", label: "New thread", hint: describe("thread.new"), icon: <SquarePen />, run: () => draft(currentPath) },
-              { id: "window.new", label: "New window", icon: <AppWindow />, run: () => openWindow(currentPath) },
-              { id: "settings.open", label: "Settings", hint: describe("settings.open"), icon: <SettingsIcon />, run: () => setModal("settings") },
-            ]}
-          />
-        ) : null}
+        <CommandPalette
+          open={palette}
+          onClose={() => setPalette(false)}
+          onOpenThread={(id) => setView({ kind: "thread", id })}
+          onNewThreadIn={(path) => draft(path)}
+          actions={[
+            { id: "thread.new", label: "New thread", hint: describe("thread.new"), icon: <SquarePen />, run: () => draft(currentPath) },
+            { id: "window.new", label: "New window", icon: <AppWindow />, run: () => openWindow(currentPath) },
+            { id: "settings.open", label: "Settings", hint: describe("settings.open"), icon: <SettingsIcon />, run: () => setModal("settings") },
+          ]}
+        />
       </ChatApp>
     </DiffWorkers>
   );
