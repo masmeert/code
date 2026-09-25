@@ -27,6 +27,13 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match apps/desktop/package.json version $version. Bump the version or retag."
             exit 1
           fi
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          awk -v version="${GITHUB_REF_NAME#v}" '/^## /{found = $2 == version; next} found' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"; then
+            echo "CHANGELOG.md has no notes under '## ${GITHUB_REF_NAME#v} - <date>'. Rename the Unreleased section and retag."
+            exit 1
+          fi
       - run: pnpm install --frozen-lockfile
       # electron-builder's own CSC_LINK import unlocks its keychain with the .p12 password, which macOS rejects
       - name: Import signing certificate
@@ -45,7 +52,7 @@ jobs:
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           rm "$RUNNER_TEMP/cert.p12"
       # electron-builder uploads in parallel and each upload creates its own draft if none exists yet
-      - run: gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME"
+      - run: gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm release
