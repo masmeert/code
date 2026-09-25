@@ -353,7 +353,11 @@ export function ApprovalCard({
                   key={question.id}
                   initial={reduce ? { opacity: 1 } : { opacity: 0, x: 8 }}
                   animate={{ opacity: 1, x: 0 }}
-                  exit={reduce ? { opacity: 0 } : { opacity: 0, x: -6 }}
+                  exit={
+                    reduce
+                      ? { opacity: 0 }
+                      : { opacity: 0, x: -6, transition: { duration: 0.12, ease: EASE_OUT } }
+                  }
                   transition={{ duration: reduce ? 0 : 0.2, ease: EASE_OUT }}
                 >
                   {question.description ? (

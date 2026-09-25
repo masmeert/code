@@ -1,4 +1,4 @@
-import { motion, MotionConfig, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import {
   createContext,
   useCallback,
@@ -46,7 +46,6 @@ export function RadioGroup({
 }: RadioGroupProps) {
   const [internal, setInternal] = useState(defaultValue);
   const layoutId = useId();
-  const reduce = useReducedMotion();
   const controlled = value !== undefined;
   const current = controlled ? value : internal;
   const setValue = useCallback(
@@ -62,20 +61,18 @@ export function RadioGroup({
   );
 
   return (
-    <MotionConfig transition={reduce ? { duration: 0 } : SPRING_LAYOUT}>
-      <RadioCtx.Provider value={contextValue}>
-        <div
-          role="radiogroup"
-          className={cn(
-            "flex gap-3",
-            orientation === "vertical" ? "flex-col" : "flex-row flex-wrap",
-            className,
-          )}
-        >
-          {children}
-        </div>
-      </RadioCtx.Provider>
-    </MotionConfig>
+    <RadioCtx.Provider value={contextValue}>
+      <div
+        role="radiogroup"
+        className={cn(
+          "flex gap-3",
+          orientation === "vertical" ? "flex-col" : "flex-row flex-wrap",
+          className,
+        )}
+      >
+        {children}
+      </div>
+    </RadioCtx.Provider>
   );
 }
 
@@ -116,7 +113,7 @@ export function RadioGroupItem({
         aria-checked={selected}
         disabled={disabled}
         onClick={() => !disabled && setValue(value)}
-        whileTap={reduce || disabled ? undefined : { scale: 0.92 }}
+        whileTap={reduce || disabled ? undefined : { scale: 0.95 }}
         transition={SPRING_PRESS}
         data-state={selected ? "checked" : "unchecked"}
         className={cn(

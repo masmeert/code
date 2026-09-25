@@ -1,4 +1,4 @@
-import { BookOpenText, ChevronDown, ExternalLink, Globe2 } from "lucide-react";
+import { BookOpenText, ChevronRight, ExternalLink, Globe2 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   type ReactNode,
@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
+import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
 import { useFavicon } from "@apcode/ui/hooks/use-favicon";
 import { cn } from "@apcode/ui/lib/utils";
 
@@ -192,7 +192,7 @@ export function CitationList({
     idPrefix ?? `citation-list-${baseId.replace(/:/g, "")}`;
 
   return (
-    <div className={cn("grid gap-0.5", className)}>
+    <div className={cn("relative grid gap-0.5", className)}>
       <AnimatePresence mode="popLayout">
         {citations.map((citation, index) => (
           <motion.div
@@ -232,7 +232,6 @@ export function Citations({
   idPrefix,
   className,
 }: CitationsProps) {
-  const reduce = useReducedMotion() ?? false;
   const baseId = useId();
   const contentId = `${baseId}-content`;
   const resolvedPrefix =
@@ -261,14 +260,13 @@ export function Citations({
         <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
           {citations.length}
         </span>
-        <motion.span
+        <ChevronRight
           aria-hidden="true"
-          animate={{ rotate: currentOpen ? 180 : 0 }}
-          transition={reduce ? { duration: 0 } : SPRING_SWAP}
-          className="text-muted-foreground/60"
-        >
-          <ChevronDown className="size-3.5" />
-        </motion.span>
+          className={cn(
+            "size-3.5 text-muted-foreground/60 transition duration-200 ease-out",
+            currentOpen && "rotate-90",
+          )}
+        />
       </button>
 
       <AgentDisclosure

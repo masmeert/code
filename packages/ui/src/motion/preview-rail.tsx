@@ -185,7 +185,7 @@ export function PreviewRail({
               <motion.span
                 data-slot="preview-rail-tick"
                 aria-hidden="true"
-                animate={isHorizontal ? { scaleY: scale } : { scaleX: scale }}
+                animate={{ transform: isHorizontal ? `scaleY(${scale})` : `scaleX(${scale})` }}
                 transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
                 className={cn(
                   "block bg-current",

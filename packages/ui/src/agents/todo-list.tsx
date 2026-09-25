@@ -1,4 +1,4 @@
-import { ChevronDown, ListTodo } from "lucide-react";
+import { ChevronRight, ListTodo } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   type ReactNode,
@@ -11,6 +11,7 @@ import {
 } from "react";
 import { ActionSwapRollText } from "@apcode/ui/motion/action-swap-roll";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
+import { useArrivalOrder } from "@apcode/ui/hooks/use-arrival-order";
 import {
   EASE_OUT,
   SPRING_LAYOUT,
@@ -63,7 +64,7 @@ function TodoHeaderIcon({ complete }: { complete: boolean }) {
           <motion.svg
             key="complete"
             viewBox="0 0 24 24"
-            initial={reduce ? { opacity: 1 } : { opacity: 0, scale: 0.72 }}
+            initial={reduce ? { opacity: 1 } : { opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0 }}
             transition={reduce ? { duration: 0 } : SPRING_SWAP}
@@ -87,9 +88,9 @@ function TodoHeaderIcon({ complete }: { complete: boolean }) {
         ) : (
           <motion.span
             key="todo"
-            initial={reduce ? { opacity: 1 } : { opacity: 0, scale: 0.8 }}
+            initial={reduce ? { opacity: 1 } : { opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.72 }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
             transition={reduce ? { duration: 0 } : SPRING_SWAP}
             className="absolute grid place-items-center text-muted-foreground"
           >
@@ -137,33 +138,32 @@ function TodoStatusIcon({
         transition={reduce ? { duration: 0 } : { duration: 0.18, ease: EASE_OUT }}
         className={cn(status === "in-progress" && "opacity-20")}
       />
-      <motion.circle
-        cx="12"
-        cy="12"
-        r="9"
-        pathLength="1"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        initial={false}
-        animate={{
-          pathLength: status === "in-progress" ? normalizedProgress : 0,
-          opacity: status === "in-progress" ? 1 : 0,
-          rotate:
-            status === "in-progress" && progress === undefined && !reduce
-              ? 360
-              : -90,
-        }}
-        transition={
-          status === "in-progress" && progress === undefined && !reduce
-            ? { rotate: { duration: 1.1, repeat: Infinity, ease: "linear" } }
-            : reduce
-              ? { duration: 0 }
-              : SPRING_LAYOUT
-        }
-        style={{ transformOrigin: "12px 12px" }}
-      />
+      <g
+        className={cn(
+          "origin-[12px_12px]",
+          status === "in-progress" &&
+            progress === undefined &&
+            "animate-spin motion-reduce:animate-none",
+        )}
+      >
+        <motion.circle
+          cx="12"
+          cy="12"
+          r="9"
+          pathLength="1"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          transform="rotate(-90 12 12)"
+          initial={false}
+          animate={{
+            pathLength: status === "in-progress" ? normalizedProgress : 0,
+            opacity: status === "in-progress" ? 1 : 0,
+          }}
+          transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
+        />
+      </g>
       <motion.path
         d="M7.5 12.25 10.5 15.25 16.75 8.75"
         fill="none"
@@ -216,6 +216,7 @@ export function TodoList({
   const completed = items.filter((item) => item.status === "completed").length;
   const allComplete = items.length > 0 && completed === items.length;
   const itemCount = items.length;
+  const arrival = useArrivalOrder(items.map((item) => item.id));
 
   const setOpen = useCallback(
     (next: boolean) => {
@@ -290,14 +291,13 @@ export function TodoList({
             <span>{items.length}</span>
           </span>
         </span>
-        <motion.span
+        <ChevronRight
           aria-hidden="true"
-          animate={{ rotate: currentOpen ? 180 : 0 }}
-          transition={reduce ? { duration: 0 } : SPRING_SWAP}
-          className="text-muted-foreground/50 transition-colors group-hover:text-muted-foreground"
-        >
-          <ChevronDown className="size-3.5" />
-        </motion.span>
+          className={cn(
+            "size-3.5 text-muted-foreground/50 transition duration-200 ease-out group-hover:text-muted-foreground",
+            currentOpen && "rotate-90",
+          )}
+        />
       </button>
 
       <AgentDisclosure
@@ -312,10 +312,11 @@ export function TodoList({
           style={{ maxHeight }}
         >
           {items.length ? (
-            <ol aria-live="polite" className="space-y-0">
+            <ol aria-live="polite" className="relative space-y-0">
             <AnimatePresence initial={false} mode="popLayout">
               {items.map((item) => {
                 const status = item.status ?? "pending";
+                const delay = arrival(item.id) * 0.04;
                 return (
                   <motion.li
                     layout="position"
@@ -327,8 +328,8 @@ export function TodoList({
                       reduce
                         ? { duration: 0 }
                         : {
-                            opacity: { duration: 0.18, ease: EASE_OUT },
-                            y: SPRING_LAYOUT,
+                            opacity: { duration: 0.18, ease: EASE_OUT, delay },
+                            y: { ...SPRING_LAYOUT, delay },
                             layout: SPRING_LAYOUT,
                           }
                     }
@@ -355,9 +356,7 @@ export function TodoList({
                             opacity: status === "completed" ? 1 : 0,
                           }}
                           transition={
-                            reduce
-                              ? { duration: 0 }
-                              : { duration: 0.28, ease: EASE_OUT, delay: 0.06 }
+                            reduce ? { duration: 0 } : { duration: 0.2, ease: EASE_OUT }
                           }
                           className="absolute inset-x-0 top-1/2 h-px origin-left bg-current"
                         />

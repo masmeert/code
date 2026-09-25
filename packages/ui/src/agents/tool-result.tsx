@@ -2,7 +2,7 @@ import {
   Ban,
   Braces,
   Check,
-  ChevronDown,
+  ChevronRight,
   CircleCheck,
   CircleX,
   Copy,
@@ -25,9 +25,12 @@ import {
   AgentCode,
   type AgentCodeLanguage,
 } from "@apcode/ui/agents/agent-code";
-import { ActionSwapRollText } from "@apcode/ui/motion/action-swap-roll";
+import {
+  ActionSwapRollIcon,
+  ActionSwapRollText,
+} from "@apcode/ui/motion/action-swap-roll";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
-import { SPRING_PRESS, SPRING_SWAP } from "@apcode/ui/lib/ease";
+import { SPRING_PRESS } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
 export type ToolResultStatus = "running" | "success" | "error" | "cancelled";
@@ -64,12 +67,6 @@ function getStatusLabel(status: ToolResultStatus) {
   if (status === "success") return "Completed";
   if (status === "error") return "Failed";
   return "Cancelled";
-}
-
-function getSwapKey(value: ReactNode, fallback: string) {
-  return typeof value === "string" || typeof value === "number"
-    ? String(value)
-    : fallback;
 }
 
 function getStatusClass(status: ToolResultStatus) {
@@ -123,7 +120,7 @@ function ToolResultAction({
       aria-label={label}
       title={label}
       onClick={onClick}
-      whileTap={reduce ? undefined : { scale: 0.9 }}
+      whileTap={reduce ? undefined : { scale: 0.95 }}
       transition={SPRING_PRESS}
       className="grid size-7 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
     >
@@ -180,9 +177,6 @@ export function ToolResult({
   const currentOpen = open ?? internalOpen;
   const running = status === "running";
   const canCopy = Boolean(copyText || onCopy);
-  const titleKey = getSwapKey(title, status);
-  const metaKey = getSwapKey(meta, `${status}-meta`);
-  const toolKey = getSwapKey(tool, `${status}-tool`);
   const statusLabel = getStatusLabel(status);
 
   const setOpen = useCallback(
@@ -219,14 +213,7 @@ export function ToolResult({
     if (!viewport || !currentOpen || !running) return;
 
     const frame = requestAnimationFrame(() => {
-      if (typeof viewport.scrollTo === "function") {
-        viewport.scrollTo({
-          top: viewport.scrollHeight,
-          behavior: reduce ? "auto" : "smooth",
-        });
-      } else {
-        viewport.scrollTop = viewport.scrollHeight;
-      }
+      viewport.scrollTop = viewport.scrollHeight;
     });
     return () => cancelAnimationFrame(frame);
   });
@@ -262,21 +249,15 @@ export function ToolResult({
         </span>
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
           <span className="min-w-0 truncate font-medium text-foreground/90">
-            <ActionSwapRollText value={titleKey}>
-              {title}
-            </ActionSwapRollText>
+            {title}
           </span>
           {meta ? (
             <span className="shrink-0 text-xs text-muted-foreground/60">
-              <ActionSwapRollText value={metaKey}>
-                {meta}
-              </ActionSwapRollText>
+              {meta}
             </span>
           ) : null}
           <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground/55">
-            <ActionSwapRollText value={toolKey}>
-              {tool}
-            </ActionSwapRollText>
+            {tool}
           </span>
         </span>
         <span
@@ -288,14 +269,13 @@ export function ToolResult({
           <StatusIcon status={status} reduce={reduce} />
           <ActionSwapRollText value={status}>{statusLabel}</ActionSwapRollText>
         </span>
-        <motion.span
+        <ChevronRight
           aria-hidden="true"
-          animate={{ rotate: currentOpen ? 180 : 0 }}
-          transition={reduce ? { duration: 0 } : SPRING_SWAP}
-          className="shrink-0 text-muted-foreground/50 transition-colors group-hover:text-muted-foreground"
-        >
-          <ChevronDown className="size-3.5" />
-        </motion.span>
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground/50 transition duration-200 ease-out group-hover:text-muted-foreground",
+            currentOpen && "rotate-90",
+          )}
+        />
       </button>
 
       <AgentDisclosure
@@ -323,11 +303,13 @@ export function ToolResult({
                   label={copied ? "Copied" : "Copy result"}
                   onClick={handleCopy}
                 >
-                  {copied ? (
-                    <Check className="size-3.5" />
-                  ) : (
-                    <Copy className="size-3.5" />
-                  )}
+                  <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">
+                    {copied ? (
+                      <Check className="size-3.5" />
+                    ) : (
+                      <Copy className="size-3.5" />
+                    )}
+                  </ActionSwapRollIcon>
                 </ToolResultAction>
               ) : null}
               {onRetry ? (
@@ -336,9 +318,7 @@ export function ToolResult({
                 </ToolResultAction>
               ) : null}
               <span className="ml-auto text-[11px] text-muted-foreground/55">
-                <ActionSwapRollText value={status}>
-                  {statusLabel}
-                </ActionSwapRollText>
+                {statusLabel}
               </span>
               </div>
             ) : null}

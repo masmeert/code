@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   type ReactNode,
@@ -11,11 +11,7 @@ import {
 } from "react";
 import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
-import {
-  EASE_OUT,
-  SPRING_LAYOUT,
-  SPRING_SWAP,
-} from "@apcode/ui/lib/ease";
+import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 import { ActivityRow } from "./agent-activity/activity-row";
 import type {
@@ -220,14 +216,13 @@ export function AgentActivity({
               ? renderCompletedStatus({ summary: completedSummary, duration })
               : completedSummary}
           </span>
-          <motion.span
+          <ChevronRight
             aria-hidden="true"
-            animate={{ rotate: expanded ? 180 : 0 }}
-            transition={reduce ? { duration: 0 } : SPRING_SWAP}
-            className="inline-flex shrink-0 text-muted-foreground/70 group-hover:text-foreground"
-          >
-            <ChevronDown className="size-3.5" />
-          </motion.span>
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground/70 transition duration-200 ease-out group-hover:text-foreground",
+              expanded && "rotate-90",
+            )}
+          />
         </button>
       )}
 
@@ -250,9 +245,9 @@ export function AgentActivity({
             ref={contentRef}
             role="list"
             initial={false}
-            animate={{ y: streamOffset }}
+            animate={{ transform: `translateY(${streamOffset}px)` }}
             transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
-            className={cn("space-y-0.5 py-2", contentClassName)}
+            className={cn("relative space-y-0.5 py-2", contentClassName)}
           >
             <AnimatePresence mode="popLayout">
               {items.map((item) => (

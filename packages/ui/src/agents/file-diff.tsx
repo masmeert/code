@@ -1,6 +1,6 @@
 import {
   Check,
-  ChevronDown,
+  ChevronRight,
   Copy,
   FileCode2,
   LoaderCircle,
@@ -21,7 +21,8 @@ import {
   useAgentCodeTokens,
 } from "@apcode/ui/agents/agent-code";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
-import { SPRING_PRESS, SPRING_SWAP } from "@apcode/ui/lib/ease";
+import { ActionSwapRollIcon } from "@apcode/ui/motion/action-swap-roll";
+import { SPRING_PRESS } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
 export type FileDiffStatus = "streaming" | "complete";
@@ -132,15 +133,7 @@ export function FileDiff({
     if (!viewport || !currentOpen || !streaming) return;
 
     const frame = requestAnimationFrame(() => {
-      if (viewport.scrollHeight <= viewport.clientHeight) return;
-      if (typeof viewport.scrollTo === "function") {
-        viewport.scrollTo({
-          top: viewport.scrollHeight,
-          behavior: reduce ? "auto" : "smooth",
-        });
-      } else {
-        viewport.scrollTop = viewport.scrollHeight;
-      }
+      viewport.scrollTop = viewport.scrollHeight;
     });
     return () => cancelAnimationFrame(frame);
   });
@@ -189,14 +182,13 @@ export function FileDiff({
             <Check aria-label="Changes applied" className="size-3.5" />
           )}
         </span>
-        <motion.span
+        <ChevronRight
           aria-hidden="true"
-          animate={{ rotate: currentOpen ? 180 : 0 }}
-          transition={reduce ? { duration: 0 } : SPRING_SWAP}
-          className="shrink-0 text-muted-foreground/45 transition-colors group-hover:text-muted-foreground"
-        >
-          <ChevronDown className="size-3.5" />
-        </motion.span>
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground/45 transition duration-200 ease-out group-hover:text-muted-foreground",
+            currentOpen && "rotate-90",
+          )}
+        />
       </button>
 
       <AgentDisclosure
@@ -266,15 +258,17 @@ export function FileDiff({
                   aria-label={copied ? "Copied" : "Copy diff"}
                   title={copied ? "Copied" : "Copy diff"}
                   onClick={handleCopy}
-                  whileTap={reduce ? undefined : { scale: 0.9 }}
+                  whileTap={reduce ? undefined : { scale: 0.95 }}
                   transition={SPRING_PRESS}
                   className="grid size-7 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-background/70 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
                 >
-                  {copied ? (
-                    <Check className="size-3.5" />
-                  ) : (
-                    <Copy className="size-3.5" />
-                  )}
+                  <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">
+                    {copied ? (
+                      <Check className="size-3.5" />
+                    ) : (
+                      <Copy className="size-3.5" />
+                    )}
+                  </ActionSwapRollIcon>
                 </motion.button>
               </div>
             ) : null}

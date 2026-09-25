@@ -32,12 +32,12 @@ export function AgentDisclosure({
           : {
               opacity: open ? 1 : 0,
               clipPath: open ? "inset(0 0 0% 0)" : "inset(0 0 100% 0)",
-              y: open ? 0 : -4,
+              transform: open ? "translateY(0px)" : "translateY(-4px)",
             }
       }
       transition={
         transition ?? {
-          duration: reduce ? 0 : open ? 0.22 : 0.14,
+          duration: open && !reduce ? 0.22 : 0,
           ease: EASE_OUT,
         }
       }

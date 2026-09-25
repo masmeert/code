@@ -1,6 +1,6 @@
 import {
   Check,
-  ChevronDown,
+  ChevronRight,
   Copy,
   RotateCcw,
   ThumbsDown,
@@ -21,7 +21,8 @@ import {
   CitationStack,
 } from "@apcode/ui/agents/citations";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
-import { EASE_OUT, SPRING_PRESS, SPRING_SWAP } from "@apcode/ui/lib/ease";
+import { ActionSwapRollIcon } from "@apcode/ui/motion/action-swap-roll";
+import { EASE_OUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
 export type StreamingResponseStatus = "streaming" | "complete" | "error";
@@ -76,7 +77,7 @@ function ResponseAction({
       title={label}
       aria-pressed={label === "Helpful" || label === "Not helpful" ? active : undefined}
       onClick={onClick}
-      whileTap={reduce ? undefined : { scale: 0.9 }}
+      whileTap={reduce ? undefined : { scale: 0.95 }}
       transition={SPRING_PRESS}
       className={cn(
         "grid size-7 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
@@ -190,11 +191,13 @@ export function StreamingResponse({
                   label={copied ? "Copied" : "Copy response"}
                   onClick={handleCopy}
                 >
-                  {copied ? (
-                    <Check className="size-3.5" />
-                  ) : (
-                    <Copy className="size-3.5" />
-                  )}
+                  <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">
+                    {copied ? (
+                      <Check className="size-3.5" />
+                    ) : (
+                      <Copy className="size-3.5" />
+                    )}
+                  </ActionSwapRollIcon>
                 </ResponseAction>
               ) : null}
               {onRetry ? (
@@ -232,14 +235,13 @@ export function StreamingResponse({
                   <span className="tabular-nums">
                     {sources.length} {sources.length === 1 ? "source" : "sources"}
                   </span>
-                  <motion.span
+                  <ChevronRight
                     aria-hidden="true"
-                    animate={{ rotate: currentSourcesOpen ? 180 : 0 }}
-                    transition={reduce ? { duration: 0 } : SPRING_SWAP}
-                    className="text-muted-foreground/50 group-hover:text-muted-foreground"
-                  >
-                    <ChevronDown className="size-3" />
-                  </motion.span>
+                    className={cn(
+                      "size-3 text-muted-foreground/50 transition duration-200 ease-out group-hover:text-muted-foreground",
+                      currentSourcesOpen && "rotate-90",
+                    )}
+                  />
                 </button>
               ) : null}
             </div>

@@ -2,7 +2,7 @@ import { Check, CircleAlert, RotateCcw } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useRef } from "react";
-import { EASE_IN_OUT, EASE_OUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
+import { EASE_OUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
 import { useHoverCapable } from "@apcode/ui/hooks/use-hover-capable";
 import { cn } from "@apcode/ui/lib/utils";
 
@@ -80,21 +80,18 @@ function DitherMark({
   }
 
   return (
-    <motion.span
+    <span
       aria-hidden="true"
-      animate={reduce ? undefined : { rotate: 360 }}
-      transition={{
-        duration: 2.4,
-        ease: EASE_IN_OUT,
-        repeat: Number.POSITIVE_INFINITY,
-      }}
-      className="grid size-3.5 grid-cols-2 place-items-center gap-0.5"
+      className={cn(
+        "grid size-3.5 grid-cols-2 place-items-center gap-0.5",
+        !reduce && "animate-spin [animation-duration:2.4s]",
+      )}
     >
       <span className="size-1 rounded-[1px] bg-current" />
       <span className="size-1 rounded-[1px] bg-current opacity-55" />
       <span className="size-1 rounded-[1px] bg-current opacity-55" />
       <span className="size-1 rounded-[1px] bg-current" />
-    </motion.span>
+    </span>
   );
 }
 
@@ -113,11 +110,18 @@ function DitherField({
   useEffect(() => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
-    if (!canvas || !context) return;
+    const resting = document.createElement("canvas");
+    const restingContext = resting.getContext("2d");
+    if (!canvas || !context || !restingContext) return;
 
     let frame = 0;
+    let visible = true;
     let width = 0;
     let height = 0;
+    let columns = 0;
+    let rows = 0;
+    let offsetX = 0;
+    let offsetY = 0;
     let dotColor = "currentColor";
     const pointer = {
       x: 0,
@@ -142,11 +146,33 @@ function DitherField({
       pointer.y = height / 2;
       pointer.targetX = pointer.x;
       pointer.targetY = pointer.y;
+
+      columns = Math.ceil(width / DOT_GAP) + 1;
+      rows = Math.ceil(height / DOT_GAP) + 1;
+      offsetX = (width - (columns - 1) * DOT_GAP) / 2;
+      offsetY = (height - (rows - 1) * DOT_GAP) / 2;
+
+      resting.width = canvas.width;
+      resting.height = canvas.height;
+      restingContext.setTransform(dpr, 0, 0, dpr, 0, 0);
+      restingContext.fillStyle = dotColor;
+      restingContext.globalAlpha = 0.17;
+      for (let row = 0; row < rows; row += 1) {
+        for (let column = 0; column < columns; column += 1) {
+          restingContext.beginPath();
+          restingContext.arc(
+            offsetX + column * DOT_GAP,
+            offsetY + row * DOT_GAP,
+            0.65,
+            0,
+            TWO_PI,
+          );
+          restingContext.fill();
+        }
+      }
     };
 
     const draw = (time: number) => {
-      context.clearRect(0, 0, width, height);
-
       if (!pointer.inside) {
         pointer.targetX =
           width / 2 + (reduce ? 0 : Math.sin(time / 1700) * width * 0.12);
@@ -159,15 +185,23 @@ function DitherField({
       pointer.y += (pointer.targetY - pointer.y) * follow;
 
       const radius = Math.min(width, height) * 0.38;
-      const columns = Math.ceil(width / DOT_GAP) + 1;
-      const rows = Math.ceil(height / DOT_GAP) + 1;
-      const offsetX = (width - (columns - 1) * DOT_GAP) / 2;
-      const offsetY = (height - (rows - 1) * DOT_GAP) / 2;
+      const firstColumn = Math.max(0, Math.floor((pointer.x - radius - offsetX) / DOT_GAP));
+      const lastColumn = Math.min(columns - 1, Math.ceil((pointer.x + radius - offsetX) / DOT_GAP));
+      const firstRow = Math.max(0, Math.floor((pointer.y - radius - offsetY) / DOT_GAP));
+      const lastRow = Math.min(rows - 1, Math.ceil((pointer.y + radius - offsetY) / DOT_GAP));
 
+      context.clearRect(0, 0, width, height);
+      context.drawImage(resting, 0, 0, width, height);
+      context.clearRect(
+        offsetX + (firstColumn - 0.5) * DOT_GAP,
+        offsetY + (firstRow - 0.5) * DOT_GAP,
+        Math.max(0, lastColumn - firstColumn + 1) * DOT_GAP,
+        Math.max(0, lastRow - firstRow + 1) * DOT_GAP,
+      );
       context.fillStyle = dotColor;
 
-      for (let row = 0; row < rows; row += 1) {
-        for (let column = 0; column < columns; column += 1) {
+      for (let row = firstRow; row <= lastRow; row += 1) {
+        for (let column = firstColumn; column <= lastColumn; column += 1) {
           const anchorX = offsetX + column * DOT_GAP;
           const anchorY = offsetY + row * DOT_GAP;
           const deltaX = anchorX - pointer.x;
@@ -190,7 +224,7 @@ function DitherField({
       }
 
       context.globalAlpha = 1;
-      if (!reduce) frame = window.requestAnimationFrame(draw);
+      frame = !reduce && visible ? window.requestAnimationFrame(draw) : 0;
     };
 
     const handlePointerMove = (event: PointerEvent) => {
@@ -208,10 +242,23 @@ function DitherField({
     const resizeObserver =
       typeof ResizeObserver === "undefined"
         ? null
-        : new ResizeObserver(resize);
+        : new ResizeObserver(() => {
+            resize();
+            if (!frame) draw(performance.now());
+          });
+    const intersectionObserver =
+      typeof IntersectionObserver === "undefined"
+        ? null
+        : new IntersectionObserver(([entry]) => {
+            visible = entry?.isIntersecting ?? true;
+            if (visible && !frame && !reduce) {
+              frame = window.requestAnimationFrame(draw);
+            }
+          });
 
     resize();
     resizeObserver?.observe(canvas);
+    intersectionObserver?.observe(canvas);
     canvas.addEventListener("pointermove", handlePointerMove, { passive: true });
     canvas.addEventListener("pointerleave", handlePointerLeave);
     draw(0);
@@ -219,6 +266,7 @@ function DitherField({
     return () => {
       if (frame) window.cancelAnimationFrame(frame);
       resizeObserver?.disconnect();
+      intersectionObserver?.disconnect();
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerleave", handlePointerLeave);
     };

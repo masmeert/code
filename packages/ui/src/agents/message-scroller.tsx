@@ -76,7 +76,7 @@ export interface MessageScrollerProps extends ComponentPropsWithRef<"div"> {
   followOutput?: boolean;
   /** Distance from the end that still counts as following the output. */
   followThreshold?: number;
-  /** Smoothly follow growing content. */
+  /** Glide to messages picked from the rail. */
   smooth?: boolean;
   /** Reports when the reader leaves or returns to the live edge. */
   onFollowChange?: (following: boolean) => void;
@@ -125,7 +125,6 @@ export function MessageScroller({
   const viewportRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const followingRef = useRef(followOutput);
-  const landedRef = useRef(false);
   const programmaticScrollRef = useRef(false);
   const scrollTimerRef = useRef<number | undefined>(undefined);
   const frameRef = useRef<number | undefined>(undefined);
@@ -313,20 +312,12 @@ export function MessageScroller({
 
     const observer = new ResizeObserver(() => {
       scheduleRailSync();
-      if (!followOutput || !followingRef.current) return;
-      // The first content to overflow is a transcript opening (or arriving after
-      // mount), not output streaming in: jump to the end instead of gliding there.
-      const viewport = viewportRef.current;
-      const landing = !landedRef.current;
-      if (viewport && viewport.scrollHeight > viewport.clientHeight) {
-        landedRef.current = true;
-      }
-      scrollToEnd(landing || reduce || !smooth ? "auto" : "smooth");
+      if (followOutput && followingRef.current) scrollToEnd("auto");
     });
     observer.observe(content);
 
     return () => observer.disconnect();
-  }, [followOutput, reduce, scheduleRailSync, scrollToEnd, smooth]);
+  }, [followOutput, scheduleRailSync, scrollToEnd]);
 
   useEffect(() => {
     if (navigation !== "rail") {

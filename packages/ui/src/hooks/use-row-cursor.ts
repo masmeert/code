@@ -2,10 +2,9 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
 /**
  * Where the keyboard or the pointer last moved to: the row's id, stamped with
- * the query it was placed under, and whether the step there wrapped around an
- * end of the list.
+ * the query it was placed under, and whether the pointer put it there.
  */
-type RowCursor = { id: string; query: string; wrapped: boolean };
+type RowCursor = { id: string; query: string; pointed: boolean };
 
 /** The cursor's row, or -1 once the query has moved on or the row has left. */
 function indexOfCursor(
@@ -48,11 +47,10 @@ function indexOfCursor(
  * With `loop`, stepping past either end lands on the other one; without it the
  * ends hold.
  *
- * `continuous` says whether the highlight got to its row by a move within the
- * list as it stands: the pointer, or a step to a neighbour. It is false when
- * the list put the highlight there (a new query, a row that left) and after a
- * step wrapped around an end, which is when a highlight that glides between
- * rows should jump instead.
+ * `pointed` says whether the pointer moved the highlight to its row within the
+ * list as it stands. It is false after a key step and when the list put the
+ * highlight there (a new query, a row that left), which is when a highlight
+ * that glides between rows should jump instead.
  */
 export function useRowCursor(
   rows: readonly { id: string }[],
@@ -80,7 +78,7 @@ export function useRowCursor(
       setCursor(
         id === null
           ? null
-          : { id, query: latest.current.query, wrapped: false },
+          : { id, query: latest.current.query, pointed: true },
       ),
     [],
   );
@@ -98,13 +96,13 @@ export function useRowCursor(
       const next = wrapped
         ? (stepped + live.length) % live.length
         : Math.min(Math.max(stepped, 0), last);
-      return { id: live[next].id, query: liveQuery, wrapped };
+      return { id: live[next].id, query: liveQuery, pointed: false };
     });
   }, [loop]);
 
   return {
     activeIndex: cursorRow < 0 ? 0 : cursorRow,
-    continuous: cursor !== null && cursorRow >= 0 && !cursor.wrapped,
+    pointed: cursor !== null && cursorRow >= 0 && cursor.pointed,
     moveTo,
     moveActive,
   };

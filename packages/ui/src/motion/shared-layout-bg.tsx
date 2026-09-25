@@ -1,9 +1,8 @@
 import {
-  AnimatePresence,
   type HTMLMotionProps,
   motion,
+  PresenceContext,
   useReducedMotion,
-  type Variants,
 } from "motion/react";
 import {
   Children,
@@ -18,7 +17,7 @@ import {
   useId,
   useState,
 } from "react";
-import { SPRING_LAYOUT } from "@apcode/ui/lib/ease";
+import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
 export interface SharedLayoutBgProps
@@ -34,19 +33,6 @@ export interface SharedLayoutBgProps
   pillContainerClassName?: string;
 }
 
-const variants: Variants = {
-  initial: { opacity: 0, filter: "blur(6px)" },
-  animate: { opacity: 1, filter: "blur(0px)" },
-  exit: (isActive: boolean) =>
-    !isActive ? { opacity: 0, filter: "blur(6px)" } : {},
-};
-
-const reducedVariants: Variants = {
-  initial: { opacity: 0 },
-  animate: { opacity: 1 },
-  exit: (isActive: boolean) => (!isActive ? { opacity: 0 } : {}),
-};
-
 export const SharedLayoutBg = forwardRef<HTMLElement, SharedLayoutBgProps>(
   function SharedLayoutBg(
     {
@@ -61,7 +47,12 @@ export const SharedLayoutBg = forwardRef<HTMLElement, SharedLayoutBgProps>(
     },
     forwardedRef,
   ) {
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [active, setActive] = useState<{
+    id: string;
+    session: number;
+    fresh: boolean;
+    visible: boolean;
+  } | null>(null);
   const uid = useId();
   const reduce = useReducedMotion();
 
@@ -81,44 +72,51 @@ export const SharedLayoutBg = forwardRef<HTMLElement, SharedLayoutBgProps>(
             className: cn("relative", el.props.className),
             onMouseEnter: () => {
               el.props.onMouseEnter?.();
-              setActiveId(childKey);
+              setActive((current) =>
+                current?.visible
+                  ? { ...current, id: childKey, fresh: false }
+                  : {
+                      id: childKey,
+                      session: (current?.session ?? 0) + 1,
+                      fresh: true,
+                      visible: true,
+                    },
+              );
             },
           },
           <>
-            <AnimatePresence custom={activeId !== null}>
-              {activeId !== null ? (
-                <motion.div
-                  variants={reduce ? reducedVariants : variants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  custom={activeId !== null}
-                  className={cn(
-                    "pointer-events-none absolute inset-y-0",
-                    pillContainerClassName,
-                  )}
-                  style={{ left: -inset, right: -inset }}
-                >
-                  {activeId === childKey ? (
-                    <motion.div
-                      layoutId={`shared-bg-${uid}`}
-                      transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
-                      className={cn(
-                        "pointer-events-none h-full w-full rounded-2xl bg-muted/80",
-                        pillClassName,
-                      )}
-                    />
-                  ) : null}
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
+            {active?.id === childKey ? (
+              <div
+                className={cn(
+                  "pointer-events-none absolute inset-y-0",
+                  pillContainerClassName,
+                )}
+                style={{ left: -inset, right: -inset }}
+              >
+                <PresenceContext.Provider value={null}>
+                  <motion.div
+                    layoutId={`shared-bg-${uid}-${active.session}`}
+                    initial={active.fresh ? { opacity: 0 } : false}
+                    animate={{ opacity: active.visible ? 1 : 0 }}
+                    transition={{
+                      opacity: { duration: 0.15, ease: EASE_OUT },
+                      layout: reduce ? { duration: 0 } : SPRING_LAYOUT,
+                    }}
+                    className={cn(
+                      "pointer-events-none h-full w-full rounded-2xl bg-muted/80",
+                      pillClassName,
+                    )}
+                  />
+                </PresenceContext.Provider>
+              </div>
+            ) : null}
             <div className="relative z-10">{el.props.children}</div>
           </>,
         );
       });
 
     const handleMouseLeave = (event: MouseEvent<HTMLElement>) => {
-      setActiveId(null);
+      setActive((current) => current && { ...current, visible: false });
       onMouseLeave?.(event);
     };
 

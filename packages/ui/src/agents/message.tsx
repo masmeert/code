@@ -4,6 +4,7 @@ import {
   createContext,
   type ReactNode,
   useContext,
+  useState,
 } from "react";
 import { EASE_OUT } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
@@ -55,14 +56,6 @@ export interface MessageTypingProps extends ComponentPropsWithRef<"span"> {
   label?: string;
 }
 
-// A sent row should rise from the live edge without changing measured layout.
-const MESSAGE_POP_UP = {
-  type: "spring",
-  stiffness: 480,
-  damping: 32,
-  mass: 0.62,
-} as const;
-
 export function Message({
   from,
   animateIn = false,
@@ -71,11 +64,10 @@ export function Message({
   initial,
   animate,
   transition,
-  exit,
-  style,
   ...props
 }: MessageProps) {
   const reduce = useReducedMotion() ?? false;
+  const [entering] = useState(animateIn);
 
   return (
     <MessageSideContext.Provider value={from === "user" ? "end" : "start"}>
@@ -86,38 +78,20 @@ export function Message({
           aria-label={props["aria-label"] ?? `${from} message`}
           initial={
             initial ??
-            (animateIn && !reduce
-              ? {
-                  opacity: 0,
-                  transform: "translateY(8px) scale(0.95)",
-                }
+            (entering && !reduce
+              ? { opacity: 0, transform: "translateY(4px)" }
               : false)
           }
           animate={
             animate ??
-            (animateIn && !reduce
-              ? {
-                  opacity: 1,
-                  transform: "translateY(0px) scale(1)",
-                }
+            (entering && !reduce
+              ? { opacity: 1, transform: "translateY(0px)" }
               : { opacity: 1 })
           }
-          exit={
-            exit ??
-            (reduce
-              ? { opacity: 0 }
-              : {
-                  opacity: 0,
-                  transform: "translateY(-3px) scale(0.99)",
-                })
-          }
           transition={
-            transition ?? (reduce ? { duration: 0.12 } : MESSAGE_POP_UP)
+            transition ??
+            (reduce ? { duration: 0.12 } : { duration: 0.15, ease: EASE_OUT })
           }
-          style={{
-            transformOrigin: from === "user" ? "100% 100%" : "0% 100%",
-            ...style,
-          }}
           className={cn(
             "group/message flex w-full items-start gap-2",
             from === "user" ? "flex-row-reverse" : "flex-row",

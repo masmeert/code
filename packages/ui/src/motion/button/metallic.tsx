@@ -4,10 +4,7 @@ import { EASE_IN_OUT } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 import { Button, type ButtonProps } from "./base";
 
-export interface MetallicButtonProps extends Omit<
-  ButtonProps,
-  "ripple" | "variant"
-> {
+export interface MetallicButtonProps extends Omit<ButtonProps, "variant"> {
   /** Stops the traveling reflection while preserving the chrome rim. */
   paused?: boolean;
 }

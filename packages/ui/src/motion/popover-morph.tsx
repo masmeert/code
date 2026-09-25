@@ -207,9 +207,7 @@ function clipHidden(side: Side, align: Align, radius: number) {
 }
 const clipShown = (radius: number) => `inset(0% 0% 0% 0% round ${radius}px)`;
 
-// Preserve the original spring character on the wrapper, but tween the complex
-// clip-path so it cannot snap when the spring resolves its final distance.
-const MORPH_CLIP_TRANSITION = { duration: 0.32, ease: EASE_OUT } as const;
+const MORPH_EXIT = { duration: 0.12, ease: EASE_OUT } as const;
 
 export interface MorphPopoverContentProps {
   children: ReactNode;
@@ -219,6 +217,7 @@ export interface MorphPopoverContentProps {
   sideOffset?: number;
   /** Panel corner radius, in px. Default 16. */
   radius?: number;
+  instant?: boolean;
   className?: string;
 }
 
@@ -228,6 +227,7 @@ export function MorphPopoverContent({
   align = "end",
   sideOffset = 8,
   radius = 16,
+  instant = false,
   className,
 }: MorphPopoverContentProps) {
   const ctx = useMorphContext("MorphPopoverContent");
@@ -305,19 +305,21 @@ export function MorphPopoverContent({
   const wrap = reduce
     ? undefined
     : {
-        hidden: { opacity: 0, scale: 0.96, transition: SPRING_PANEL },
-        show: { opacity: 1, scale: 1, transition: SPRING_PANEL },
+        hidden: { opacity: 0, transform: "scale(0.96)", transition: MORPH_EXIT },
+        show: { opacity: 1, transform: "scale(1)", transition: SPRING_PANEL },
       };
+  // Preserve the original spring character on the wrapper, but tween the complex
+  // clip-path so it cannot snap when the spring resolves its final distance.
   const clip = reduce
     ? undefined
     : {
         hidden: {
           clipPath: clipHidden(side, align, radius),
-          transition: MORPH_CLIP_TRANSITION,
+          transition: MORPH_EXIT,
         },
         show: {
           clipPath: clipShown(radius),
-          transition: MORPH_CLIP_TRANSITION,
+          transition: { duration: 0.2, ease: EASE_OUT },
         },
       };
 
@@ -332,7 +334,7 @@ export function MorphPopoverContent({
           // Wrapper carries the shadow as a drop-shadow filter, which hugs the
           // clipped shape below (box-shadow would just get clipped away).
           variants={wrap}
-          initial={reduce ? { opacity: 0 } : "hidden"}
+          initial={instant ? false : reduce ? { opacity: 0 } : "hidden"}
           animate={reduce ? { opacity: 1 } : "show"}
           exit={reduce ? { opacity: 0 } : "hidden"}
           transition={reduce ? { duration: 0.12 } : undefined}

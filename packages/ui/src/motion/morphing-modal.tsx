@@ -80,7 +80,7 @@ export function MorphingModal({
             >
               <motion.div
                 key="panel"
-                layout
+                layout={!reduce}
                 initial={{ opacity: 0, y: enterY, scale: enterScale }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{
@@ -96,7 +96,7 @@ export function MorphingModal({
                   className,
                 )}
               >
-                <motion.div layout="position" className="p-5">
+                <motion.div layout={reduce ? false : "position"} className="p-5">
                   <AnimatePresence mode="popLayout" initial={false}>
                     <motion.div
                       key={viewId}

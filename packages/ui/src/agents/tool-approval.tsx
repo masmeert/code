@@ -1,12 +1,12 @@
 import {
   Check,
-  ChevronDown,
+  ChevronRight,
   CircleAlert,
   LoaderCircle,
   ShieldCheck,
   X,
 } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import {
   type ReactNode,
   useCallback,
@@ -20,7 +20,7 @@ import {
   type AgentCodeLanguage,
 } from "@apcode/ui/agents/agent-code";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
-import { EASE_OUT, SPRING_PRESS, SPRING_SWAP } from "@apcode/ui/lib/ease";
+import { SPRING_PRESS } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
 export type ToolApprovalStatus =
@@ -199,13 +199,13 @@ export function ToolApproval({
               className="mt-2 inline-flex items-center gap-1 rounded-md text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
             >
               View details
-              <motion.span
+              <ChevronRight
                 aria-hidden="true"
-                animate={{ rotate: currentOpen ? 180 : 0 }}
-                transition={reduce ? { duration: 0 } : SPRING_SWAP}
-              >
-                <ChevronDown className="size-3.5" />
-              </motion.span>
+                className={cn(
+                  "size-3.5 transition duration-200 ease-out",
+                  currentOpen && "rotate-90",
+                )}
+              />
             </button>
           ) : null}
         </div>
@@ -230,45 +230,37 @@ export function ToolApproval({
         </dl>
       </AgentDisclosure>
 
-      <AnimatePresence initial={false}>
-        {pending ? (
-          <motion.div
-            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: reduce ? 0.12 : 0.22, ease: EASE_OUT }}
-            className="flex flex-wrap items-center gap-2 border-t border-border/60 px-4 py-3"
+      {pending ? (
+        <div className="flex flex-wrap items-center gap-2 border-t border-border/60 px-4 py-3">
+          <motion.button
+            type="button"
+            onClick={onApprove}
+            whileTap={reduce ? undefined : { scale: 0.97 }}
+            transition={SPRING_PRESS}
+            className="sheen rounded-xl bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
+            Allow once
+          </motion.button>
+          {onAlwaysAllow ? (
             <motion.button
               type="button"
-              onClick={onApprove}
+              onClick={onAlwaysAllow}
               whileTap={reduce ? undefined : { scale: 0.97 }}
               transition={SPRING_PRESS}
-              className="sheen rounded-xl bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="rounded-xl border border-border/60 bg-background px-3 py-1.5 text-xs font-medium text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
             >
-              Allow once
+              Always allow
             </motion.button>
-            {onAlwaysAllow ? (
-              <motion.button
-                type="button"
-                onClick={onAlwaysAllow}
-                whileTap={reduce ? undefined : { scale: 0.97 }}
-                transition={SPRING_PRESS}
-                className="rounded-xl border border-border/60 bg-background px-3 py-1.5 text-xs font-medium text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
-              >
-                Always allow
-              </motion.button>
-            ) : null}
-            <button
-              type="button"
-              onClick={onDeny}
-              className="rounded-xl px-3 py-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
-            >
-              Deny
-            </button>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+          ) : null}
+          <button
+            type="button"
+            onClick={onDeny}
+            className="rounded-xl px-3 py-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+          >
+            Deny
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

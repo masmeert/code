@@ -16,11 +16,7 @@ import {
   useId,
   useState,
 } from "react";
-import {
-  EASE_OUT,
-  SPRING_LAYOUT,
-  SPRING_SWAP,
-} from "@apcode/ui/lib/ease";
+import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 import { MessageSideContext } from "@apcode/ui/agents/message-context";
 
@@ -109,7 +105,6 @@ export function MessageBubble({
   children,
   initial,
   animate,
-  exit,
   transition,
   layout,
   ...props
@@ -129,10 +124,6 @@ export function MessageBubble({
         layout={layout}
         initial={initial ?? false}
         animate={animate}
-        exit={
-          exit ??
-          (reduce ? { opacity: 0 } : { opacity: 0, y: -3, scale: 0.99 })
-        }
         transition={transition ?? (reduce ? { duration: 0.12 } : SPRING_LAYOUT)}
         className={cn(
           "group/bubble flex w-full flex-col",
@@ -309,7 +300,6 @@ export function MessageBubbleCollapsible({
   children,
   ...props
 }: MessageBubbleCollapsibleProps) {
-  const reduce = useReducedMotion() ?? false;
   const contentId = useId();
   const notifyLayout = useContext(MessageBubbleLayoutContext);
   const [internalOpen, setInternalOpen] = useState(defaultOpen);
@@ -354,13 +344,13 @@ export function MessageBubbleCollapsible({
         )}
       >
         <span>{currentOpen ? lessLabel : moreLabel}</span>
-        <motion.span
+        <ChevronDown
           aria-hidden="true"
-          animate={{ rotate: currentOpen ? 180 : 0 }}
-          transition={reduce ? { duration: 0 } : SPRING_SWAP}
-        >
-          <ChevronDown className="size-3.5" />
-        </motion.span>
+          className={cn(
+            "size-3.5 transition-transform duration-200 ease-out",
+            currentOpen && "rotate-180",
+          )}
+        />
       </button>
     </div>
   );

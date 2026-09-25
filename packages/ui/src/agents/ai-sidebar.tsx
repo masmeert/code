@@ -282,12 +282,17 @@ function MarqueeLabel({ active, children }: { active: boolean; children: string 
     <span ref={viewportRef} className="block min-w-0 flex-1 overflow-hidden">
       <motion.span
         className="flex w-max items-center gap-6 whitespace-nowrap"
-        animate={{ x: running ? [0, -distance] : 0 }}
+        animate={{
+          transform: running
+            ? ["translateX(0px)", `translateX(${-distance}px)`]
+            : "translateX(0px)",
+        }}
         transition={
           running
             ? {
                 duration: Math.max(2.4, distance / 34),
                 ease: "linear",
+                delay: 0.5,
                 repeat: Number.POSITIVE_INFINITY,
                 repeatDelay: 2,
               }
@@ -860,7 +865,11 @@ export function AISidebar({
       onDragOver={(event) => {
         if (!draggingId || event.target !== event.currentTarget) return;
         event.preventDefault();
-        setDropTarget({ id: null, position: "after" });
+        setDropTarget((current) =>
+          current?.id === null && current.position === "after"
+            ? current
+            : { id: null, position: "after" },
+        );
       }}
       onDrop={(event) => {
         event.preventDefault();
@@ -938,7 +947,11 @@ export function AISidebar({
                   : ratio < 0.5
                     ? "before"
                     : "after";
-              setDropTarget({ id: targetRow.item.id, position });
+              setDropTarget((current) =>
+                current?.id === targetRow.item.id && current.position === position
+                  ? current
+                  : { id: targetRow.item.id, position },
+              );
             }}
             onDrop={(event) => {
               event.preventDefault();

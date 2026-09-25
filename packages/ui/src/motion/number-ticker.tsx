@@ -160,14 +160,14 @@ function Digit({
     >
       <motion.span
         ref={columnRef}
-        initial={{ y: 0 }}
-        animate={{ y: `-${digit * DIGIT_HEIGHT_EM}em` }}
+        initial={{ transform: "translateY(0em)" }}
+        animate={{ transform: `translateY(-${digit * DIGIT_HEIGHT_EM}em)` }}
         transition={
           reduce
             ? { duration: 0 }
             : { duration, delay, ease: EASE_OUT }
         }
-        className="absolute inset-x-0 top-0 flex flex-col items-center will-change-[transform,filter]"
+        className="absolute inset-x-0 top-0 flex flex-col items-center will-change-transform"
       >
         {DIGITS.map((n) => (
           <span

@@ -14,6 +14,7 @@ import {
   AgentCodeLine,
   useAgentCodeTokens,
 } from "@apcode/ui/agents/agent-code";
+import { ActionSwapRollIcon } from "@apcode/ui/motion/action-swap-roll";
 import { SPRING_PRESS } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
@@ -75,15 +76,7 @@ export function CodeBlock({
     if (!viewport || !streaming) return;
 
     const frame = requestAnimationFrame(() => {
-      if (viewport.scrollHeight <= viewport.clientHeight) return;
-      if (typeof viewport.scrollTo === "function") {
-        viewport.scrollTo({
-          top: viewport.scrollHeight,
-          behavior: reduce ? "auto" : "smooth",
-        });
-      } else {
-        viewport.scrollTop = viewport.scrollHeight;
-      }
+      viewport.scrollTop = viewport.scrollHeight;
     });
     return () => cancelAnimationFrame(frame);
   });
@@ -145,15 +138,17 @@ export function CodeBlock({
             aria-label={copied ? "Copied" : "Copy code"}
             title={copied ? "Copied" : "Copy code"}
             onClick={handleCopy}
-            whileTap={reduce ? undefined : { scale: 0.9 }}
+            whileTap={reduce ? undefined : { scale: 0.95 }}
             transition={SPRING_PRESS}
             className="grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-background/70 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
           >
-            {copied ? (
-              <Check className="size-3.5" />
-            ) : (
-              <Copy className="size-3.5" />
-            )}
+            <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">
+              {copied ? (
+                <Check className="size-3.5" />
+              ) : (
+                <Copy className="size-3.5" />
+              )}
+            </ActionSwapRollIcon>
           </motion.button>
         ) : null}
       </div>

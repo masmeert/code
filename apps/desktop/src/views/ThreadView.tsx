@@ -523,7 +523,7 @@ export const TurnList = ({
     // The latest exchange stays fully rendered: it's what streams and what the scroller follows.
     const className = settled && index < turns.length - 2 ? OFFSCREEN_SKIP : KEEP_RENDERED;
     return turn.from === "user" ? (
-      <UserTurn key={turn.id} item={turn.item} threadId={threadId} busy={busy} className={className} />
+      <UserTurn key={turn.id} item={turn.item} threadId={threadId} busy={busy} animateIn={settled} className={className} />
     ) : (
       <AssistantTurn
         key={turn.id}
@@ -545,8 +545,8 @@ export const TurnList = ({
 const OFFSCREEN_SKIP = "[content-visibility:auto] [contain-intrinsic-size:auto_240px]";
 const KEEP_RENDERED = "[contain-intrinsic-size:auto_240px]";
 
-const UserTurn = memo(({ item, threadId, busy, className }: { item: UserItem; threadId: string; busy: boolean; className: string }) => (
-  <Message from="user" animateIn className={cn("group/turn", className)}>
+const UserTurn = memo(({ item, threadId, busy, animateIn, className }: { item: UserItem; threadId: string; busy: boolean; animateIn: boolean; className: string }) => (
+  <Message from="user" animateIn={animateIn} className={cn("group/turn", className)}>
     <MessageContent className="gap-1.5">
       {item.attachments.length ? <AttachmentList attachments={item.attachments} /> : null}
       {item.text ? (

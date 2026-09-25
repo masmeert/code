@@ -86,6 +86,7 @@ export function Tooltip({
     [controlledOpen, onOpenChange],
   );
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const [instant, setInstant] = useState(false);
   const generatedId = useId();
   const id = providedId ?? generatedId;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -129,12 +130,13 @@ export function Tooltip({
     return () => observer.disconnect();
   }, [open, place, anchorRef, positioned]);
 
-  const show = useCallback(() => {
+  const show = useCallback((keyboard = false) => {
     if (timer.current) clearTimeout(timer.current);
     const warm = Date.now() - lastHiddenAt < WARM_WINDOW_MS;
     timer.current = setTimeout(
       () => {
         place();
+        setInstant(warm || keyboard);
         setOpen(true);
       },
       warm ? 0 : delay,
@@ -166,6 +168,7 @@ export function Tooltip({
     }
     if (timer.current) clearTimeout(timer.current);
     place();
+    setInstant(false);
     setOpen(true);
   }, [hide, place, tap, setOpen]);
 
@@ -225,7 +228,7 @@ export function Tooltip({
           onPointerLeave={(event: PointerEvent) => {
             if (hover.leave(event)) hide();
           }}
-          onFocus={(event) => event.target.matches(":focus-visible") && show()}
+          onFocus={(event) => event.target.matches(":focus-visible") && show(true)}
           onBlur={hide}
           onPointerDown={(event: PointerEvent) => tap.start(event, open)}
           // A gesture the platform took away sends no click, and a key press
@@ -254,7 +257,7 @@ export function Tooltip({
                   <TooltipSurface
                     ref={surfaceRef}
                     id={id}
-                    side={side}
+                    initial={instant ? false : "initial"}
                     style={{ transformOrigin: transformOrigin[side], maxWidth: "calc(100vw - 16px)", whiteSpace: "normal" }}
                     className={className}
                   >

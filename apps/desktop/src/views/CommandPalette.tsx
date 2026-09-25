@@ -1,12 +1,10 @@
 import { ProjectBadge } from "@/components/project-badge";
 import { searchCommands } from "@apcode/ui/lib/command-search";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
-import { useOnOpen } from "@apcode/ui/hooks/use-on-open";
 import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
 import { cn } from "@apcode/ui/lib/utils";
 import type { SearchHit } from "@apcode/contracts";
 import { MessageSquare, Search } from "lucide-react";
-import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { Fragment, memo, type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { searchMessages, useStore } from "../lib/store.ts";
@@ -40,20 +38,6 @@ const MAX_THREADS = 8;
 const SEARCH_DELAY_MS = 150;
 const NO_HITS: ReadonlyArray<SearchHit> = [];
 
-// Opened by shortcut many times a day, so the entrance has to read as instant.
-// Only transform and opacity animate: the browser runs those off the main
-// thread, so they stay smooth while a streaming reply keeps it busy.
-const PANEL_SPRING = { type: "spring", stiffness: 560, damping: 40, mass: 0.5 } as const;
-const PANEL_REDUCED = { duration: 0.1 } as const;
-const PANEL_EXIT = { duration: 0.12, ease: EASE_OUT } as const;
-const PANEL_SHOWN = { opacity: 1, transform: "translateY(0px) scale(1)" };
-const PANEL_HIDDEN = { opacity: 0, transform: "translateY(-8px) scale(0.97)" };
-const PANEL_HIDDEN_REDUCED = { opacity: 0, transform: "translateY(0px) scale(1)" };
-const SCRIM_FADE = { duration: 0.18, ease: EASE_OUT } as const;
-// Tighter than the panel's, so it keeps up with a held arrow key.
-const HIGHLIGHT_SPRING = { type: "spring", stiffness: 480, damping: 38 } as const;
-const INSTANT = { duration: 0 } as const;
-
 /** A search snippet with the matched words highlighted (the daemon wraps them in U+E000 / U+E001). */
 const Snippet = ({ text }: { text: string }) => (
   <>
@@ -82,9 +66,9 @@ const choose = (latest: RefObject<PaletteProps>, act: (props: PaletteProps) => v
  */
 export const CommandPalette = ({ open, ...props }: PaletteProps & { readonly open: boolean }) =>
   // Portaled, so no ancestor's transform or stacking context can trap the overlay.
-  createPortal(<AnimatePresence initial={false}>{open ? <Palette key="palette" {...props} /> : null}</AnimatePresence>, document.body);
+  open ? createPortal(<Palette {...props} />, document.body) : null;
 
-/** Mounted only while open or closing, so a closed palette subscribes to nothing and searches nothing. */
+/** Mounted only while open, so a closed palette subscribes to nothing and searches nothing. */
 const Palette = (props: PaletteProps) => {
   const threads = useStore((s) => s.threads);
   const projects = useStore((s) => s.projects);
@@ -92,8 +76,6 @@ const Palette = (props: PaletteProps) => {
   const [hits, setHits] = useState(NO_HITS);
   const uid = useId();
   const reduce = useReducedMotion() ?? false;
-  // False from the moment the palette starts closing: it stops taking input while the exit plays.
-  const isPresent = useIsPresent();
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const latest = useRef(props);
@@ -193,18 +175,10 @@ const Palette = (props: PaletteProps) => {
     [threadRows, actionRows, projectRows, messageRows],
   );
 
-  const { activeIndex: active, continuous, moveTo, moveActive } = useRowCursor(rows, query, { loop: true });
-  // The highlight glides for hover and single steps. A new list or a wrap-around jumps it instead:
-  // gliding from wherever the old row ended up reads as the list scrolling.
-  const glide = continuous && !reduce;
-  // Reopened while still closing, it's the same palette coming back: start it over.
-  useOnOpen(isPresent, () => {
-    setQuery("");
-    moveTo(null);
-  });
-  useLayoutEffect(() => {
-    if (isPresent) input.current?.focus();
-  }, [isPresent]);
+  const { activeIndex: active, pointed, moveTo, moveActive } = useRowCursor(rows, query, { loop: true });
+  // The highlight glides after the pointer. Arrow keys and a new list jump it: the keyboard wants each
+  // step at once, and gliding from wherever the old row ended up reads as the list scrolling.
+  const glide = pointed && !reduce;
 
   const activeId = rows[active]?.id;
   useEffect(() => {
@@ -236,42 +210,30 @@ const Palette = (props: PaletteProps) => {
     }
   };
 
-  const hidden = reduce ? PANEL_HIDDEN_REDUCED : PANEL_HIDDEN;
-  const pointerEvents = isPresent ? "auto" : "none";
   return (
     <>
-      <motion.button
+      <button
         type="button"
         aria-label="Close command palette"
         tabIndex={-1}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0, transition: PANEL_EXIT }}
-        transition={SCRIM_FADE}
-        inert={!isPresent}
-        style={{ pointerEvents }}
         onClick={props.onClose}
         className="fixed inset-0 z-[100] bg-black/20"
       />
-      <div inert={!isPresent} className="pointer-events-none fixed inset-x-4 top-[14vh] bottom-4 z-[100] flex items-start justify-center">
-        <motion.div
+      <div className="pointer-events-none fixed inset-x-4 top-[14vh] bottom-4 z-[100] flex items-start justify-center">
+        <div
           role="dialog"
           aria-modal
           aria-label="Command palette"
-          initial={hidden}
-          animate={PANEL_SHOWN}
-          exit={{ ...hidden, transition: PANEL_EXIT }}
-          transition={reduce ? PANEL_REDUCED : PANEL_SPRING}
-          style={{ pointerEvents }}
           onKeyDown={onKeyDown}
           // Clicks anywhere but the field leave focus in it.
           onMouseDown={(event) => event.target !== input.current && event.preventDefault()}
-          className="flex max-h-[60vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-panel will-change-transform"
+          className="pointer-events-auto flex max-h-[60vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-panel"
         >
           <div className="flex items-center gap-2 border-b border-border px-3">
             <Search className="size-4 shrink-0 text-muted-foreground" />
             <input
               ref={input}
+              autoFocus
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search threads, projects and messages… (> for actions)"
@@ -308,7 +270,7 @@ const Palette = (props: PaletteProps) => {
               </Fragment>
             ))}
           </motion.div>
-        </motion.div>
+        </div>
       </div>
     </>
   );
@@ -344,7 +306,7 @@ const PaletteRow = memo(function PaletteRow(props: {
       {active ? (
         <motion.span
           layoutId={`${props.uid}-highlight`}
-          transition={props.glide ? HIGHLIGHT_SPRING : INSTANT}
+          transition={props.glide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }}
           className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-muted"
         />
       ) : null}

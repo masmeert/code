@@ -1,6 +1,7 @@
 import { ChatApp } from "@apcode/ui/agents/chat-app";
 import { AnimatedSidebarInset } from "@apcode/ui/motion/animated-sidebar";
 import { AppWindow, Settings as SettingsIcon, SquarePen, SquareTerminal } from "lucide-react";
+import { MotionConfig } from "motion/react";
 import { useEffect, useState } from "react";
 import { describe, useKeybinding } from "./lib/keybindings.ts";
 import { toggleTerminalPanel, useStore } from "./lib/store.ts";
@@ -77,53 +78,55 @@ export const App = () => {
   }, [currentPath]);
 
   return (
-    <DiffWorkers>
-      <ChatApp sidebarWidth="16rem" className="h-full rounded-none border-0">
-        <Sidebar
-          activeId={view.kind === "thread" ? view.id : null}
-          currentPath={currentPath}
-          onSelect={(id) => setView({ kind: "thread", id })}
-          onModal={setModal}
-          onDraft={draft}
-        />
-        <AnimatedSidebarInset className="relative min-h-0 bg-background">
-          {connected || (source !== "daemon" && !slowStart) ? null : (
-            <div className="absolute top-16 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1 text-[11px] text-muted-foreground shadow-panel">
-              {source === "daemon" ? "Reconnecting to daemon…" : "Starting daemon…"}
-            </div>
-          )}
-          {view.kind === "thread" ? (
-            <ThreadView key={view.id} threadId={view.id} />
-          ) : (
-            // One key for every draft, so text typed before picking a project survives the pick.
-            <DraftView key="draft" path={view.path} onPickProject={draft} />
-          )}
-        </AnimatedSidebarInset>
-        <AppModal view={modal} onView={setModal} />
-        <CommandPalette
-          open={palette}
-          onClose={() => setPalette(false)}
-          onOpenThread={(id) => setView({ kind: "thread", id })}
-          onNewThreadIn={(path) => draft(path)}
-          actions={[
-            { id: "thread.new", label: "New thread", hint: describe("thread.new"), icon: <SquarePen />, run: () => draft(currentPath) },
-            ...(view.kind === "thread"
-              ? [
-                  {
-                    id: "terminal.toggle",
-                    label: "Toggle terminal",
-                    hint: describe("terminal.toggle"),
-                    icon: <SquareTerminal />,
-                    run: () => toggleTerminalPanel(view.id),
-                  },
-                ]
-              : []),
-            { id: "window.new", label: "New window", icon: <AppWindow />, run: () => openWindow(currentPath) },
-            { id: "settings.open", label: "Settings", hint: describe("settings.open"), icon: <SettingsIcon />, run: () => setModal("settings") },
-          ]}
-        />
+    <MotionConfig reducedMotion="user">
+      <DiffWorkers>
+        <ChatApp sidebarWidth="16rem" className="h-full rounded-none border-0">
+          <Sidebar
+            activeId={view.kind === "thread" ? view.id : null}
+            currentPath={currentPath}
+            onSelect={(id) => setView({ kind: "thread", id })}
+            onModal={setModal}
+            onDraft={draft}
+          />
+          <AnimatedSidebarInset className="relative min-h-0 bg-background">
+            {connected || (source !== "daemon" && !slowStart) ? null : (
+              <div className="absolute top-16 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1 text-[11px] text-muted-foreground shadow-panel">
+                {source === "daemon" ? "Reconnecting to daemon…" : "Starting daemon…"}
+              </div>
+            )}
+            {view.kind === "thread" ? (
+              <ThreadView key={view.id} threadId={view.id} />
+            ) : (
+              // One key for every draft, so text typed before picking a project survives the pick.
+              <DraftView key="draft" path={view.path} onPickProject={draft} />
+            )}
+          </AnimatedSidebarInset>
+          <AppModal view={modal} onView={setModal} />
+          <CommandPalette
+            open={palette}
+            onClose={() => setPalette(false)}
+            onOpenThread={(id) => setView({ kind: "thread", id })}
+            onNewThreadIn={(path) => draft(path)}
+            actions={[
+              { id: "thread.new", label: "New thread", hint: describe("thread.new"), icon: <SquarePen />, run: () => draft(currentPath) },
+              ...(view.kind === "thread"
+                ? [
+                    {
+                      id: "terminal.toggle",
+                      label: "Toggle terminal",
+                      hint: describe("terminal.toggle"),
+                      icon: <SquareTerminal />,
+                      run: () => toggleTerminalPanel(view.id),
+                    },
+                  ]
+                : []),
+              { id: "window.new", label: "New window", icon: <AppWindow />, run: () => openWindow(currentPath) },
+              { id: "settings.open", label: "Settings", hint: describe("settings.open"), icon: <SettingsIcon />, run: () => setModal("settings") },
+            ]}
+          />
 
-      </ChatApp>
-    </DiffWorkers>
+        </ChatApp>
+      </DiffWorkers>
+    </MotionConfig>
   );
 };

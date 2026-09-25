@@ -397,9 +397,9 @@ export function PromptInput({
               <AnimatePresence initial={false} mode="popLayout">
                 <motion.span
                   key={showStop ? "stop" : "send"}
-                  initial={reduce ? { opacity: 1 } : { opacity: 0, y: 3, scale: 0.8 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={reduce ? { opacity: 0 } : { opacity: 0, y: -3, scale: 0.8 }}
+                  initial={reduce ? { opacity: 1 } : { opacity: 0, transform: "scale(0.95)", filter: "blur(2px)" }}
+                  animate={{ opacity: 1, transform: "scale(1)", filter: "blur(0px)" }}
+                  exit={reduce ? { opacity: 0 } : { opacity: 0, transform: "scale(0.95)", filter: "blur(2px)" }}
                   transition={reduce ? { duration: 0 } : SPRING_SWAP}
                   className="grid place-items-center"
                 >
@@ -461,23 +461,23 @@ function AttachmentChip({
 
 /** Opens a picker from its keyboard shortcut, or whenever `openSignal` changes. */
 function usePickerOpener(
-  setOpen: (open: boolean) => void,
+  open: () => void,
   { shortcut, disabled, openSignal }: { shortcut?: string; disabled: boolean; openSignal?: number },
 ) {
-  const setOpenRef = useRef(setOpen);
-  setOpenRef.current = setOpen;
+  const openRef = useRef(open);
+  openRef.current = open;
   useEffect(() => {
     if (!shortcut || disabled) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.defaultPrevented || !matches(event, shortcut)) return;
       event.preventDefault();
-      setOpenRef.current(true);
+      openRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [shortcut, disabled]);
   useEffect(() => {
-    if (openSignal) setOpenRef.current(true);
+    if (openSignal) openRef.current();
   }, [openSignal]);
 }
 
@@ -532,12 +532,11 @@ function DialText({ value, className, children }: { value: number; className?: s
   }, [value]);
   // Tighter than SPRING_SWAP: the label has to keep up with a thumb being dragged.
   const variants = {
-    enter: (dir: number) => ({ opacity: 0, y: `${dir * 55}%`, rotateX: dir * -50 }),
-    center: { opacity: 1, y: "0%", rotateX: 0, transition: DIAL_SPRING },
+    enter: (dir: number) => ({ opacity: 0, transform: `translateY(${dir * 55}%) rotateX(${dir * -50}deg)` }),
+    center: { opacity: 1, transform: "translateY(0%) rotateX(0deg)", transition: DIAL_SPRING },
     exit: (dir: number) => ({
       opacity: 0,
-      y: `${dir * -55}%`,
-      rotateX: dir * 50,
+      transform: `translateY(${dir * -55}%) rotateX(${dir * 50}deg)`,
       transition: { duration: 0.08, ease: EASE_OUT },
     }),
   };
@@ -597,6 +596,7 @@ export function PromptSlider({
   className,
 }: PromptSliderProps) {
   const [open, setOpenState] = useState(false);
+  const [instant, setInstant] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const index = options.findIndex((option) => option.value === value);
   const current = options[index];
@@ -628,8 +628,12 @@ export function PromptSlider({
   const setOpen = (next: boolean) => {
     if (!next) settle();
     setOpenState(next);
+    setInstant(false);
   };
-  usePickerOpener(setOpen, { shortcut, disabled });
+  usePickerOpener(() => {
+    setOpen(true);
+    setInstant(true);
+  }, { shortcut, disabled });
 
   // Focus the handle once the panel has morphed in, so arrow keys step right away.
   useEffect(() => {
@@ -647,7 +651,7 @@ export function PromptSlider({
           {current?.label ?? placeholder}
         </PickerTrigger>
       </MorphPopoverTrigger>
-      <MorphPopoverContent side={side} align={align} sideOffset={6} radius={12} className={cn(width, "p-3")}>
+      <MorphPopoverContent side={side} align={align} sideOffset={6} radius={12} instant={instant} className={cn(width, "p-3")}>
         <div
           ref={contentRef}
           onKeyDown={(event) => {
@@ -760,14 +764,19 @@ export function PromptSelect({
   className,
 }: PromptSelectProps) {
   const [open, setOpenState] = useState(false);
+  const [instant, setInstant] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const setOpen = (next: boolean) => {
     setOpenState(next);
+    setInstant(false);
     if (!next) setQuery("");
     onOpenChange?.(next);
   };
-  usePickerOpener(setOpen, { shortcut, disabled, openSignal });
+  usePickerOpener(() => {
+    setOpen(true);
+    setInstant(true);
+  }, { shortcut, disabled, openSignal });
   const current = options.find((option) => option.value === value);
   const triggerIcon = icon ?? (showOptionIcon ? current?.groupIcon ?? current?.icon : undefined);
   const searchable = Boolean(onCreate) || options.length >= searchThreshold;
@@ -797,7 +806,7 @@ export function PromptSelect({
           {multi.length ? `${multi.length + 1} models` : (current?.label ?? placeholder)}
         </PickerTrigger>
       </MorphPopoverTrigger>
-      <MorphPopoverContent side={side} align={align} sideOffset={6} radius={12} className={cn(width, "p-1")}>
+      <MorphPopoverContent side={side} align={align} sideOffset={6} radius={12} instant={instant} className={cn(width, "p-1")}>
         {title ? <div className="px-2 pt-1 pb-1.5 text-[11px] text-muted-foreground">{title}</div> : null}
         {searchable ? (
           <input

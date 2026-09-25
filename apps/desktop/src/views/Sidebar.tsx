@@ -4,7 +4,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { Input } from "@apcode/ui/motion/input";
 import { Tooltip } from "@apcode/ui/motion/tooltip";
 import { MorphPopover, MorphPopoverContent, MorphPopoverMenu, MorphPopoverTrigger } from "@apcode/ui/motion/popover-morph";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
+import { EASE_OUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
 import { NumberTicker } from "@apcode/ui/motion/number-ticker";
 import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
 import { Separator } from "@apcode/ui/components/separator";
@@ -37,11 +37,8 @@ import { usePersistedFlag } from "../lib/usePersistedFlag.ts";
 import type { ModalView } from "./AppModal.tsx";
 import { ThreadListMenu } from "./ThreadListMenu.tsx";
 
-// Fold springs, borrowed from BouncyAccordion (@apcode/ui/motion/bouncy-accordion).
-const FOLD_OPEN: Transition = { type: "spring", duration: 0.58, bounce: 0.32 };
-// Closing is a plain ease: a bouncy spring overshoots past zero height, which clamps and stutters.
-const FOLD_CLOSE: Transition = { duration: 0.24, ease: EASE_OUT, opacity: { duration: 0.12, ease: EASE_OUT } };
-const FOLD_CHEVRON: Transition = { type: "spring", duration: 0.42, bounce: 0.28 };
+// A plain ease: a bouncy spring overshoots past zero height, which clamps and stutters.
+const FOLD: Transition = { duration: 0.24, ease: EASE_OUT, opacity: { duration: 0.12, ease: EASE_OUT } };
 
 const IconButton = ({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) => (
   <Tooltip content={label} side="bottom">
@@ -142,6 +139,7 @@ export const Sidebar = (props: {
   const renderFolding = (key: string, label: string, icon: ReactNode, infos: Array<ThreadInfo>, open: boolean, toggle: () => void) => {
     if (infos.length === 0) return null;
     const expanded = open || Boolean(query);
+    const snap = reduce || Boolean(query);
     return (
       <section key={key} className="flex flex-col gap-1">
         <button
@@ -160,14 +158,14 @@ export const Sidebar = (props: {
           <NumberTicker
             value={infos.length}
             startOnView={false}
-            duration={0.5}
+            duration={0.2}
             className="ml-auto rounded-full bg-muted px-1.5 py-px text-[11px] leading-4"
           />
           <motion.span
             aria-hidden="true"
             initial={false}
             animate={{ rotate: expanded ? 90 : 0 }}
-            transition={reduce ? { duration: 0 } : FOLD_CHEVRON}
+            transition={snap ? { duration: 0 } : SPRING_SWAP}
             className="grid shrink-0 place-items-center"
           >
             <ChevronRight className="size-3.5" />
@@ -178,10 +176,10 @@ export const Sidebar = (props: {
             <motion.div
               key="rows"
               // Clip only while moving, so focus rings aren't cut once open.
-              initial={{ height: 0, opacity: 0, overflow: "hidden" }}
+              initial={snap ? false : { height: 0, opacity: 0, overflow: "hidden" }}
               animate={{ height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }}
-              exit={{ height: 0, opacity: 0, overflow: "hidden", transition: reduce ? { duration: 0 } : FOLD_CLOSE }}
-              transition={reduce ? { duration: 0 } : FOLD_OPEN}
+              exit={{ height: 0, opacity: 0, overflow: "hidden", transition: snap ? { duration: 0 } : FOLD }}
+              transition={FOLD}
             >
               {renderCards(infos)}
             </motion.div>

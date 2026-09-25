@@ -54,7 +54,7 @@ export function Checkbox({
         aria-describedby={ariaDescribedBy}
         disabled={disabled}
         onClick={() => !disabled && onCheckedChange(!checked)}
-        whileTap={reduce || disabled ? undefined : { scale: 0.92 }}
+        whileTap={reduce || disabled ? undefined : { scale: 0.95 }}
         transition={SPRING_PRESS}
         data-state={
           checked ? "checked" : indeterminate ? "indeterminate" : "unchecked"
@@ -100,11 +100,7 @@ export function Checkbox({
                 transition={
                   reduce
                     ? { duration: 0 }
-                    : {
-                        duration: indeterminate ? 0.2 : 0.3,
-                        ease: EASE_OUT,
-                        delay: 0.04,
-                      }
+                    : { duration: 0.2, ease: EASE_OUT }
                 }
               />
             </motion.svg>

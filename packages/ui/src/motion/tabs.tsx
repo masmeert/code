@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { cancelFrame, frame, motion, MotionConfig, useReducedMotion, type Transition } from "motion/react";
+import { cancelFrame, frame, motion, MotionConfig, useReducedMotion } from "motion/react";
 import {
   createContext,
   useCallback,
@@ -11,7 +11,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
+import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
 type Variant = "pill" | "underline" | "segment";
@@ -30,16 +30,6 @@ function useTabs() {
   if (!ctx) throw new Error("Tabs.* must be used inside <Tabs>");
   return ctx;
 }
-
-// Settle without overshoot: a scrollable tab list would turn even a small
-// overshoot into a transient scrollbar and layout shift.
-// Scale stiffness and damping together for a quicker glide with the same feel.
-const transition: Transition = {
-  type: "spring",
-  stiffness: 245,
-  damping: 36,
-  mass: 1.2,
-};
 
 export function Tabs({
   defaultValue,
@@ -73,7 +63,7 @@ export function Tabs({
     [current, layoutId, setValue, variant],
   );
   return (
-    <MotionConfig transition={reduce ? { duration: 0 } : transition}>
+    <MotionConfig transition={reduce ? { duration: 0 } : SPRING_LAYOUT}>
       <TabsCtx.Provider value={contextValue}>
         {/* layoutRoot: the indicator's layoutId measures in page coordinates, so
             inside fixed/scrolled containers it would replay scroll offsets as

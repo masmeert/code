@@ -34,7 +34,6 @@ type MenuPoint = { x: number; y: number };
 const VIEWPORT_PADDING = 8;
 const LONG_PRESS_DELAY = 520;
 const LONG_PRESS_TOLERANCE = 10;
-const MORPH_DURATION = 0.3;
 
 type TriggerElementProps = React.HTMLAttributes<HTMLElement> & {
   ref?: Ref<HTMLElement>;
@@ -42,7 +41,7 @@ type TriggerElementProps = React.HTMLAttributes<HTMLElement> & {
 
 interface ContextMenuContextValue {
   open: boolean;
-  setOpen: (open: boolean) => void;
+  setOpen: (open: boolean, modality?: OpenModality) => void;
   openAt: (point: MenuPoint, modality: OpenModality) => void;
   point: MenuPoint;
   modality: OpenModality;
@@ -52,6 +51,8 @@ interface ContextMenuContextValue {
   contentRef: React.MutableRefObject<HTMLDivElement | null>;
   activeId: string | null;
   setActiveId: (id: string | null) => void;
+  glide: boolean;
+  setGlide: (glide: boolean) => void;
   reduce: boolean;
 }
 
@@ -118,6 +119,7 @@ export function ContextMenu({
   const [modality, setModality] = useState<OpenModality>("pointer");
   const [invocation, setInvocation] = useState(0);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [glide, setGlide] = useState(false);
   const controlled = controlledOpen !== undefined;
   const open = controlled ? controlledOpen : internalOpen;
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -126,7 +128,8 @@ export function ContextMenu({
   const reduce = useReducedMotion() ?? false;
 
   const setOpen = useCallback(
-    (next: boolean) => {
+    (next: boolean, nextModality?: OpenModality) => {
+      if (nextModality) setModality(nextModality);
       if (!controlled) setInternalOpen(next);
       onOpenChange?.(next);
       if (!next) setActiveId(null);
@@ -140,6 +143,7 @@ export function ContextMenu({
       setModality(nextModality);
       setInvocation((current) => current + 1);
       setActiveId(null);
+      setGlide(false);
       setOpen(true);
     },
     [setOpen],
@@ -176,6 +180,8 @@ export function ContextMenu({
       contentRef,
       activeId,
       setActiveId,
+      glide,
+      setGlide,
       reduce,
     }),
     [
@@ -187,6 +193,7 @@ export function ContextMenu({
       invocation,
       menuId,
       activeId,
+      glide,
       reduce,
     ],
   );
@@ -434,14 +441,15 @@ export function ContextMenuContent({
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      context.setOpen(false);
+      context.setOpen(false, "keyboard");
       context.triggerRef.current?.focus();
       return;
     }
     if (event.key === "Tab") {
-      context.setOpen(false);
+      context.setOpen(false, "keyboard");
       return;
     }
+    context.setGlide(false);
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       moveFocus(event.key === "ArrowDown" ? 1 : -1);
@@ -479,6 +487,13 @@ export function ContextMenuContent({
   const visualOpen = context.open && morphReady;
   const clipHidden = collapsedClip(origin, size);
   const clipShown = "inset(0px 0px 0px 0px round 12px)";
+  const transition =
+    context.modality === "keyboard" || (context.open && !morphReady)
+      ? { duration: 0 }
+      : {
+          duration: context.reduce ? 0.1 : context.open ? 0.18 : 0.12,
+          ease: EASE_OUT,
+        };
 
   return createPortal(
     <div
@@ -487,10 +502,17 @@ export function ContextMenuContent({
       inert={!context.open}
       style={{ left: position.x, top: position.y }}
       className={cn(
-        "fixed z-[100] [filter:drop-shadow(0_18px_28px_rgba(0,0,0,0.2))]",
+        "fixed z-[100]",
         context.open ? "pointer-events-auto" : "pointer-events-none",
       )}
     >
+      <motion.div
+        aria-hidden="true"
+        initial={false}
+        animate={{ opacity: visualOpen ? 1 : 0 }}
+        transition={transition}
+        className="pointer-events-none absolute inset-0 rounded-xl shadow-[0_18px_28px_rgba(0,0,0,0.2)]"
+      />
       <motion.div
         ref={context.contentRef}
         id={context.menuId}
@@ -506,26 +528,11 @@ export function ContextMenuContent({
               ? clipShown
               : clipHidden,
         }}
-        transition={
-          context.modality === "keyboard"
-            ? { duration: 0 }
-            : context.reduce
-              ? { duration: 0.1, ease: EASE_OUT }
-              : {
-                  clipPath: {
-                    duration: MORPH_DURATION,
-                    ease: EASE_OUT,
-                  },
-                  opacity: {
-                    duration: MORPH_DURATION,
-                    ease: EASE_OUT,
-                  },
-                }
-        }
+        transition={transition}
         onKeyDown={onKeyDown}
         onContextMenu={(event) => event.preventDefault()}
         className={cn(
-          "min-w-56 overflow-hidden rounded-xl border border-border bg-card p-1.5 text-foreground outline-none",
+          "relative min-w-56 overflow-hidden rounded-xl border border-border bg-card p-1.5 text-foreground outline-none",
           className,
         )}
       >
@@ -583,12 +590,15 @@ function ContextMenuItemBase({
       tabIndex={-1}
       onFocus={() => context.setActiveId(id)}
       onPointerMove={(event) => {
-        if (!disabled && event.pointerType !== "touch") event.currentTarget.focus();
+        if (disabled || event.pointerType === "touch") return;
+        context.setGlide(true);
+        event.currentTarget.focus();
       }}
-      onClick={() => {
+      onClick={(event) => {
         if (disabled) return;
         onSelect?.();
-        if (closeOnSelect) context.setOpen(false);
+        if (closeOnSelect)
+          context.setOpen(false, event.detail === 0 ? "keyboard" : undefined);
       }}
       className={cn(
         "relative isolate flex w-full select-none items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] outline-none",
@@ -608,7 +618,9 @@ function ContextMenuItemBase({
               ? "bg-destructive/10"
               : "bg-foreground/[0.065]",
           )}
-          transition={context.reduce ? { duration: 0 } : SPRING_LAYOUT}
+          transition={
+            context.reduce || !context.glide ? { duration: 0 } : SPRING_LAYOUT
+          }
         />
       ) : null}
       {children}

@@ -44,9 +44,9 @@ const PANEL_TRANSITION = {
   ease: EASE_DRAWER,
 } as const;
 
-// The desktop rail settles at a hard zero-width boundary. Keep the spring
-// critically damped so it cannot overshoot, pause against that boundary, and
-// then snap back during the final frame.
+// The icon rail settles at a hard boundary. Keep the spring critically damped
+// so it cannot overshoot, pause against that boundary, and then snap back
+// during the final frame.
 const SIDEBAR_MORPH_TRANSITION = {
   type: "spring",
   stiffness: 380,
@@ -143,16 +143,21 @@ function useIsMobile() {
   );
 }
 
+interface SidebarToggleOptions {
+  instant?: boolean;
+}
+
 interface AnimatedSidebarContextValue {
+  instant: boolean;
   isMobile: boolean;
   layoutId: string;
   open: boolean;
   openMobile: boolean;
   reduce: boolean;
-  setOpen: (open: boolean) => void;
+  setOpen: (open: boolean, options?: SidebarToggleOptions) => void;
   setOpenMobile: (open: boolean) => void;
   state: SidebarState;
-  toggleSidebar: () => void;
+  toggleSidebar: (options?: SidebarToggleOptions) => void;
   triggerRef: React.RefObject<HTMLButtonElement | null>;
 }
 
@@ -220,6 +225,7 @@ export function AnimatedSidebarProvider({
   const [internalOpen, setInternalOpen] = useState(defaultOpen);
   const [internalOpenMobile, setInternalOpenMobile] =
     useState(defaultOpenMobile);
+  const [instant, setInstant] = useState(false);
   const isMobile = useIsMobile();
   const reduce = useReducedMotion() ?? false;
   const generatedId = useId();
@@ -228,7 +234,8 @@ export function AnimatedSidebarProvider({
   const mobileOpen = openMobile ?? internalOpenMobile;
 
   const setOpen = useCallback(
-    (nextOpen: boolean) => {
+    (nextOpen: boolean, options?: SidebarToggleOptions) => {
+      setInstant(options?.instant ?? false);
       if (open === undefined) setInternalOpen(nextOpen);
       onOpenChange?.(nextOpen);
     },
@@ -243,10 +250,13 @@ export function AnimatedSidebarProvider({
     [onOpenMobileChange, openMobile],
   );
 
-  const toggleSidebar = useCallback(() => {
-    if (isMobile) setOpenMobile(!mobileOpen);
-    else setOpen(!desktopOpen);
-  }, [desktopOpen, isMobile, mobileOpen, setOpen, setOpenMobile]);
+  const toggleSidebar = useCallback(
+    (options?: SidebarToggleOptions) => {
+      if (isMobile) setOpenMobile(!mobileOpen);
+      else setOpen(!desktopOpen, options);
+    },
+    [desktopOpen, isMobile, mobileOpen, setOpen, setOpenMobile],
+  );
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -255,7 +265,7 @@ export function AnimatedSidebarProvider({
         (event.metaKey || event.ctrlKey)
       ) {
         event.preventDefault();
-        toggleSidebar();
+        toggleSidebar({ instant: true });
       }
     };
 
@@ -266,6 +276,7 @@ export function AnimatedSidebarProvider({
   return (
     <AnimatedSidebarContext.Provider
       value={{
+        instant,
         isMobile,
         layoutId: `${generatedId}-active`,
         open: desktopOpen,
@@ -542,11 +553,13 @@ export const AnimatedSidebar = forwardRef<HTMLElement, AnimatedSidebarProps>(
         data-side={side}
         animate={{ width }}
         transition={
-          context.reduce ? { duration: 0 } : SIDEBAR_MORPH_TRANSITION
+          context.reduce || context.instant || collapsible === "offcanvas"
+            ? { duration: 0 }
+            : SIDEBAR_MORPH_TRANSITION
         }
         style={style}
         className={cn(
-          "group/sidebar relative hidden h-auto shrink-0 md:block will-change-[width]",
+          "group/sidebar relative hidden h-auto shrink-0 md:block",
           "peer",
           side === "right" && "order-last",
           className,
@@ -554,15 +567,23 @@ export const AnimatedSidebar = forwardRef<HTMLElement, AnimatedSidebarProps>(
       >
         <motion.div
           initial={false}
+          inert={offcanvas}
           animate={{
             opacity: offcanvas ? 0 : 1,
-            x: offcanvas ? (side === "left" ? "-100%" : "100%") : "0%",
+            transform:
+              offcanvas && !context.reduce
+                ? `translateX(${side === "left" ? "-100%" : "100%"})`
+                : "translateX(0%)",
           }}
           transition={
-            context.reduce ? REDUCED_TRANSITION : PANEL_TRANSITION
+            context.instant
+              ? { duration: 0 }
+              : context.reduce
+                ? REDUCED_TRANSITION
+                : { duration: 0.25, ease: EASE_OUT }
           }
           className={cn(
-            "sticky top-0 flex h-svh w-full flex-col overflow-hidden bg-background",
+            "sticky top-0 z-10 flex h-svh w-full flex-col overflow-hidden bg-background",
             collapsible === "offcanvas" && "w-[var(--sidebar-width)]",
             variant === "sidebar" &&
               (side === "left" ? "border-border border-r" : "border-border border-l"),
@@ -611,7 +632,8 @@ export const AnimatedSidebarTrigger = forwardRef<
       data-state={expanded ? "expanded" : "collapsed"}
       onClick={(event) => {
         onClick?.(event);
-        if (!event.defaultPrevented) context.toggleSidebar();
+        if (!event.defaultPrevented)
+          context.toggleSidebar({ instant: event.detail === 0 });
       }}
       className={cn(
         "inline-flex size-10 shrink-0 items-center justify-center rounded-xl outline-none",
@@ -1086,11 +1108,13 @@ export function AnimatedSidebarMenuButton({
           x: panel.collapsed ? -4 : 0,
         }}
         transition={
-          context.reduce
-            ? REDUCED_TRANSITION
-            : panel.collapsed
-              ? LABEL_EXIT_TRANSITION
-              : LABEL_ENTER_TRANSITION
+          context.instant
+            ? { duration: 0 }
+            : context.reduce
+              ? REDUCED_TRANSITION
+              : panel.collapsed
+                ? LABEL_EXIT_TRANSITION
+                : LABEL_ENTER_TRANSITION
         }
         aria-hidden={panel.collapsed}
         className={cn(

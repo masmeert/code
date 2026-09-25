@@ -1,11 +1,9 @@
 import { ChevronRight } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
 import { useId, useState } from "react";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
 import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
 import { ToolResultOutput } from "@apcode/ui/agents/tool-result";
 import type { AgentCodeLanguage } from "@apcode/ui/agents/agent-code";
-import { SPRING_SWAP } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
 export interface ToolCall {
@@ -113,16 +111,14 @@ const outputLanguage = (call: ToolCall): AgentCodeLanguage =>
   call.name === "edit" ? "diff" : categoryOf(call.name) === "run" ? "bash" : "text";
 
 function Chevron({ open }: { open: boolean }) {
-  const reduce = useReducedMotion() ?? false;
   return (
-    <motion.span
+    <ChevronRight
       aria-hidden="true"
-      animate={{ rotate: open ? 90 : 0 }}
-      transition={reduce ? { duration: 0 } : SPRING_SWAP}
-      className="inline-flex shrink-0 text-muted-foreground/50 transition-colors group-hover:text-muted-foreground"
-    >
-      <ChevronRight className="size-3.5" />
-    </motion.span>
+      className={cn(
+        "size-3.5 shrink-0 text-muted-foreground/50 transition duration-200 ease-out group-hover:text-muted-foreground",
+        open && "rotate-90",
+      )}
+    />
   );
 }
 

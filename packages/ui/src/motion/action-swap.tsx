@@ -47,9 +47,9 @@ export interface ActionSwapIconProps {
   className?: string;
 }
 
-const BLUR_TRANSITION = { duration: 0.2, ease: "easeInOut" } as const;
+const BLUR_TRANSITION = { duration: 0.2, ease: EASE_OUT } as const;
 const ROLL_TRANSITION = SPRING_SWAP;
-const ROLL_EXIT_TRANSITION = { duration: 0.14, ease: EASE_OUT } as const;
+const EXIT_TRANSITION = { duration: 0.14, ease: EASE_OUT } as const;
 const SWAP_BLUR = "blur(8px)";
 const ROLL_BLUR = "blur(3px)";
 
@@ -60,16 +60,16 @@ const ROLL_BLUR = "blur(3px)";
 const CASCADE_STAGGER = 0.025;
 
 const CASCADE_LETTER_VARIANTS: Variants = {
-  initial: { opacity: 0, y: "105%", filter: ROLL_BLUR },
+  initial: { opacity: 0, transform: "translateY(105%)", filter: ROLL_BLUR },
   animate: (delay: number = 0) => ({
     opacity: 1,
-    y: "0%",
+    transform: "translateY(0%)",
     filter: "blur(0px)",
     transition: { ...SPRING_SWAP, delay },
   }),
   exit: (delay: number = 0) => ({
     opacity: 0,
-    y: "-105%",
+    transform: "translateY(-105%)",
     filter: ROLL_BLUR,
     transition: { duration: 0.16, ease: EASE_OUT, delay: delay * 0.5 },
   }),
@@ -77,66 +77,66 @@ const CASCADE_LETTER_VARIANTS: Variants = {
 
 const TEXT_VARIANTS: Record<CoreAnimation, Variants> = {
   blur: {
-    initial: { opacity: 0, scale: 0.94, filter: SWAP_BLUR },
+    initial: { opacity: 0, transform: "scale(0.94)", filter: SWAP_BLUR },
     animate: {
       opacity: 1,
-      scale: 1,
+      transform: "scale(1)",
       filter: "blur(0px)",
       transition: BLUR_TRANSITION,
     },
     exit: {
       opacity: 0,
-      scale: 0.94,
+      transform: "scale(0.94)",
       filter: SWAP_BLUR,
-      transition: BLUR_TRANSITION,
+      transition: EXIT_TRANSITION,
     },
   },
   roll: {
-    initial: { opacity: 0, y: "90%", filter: ROLL_BLUR },
+    initial: { opacity: 0, transform: "translateY(90%)", filter: ROLL_BLUR },
     animate: {
       opacity: 1,
-      y: "0%",
+      transform: "translateY(0%)",
       filter: "blur(0px)",
       transition: ROLL_TRANSITION,
     },
     exit: {
       opacity: 0,
-      y: "-90%",
+      transform: "translateY(-90%)",
       filter: ROLL_BLUR,
-      transition: ROLL_EXIT_TRANSITION,
+      transition: EXIT_TRANSITION,
     },
   },
 };
 
 const ICON_VARIANTS: Record<CoreAnimation, Variants> = {
   blur: {
-    initial: { opacity: 0, scale: 0.25, filter: SWAP_BLUR },
+    initial: { opacity: 0, transform: "scale(0.9)", filter: SWAP_BLUR },
     animate: {
       opacity: 1,
-      scale: 1,
+      transform: "scale(1)",
       filter: "blur(0px)",
       transition: BLUR_TRANSITION,
     },
     exit: {
       opacity: 0,
-      scale: 0.25,
+      transform: "scale(0.9)",
       filter: SWAP_BLUR,
-      transition: BLUR_TRANSITION,
+      transition: EXIT_TRANSITION,
     },
   },
   roll: {
-    initial: { opacity: 0, y: 12, filter: ROLL_BLUR },
+    initial: { opacity: 0, transform: "translateY(12px)", filter: ROLL_BLUR },
     animate: {
       opacity: 1,
-      y: 0,
+      transform: "translateY(0px)",
       filter: "blur(0px)",
       transition: ROLL_TRANSITION,
     },
     exit: {
       opacity: 0,
-      y: -12,
+      transform: "translateY(-12px)",
       filter: ROLL_BLUR,
-      transition: ROLL_EXIT_TRANSITION,
+      transition: EXIT_TRANSITION,
     },
   },
 };
@@ -230,7 +230,7 @@ export function ActionSwapText({
             key={`${animation}-${value}`}
             variants={TEXT_VARIANTS[coreAnimation]}
             initial={reduce ? false : "initial"}
-            animate={reduce ? { opacity: 1, filter: "blur(0px)", scale: 1, y: 0 } : "animate"}
+            animate={reduce ? { opacity: 1, filter: "blur(0px)" } : "animate"}
             exit={reduce ? undefined : "exit"}
             // Truncation lives on the layer that holds the text — the layer
             // moves as a whole, so clipping it never eats the roll.
@@ -263,7 +263,7 @@ export function ActionSwapIcon({
           aria-hidden
           variants={ICON_VARIANTS[coreAnimation]}
           initial={reduce ? false : "initial"}
-          animate={reduce ? { opacity: 1, filter: "blur(0px)", scale: 1, y: 0 } : "animate"}
+          animate={reduce ? { opacity: 1, filter: "blur(0px)" } : "animate"}
           exit={reduce ? undefined : "exit"}
           className="col-start-1 row-start-1 inline-flex items-center justify-center will-change-[opacity,filter,transform]"
         >

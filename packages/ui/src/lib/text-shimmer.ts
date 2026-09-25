@@ -7,7 +7,7 @@ import type { CSSProperties } from "react";
 // in a media query. It selects a marker class carried by TEXT_SHIMMER_CLASS_NAME
 // so it also reaches consumers that build their own span out of these exports.
 export const TEXT_SHIMMER_KEYFRAMES =
-  "@keyframes text-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}" +
+  "@keyframes text-shimmer{from{background-position:100% 0}to{background-position:-100% 0}}" +
   "@media (prefers-reduced-motion: reduce){.text-shimmer{animation:none !important}}";
 
 export const TEXT_SHIMMER_CLASS_NAME =
