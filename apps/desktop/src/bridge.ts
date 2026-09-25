@@ -1,9 +1,10 @@
 import { BrowserAction, Theme } from "@apcode/contracts";
-import { BrowserWindow, dialog, ipcMain, nativeTheme } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from "electron";
 import * as Schema from "effect/Schema";
 import { homedir } from "node:os";
 import { automateBrowser } from "./browserAutomation.ts";
 import { APP_URL } from "./renderer.ts";
+import { checkForUpdates, installUpdate, updateStatus } from "./updates.ts";
 
 function handle<S extends Schema.ConstraintDecoder<unknown>, Result>(
   channel: string,
@@ -53,4 +54,8 @@ export function registerBridge(daemonToken: string | null) {
     Schema.Struct({ webContentsId: Schema.Number, action: BrowserAction }),
     (window, { webContentsId, action }) => automateBrowser(window, webContentsId, action),
   );
+  handle("app-version", Schema.Undefined, () => app.getVersion());
+  handle("update-status", Schema.Undefined, updateStatus);
+  handle("check-for-updates", Schema.Undefined, checkForUpdates);
+  handle("install-update", Schema.Undefined, installUpdate);
 }

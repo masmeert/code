@@ -54,6 +54,16 @@ export const DesktopBrowserEvent = Schema.TaggedUnion({
 });
 export type DesktopBrowserEvent = typeof DesktopBrowserEvent.Type;
 
+export const UpdateStatus = Schema.TaggedUnion({
+  idle: {},
+  checking: {},
+  "up-to-date": {},
+  downloading: { version: Schema.String, percent: Schema.Number },
+  ready: { version: Schema.String },
+  failed: { message: Schema.String },
+});
+export type UpdateStatus = typeof UpdateStatus.Type;
+
 export interface DesktopBridge {
   readonly daemonToken: () => Promise<string | null>;
   readonly pickFolder: (title: string, defaultPath?: string) => Promise<string | null>;
@@ -65,6 +75,11 @@ export interface DesktopBridge {
     webContentsId: number,
     action: BrowserAction,
   ) => Promise<BrowserResult>;
+  readonly appVersion: () => Promise<string>;
+  readonly updateStatus: () => Promise<UpdateStatus>;
+  readonly onUpdateStatus: (listener: (status: UpdateStatus) => void) => () => void;
+  readonly checkForUpdates: () => Promise<void>;
+  readonly installUpdate: () => Promise<void>;
 }
 
 /** Reasoning effort. Each harness takes a subset: Claude low…max, Codex minimal…xhigh. */

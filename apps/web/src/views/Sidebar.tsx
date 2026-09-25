@@ -32,10 +32,12 @@ import {
   DEFAULT_SETTLE_DELAY_MINUTES,
   type Project,
   type ThreadInfo,
+  UpdateStatus,
 } from "@apcode/contracts";
 import {
   Archive,
   ArchiveRestore,
+  ArrowDownToLine,
   ChevronRight,
   CircleCheck,
   CircleDot,
@@ -54,6 +56,7 @@ import { canSettle, isSeen, isSettled, send, setSettled, useStore } from "../lib
 import { addProject } from "../lib/projects.ts";
 import { useThreadListView } from "../lib/threadListView.ts";
 import { ago, useNow } from "../lib/time.ts";
+import { useUpdateStatus } from "../lib/updates.ts";
 import { usePersistedFlag } from "../lib/usePersistedFlag.ts";
 import type { ModalView } from "./AppModal.tsx";
 import { ThreadListMenu } from "./ThreadListMenu.tsx";
@@ -107,6 +110,7 @@ export const Sidebar = (props: {
   const [view, setView] = useThreadListView();
   const now = useNow();
   const reduce = useReducedMotion();
+  const updateStatus = useUpdateStatus();
 
   // Grouped by state: whatever still needs you on top, then settled threads, then archived ones.
   const [showArchived, setShowArchived] = useState(false);
@@ -379,7 +383,18 @@ export const Sidebar = (props: {
         />
       </div>
 
-      <div className="flex shrink-0 items-center px-3 pt-1 pb-3">
+      <div className="flex shrink-0 flex-col gap-1 px-3 pt-1 pb-3">
+        {updateStatus && UpdateStatus.guards.ready(updateStatus) ? (
+          <Button
+            variant="ghost"
+            onClick={() => window.desktop?.installUpdate()}
+            className="h-8 w-full justify-start gap-2 rounded-lg bg-primary/10 px-2 text-sm font-normal text-primary hover:bg-primary/15 hover:text-primary"
+          >
+            <ArrowDownToLine className="size-4" />
+            Restart to update
+            <span className="ml-auto text-xs tabular-nums opacity-70">v{updateStatus.version}</span>
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           onClick={() => props.onModal("settings")}

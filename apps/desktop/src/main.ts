@@ -2,10 +2,10 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { app, BrowserWindow } from "electron";
-import { autoUpdater } from "electron-updater";
 import { registerBridge } from "./bridge.ts";
 import { configureBrowserSession } from "./browser.ts";
 import { APP_URL, registerRendererScheme, serveRenderer } from "./renderer.ts";
+import { watchForUpdates } from "./updates.ts";
 import { createWindow } from "./windows.ts";
 
 const daemonToken = app.isPackaged ? randomBytes(32).toString("hex") : null;
@@ -15,10 +15,6 @@ const daemon = daemonToken
       stdio: "ignore",
     })
   : null;
-
-function checkForUpdates() {
-  autoUpdater.checkForUpdatesAndNotify().catch(() => {});
-}
 
 registerRendererScheme();
 registerBridge(daemonToken);
@@ -37,8 +33,6 @@ app
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow(APP_URL);
     });
-    if (!app.isPackaged) return;
-    checkForUpdates();
-    setInterval(checkForUpdates, 4 * 60 * 60 * 1000);
+    if (app.isPackaged) watchForUpdates();
   })
   .catch(() => app.quit());

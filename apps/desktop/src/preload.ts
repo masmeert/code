@@ -1,4 +1,4 @@
-import type { DesktopBridge, DesktopBrowserEvent } from "@apcode/contracts";
+import type { DesktopBridge, DesktopBrowserEvent, UpdateStatus } from "@apcode/contracts";
 import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
 
 const dropListeners = new Set<(paths: ReadonlyArray<string>) => void>();
@@ -33,4 +33,15 @@ contextBridge.exposeInMainWorld("desktop", {
   },
   automateBrowser: (webContentsId, action) =>
     ipcRenderer.invoke("automate-browser", { webContentsId, action }),
+  appVersion: () => ipcRenderer.invoke("app-version"),
+  updateStatus: () => ipcRenderer.invoke("update-status"),
+  onUpdateStatus: (listener) => {
+    function forward(_event: IpcRendererEvent, status: UpdateStatus) {
+      listener(status);
+    }
+    ipcRenderer.on("update-status-changed", forward);
+    return () => ipcRenderer.removeListener("update-status-changed", forward);
+  },
+  checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
+  installUpdate: () => ipcRenderer.invoke("install-update"),
 } satisfies DesktopBridge);

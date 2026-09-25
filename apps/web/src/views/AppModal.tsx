@@ -25,6 +25,7 @@ import {
   ProviderKind,
   type ProviderStatus,
   Theme,
+  UpdateStatus,
 } from "@apcode/contracts";
 import * as Match from "effect/Match";
 import * as Schema from "effect/Schema";
@@ -54,6 +55,7 @@ import {
   visibleModels,
 } from "../lib/models.ts";
 import { send, updateHarness, updateSettings, useStore } from "../lib/store.ts";
+import { useUpdateStatus } from "../lib/updates.ts";
 
 export type ModalView = "settings";
 
@@ -533,7 +535,73 @@ function GeneralPage() {
           </SettingsRow>
         </SettingsGroup>
       </Section>
+      {window.desktop ? <UpdatesSection /> : null}
     </>
+  );
+}
+
+function UpdatesSection() {
+  const status = useUpdateStatus();
+  const [version, setVersion] = useState<string | null>(null);
+  useEffect(() => {
+    window.desktop?.appVersion().then(setVersion, () => {});
+  }, []);
+
+  return (
+    <Section title="Updates">
+      <SettingsGroup>
+        <SettingsRow
+          label={
+            <>
+              <p>
+                APCode{" "}
+                {version ? (
+                  <span className="text-xs text-muted-foreground tabular-nums">v{version}</span>
+                ) : null}
+              </p>
+              <p
+                className={cn(
+                  "text-xs text-muted-foreground",
+                  status && UpdateStatus.guards.failed(status) && "text-destructive",
+                )}
+              >
+                {Match.value(status ?? UpdateStatus.cases.idle.make({})).pipe(
+                  Match.tag("idle", () => "Checks for updates automatically"),
+                  Match.tag("checking", () => "Checking for updates…"),
+                  Match.tag("up-to-date", () => "Up to date"),
+                  Match.tag(
+                    "downloading",
+                    ({ version, percent }) => `Downloading v${version}… ${Math.round(percent)}%`,
+                  ),
+                  Match.tag("ready", ({ version }) => `v${version} is ready to install`),
+                  Match.tag("failed", ({ message }) => message),
+                  Match.exhaustive,
+                )}
+              </p>
+            </>
+          }
+        >
+          {status && UpdateStatus.guards.ready(status) ? (
+            <Button
+              size="sm"
+              className="h-7 rounded-lg"
+              onClick={() => window.desktop?.installUpdate()}
+            >
+              Restart to update
+            </Button>
+          ) : status && UpdateStatus.isAnyOf(["checking", "downloading"])(status) ? null : (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 rounded-lg"
+              onClick={() => window.desktop?.checkForUpdates()}
+            >
+              Check for updates
+            </Button>
+          )}
+        </SettingsRow>
+      </SettingsGroup>
+    </Section>
   );
 }
 
