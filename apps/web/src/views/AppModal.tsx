@@ -541,64 +541,56 @@ function GeneralPage() {
 }
 
 function UpdatesSection() {
-  const status = useUpdateStatus();
+  const status = useUpdateStatus() ?? UpdateStatus.cases.idle.make({});
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     window.desktop?.appVersion().then(setVersion, () => {});
   }, []);
+  const ready = UpdateStatus.guards.ready(status);
 
   return (
-    <Section title="Updates">
+    <Section title="About">
       <SettingsGroup>
         <SettingsRow
           label={
             <>
-              <p>
-                APCode{" "}
+              <p className="flex items-baseline gap-1.5">
+                Version
                 {version ? (
-                  <span className="text-xs text-muted-foreground tabular-nums">v{version}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{version}</span>
                 ) : null}
               </p>
-              <p
-                className={cn(
-                  "text-xs text-muted-foreground",
-                  status && UpdateStatus.guards.failed(status) && "text-destructive",
-                )}
-              >
-                {Match.value(status ?? UpdateStatus.cases.idle.make({})).pipe(
-                  Match.tag("idle", () => "Checks for updates automatically"),
-                  Match.tag("checking", () => "Checking for updates…"),
-                  Match.tag("up-to-date", () => "Up to date"),
-                  Match.tag(
-                    "downloading",
-                    ({ version, percent }) => `Downloading v${version}… ${Math.round(percent)}%`,
-                  ),
-                  Match.tag("ready", ({ version }) => `v${version} is ready to install`),
-                  Match.tag("failed", ({ message }) => message),
-                  Match.exhaustive,
-                )}
-              </p>
+              {UpdateStatus.guards.failed(status) ? (
+                <p className="text-xs text-destructive">{status.message}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {ready
+                    ? `Version ${status.version} is downloaded and installs when APCode restarts.`
+                    : "Current version of the application."}
+                </p>
+              )}
             </>
           }
         >
-          {status && UpdateStatus.guards.ready(status) ? (
-            <Button
-              size="sm"
-              className="h-7 rounded-lg"
-              onClick={() => window.desktop?.installUpdate()}
-            >
-              Restart to update
-            </Button>
-          ) : status && UpdateStatus.isAnyOf(["checking", "downloading"])(status) ? null : (
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-7 rounded-lg"
-              onClick={() => window.desktop?.checkForUpdates()}
-            >
-              Check for updates
-            </Button>
-          )}
+          <Button
+            size="sm"
+            variant={ready ? "primary" : "secondary"}
+            disabled={UpdateStatus.isAnyOf(["checking", "downloading"])(status)}
+            className="h-7 rounded-lg tabular-nums disabled:opacity-100"
+            onClick={() =>
+              ready ? window.desktop?.installUpdate() : window.desktop?.checkForUpdates()
+            }
+          >
+            {Match.value(status).pipe(
+              Match.tag("idle", () => "Check for updates"),
+              Match.tag("checking", () => "Checking…"),
+              Match.tag("up-to-date", () => "Up to date"),
+              Match.tag("downloading", ({ percent }) => `Downloading ${Math.round(percent)}%`),
+              Match.tag("ready", () => "Restart to update"),
+              Match.tag("failed", () => "Try again"),
+              Match.exhaustive,
+            )}
+          </Button>
         </SettingsRow>
       </SettingsGroup>
     </Section>
