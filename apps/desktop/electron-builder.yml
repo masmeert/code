@@ -21,3 +21,8 @@ mac:
     - zip
   icon: resources/icon.icns
   category: public.app-category.developer-tools
+  identity: "Massimo Meert (3942GST99F)"
+  hardenedRuntime: true
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  notarize: true
