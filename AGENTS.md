@@ -2,7 +2,7 @@
 
 ## Code style
 
-- No comments unless asked.
+- No comments unless they explain something the code can't: a non-obvious why, a constraint, or a type assertion's justification. Never restate what the code does.
 - No single-use variables/constants — inline them. This includes Tailwind classes: always write them inline in `className` or `cn`.
 - Check shared helpers/utils before writing a local one; don't create a helper for something that can stay inline.
 - Named functions: use `function foo() {}`, not `const foo = () => {}`.
