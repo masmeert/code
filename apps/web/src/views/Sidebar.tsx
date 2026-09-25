@@ -25,6 +25,7 @@ import { Separator } from "@apcode/ui/components/separator";
 import { ProjectBadge } from "@/components/project-badge";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import { cn } from "@apcode/ui/lib/utils";
+import { isMac } from "@apcode/ui/lib/keys";
 import {
   ClientCommand,
   DEFAULT_SETTLE_DELAY_MINUTES,
@@ -57,6 +58,9 @@ import type { ModalView } from "./AppModal.tsx";
 import { ThreadListMenu } from "./ThreadListMenu.tsx";
 
 // A plain ease: a bouncy spring overshoots past zero height, which clamps and stutters.
+/** Only the macOS desktop window draws traffic lights over the top-left corner. */
+export const hasTrafficLights = Boolean(window.desktop) && isMac;
+
 const FOLD: Transition = {
   duration: 0.24,
   ease: EASE_OUT,
@@ -232,7 +236,11 @@ export const Sidebar = (props: {
               key="rows"
               // Clip only while moving, so focus rings aren't cut once open.
               initial={snap ? false : { height: 0, opacity: 0, overflow: "hidden" }}
-              animate={{ height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }}
+              animate={{
+                height: "auto",
+                opacity: 1,
+                transitionEnd: { overflow: "visible" },
+              }}
               exit={{
                 height: 0,
                 opacity: 0,
@@ -258,7 +266,12 @@ export const Sidebar = (props: {
     >
       {/* Title bar. The traffic lights (trafficLightPosition 16,11) are centred 18.5px down and end at 76px;
           the bottom padding centres this row on them, the left padding leaves them room. */}
-      <div className="flex h-10 shrink-0 items-center gap-1 pr-3 pb-[3px] pl-[86px] [-webkit-app-region:drag]">
+      <div
+        className={cn(
+          "flex h-10 shrink-0 items-center gap-1 pr-3 pb-[3px] [-webkit-app-region:drag]",
+          hasTrafficLights ? "pl-[86px]" : "pl-3",
+        )}
+      >
         <AnimatedSidebarTrigger className="size-7 rounded-lg text-muted-foreground [-webkit-app-region:no-drag] hover:bg-muted/60 hover:text-foreground">
           <PanelLeft className="size-4" />
         </AnimatedSidebarTrigger>
@@ -448,7 +461,10 @@ const useThreadActions = (info: ThreadInfo, settled: boolean) => {
             icon: ArchiveRestore,
             onSelect: () =>
               send(
-                ClientCommand.cases["thread.archive"].make({ threadId: info.id, archived: false }),
+                ClientCommand.cases["thread.archive"].make({
+                  threadId: info.id,
+                  archived: false,
+                }),
               ),
           },
         ]
@@ -466,7 +482,10 @@ const useThreadActions = (info: ThreadInfo, settled: boolean) => {
             icon: Archive,
             onSelect: () =>
               send(
-                ClientCommand.cases["thread.archive"].make({ threadId: info.id, archived: true }),
+                ClientCommand.cases["thread.archive"].make({
+                  threadId: info.id,
+                  archived: true,
+                }),
               ),
             disabled: !canSettle(info),
           },

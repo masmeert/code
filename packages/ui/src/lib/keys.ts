@@ -3,7 +3,7 @@
  * `alt` is ⌥ / Alt.
  */
 
-const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
 /** Whether a key event is the shortcut `binding`. */
 export const matches = (event: KeyboardEvent | React.KeyboardEvent, binding: string) => {
