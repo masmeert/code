@@ -119,7 +119,7 @@ const Header = ({
       ) : null}
       <span className="min-w-0 truncate text-sm font-medium text-foreground">{title}</span>
       {badge}
-      {actions ? <span className="ml-auto flex shrink-0 items-center gap-1 pl-2">{actions}</span> : null}
+      {actions ? <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">{actions}</span> : null}
     </header>
   );
 };
@@ -370,29 +370,31 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
         actions={
           <>
             <GitMenu cwd={info.cwd} refreshKey={diffKey} />
-            <button
-              type="button"
-              title={`${activeTerminal ? "Hide" : "Show"} terminal (${describe("terminal.toggle")})`}
-              aria-label={activeTerminal ? "Hide terminal" : "Show terminal"}
-              aria-pressed={activeTerminal !== undefined}
-              onClick={() => toggleTerminalPanel(threadId)}
-              className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${activeTerminal ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
-            >
-              <SquareTerminal className="size-4" />
-            </button>
-            <button
-              type="button"
-              title={diffOpen ? "Hide changes" : "Show changes"}
-              aria-label={diffOpen ? "Hide changes" : "Show changes"}
-              aria-pressed={diffOpen}
-              onClick={() => {
-                setDiffOpen(!diffOpen);
-                setDiffTurn(null);
-              }}
-              className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${diffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
-            >
-              <FileDiff className="size-4" />
-            </button>
+            <span className="flex items-center gap-0.5">
+              <button
+                type="button"
+                title={`${activeTerminal ? "Hide" : "Show"} terminal (${describe("terminal.toggle")})`}
+                aria-label={activeTerminal ? "Hide terminal" : "Show terminal"}
+                aria-pressed={activeTerminal !== undefined}
+                onClick={() => toggleTerminalPanel(threadId)}
+                className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${activeTerminal ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+              >
+                <SquareTerminal className="size-4" />
+              </button>
+              <button
+                type="button"
+                title={diffOpen ? "Hide changes" : "Show changes"}
+                aria-label={diffOpen ? "Hide changes" : "Show changes"}
+                aria-pressed={diffOpen}
+                onClick={() => {
+                  setDiffOpen(!diffOpen);
+                  setDiffTurn(null);
+                }}
+                className={`grid size-7 place-items-center rounded-lg outline-none transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${diffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+              >
+                <FileDiff className="size-4" />
+              </button>
+            </span>
           </>
         }
       />
