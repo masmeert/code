@@ -41,6 +41,7 @@ const initialView = (): View | null => {
 export const App = () => {
   const order = useStore((s) => s.order);
   const threads = useStore((s) => s.threads);
+  const projects = useStore((s) => s.projects);
   const connected = useStore((s) => s.connected);
   const source = useStore((s) => s.source);
   // A cold start takes a moment and the cached threads are already on screen, so
@@ -73,7 +74,11 @@ export const App = () => {
   }, [createdHere]);
 
   const draft = (path: string | null) => setView({ kind: "draft", path });
-  const currentPath = view.kind === "thread" ? (threads[view.id]?.cwd ?? null) : view.path;
+  // A worktree thread's cwd is its worktree, so new threads go by its project instead.
+  const currentPath =
+    view.kind === "thread"
+      ? (projects.find((project) => project.id === threads[view.id]?.projectId)?.path ?? null)
+      : view.path;
 
   // Like Claude Code: a new thread starts in the project on screen, if any.
   useShortcut("n", () => draft(currentPath));
