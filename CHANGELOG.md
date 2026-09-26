@@ -2,6 +2,16 @@
 
 Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unreleased` to `X.Y.Z - YYYY-MM-DD`; the release workflow publishes that section as the GitHub release notes and fails if it is missing.
 
+## Unreleased
+
+### Added
+
+- A fork ends with a "Forked from …" divider that takes you back to the original.
+
+### Changed
+
+- Forking asks first, in a small dialog (Enter forks, Esc cancels), and says why if it fails.
+
 ## 0.0.4 - 2026-09-26
 
 ### Added
