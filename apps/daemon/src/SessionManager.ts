@@ -1,6 +1,7 @@
 import {
   AttachmentInput,
   ClientCommand,
+  isTurnActive,
   ProviderKind,
   RuntimeEvent,
   ServerFrame,
@@ -502,7 +503,7 @@ const make = Effect.gen(function* () {
       );
       // A turn is running: the message joins it.
       const { status } = entry.info;
-      if (entry.session && (status === "running" || status === "awaiting-approval")) {
+      if (entry.session && isTurnActive(status)) {
         publish({ ...message, steer: true });
         return yield* entry.session.steer(turn);
       }
@@ -523,8 +524,7 @@ const make = Effect.gen(function* () {
       yield* session.send(turn);
     });
 
-  const isBusy = (entry: ThreadEntry) =>
-    entry.info.status === "running" || entry.info.status === "awaiting-approval";
+  const isBusy = (entry: ThreadEntry) => isTurnActive(entry.info.status);
 
   /**
    * Rewinds to before a user message: the provider's conversation first (the step that
@@ -680,7 +680,7 @@ const make = Effect.gen(function* () {
     const now = Date.now();
     for (const entry of threads.values()) {
       const { status } = entry.info;
-      if (!entry.session || status === "running" || status === "awaiting-approval") continue;
+      if (!entry.session || isTurnActive(status)) continue;
       if (now - entry.activeAt < SESSION_IDLE_MS) continue;
       const session = entry.session;
       entry.session = null;
@@ -1098,7 +1098,7 @@ const make = Effect.gen(function* () {
         withLiveSession(command.threadId, (s) => s.stopAgent?.(command.toolId) ?? Effect.void),
       "approval.respond": (command) =>
         withLiveSession(command.threadId, (s) =>
-          s.respondApproval(command.requestId, command.decision, command.permission),
+          s.respondApproval(command.requestId, command.decision, command),
         ),
       "thread.close": (command) => removeThread(command.threadId),
       "thread.archive": (command) =>

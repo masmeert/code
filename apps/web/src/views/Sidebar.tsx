@@ -422,15 +422,17 @@ const StatusDot = ({
   const [label, tone] =
     info.status === "awaiting-approval"
       ? ["Needs approval", "bg-warning"]
-      : info.status === "error"
-        ? ["Error", "bg-destructive"]
-        : info.status === "running"
-          ? ["Working", "bg-foreground animate-pulse"]
-          : unread
-            ? ["New activity", "bg-foreground"]
-            : settled
-              ? ["Settled", "bg-muted-foreground/25"]
-              : ["Idle", "bg-muted-foreground/60"];
+      : info.status === "awaiting-answer"
+        ? ["Needs an answer", "bg-warning"]
+        : info.status === "error"
+          ? ["Error", "bg-destructive"]
+          : info.status === "running"
+            ? ["Working", "bg-foreground animate-pulse"]
+            : unread
+              ? ["New activity", "bg-foreground"]
+              : settled
+                ? ["Settled", "bg-muted-foreground/25"]
+                : ["Idle", "bg-muted-foreground/60"];
   return (
     <span role="img" aria-label={label} className={cn("size-2 shrink-0 rounded-full", tone)} />
   );
@@ -456,6 +458,8 @@ const ProviderMark = ({ info }: { info: ThreadInfo }) => {
 const TrailingLabel = ({ info, now }: { info: ThreadInfo; now: number }) => {
   if (info.status === "awaiting-approval")
     return <span className="font-medium text-warning">Needs approval</span>;
+  if (info.status === "awaiting-answer")
+    return <span className="font-medium text-warning">Needs an answer</span>;
   if (info.status === "error") return <span className="font-medium text-destructive">Error</span>;
   return <span className="tabular-nums">{ago(info.updatedAt, now)}</span>;
 };

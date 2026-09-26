@@ -9,13 +9,45 @@ export const ThreadStatus = Schema.Literals([
   "idle",
   "running",
   "awaiting-approval",
+  /** The agent asked the user questions and waits for the answers. */
+  "awaiting-answer",
   "error",
   "closed",
 ]);
 export type ThreadStatus = typeof ThreadStatus.Type;
 
+/** The agent is stopped on the user: for an approval, or for answers. */
+export const isAwaitingUser = (status: ThreadStatus) =>
+  status === "awaiting-approval" || status === "awaiting-answer";
+
+/** A turn is going, whether the agent is working or waiting on the user. */
+export const isTurnActive = (status: ThreadStatus) =>
+  status === "running" || isAwaitingUser(status);
+
 export const ApprovalDecision = Schema.Literals(["allow", "allow-session", "deny"]);
 export type ApprovalDecision = typeof ApprovalDecision.Type;
+
+/** A multiple-choice question from the agent, like Claude's AskUserQuestion. */
+export const UserQuestion = Schema.Struct({
+  id: Schema.String,
+  /** A short label for it, like "Auth method". */
+  header: Schema.String,
+  question: Schema.String,
+  options: Schema.Array(
+    Schema.Struct({
+      label: Schema.String,
+      description: Schema.String,
+      /** Markdown to show while the option is looked at: a mockup, a snippet. */
+      preview: Schema.optional(Schema.String),
+    }),
+  ),
+  multiSelect: Schema.Boolean,
+});
+export type UserQuestion = typeof UserQuestion.Type;
+
+/** Question id to the chosen option labels, plus any answer typed instead. */
+export const UserAnswers = Schema.Record(Schema.String, Schema.Array(Schema.String));
+export type UserAnswers = typeof UserAnswers.Type;
 
 export const Theme = Schema.Literals(["system", "light", "dark"]);
 export type Theme = typeof Theme.Type;
@@ -483,8 +515,15 @@ export const RuntimeEvent = Schema.Union([
     detail: Schema.String,
     /** The subagent asking, when it isn't the main agent. */
     agent: Schema.optional(Schema.String),
+    /** Set when the agent asks questions rather than for permission. */
+    questions: Schema.optional(Schema.Array(UserQuestion)),
   }),
-  Schema.TaggedStruct("approval.resolved", { threadId: Schema.String, requestId: Schema.String }),
+  Schema.TaggedStruct("approval.resolved", {
+    threadId: Schema.String,
+    requestId: Schema.String,
+    /** What was answered, for questions; absent when they were skipped. */
+    answers: Schema.optional(UserAnswers),
+  }),
   Schema.TaggedStruct("turn.completed", {
     threadId: Schema.String,
     durationMs: Schema.NullOr(Schema.Number),
@@ -641,12 +680,14 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("thread.close", { threadId: Schema.String }),
   /** Archiving also stops the thread's agent process; it resumes on the next message. */
   Schema.TaggedStruct("thread.archive", { threadId: Schema.String, archived: Schema.Boolean }),
+  /** Questions are answered with "allow" and `answers`, and skipped with "deny". */
   Schema.TaggedStruct("approval.respond", {
     threadId: Schema.String,
     requestId: Schema.String,
     decision: ApprovalDecision,
     /** Approving a plan: the level to build it with; auto-edit when left out. */
     permission: Schema.optional(PermissionLevel),
+    answers: Schema.optional(UserAnswers),
   }),
   Schema.TaggedStruct("settings.update", { settings: Settings }),
   Schema.TaggedStruct("project.remove", { projectId: Schema.String }),

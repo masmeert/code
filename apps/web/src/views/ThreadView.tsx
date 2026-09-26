@@ -12,6 +12,7 @@ import { Markdown } from "@apcode/ui/agents/markdown";
 import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
 import { PromptSelect } from "@apcode/ui/agents/prompt-input";
 import { StreamingResponse } from "@apcode/ui/agents/streaming-response";
+import { ApprovalCard } from "@apcode/ui/agents/approval-card";
 import { ToolApproval, ToolApprovalCode } from "@apcode/ui/agents/tool-approval";
 import {
   categoryOf,
@@ -25,7 +26,13 @@ import {
 import { ProjectBadge } from "@/components/project-badge";
 import { cn } from "@apcode/ui/lib/utils";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
-import { type Attachment, ClientCommand, type Project, type ProviderKind } from "@apcode/contracts";
+import {
+  type Attachment,
+  ClientCommand,
+  isTurnActive,
+  type Project,
+  type ProviderKind,
+} from "@apcode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
 import {
   ArrowUp,
@@ -59,7 +66,7 @@ import {
 } from "react";
 import { toggleBrowser, useBrowser } from "../lib/browser.ts";
 import { approvePlan, BUILD_WITH_LABEL, fromSent } from "../lib/composer.ts";
-import { appendToDraft, focusComposer, setDraft } from "../lib/drafts.ts";
+import { appendToDraft, focusComposer, getDraft, setDraft } from "../lib/drafts.ts";
 import { describe, useKeybinding } from "../lib/keybindings.ts";
 import {
   decodeChoice,
@@ -430,7 +437,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   // The harness is fixed per thread; only its model can change.
   const choices = modelChoices(providers, settings, provider);
   const current = info.model ?? defaultModel(providers, settings, provider);
-  const busy = status === "running" || status === "awaiting-approval";
+  const busy = isTurnActive(status);
   const lastItem = items.at(-1);
   const [reveal, setReveal] = useState<ToolReveal | null>(null);
   const runningAgents = busy
@@ -1126,6 +1133,78 @@ const AgentBlockContent = ({
               <Markdown className="selectable leading-relaxed">{item.detail}</Markdown>
             </div>
           </ToolApproval>
+        );
+      }
+      if (item.questions) {
+        const { questions, answers } = item;
+        return (
+          <ApprovalCard
+            autoFocus={
+              !getDraft(threadId).text.trim() &&
+              (document.activeElement === document.body ||
+                document.activeElement?.matches("textarea[data-composer]") === true)
+            }
+            status={
+              item.resolved
+                ? answers
+                  ? "answered"
+                  : "skipped"
+                : item.decision
+                  ? "submitting"
+                  : "pending"
+            }
+            questions={questions.map((question) => ({
+              id: question.id,
+              title: question.question,
+              description: item.agent ? `Asked by ${item.agent}` : undefined,
+              options: question.options.map((option) => {
+                const choice = {
+                  value: option.label,
+                  label: option.label,
+                  description: option.description,
+                };
+                return option.preview === undefined
+                  ? choice
+                  : {
+                      ...choice,
+                      preview: (
+                        <Markdown className="text-xs leading-relaxed">{option.preview}</Markdown>
+                      ),
+                    };
+              }),
+              multiple: question.multiSelect,
+              allowCustom: true,
+              customPlaceholder: "Something else…",
+            }))}
+            onSubmit={(chosen) =>
+              respondApproval(threadId, item.id, "allow", {
+                answers: Object.fromEntries(
+                  questions.map((question) => {
+                    const custom = chosen[question.id]?.custom?.trim();
+                    return [
+                      question.id,
+                      [...(chosen[question.id]?.selected ?? []), ...(custom ? [custom] : [])],
+                    ];
+                  }),
+                ),
+              })
+            }
+            onDismiss={
+              item.resolved || item.decision
+                ? undefined
+                : () => respondApproval(threadId, item.id, "deny")
+            }
+            result={
+              answers
+                ? questions
+                    .map(
+                      (question) =>
+                        `${questions.length > 1 ? `${question.header}: ` : ""}${(answers[question.id] ?? []).join(", ")}`,
+                    )
+                    .join(" · ")
+                : "Went on without an answer"
+            }
+          />
         );
       }
       // Once approved, the tool group shows what ran; only pending and denied requests stay visible.

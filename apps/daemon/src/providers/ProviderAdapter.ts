@@ -8,6 +8,7 @@ import type {
   RuntimeEvent,
   SlashCommand,
   ThreadUsage,
+  UserAnswers,
 } from "@apcode/contracts";
 import type * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
@@ -67,8 +68,11 @@ export interface ProviderSession {
   readonly respondApproval: (
     requestId: string,
     decision: ApprovalDecision,
-    /** Approving a plan: the level to build it with. */
-    permission?: PermissionLevel,
+    reply?: {
+      /** Approving a plan: the level to build it with. */
+      readonly permission?: PermissionLevel | undefined;
+      readonly answers?: UserAnswers | undefined;
+    },
   ) => Effect.Effect<void, ProviderError>;
   /** Switches model for subsequent turns; null reverts to the harness default where supported. */
   readonly setModel: (model: string | null) => Effect.Effect<void, ProviderError>;

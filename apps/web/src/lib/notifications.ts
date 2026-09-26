@@ -1,3 +1,4 @@
+import { isAwaitingUser, isTurnActive } from "@apcode/contracts";
 import { harnessLabel } from "./models.ts";
 import { isSeen, watchState } from "./store.ts";
 
@@ -20,11 +21,13 @@ watchState((prev, next) => {
       const body =
         info.status === "awaiting-approval"
           ? "needs your approval"
-          : info.status === "error"
-            ? "stopped with an error"
-            : info.status === "idle" && (was === "running" || was === "awaiting-approval")
-              ? "finished"
-              : null;
+          : info.status === "awaiting-answer"
+            ? "has a question for you"
+            : info.status === "error"
+              ? "stopped with an error"
+              : info.status === "idle" && isTurnActive(was)
+                ? "finished"
+                : null;
       if (body)
         void desktop.notify({
           threadId: id,
@@ -40,8 +43,7 @@ watchState((prev, next) => {
     const info = next.threads[id]!;
     return (
       info.archivedAt === null &&
-      (info.status === "awaiting-approval" ||
-        (info.status !== "running" && !isSeen(info, next.seen)))
+      (isAwaitingUser(info.status) || (info.status !== "running" && !isSeen(info, next.seen)))
     );
   }).length;
   if (needingYou === badge) return;

@@ -107,7 +107,7 @@ export function approvePlan(
   requestId: string,
   permission: keyof typeof BUILD_WITH_LABEL,
 ) {
-  respondApproval(threadId, requestId, "allow", permission);
+  respondApproval(threadId, requestId, "allow", { permission });
   setTurnPrefs(threadId, { permission });
 }
 

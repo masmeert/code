@@ -6,11 +6,15 @@ export type ApprovalCardStatus =
   | "approved"
   | "rejected"
   | "changes-requested"
-  | "answered";
+  | "answered"
+  | "skipped";
 
 export interface ApprovalCardOption {
   value: string;
   label: string;
+  description?: string;
+  /** Shown while the option is hovered, focused or picked. */
+  preview?: ReactNode;
   disabled?: boolean;
 }
 
@@ -52,5 +56,7 @@ export interface ApprovalCardProps {
   approveLabel?: ReactNode;
   submitLabel?: ReactNode;
   result?: ReactNode;
+  /** Takes focus on mount while questions wait, so the keyboard answers them. */
+  autoFocus?: boolean;
   className?: string;
 }

@@ -18,7 +18,12 @@ import {
   type SDKUserMessage,
   type SessionMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { RuntimeEvent, type Effort, type PermissionLevel } from "@apcode/contracts";
+import {
+  RuntimeEvent,
+  type Effort,
+  type PermissionLevel,
+  type UserQuestion,
+} from "@apcode/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
@@ -72,8 +77,29 @@ interface PendingApproval {
   readonly toolName: string;
   readonly input: Parameters<CanUseTool>[1];
   readonly suggestions: Array<PermissionUpdate> | undefined;
+  /** Set for AskUserQuestion, whose "approval" is the user's answers. */
+  readonly questions: ReadonlyArray<UserQuestion> | undefined;
   readonly resolve: (result: PermissionResult) => void;
 }
+
+const decodeAskUserQuestion = Schema.decodeUnknownOption(
+  Schema.Struct({
+    questions: Schema.Array(
+      Schema.Struct({
+        question: Schema.String,
+        header: Schema.String,
+        multiSelect: Schema.optional(Schema.Boolean),
+        options: Schema.Array(
+          Schema.Struct({
+            label: Schema.String,
+            description: Schema.optional(Schema.String),
+            preview: Schema.optional(Schema.String),
+          }),
+        ),
+      }),
+    ),
+  }),
+);
 
 const fail = (message: string) => new ProviderError({ provider: "claude", message });
 
@@ -155,24 +181,47 @@ const start = ({
       const canUseTool: CanUseTool = (toolName, input, { signal, suggestions, agentID }) =>
         new Promise<PermissionResult>((resolve) => {
           const requestId = `claude-perm-${++nextRequest}`;
-          pending.set(requestId, { toolName, input, suggestions, resolve });
+          const questions: ReadonlyArray<UserQuestion> | undefined =
+            toolName === "AskUserQuestion"
+              ? Option.getOrUndefined(decodeAskUserQuestion(input))?.questions.map(
+                  // AskUserQuestion's questions carry no ids; their position is theirs.
+                  (question, index) => ({
+                    id: String(index),
+                    header: question.header,
+                    question: question.question,
+                    options: question.options.map((option) => ({
+                      ...option,
+                      description: option.description ?? "",
+                    })),
+                    multiSelect: question.multiSelect === true,
+                  }),
+                )
+              : undefined;
+          pending.set(requestId, { toolName, input, suggestions, questions, resolve });
           signal.addEventListener("abort", () => {
             if (pending.delete(requestId)) {
               emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
               resolve({ behavior: "deny", message: "Aborted" });
             }
           });
-          emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "awaiting-approval" }));
+          emit(
+            RuntimeEvent.cases["thread.status"].make({
+              threadId,
+              status: questions ? "awaiting-answer" : "awaiting-approval",
+            }),
+          );
           emit(
             RuntimeEvent.cases["approval.requested"].make({
               threadId,
               requestId,
               title: toolName,
-              detail:
-                toolName === "ExitPlanMode" && Predicate.isString(input.plan)
+              detail: questions
+                ? questions.map((question) => question.question).join("\n")
+                : toolName === "ExitPlanMode" && Predicate.isString(input.plan)
                   ? input.plan
                   : summarizeToolInput(Option.getOrNull(decodeToolInput(input))),
               agent: agentID === undefined ? undefined : agentNames.get(agentID),
+              questions,
             }),
           );
         });
@@ -218,6 +267,7 @@ const start = ({
       // Subagents' descriptions by task id, to say which one asks for an approval.
       const agentNames = new Map<string, string>();
       const backgroundAgents = new Set<string>();
+      const questionTools = new Set<string>();
       // Claude Code's own running/idle, which covers turns it starts itself and waits out background
       // agents. CLIs too old to send it get idle at the end of each turn instead.
       let reportsSessionState = false;
@@ -279,6 +329,9 @@ const start = ({
                     text: block.text,
                   }),
                 );
+              } else if (block.type === "tool_use" && block.name === "AskUserQuestion") {
+                // Shown as its question card instead.
+                questionTools.add(block.id);
               } else if (block.type === "tool_use") {
                 emit(
                   RuntimeEvent.cases["tool.started"].make({
@@ -296,7 +349,12 @@ const start = ({
           case "user": {
             if (!Array.isArray(msg.message.content)) return;
             for (const block of msg.message.content) {
-              if (block.type !== "tool_result" || backgroundAgents.has(block.tool_use_id)) continue;
+              if (
+                block.type !== "tool_result" ||
+                backgroundAgents.has(block.tool_use_id) ||
+                questionTools.delete(block.tool_use_id)
+              )
+                continue;
               emit(
                 RuntimeEvent.cases["tool.completed"].make({
                   threadId,
@@ -462,11 +520,16 @@ const start = ({
             },
             catch: (e) => fail(`Couldn't stop the subagent: ${String(e)}`),
           }),
-        respondApproval: (requestId, decision, buildPermission = "auto-edit") =>
+        respondApproval: (
+          requestId,
+          decision,
+          { permission: buildPermission = "auto-edit", answers } = {},
+        ) =>
           Effect.suspend(() => {
             const entry = pending.get(requestId);
             if (!entry) return Effect.fail(fail(`Unknown approval request ${requestId}`));
             pending.delete(requestId);
+            const answered = entry.questions && decision !== "deny" ? answers : undefined;
             // Approving a plan leaves plan mode for the level picked with it; the composer follows.
             if (entry.toolName === "ExitPlanMode" && decision !== "deny") {
               permission = buildPermission;
@@ -484,6 +547,31 @@ const start = ({
                 message:
                   "The user rejected this plan and will reply with what to change. End your turn now, without calling any tools.",
               });
+            else if (entry.questions && !answered)
+              entry.resolve({ behavior: "deny", message: "The user chose not to answer" });
+            else if (entry.questions && answered)
+              // Claude reads answers keyed by question text, several choices comma-separated.
+              entry.resolve({
+                behavior: "allow",
+                updatedInput: {
+                  ...entry.input,
+                  answers: Object.fromEntries(
+                    entry.questions.map((question) => [
+                      question.question,
+                      (answered[question.id] ?? []).join(", "),
+                    ]),
+                  ),
+                  // Tells Claude which mockup the user picked, as its own dialog does.
+                  annotations: Object.fromEntries(
+                    entry.questions.flatMap((question) => {
+                      const preview = question.options.find((option) =>
+                        answered[question.id]?.includes(option.label),
+                      )?.preview;
+                      return preview ? [[question.question, { preview }]] : [];
+                    }),
+                  ),
+                },
+              });
             else if (decision === "deny")
               entry.resolve({ behavior: "deny", message: "Denied by user" });
             else if (decision === "allow-session" && entry.suggestions)
@@ -493,7 +581,11 @@ const start = ({
                 updatedPermissions: entry.suggestions,
               });
             else entry.resolve({ behavior: "allow", updatedInput: entry.input });
-            emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
+            emit(
+              RuntimeEvent.cases["approval.resolved"].make(
+                answered ? { threadId, requestId, answers: answered } : { threadId, requestId },
+              ),
+            );
             emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
             return Effect.void;
           }),

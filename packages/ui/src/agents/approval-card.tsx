@@ -8,7 +8,7 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
 import { ActionSwapRollText } from "@apcode/ui/motion/action-swap-roll";
 import { Button } from "@apcode/ui/motion/button";
@@ -42,6 +42,7 @@ function getStatusLabel(status: ApprovalCardStatus) {
   if (status === "rejected") return "Rejected";
   if (status === "changes-requested") return "Changes requested";
   if (status === "answered") return "Response submitted";
+  if (status === "skipped") return "Skipped";
   return "Input required";
 }
 
@@ -63,6 +64,7 @@ function getStatusBadgeClass(status: ApprovalCardStatus) {
   if (status === "submitting") {
     return "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400";
   }
+  if (status === "skipped") return "border-border bg-background/60 text-muted-foreground";
   if (status === "approved" || status === "answered") {
     return "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
   }
@@ -87,28 +89,39 @@ function QuestionOptions({
   onSingleSelect?: () => void;
 }) {
   const custom = answer.custom ?? "";
+  const [lookedAt, setLookedAt] = useState<string>();
+  const preview = question.options?.find(
+    (option) => option.value === (lookedAt ?? answer.selected.at(-1)),
+  )?.preview;
 
   return (
     <div className="mt-3">
       {question.options?.length ? (
         question.multiple ? (
-          <div className="grid gap-0.5">
+          <div className="grid gap-0.5" onPointerLeave={() => setLookedAt(undefined)}>
             {question.options.map((option) => (
-              <Checkbox
+              <div
                 key={option.value}
-                checked={answer.selected.includes(option.value)}
-                disabled={disabled || option.disabled}
-                label={option.label}
-                onCheckedChange={(checked) =>
-                  onChange({
-                    ...answer,
-                    selected: checked
-                      ? [...answer.selected, option.value]
-                      : answer.selected.filter((value) => value !== option.value),
-                  })
-                }
-                className="min-h-9 rounded-lg px-1.5 py-1"
-              />
+                className="flex"
+                onPointerEnter={() => setLookedAt(option.value)}
+                onFocus={() => setLookedAt(option.value)}
+              >
+                <Checkbox
+                  checked={answer.selected.includes(option.value)}
+                  disabled={disabled || option.disabled}
+                  label={option.label}
+                  description={option.description}
+                  onCheckedChange={(checked) =>
+                    onChange({
+                      ...answer,
+                      selected: checked
+                        ? [...answer.selected, option.value]
+                        : answer.selected.filter((value) => value !== option.value),
+                    })
+                  }
+                  className="min-h-9 rounded-lg px-1.5 py-1"
+                />
+              </div>
             ))}
           </div>
         ) : (
@@ -121,17 +134,27 @@ function QuestionOptions({
             className="gap-0.5"
           >
             {question.options.map((option) => (
-              <RadioGroupItem
+              <div
                 key={option.value}
-                value={option.value}
-                label={option.label}
-                disabled={disabled || option.disabled}
-                className="min-h-9 rounded-lg px-1.5 py-1"
-              />
+                className="flex"
+                onPointerEnter={() => setLookedAt(option.value)}
+                onPointerLeave={() => setLookedAt(undefined)}
+                onFocus={() => setLookedAt(option.value)}
+              >
+                <RadioGroupItem
+                  value={option.value}
+                  label={option.label}
+                  description={option.description}
+                  disabled={disabled || option.disabled}
+                  className="min-h-9 rounded-lg px-1.5 py-1"
+                />
+              </div>
             ))}
           </RadioGroup>
         )
       ) : null}
+
+      {preview ? <div className="mt-2 max-h-72 overflow-auto rounded-xl">{preview}</div> : null}
 
       {question.allowCustom ? (
         <Input
@@ -201,12 +224,14 @@ export function ApprovalCard({
   approveLabel = "Approve",
   submitLabel = "Submit response",
   result,
+  autoFocus = false,
   className,
 }: ApprovalCardProps) {
   const reduce = useReducedMotion() ?? false;
   const [internalAnswers, setInternalAnswers] = useState<ApprovalCardAnswers>(defaultAnswers);
   const [internalStep, setInternalStep] = useState(defaultStep);
   const autoAdvanceTimer = useRef<number | undefined>(undefined);
+  const cardRef = useRef<HTMLDivElement>(null);
   const currentAnswers = answers ?? internalAnswers;
   const currentStep = Math.min(
     Math.max(0, step ?? internalStep),
@@ -230,6 +255,12 @@ export function ApprovalCard({
   }, []);
 
   useEffect(() => clearAutoAdvance, [clearAutoAdvance]);
+
+  // Decided at mount only: a card shouldn't grab focus later, while you're typing elsewhere.
+  const focusOnMount = useRef(autoFocus && questionMode && pending);
+  useEffect(() => {
+    if (focusOnMount.current) cardRef.current?.focus({ preventScroll: true });
+  }, []);
 
   const setAnswers = useCallback(
     (next: ApprovalCardAnswers) => {
@@ -275,11 +306,71 @@ export function ApprovalCard({
     }, 240);
   };
 
+  const answerWithKeys = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!question || !pending || event.metaKey || event.ctrlKey || event.altKey) return;
+    const typing =
+      event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      // Esc in the text field only leaves it; the keys then answer again.
+      if (typing) cardRef.current?.focus();
+      else onDismiss?.();
+      return;
+    }
+    // A focused option or button does its own thing on Enter.
+    if (event.key === "Enter" && !(event.target instanceof HTMLButtonElement)) {
+      if (!isAnswered(currentAnswer)) return;
+      event.preventDefault();
+      continueQuestion();
+      return;
+    }
+    if (typing) return;
+    if (event.key === "ArrowLeft" && currentStep > 0) {
+      event.preventDefault();
+      setStep(currentStep - 1);
+      return;
+    }
+    if (
+      event.key === "ArrowRight" &&
+      currentStep < questions.length - 1 &&
+      isAnswered(currentAnswer)
+    ) {
+      event.preventDefault();
+      setStep(currentStep + 1);
+      return;
+    }
+    const option = /^[1-9]$/.test(event.key)
+      ? question.options?.[Number(event.key) - 1]
+      : undefined;
+    if (!option || option.disabled) return;
+    event.preventDefault();
+    if (!question.multiple) {
+      updateCurrentAnswer({ selected: [option.value], custom: "" });
+      queueAutoAdvance();
+    } else if (currentAnswer.selected.includes(option.value))
+      updateCurrentAnswer({
+        ...currentAnswer,
+        selected: currentAnswer.selected.filter((value) => value !== option.value),
+      });
+    else
+      updateCurrentAnswer({
+        ...currentAnswer,
+        selected: [...currentAnswer.selected, option.value],
+      });
+  };
+
   return (
     <div
+      ref={cardRef}
       data-state={status}
       aria-busy={busy}
-      className={cn("w-full overflow-hidden rounded-2xl bg-muted p-4 text-sm", className)}
+      tabIndex={questionMode && pending ? -1 : undefined}
+      onKeyDown={answerWithKeys}
+      className={cn(
+        "group/approval w-full overflow-hidden rounded-2xl bg-muted p-4 text-sm outline-none",
+        className,
+      )}
     >
       <div className="flex items-start gap-3">
         <span
@@ -297,7 +388,7 @@ export function ApprovalCard({
             ) : (
               <MessageSquareText className="size-4" />
             )
-          ) : status === "rejected" ? (
+          ) : status === "rejected" || status === "skipped" ? (
             <X className="size-4" />
           ) : (
             <Check className="size-4" />
@@ -389,6 +480,14 @@ export function ApprovalCard({
                     <ProgressDots current={currentStep} ids={questions.map((item) => item.id)} />
                   </>
                 ) : null}
+                {pending ? (
+                  <span className="hidden min-w-0 truncate text-xs text-muted-foreground/65 group-focus-within/approval:inline">
+                    {question?.options?.length
+                      ? `1–${Math.min(question.options.length, 9)} to pick · `
+                      : ""}
+                    ↵ to continue{onDismiss ? " · Esc to skip" : ""}
+                  </span>
+                ) : null}
                 <Button
                   size={currentStep === questions.length - 1 ? "sm" : "icon"}
                   aria-label={
@@ -396,7 +495,7 @@ export function ApprovalCard({
                   }
                   disabled={busy || !isAnswered(currentAnswer)}
                   onClick={continueQuestion}
-                  className="ml-auto rounded-full"
+                  className="ml-auto shrink-0 rounded-full"
                 >
                   {busy ? (
                     <LoaderCircle className={cn("size-4", !reduce && "animate-spin")} />

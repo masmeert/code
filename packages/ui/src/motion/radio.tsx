@@ -79,6 +79,8 @@ export function RadioGroup({
 export interface RadioGroupItemProps {
   value: string;
   label?: string;
+  /** A line under the label explaining the choice. */
+  description?: string;
   disabled?: boolean;
   className?: string;
   id?: string;
@@ -87,6 +89,7 @@ export interface RadioGroupItemProps {
 export function RadioGroupItem({
   value,
   label,
+  description,
   disabled,
   className,
   id: idProp,
@@ -132,8 +135,16 @@ export function RadioGroupItem({
         ) : null}
       </motion.button>
       {label ? (
-        <span className={cn("text-sm text-foreground select-none", disabled && "opacity-60")}>
+        <span
+          className={cn(
+            "flex flex-col text-sm text-foreground select-none",
+            disabled && "opacity-60",
+          )}
+        >
           {label}
+          {description ? (
+            <span className="text-xs leading-4 text-muted-foreground">{description}</span>
+          ) : null}
         </span>
       ) : null}
     </label>

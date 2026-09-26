@@ -23,7 +23,10 @@ import {
   type ThreadInfo,
   type TurnOptions,
   type UsageLimit,
+  type UserAnswers,
+  type UserQuestion,
   isTranscriptEvent,
+  isTurnActive,
 } from "@apcode/contracts";
 import type { ToolCall } from "@apcode/ui/agents/tool-group";
 import * as Match from "effect/Match";
@@ -74,6 +77,10 @@ export type TranscriptItem =
       readonly agent?: string;
       readonly resolved: boolean;
       readonly decision: ApprovalDecision | null;
+      /** Set when the agent asks questions rather than for permission. */
+      readonly questions?: ReadonlyArray<UserQuestion>;
+      /** What was answered; absent until then, and when the questions were skipped. */
+      readonly answers?: UserAnswers;
     }
   | { readonly kind: "error"; readonly id: string; readonly text: string };
 
@@ -376,12 +383,13 @@ const reduceItems = (
         agent: approval.agent,
         resolved: false,
         decision: null,
+        questions: approval.questions,
       })),
     ),
     Match.tag("approval.resolved", (approval) =>
       items.map((item) =>
         item.id === approval.requestId && item.kind === "approval"
-          ? { ...item, resolved: true }
+          ? { ...item, resolved: true, answers: approval.answers }
           : item,
       ),
     ),
@@ -1197,14 +1205,13 @@ export const isSettled = (
 };
 
 /** Working threads, or ones waiting on you, can't be settled by hand. */
-export const canSettle = (info: ThreadInfo) =>
-  info.status !== "running" && info.status !== "awaiting-approval";
+export const canSettle = (info: ThreadInfo) => !isTurnActive(info.status);
 
 export const respondApproval = (
   threadId: string,
   requestId: string,
   decision: ApprovalDecision,
-  permission?: PermissionLevel,
+  reply?: { readonly permission?: PermissionLevel; readonly answers?: UserAnswers },
 ) => {
   const transcript = state.transcripts[threadId];
   if (transcript) {
@@ -1213,7 +1220,7 @@ export const respondApproval = (
     );
     setState(setTranscript(state, threadId, { ...transcript, items }));
   }
-  send(ClientCommand.cases["approval.respond"].make({ threadId, requestId, decision, permission }));
+  send(ClientCommand.cases["approval.respond"].make({ threadId, requestId, decision, ...reply }));
 };
 
 export const useStore = <A>(select: (state: State) => A): A =>

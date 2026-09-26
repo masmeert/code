@@ -12,6 +12,8 @@ export interface CheckboxProps {
   disabled?: boolean;
   indeterminate?: boolean;
   label?: string;
+  /** A line under the label explaining the choice. */
+  description?: string;
   className?: string;
   id?: string;
   "aria-label"?: string;
@@ -25,6 +27,7 @@ export function Checkbox({
   disabled,
   indeterminate,
   label,
+  description,
   className,
   id: idProp,
   "aria-label": ariaLabel,
@@ -96,8 +99,16 @@ export function Checkbox({
         </AnimatePresence>
       </motion.button>
       {label ? (
-        <span className={cn("text-sm text-foreground select-none", disabled && "opacity-60")}>
+        <span
+          className={cn(
+            "flex flex-col text-sm text-foreground select-none",
+            disabled && "opacity-60",
+          )}
+        >
           {label}
+          {description ? (
+            <span className="text-xs leading-4 text-muted-foreground">{description}</span>
+          ) : null}
         </span>
       ) : null}
     </label>
