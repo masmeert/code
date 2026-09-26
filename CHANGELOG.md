@@ -2,7 +2,7 @@
 
 Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unreleased` to `X.Y.Z - YYYY-MM-DD`; the release workflow publishes that section as the GitHub release notes and fails if it is missing.
 
-## Unreleased
+## 0.0.5 - 2026-09-26
 
 ### Added
 
