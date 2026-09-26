@@ -55,6 +55,12 @@ export type TranscriptItem =
     }
   | { readonly kind: "assistant"; readonly id: string; readonly text: string }
   | {
+      readonly kind: "forked";
+      readonly id: string;
+      readonly fromThreadId: string;
+      readonly fromTitle: string;
+    }
+  | {
       readonly kind: "tool";
       readonly id: string;
       readonly name: string;
@@ -118,10 +124,14 @@ export interface State {
   readonly readingUsage: Readonly<Record<string, boolean>>;
   /** Subscription rate limits per harness, read when the usage panel opens. */
   readonly limits: Partial<Record<ProviderKind, ProviderLimits>>;
-  /** The message this window asked to fork from, until the fork appears or fails. */
-  readonly forking: { readonly threadId: string; readonly messageId: string } | null;
-  /** Set when a thread this window asked for appears, so the window can open it. */
-  readonly createdHere: { readonly threadId: string } | null;
+  /** The message this window asked to fork from, until the fork appears; `error` says why it didn't. */
+  readonly forking: {
+    readonly threadId: string;
+    readonly messageId: string;
+    readonly error: string | null;
+  } | null;
+  /** A thread for this window to switch to: one it created or forked, or a link followed. */
+  readonly switchTo: { readonly threadId: string } | null;
   readonly order: ReadonlyArray<string>;
   /** The thread list. Transcripts live apart, so streaming text doesn't re-render the sidebar. */
   readonly threads: Readonly<Record<string, ThreadInfo>>;
@@ -233,7 +243,7 @@ const initial: State = {
   limits: {},
   readingUsage: {},
   forking: null,
-  createdHere: null,
+  switchTo: null,
   order: [],
   threads: {},
   transcripts: {},
@@ -313,6 +323,14 @@ const reduceItems = (
         ...items.slice(next).filter((i) => i.id !== item.id),
       ];
     }),
+    Match.tag("thread.forked", ({ fromThreadId, fromTitle }) =>
+      upsert(items, `forked:${fromThreadId}`, () => ({
+        kind: "forked",
+        id: `forked:${fromThreadId}`,
+        fromThreadId,
+        fromTitle,
+      })),
+    ),
     Match.tag("thread.rewound", (rewound) => {
       const index = items.findIndex((item) => item.id === rewound.messageId);
       return index === -1 ? items : items.slice(0, index);
@@ -476,7 +494,7 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
       const next = {
         ...state,
         forking: request ? null : state.forking,
-        createdHere: request?.open ? { threadId: thread.id } : state.createdHere,
+        switchTo: request?.open ? { threadId: thread.id } : state.switchTo,
         order: [thread.id, ...state.order.filter((id) => id !== thread.id)],
         threads: { ...state.threads, [thread.id]: thread },
       };
@@ -816,8 +834,12 @@ const onFrame = (frame: ServerFrame) =>
       ),
     event: ({ event, id }) => {
       // A failed fork reports on the thread it was forked from.
-      if (RuntimeEvent.guards.error(event) && event.threadId === state.forking?.threadId)
-        setState({ ...state, forking: null });
+      if (
+        RuntimeEvent.guards.error(event) &&
+        state.forking?.error === null &&
+        event.threadId === state.forking.threadId
+      )
+        setState({ ...state, forking: { ...state.forking, error: event.message } });
       if (!isTranscriptEvent(event)) return applyShellEvent(event);
       const transcript = state.transcripts[event.threadId];
       // Not following this thread, or already have it (a replay can overlap live events).
@@ -999,13 +1021,20 @@ export const createThread = (input: {
   send(ClientCommand.cases["thread.create"].make({ requestId, ...command }));
 };
 
+export const switchToThread = (threadId: string) => setState({ ...state, switchTo: { threadId } });
+
 /** Starts a new thread with the conversation through a message's turn, and switches to it. */
 export const forkThread = (threadId: string, messageId: string) => {
-  if (state.forking) return;
+  if (state.forking?.error === null) return;
   const requestId = crypto.randomUUID();
   ownRequests.set(requestId, { open: true });
-  setState({ ...state, forking: { threadId, messageId } });
+  setState({ ...state, forking: { threadId, messageId, error: null } });
   send(ClientCommand.cases["thread.fork"].make({ threadId, messageId, requestId }));
+};
+
+/** Forgets a fork that failed, once its error has been seen. */
+export const dismissForkError = () => {
+  if (state.forking?.error) setState({ ...state, forking: null });
 };
 
 // --- follow-ups ----------------------------------------------------------------

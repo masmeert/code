@@ -13,6 +13,14 @@ import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimm
 import { PromptSelect } from "@apcode/ui/agents/prompt-input";
 import { StreamingResponse } from "@apcode/ui/agents/streaming-response";
 import { ApprovalCard } from "@apcode/ui/agents/approval-card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogTitle,
+} from "@apcode/ui/components/alert-dialog";
 import { ToolApproval, ToolApprovalCode } from "@apcode/ui/agents/tool-approval";
 import {
   categoryOf,
@@ -39,6 +47,7 @@ import {
   ChevronRight,
   FileDiff,
   FileText,
+  GitFork,
   FolderTree,
   Globe,
   ImageIcon,
@@ -78,6 +87,7 @@ import {
 import {
   createThread,
   type FollowUp,
+  dismissForkError,
   forkThread,
   loadOlder,
   markSeen,
@@ -85,6 +95,7 @@ import {
   respondApproval,
   send,
   sendFollowUpNow,
+  switchToThread,
   takeFollowUps,
   toggleTerminalPanel,
   useStore,
@@ -109,15 +120,22 @@ const TerminalPanel = lazy(() =>
 /** Consecutive agent items form one turn under a single avatar. */
 type UserItem = Extract<TranscriptItem, { kind: "user" }>;
 
+type ForkedItem = Extract<TranscriptItem, { kind: "forked" }>;
+
 type Turn =
   | { readonly from: "user"; readonly id: string; readonly item: UserItem }
-  | { readonly from: "assistant"; readonly id: string; readonly items: Array<TranscriptItem> };
+  | { readonly from: "assistant"; readonly id: string; readonly items: Array<TranscriptItem> }
+  | { readonly from: "fork"; readonly id: string; readonly item: ForkedItem };
 
 const toTurns = (items: ReadonlyArray<TranscriptItem>): Array<Turn> => {
   const turns: Array<Turn> = [];
   for (const item of items) {
     if (item.kind === "user") {
       turns.push({ from: "user", id: item.id, item });
+      continue;
+    }
+    if (item.kind === "forked") {
+      turns.push({ from: "fork", id: item.id, item });
       continue;
     }
     const last = turns.at(-1);
@@ -711,6 +729,7 @@ export const TurnList = ({
   return turns.map((turn, index) => {
     // The latest exchange stays fully rendered: it's what streams and what the scroller follows.
     const className = settled && index < turns.length - 2 ? OFFSCREEN_SKIP : KEEP_RENDERED;
+    if (turn.from === "fork") return <ForkedFrom key={turn.id} item={turn.item} />;
     return turn.from === "user" ? (
       <UserTurn
         key={turn.id}
@@ -733,6 +752,29 @@ export const TurnList = ({
     );
   });
 };
+
+/** Where a fork's own conversation starts, with the way back to the original. */
+function ForkedFrom({ item }: { item: ForkedItem }) {
+  const original = useStore((s) => s.threads[item.fromThreadId]);
+  return (
+    <div className="flex items-center gap-3 py-2 text-xs text-muted-foreground">
+      <span className="h-px flex-1 bg-border" />
+      <GitFork className="size-3.5 shrink-0" />
+      {original ? (
+        <button
+          type="button"
+          onClick={() => switchToThread(item.fromThreadId)}
+          className="max-w-[60%] truncate rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Forked from {original.title}
+        </button>
+      ) : (
+        <span className="max-w-[60%] truncate">Forked from {item.fromTitle} (deleted)</span>
+      )}
+      <span className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
 
 /**
  * Lighter than virtualizing (the message rail reads every turn's text from the DOM):
@@ -812,6 +854,79 @@ const EditFromHere = ({ item, threadId }: { item: UserItem; threadId: string }) 
     />
   </div>
 );
+
+/** Asks before forking, and stays up with progress until the fork opens (or says why it didn't). */
+function ForkDialog({
+  threadId,
+  item,
+  onClose,
+}: {
+  threadId: string;
+  item: Extract<TranscriptItem, { kind: "assistant" }>;
+  onClose: () => void;
+}) {
+  const fork = useStore((s) => (s.forking?.messageId === item.id ? s.forking : null));
+  const pending = fork !== null && fork.error === null;
+  const forkButton = useRef<HTMLButtonElement>(null);
+  return (
+    <AlertDialog
+      open
+      onOpenChange={(open) => {
+        if (open || pending) return;
+        dismissForkError();
+        onClose();
+      }}
+    >
+      <AlertDialogContent
+        // Dimmed like the command palette: the blur is too much for a one-line question.
+        overlayClassName="bg-black/20 [backdrop-filter:none] [-webkit-backdrop-filter:none]"
+        className="gap-4 bg-popover p-4 data-[size=default]:sm:max-w-xs"
+        aria-describedby={undefined}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          forkButton.current?.focus();
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+            <GitFork className="size-4" />
+          </span>
+          <AlertDialogTitle className="text-sm">Fork from this reply?</AlertDialogTitle>
+        </div>
+        {fork?.error ? (
+          <p role="alert" className="text-xs text-destructive">
+            {fork.error}
+          </p>
+        ) : null}
+        <AlertDialogFooter className="flex-row justify-end">
+          <AlertDialogCancel size="sm" disabled={pending}>
+            Cancel
+            <kbd aria-hidden className="font-sans text-[10px] text-muted-foreground">
+              esc
+            </kbd>
+          </AlertDialogCancel>
+          <AlertDialogAction
+            ref={forkButton}
+            size="sm"
+            disabled={pending}
+            onClick={(event) => {
+              // Stays open until the fork opens, which replaces this view.
+              event.preventDefault();
+              forkThread(threadId, item.id);
+            }}
+          >
+            {pending ? "Forking…" : fork?.error ? "Try again" : "Fork"}
+            {pending ? null : (
+              <kbd aria-hidden className="font-sans text-[10px] text-primary-foreground/60">
+                ↵
+              </kbd>
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 /** Latest calls a subagent row unfolds to; older ones are a jump to the chat away. */
 const RECENT_AGENT_CALLS = 5;
@@ -1070,7 +1185,8 @@ const AgentBlockContent = ({
   streaming,
   showActions,
 }: AgentBlockProps) => {
-  const forking = useStore((s) => s.forking?.messageId === item.id);
+  const forking = useStore((s) => s.forking?.messageId === item.id && s.forking.error === null);
+  const [confirmingFork, setConfirmingFork] = useState(false);
   switch (item.kind) {
     case "user":
       return null;
@@ -1081,7 +1197,7 @@ const AgentBlockContent = ({
             <StreamingResponse
               status={streaming ? "streaming" : "complete"}
               copyText={item.text}
-              onFork={live ? undefined : () => forkThread(threadId, item.id)}
+              onFork={live ? undefined : () => setConfirmingFork(true)}
               forking={forking}
               showActions={showActions}
               showFeedback={false}
@@ -1091,6 +1207,9 @@ const AgentBlockContent = ({
               </Markdown>
             </StreamingResponse>
           </MessageBubbleContent>
+          {confirmingFork ? (
+            <ForkDialog threadId={threadId} item={item} onClose={() => setConfirmingFork(false)} />
+          ) : null}
         </MessageBubble>
       );
     case "tools":

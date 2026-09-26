@@ -636,6 +636,14 @@ const make = Effect.gen(function* () {
       });
       store.insertThread(info);
       store.copyEvents(source.info.id, info.id, cut.seq);
+      store.appendEvent(
+        info.id,
+        RuntimeEvent.cases["thread.forked"].make({
+          threadId: info.id,
+          fromThreadId: source.info.id,
+          fromTitle: source.info.title,
+        }),
+      );
       if (resumeToken) store.setResumeToken(info.id, resumeToken);
       publish(
         RuntimeEvent.cases["thread.created"].make({

@@ -538,6 +538,13 @@ export const RuntimeEvent = Schema.Union([
   }),
   /** The conversation was rewound to before `messageId`: it and everything after it are gone. */
   Schema.TaggedStruct("thread.rewound", { threadId: Schema.String, messageId: Schema.String }),
+  /** Ends the transcript a fork starts with: where it was forked from. */
+  Schema.TaggedStruct("thread.forked", {
+    threadId: Schema.String,
+    fromThreadId: Schema.String,
+    /** The original's title then, for when it's gone. */
+    fromTitle: Schema.String,
+  }),
   /** Slash commands the thread's harness offers; answers `thread.listCommands`. */
   Schema.TaggedStruct("thread.commands", {
     threadId: Schema.String,
@@ -781,6 +788,7 @@ export function isTranscriptEvent(
       "turn.completed",
       "turn.checkpoint",
       "thread.rewound",
+      "thread.forked",
     ])(event) ||
     (RuntimeEvent.guards.error(event) && event.threadId !== null)
   );

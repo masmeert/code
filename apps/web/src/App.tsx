@@ -52,7 +52,7 @@ export const App = () => {
     return () => clearTimeout(timer);
   }, []);
   const theme = useStore((s) => s.settings.theme);
-  const createdHere = useStore((s) => s.createdHere);
+  const switchTo = useStore((s) => s.switchTo);
   const [chosen, setView] = useState<View | null>(initialView);
   const [modal, setModal] = useState<ModalView | null>(null);
   const [palette, setPalette] = useState(false);
@@ -68,10 +68,9 @@ export const App = () => {
         ? { kind: "thread", id: order[0] }
         : { kind: "draft", path: null };
 
-  // A draft sent from this window became a thread: open it.
   useEffect(() => {
-    if (createdHere) setView({ kind: "thread", id: createdHere.threadId });
-  }, [createdHere]);
+    if (switchTo) setView({ kind: "thread", id: switchTo.threadId });
+  }, [switchTo]);
 
   const draft = (path: string | null) => setView({ kind: "draft", path });
   // A worktree thread's cwd is its worktree, so new threads go by its project instead.
