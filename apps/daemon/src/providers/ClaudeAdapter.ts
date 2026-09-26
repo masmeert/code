@@ -68,6 +68,7 @@ const makeInbox = <A>() => {
 };
 
 interface PendingApproval {
+  readonly toolName: string;
   readonly input: Parameters<CanUseTool>[1];
   readonly suggestions: Array<PermissionUpdate> | undefined;
   readonly resolve: (result: PermissionResult) => void;
@@ -76,8 +77,10 @@ interface PendingApproval {
 const fail = (message: string) => new ProviderError({ provider: "claude", message });
 
 const PERMISSION_MODE = {
+  plan: "plan",
   ask: "default",
   "auto-edit": "acceptEdits",
+  auto: "auto",
   "full-access": "bypassPermissions",
 } as const satisfies Record<PermissionLevel, PermissionMode>;
 
@@ -151,7 +154,7 @@ const start = ({
       const canUseTool: CanUseTool = (toolName, input, { signal, suggestions, agentID }) =>
         new Promise<PermissionResult>((resolve) => {
           const requestId = `claude-perm-${++nextRequest}`;
-          pending.set(requestId, { input, suggestions, resolve });
+          pending.set(requestId, { toolName, input, suggestions, resolve });
           signal.addEventListener("abort", () => {
             if (pending.delete(requestId)) {
               emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
@@ -164,7 +167,10 @@ const start = ({
               threadId,
               requestId,
               title: toolName,
-              detail: summarizeToolInput(Option.getOrNull(decodeToolInput(input))),
+              detail:
+                toolName === "ExitPlanMode" && Predicate.isString(input.plan)
+                  ? input.plan
+                  : summarizeToolInput(Option.getOrNull(decodeToolInput(input))),
               agent: agentID === undefined ? undefined : agentNames.get(agentID),
             }),
           );
@@ -455,12 +461,30 @@ const start = ({
             },
             catch: (e) => fail(`Couldn't stop the subagent: ${String(e)}`),
           }),
-        respondApproval: (requestId, decision) =>
+        respondApproval: (requestId, decision, buildPermission = "auto-edit") =>
           Effect.suspend(() => {
             const entry = pending.get(requestId);
             if (!entry) return Effect.fail(fail(`Unknown approval request ${requestId}`));
             pending.delete(requestId);
-            if (decision === "deny") entry.resolve({ behavior: "deny", message: "Denied by user" });
+            // Approving a plan leaves plan mode for the level picked with it; the composer follows.
+            if (entry.toolName === "ExitPlanMode" && decision !== "deny") {
+              permission = buildPermission;
+              entry.resolve({
+                behavior: "allow",
+                updatedInput: entry.input,
+                updatedPermissions: [
+                  { type: "setMode", mode: PERMISSION_MODE[permission], destination: "session" },
+                ],
+              });
+            } else if (entry.toolName === "ExitPlanMode")
+              // Not an interrupt: that ends the turn as an error, when the user just wants a different plan.
+              entry.resolve({
+                behavior: "deny",
+                message:
+                  "The user rejected this plan and will reply with what to change. End your turn now, without calling any tools.",
+              });
+            else if (decision === "deny")
+              entry.resolve({ behavior: "deny", message: "Denied by user" });
             else if (decision === "allow-session" && entry.suggestions)
               entry.resolve({
                 behavior: "allow",

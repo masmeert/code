@@ -6,9 +6,9 @@ import {
   type ProviderKind,
   type TurnOptions,
 } from "@apcode/contracts";
-import { useEffect, useEffectEvent, useReducer, useRef } from "react";
+import { useEffect, useEffectEvent, useRef, useSyncExternalStore } from "react";
 import { type DraftAttachment, getDraft, setDraft, useDraft } from "./drafts.ts";
-import { useStore } from "./store.ts";
+import { firstTurnOptions, respondApproval, useStore } from "./store.ts";
 
 /** Effort levels each harness accepts, lowest first. */
 export const EFFORTS: Record<ProviderKind, ReadonlyArray<Effort>> = {
@@ -25,15 +25,25 @@ export const EFFORT_LABEL: Record<Effort, string> = {
   max: "Max",
 };
 
+/** Permission levels each harness offers; Codex has no plan or auto mode. */
+export const PERMISSIONS: Record<ProviderKind, ReadonlyArray<PermissionLevel>> = {
+  claude: ["plan", "ask", "auto-edit", "auto", "full-access"],
+  codex: ["ask", "auto-edit", "full-access"],
+};
+
 export const PERMISSION_LABEL: Record<PermissionLevel, string> = {
+  plan: "Plan",
   ask: "Ask first",
   "auto-edit": "Auto-edit",
+  auto: "Auto",
   "full-access": "Full access",
 };
 
 export const PERMISSION_DESCRIPTION: Record<PermissionLevel, string> = {
+  plan: "Reads and plans without changing anything, then asks you to approve the plan",
   ask: "Asks before running commands or editing files",
   "auto-edit": "Edits files freely, asks before riskier commands",
+  auto: "A classifier approves safe actions and blocks risky ones, without asking",
   "full-access": "Runs anything without asking, outside the sandbox too",
 };
 
@@ -46,30 +56,60 @@ export interface TurnPrefs {
 // --- prefs -----------------------------------------------------------------
 // Each thread keeps its own picks while the window is open; new ones start from Settings.
 
-const perThread = new Map<string, TurnPrefs>();
+const perThread = new Map<string, Partial<TurnPrefs>>();
+const prefsListeners = new Set<() => void>();
 
-/** Drops an effort the harness doesn't take (e.g. "max" after switching a draft to Codex). */
-const fit = (prefs: TurnPrefs, provider: ProviderKind): TurnPrefs =>
-  prefs.effort && !EFFORTS[provider].includes(prefs.effort) ? { ...prefs, effort: null } : prefs;
+function setTurnPrefs(key: string, patch: Partial<TurnPrefs>) {
+  perThread.set(key, { ...perThread.get(key), ...patch });
+  for (const listener of prefsListeners) listener();
+}
+
+/** Drops what the harness doesn't take (e.g. "max" effort or plan mode after switching a draft to Codex). */
+const fit = (prefs: TurnPrefs, provider: ProviderKind): TurnPrefs => ({
+  effort: prefs.effort && EFFORTS[provider].includes(prefs.effort) ? prefs.effort : null,
+  permission: PERMISSIONS[provider].includes(prefs.permission) ? prefs.permission : "ask",
+});
 
 /** Effort and permission level for the composer identified by `key` (a thread id, or a draft's path). */
 export const useTurnPrefs = (key: string, provider: ProviderKind) => {
-  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  const stored = useSyncExternalStore(
+    (listener) => {
+      prefsListeners.add(listener);
+      return () => prefsListeners.delete(listener);
+    },
+    () => perThread.get(key),
+  );
   const settings = useStore((s) => s.settings);
+  const first = firstTurnOptions(key);
   const prefs = fit(
-    perThread.get(key) ?? {
+    {
       effort: settings.newThreadEffort ?? null,
       permission: settings.newThreadPermission ?? "ask",
+      ...(first && { effort: first.effort, permission: first.permission }),
+      ...stored,
     },
     provider,
   );
-
-  const update = (patch: Partial<TurnPrefs>) => {
-    perThread.set(key, { ...prefs, ...patch });
-    rerender();
-  };
-  return [prefs, update] as const;
+  return [prefs, (patch: Partial<TurnPrefs>) => setTurnPrefs(key, { ...prefs, ...patch })] as const;
 };
+
+/** Labels for approving a plan into each level it can be built with. */
+export const BUILD_WITH_LABEL = {
+  ask: "Approve and ask before edits",
+  "auto-edit": "Approve and allow edits",
+  auto: "Approve and auto mode",
+  "full-access": "Approve and bypass permissions",
+} as const satisfies Record<Exclude<PermissionLevel, "plan">, string>;
+
+/** Approves a plan: the daemon leaves plan mode for `permission`, and the thread's composer follows. */
+export function approvePlan(
+  threadId: string,
+  requestId: string,
+  permission: keyof typeof BUILD_WITH_LABEL,
+) {
+  respondApproval(threadId, requestId, "allow", permission);
+  setTurnPrefs(threadId, { permission });
+}
 
 // --- attachments -----------------------------------------------------------
 

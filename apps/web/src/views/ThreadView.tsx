@@ -58,7 +58,7 @@ import {
   useState,
 } from "react";
 import { toggleBrowser, useBrowser } from "../lib/browser.ts";
-import { fromSent } from "../lib/composer.ts";
+import { approvePlan, BUILD_WITH_LABEL, fromSent } from "../lib/composer.ts";
 import { appendToDraft, focusComposer, setDraft } from "../lib/drafts.ts";
 import { describe, useKeybinding } from "../lib/keybindings.ts";
 import {
@@ -1091,6 +1091,39 @@ const AgentBlockContent = ({
         />
       );
     case "approval":
+      if (item.title === "ExitPlanMode") {
+        // Interrupted before an answer: the turn ended, so there's nothing left to approve.
+        if (item.resolved && !item.decision) return null;
+        return (
+          <ToolApproval
+            title="Approve this plan?"
+            description={item.decision === "deny" ? "Rejected — say what to change" : undefined}
+            status={
+              item.decision === "deny"
+                ? "denied"
+                : item.decision
+                  ? item.resolved
+                    ? "approved"
+                    : "approving"
+                  : "pending"
+            }
+            defaultOpen
+            approveLabel={BUILD_WITH_LABEL["auto-edit"]}
+            approveOptions={(["ask", "auto-edit", "auto", "full-access"] as const).map((level) => ({
+              id: level,
+              label: BUILD_WITH_LABEL[level],
+              onSelect: () => approvePlan(threadId, item.id, level),
+            }))}
+            denyLabel="Reject"
+            onApprove={() => approvePlan(threadId, item.id, "auto-edit")}
+            onDeny={() => respondApproval(threadId, item.id, "deny")}
+          >
+            <div className="max-h-96 overflow-y-auto">
+              <Markdown className="selectable leading-relaxed">{item.detail}</Markdown>
+            </div>
+          </ToolApproval>
+        );
+      }
       // Once approved, the tool group shows what ran; only pending and denied requests stay visible.
       if (item.resolved && item.decision !== "deny") return null;
       return (

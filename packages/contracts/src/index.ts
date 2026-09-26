@@ -98,7 +98,7 @@ export const Effort = Schema.Literals(["minimal", "low", "medium", "high", "xhig
 export type Effort = typeof Effort.Type;
 
 /** How much the agent may do without asking. */
-export const PermissionLevel = Schema.Literals(["ask", "auto-edit", "full-access"]);
+export const PermissionLevel = Schema.Literals(["plan", "ask", "auto-edit", "auto", "full-access"]);
 export type PermissionLevel = typeof PermissionLevel.Type;
 
 /** A file for the next message: a path on disk, or bytes pasted into the composer (base64). */
@@ -630,6 +630,8 @@ export const ClientCommand = Schema.Union([
     threadId: Schema.String,
     requestId: Schema.String,
     decision: ApprovalDecision,
+    /** Approving a plan: the level to build it with; auto-edit when left out. */
+    permission: Schema.optional(PermissionLevel),
   }),
   Schema.TaggedStruct("settings.update", { settings: Settings }),
   Schema.TaggedStruct("project.remove", { projectId: Schema.String }),

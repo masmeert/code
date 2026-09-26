@@ -67,6 +67,8 @@ export interface ProviderSession {
   readonly respondApproval: (
     requestId: string,
     decision: ApprovalDecision,
+    /** Approving a plan: the level to build it with. */
+    permission?: PermissionLevel,
   ) => Effect.Effect<void, ProviderError>;
   /** Switches model for subsequent turns; null reverts to the harness default where supported. */
   readonly setModel: (model: string | null) => Effect.Effect<void, ProviderError>;

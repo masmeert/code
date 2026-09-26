@@ -1029,7 +1029,7 @@ const make = Effect.gen(function* () {
         withLiveSession(command.threadId, (s) => s.stopAgent?.(command.toolId) ?? Effect.void),
       "approval.respond": (command) =>
         withLiveSession(command.threadId, (s) =>
-          s.respondApproval(command.requestId, command.decision),
+          s.respondApproval(command.requestId, command.decision, command.permission),
         ),
       "thread.close": (command) => removeThread(command.threadId),
       "thread.archive": (command) =>

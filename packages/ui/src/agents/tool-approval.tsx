@@ -1,8 +1,22 @@
-import { Check, ChevronRight, CircleAlert, LoaderCircle, ShieldCheck, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  CircleAlert,
+  LoaderCircle,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { AgentCode, type AgentCodeLanguage } from "@apcode/ui/agents/agent-code";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@apcode/ui/components/dropdown-menu";
 import { SPRING_PRESS } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
@@ -28,10 +42,16 @@ export interface ToolApprovalCodeProps {
 }
 
 export interface ToolApprovalProps {
-  tool: ReactNode;
+  tool?: ReactNode;
   title?: ReactNode;
   description?: ReactNode;
   parameters?: ToolApprovalParameter[];
+  /** Details shown instead of the parameter list (e.g. a plan to approve). */
+  children?: ReactNode;
+  approveLabel?: ReactNode;
+  /** Other ways to approve, in a menu beside the approve button. */
+  approveOptions?: ReadonlyArray<{ id: string; label: ReactNode; onSelect: () => void }>;
+  denyLabel?: ReactNode;
   status?: ToolApprovalStatus;
   open?: boolean;
   defaultOpen?: boolean;
@@ -85,6 +105,10 @@ export function ToolApproval({
   title = "Allow this tool to run?",
   description,
   parameters = [],
+  children,
+  approveLabel = "Allow once",
+  approveOptions,
+  denyLabel = "Deny",
   status = "pending",
   open,
   defaultOpen = false,
@@ -152,7 +176,11 @@ export function ToolApproval({
           <div className="flex min-w-0 items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="font-medium text-foreground">{title}</div>
-              <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{tool}</div>
+              {tool ? (
+                <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                  {tool}
+                </div>
+              ) : null}
             </div>
             <span
               className={cn(
@@ -167,7 +195,7 @@ export function ToolApproval({
             <p className="mt-2 leading-5 text-muted-foreground">{description}</p>
           ) : null}
 
-          {parameters.length ? (
+          {parameters.length || children ? (
             <button
               type="button"
               aria-expanded={currentOpen}
@@ -189,32 +217,63 @@ export function ToolApproval({
       </div>
 
       <AgentDisclosure id={detailsId} open={currentOpen}>
-        <dl className="mx-4 mb-4 grid gap-2 rounded-xl border border-border/50 bg-background/70 p-3">
-          {parameters.map((parameter) => (
-            <div
-              key={parameter.id}
-              className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)] items-center gap-3 text-xs"
-            >
-              <dt className="text-muted-foreground">{parameter.label}</dt>
-              <dd className="min-w-0 font-mono break-words text-foreground/85">
-                {parameter.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
+        {children ? (
+          <div className="mx-4 mb-4 rounded-xl border border-border/50 bg-background/70 p-3">
+            {children}
+          </div>
+        ) : (
+          <dl className="mx-4 mb-4 grid gap-2 rounded-xl border border-border/50 bg-background/70 p-3">
+            {parameters.map((parameter) => (
+              <div
+                key={parameter.id}
+                className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)] items-center gap-3 text-xs"
+              >
+                <dt className="text-muted-foreground">{parameter.label}</dt>
+                <dd className="min-w-0 font-mono break-words text-foreground/85">
+                  {parameter.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </AgentDisclosure>
 
       {pending ? (
         <div className="flex flex-wrap items-center gap-2 border-t border-border/60 px-4 py-3">
-          <motion.button
-            type="button"
-            onClick={onApprove}
-            whileTap={reduce ? undefined : { scale: 0.97 }}
-            transition={SPRING_PRESS}
-            className="sheen rounded-xl bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            Allow once
-          </motion.button>
+          <div className="flex items-stretch">
+            <motion.button
+              type="button"
+              onClick={onApprove}
+              whileTap={reduce ? undefined : { scale: 0.97 }}
+              transition={SPRING_PRESS}
+              className={cn(
+                "sheen rounded-xl bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2",
+                approveOptions && "rounded-r-none",
+              )}
+            >
+              {approveLabel}
+            </motion.button>
+            {approveOptions ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="More ways to approve"
+                    className="grid place-items-center rounded-r-xl border-l border-primary-foreground/20 bg-primary px-1.5 text-primary-foreground outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    <ChevronDown className="size-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" sideOffset={6} collisionPadding={8}>
+                  {approveOptions.map((option) => (
+                    <DropdownMenuItem key={option.id} onSelect={option.onSelect}>
+                      {option.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </div>
           {onAlwaysAllow ? (
             <motion.button
               type="button"
@@ -231,7 +290,7 @@ export function ToolApproval({
             onClick={onDeny}
             className="rounded-xl px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
           >
-            Deny
+            {denyLabel}
           </button>
         </div>
       ) : null}

@@ -13,6 +13,7 @@ import {
   ClientCommand,
   type GitAction,
   type PageInfo,
+  type PermissionLevel,
   type RepoStatus,
   RuntimeEvent,
   type SearchHit,
@@ -235,8 +236,11 @@ const initial: State = {
   activeTerminals: {},
 };
 
-/** Request ids of `thread.create` commands sent from this window. */
-const ownRequests = new Set<string>();
+/** `thread.create` commands sent from this window, by request id. */
+const ownRequests = new Map<string, { readonly open: boolean; readonly options: TurnOptions }>();
+/** What threads created here sent their first message with, so their composer starts from the draft's picks. */
+const firstOptions = new Map<string, TurnOptions>();
+export const firstTurnOptions = (threadId: string) => firstOptions.get(threadId);
 
 /** Latest turns loaded when a thread opens, and per "load earlier" (t3code uses the same window). */
 const TURN_LIMIT = 10;
@@ -448,10 +452,12 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
       authFlows: { ...state.authFlows, [flow.provider]: flow },
     })),
     Match.tag("thread.created", ({ thread, requestId }) => {
-      const mine = requestId !== null && ownRequests.delete(requestId);
+      const request = requestId === null ? undefined : ownRequests.get(requestId);
+      if (requestId !== null) ownRequests.delete(requestId);
+      if (request) firstOptions.set(thread.id, request.options);
       return {
         ...state,
-        createdHere: mine ? { threadId: thread.id } : state.createdHere,
+        createdHere: request?.open ? { threadId: thread.id } : state.createdHere,
         order: [thread.id, ...state.order.filter((id) => id !== thread.id)],
         threads: { ...state.threads, [thread.id]: thread },
         // Brand new: nothing to fetch, it's live from its first event.
@@ -962,7 +968,7 @@ export const createThread = (input: {
 }) => {
   const { open = true, ...command } = input;
   const requestId = crypto.randomUUID();
-  if (open) ownRequests.add(requestId);
+  ownRequests.set(requestId, { open, options: command.options });
   send(ClientCommand.cases["thread.create"].make({ requestId, ...command }));
 };
 
@@ -1170,6 +1176,7 @@ export const respondApproval = (
   threadId: string,
   requestId: string,
   decision: ApprovalDecision,
+  permission?: PermissionLevel,
 ) => {
   const transcript = state.transcripts[threadId];
   if (transcript) {
@@ -1178,7 +1185,7 @@ export const respondApproval = (
     );
     setState(setTranscript(state, threadId, { ...transcript, items }));
   }
-  send(ClientCommand.cases["approval.respond"].make({ threadId, requestId, decision }));
+  send(ClientCommand.cases["approval.respond"].make({ threadId, requestId, decision, permission }));
 };
 
 export const useStore = <A>(select: (state: State) => A): A =>

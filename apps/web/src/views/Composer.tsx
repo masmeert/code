@@ -16,8 +16,10 @@ import {
   FolderPlus,
   FolderTree,
   GitBranch,
+  ListChecks,
   LockOpen,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import {
@@ -27,6 +29,7 @@ import {
   LARGE_PASTE_BYTES,
   PERMISSION_DESCRIPTION,
   PERMISSION_LABEL,
+  PERMISSIONS,
   toTurnOptions,
   useAttachments,
   useTurnPrefs,
@@ -40,12 +43,14 @@ import { ago, useNow } from "../lib/time.ts";
 import { UsageMeter } from "./UsageMeter.tsx";
 
 const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {
+  plan: ListChecks,
   ask: ShieldCheck,
   "auto-edit": FilePen,
+  auto: Sparkles,
   "full-access": LockOpen,
 };
 
-const PERMISSION_OPTIONS = PermissionLevel.literals.map((level) => {
+function permissionOption(level: PermissionLevel) {
   const Icon = PERMISSION_ICON[level];
   return {
     value: level,
@@ -53,7 +58,7 @@ const PERMISSION_OPTIONS = PermissionLevel.literals.map((level) => {
     description: PERMISSION_DESCRIPTION[level],
     icon: <Icon />,
   };
-});
+}
 
 export interface ComposerProps {
   /** Whose draft, and effort/permission picks, these are: a thread id, or "draft:new". */
@@ -254,7 +259,7 @@ export const Composer = (props: ComposerProps) => {
             <PromptSelect
               key="permission"
               title="Permissions"
-              options={PERMISSION_OPTIONS}
+              options={PERMISSIONS[props.provider].map(permissionOption)}
               value={prefs.permission}
               onChange={(value) =>
                 Schema.is(PermissionLevel)(value) && setPrefs({ permission: value })

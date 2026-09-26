@@ -39,6 +39,9 @@ const fail = (message: string) => new ProviderError({ provider: "codex", message
 
 /** Codex's own presets: untrusted asks before most commands, on-request is "Auto", never + full access is "Full access". */
 const PERMISSION = {
+  // The composer doesn't offer plan or auto mode for Codex; these only catch a stray one.
+  plan: { approvalPolicy: "untrusted", sandbox: "workspace-write" },
+  auto: { approvalPolicy: "untrusted", sandbox: "workspace-write" },
   ask: { approvalPolicy: "untrusted", sandbox: "workspace-write" },
   "auto-edit": { approvalPolicy: "on-request", sandbox: "workspace-write" },
   "full-access": { approvalPolicy: "never", sandbox: "danger-full-access" },
