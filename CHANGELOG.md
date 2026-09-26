@@ -2,10 +2,11 @@
 
 Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unreleased` to `X.Y.Z - YYYY-MM-DD`; the release workflow publishes that section as the GitHub release notes and fails if it is missing.
 
-## Unreleased
+## 0.0.4 - 2026-09-26
 
 ### Added
 
+- Plan and Auto modes in Claude's permission picker. A finished plan shows as a card to approve with the permission level to build it with, or reject with what to change.
 - Claude's questions show as a card with options, previews and a free-text answer, answerable from the keyboard.
 - Fork a thread from any finished reply into a new one; the original stays as it is.
 - Mention project files with `@` in the composer.
