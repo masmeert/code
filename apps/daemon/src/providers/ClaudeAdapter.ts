@@ -13,6 +13,7 @@ import {
   type PermissionResult,
   type PermissionUpdate,
   type Query,
+  type SDKControlGetContextUsageResponse,
   type SDKMessage,
   type SDKUserMessage,
   type SessionMessage,
@@ -33,7 +34,7 @@ import {
   type StartSessionInput,
   type TurnInput,
 } from "./ProviderAdapter.ts";
-import { claudeExtraArgs, harnessLaunch } from "./launch.ts";
+import { claudeExtraArgs, harnessLaunch, promptlessQuery } from "./launch.ts";
 
 /** Minimal push-based async iterable used as the SDK's streaming prompt input. */
 const makeInbox = <A>() => {
@@ -114,6 +115,19 @@ const toContent = async (turn: TurnInput): Promise<SDKUserMessage["message"]["co
   );
   return [...blocks, ...(text ? [{ type: "text" as const, text }] : [])];
 };
+
+function contextUsage(usage: SDKControlGetContextUsageResponse) {
+  return {
+    usedTokens: usage.totalTokens,
+    maxTokens: usage.rawMaxTokens,
+    categories: usage.categories.map(({ name, tokens, kind, isDeferred }) => ({
+      name,
+      tokens,
+      // CLIs older than the SDK leave `kind` out.
+      kind: kind ?? (isDeferred ? "deferred" : "used"),
+    })),
+  };
+}
 
 const start = ({
   threadId,
@@ -203,6 +217,15 @@ const start = ({
       let sessionId = resumeToken;
       let permission = initialPermission;
       let effort = initialEffort;
+
+      /** "summary" estimates the breakdown locally; "full" would make a token-count request per category. */
+      async function reportUsage(costUsd: number) {
+        const context = await q
+          .getContextUsage({ detail: "summary" })
+          .then(contextUsage)
+          .catch(() => null);
+        emit(RuntimeEvent.cases["thread.usage"].make({ threadId, usage: { context, costUsd } }));
+      }
 
       const handle = (msg: SDKMessage) => {
         if (msg.session_id !== undefined && msg.session_id !== sessionId) {
@@ -335,6 +358,7 @@ const start = ({
             );
             if (!reportsSessionState)
               emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
+            void reportUsage(msg.total_cost_usd);
             return;
           }
           default:
@@ -522,4 +546,27 @@ async function forkBefore(cwd: string, resumeToken: string, messageId: string, k
   return sessionId;
 }
 
-export const ClaudeAdapter: ProviderAdapter = { kind: "claude", start, rewind };
+/** A prompt-less session resumed from the log answers as the live one would; the cost call is experimental, so it may come back empty. */
+const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, model }) =>
+  Effect.tryPromise({
+    try: async () => {
+      const options: Options = { cwd, resume: resumeToken };
+      if (model) options.model = model;
+      const q = promptlessQuery(harnessLaunch("claude", harness), options);
+      try {
+        const context = contextUsage(await q.getContextUsage({ detail: "summary" }));
+        const costUsd = await q
+          .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
+          .then(
+            (usage) => usage.session.total_cost_usd,
+            () => null,
+          );
+        return { context, costUsd };
+      } finally {
+        q.close();
+      }
+    },
+    catch: (e) => fail(`Couldn't read usage: ${e instanceof Error ? e.message : String(e)}`),
+  });
+
+export const ClaudeAdapter: ProviderAdapter = { kind: "claude", start, rewind, readUsage };

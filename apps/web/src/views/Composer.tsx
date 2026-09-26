@@ -37,6 +37,7 @@ import { defaultEffort, type modelChoices, recommendedBadge } from "../lib/model
 import { addProject } from "../lib/projects.ts";
 import { send, useStore } from "../lib/store.ts";
 import { ago, useNow } from "../lib/time.ts";
+import { UsageMeter } from "./UsageMeter.tsx";
 
 const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {
   ask: ShieldCheck,
@@ -296,6 +297,13 @@ export const Composer = (props: ComposerProps) => {
                 {props.workspace ? <WorkspaceSelect {...props.workspace} /> : null}
               </span>
               <span className="flex min-w-0 items-center gap-0.5">
+                {threadId ? (
+                  <UsageMeter
+                    threadId={threadId}
+                    provider={props.provider}
+                    busy={props.busy ?? false}
+                  />
+                ) : null}
                 {stashes.length ? (
                   <StashSelect prefsKey={prefsKey} openSignal={stashSignal} />
                 ) : null}

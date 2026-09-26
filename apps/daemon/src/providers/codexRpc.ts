@@ -81,6 +81,22 @@ export const CompletedItem = Schema.Union([
   }),
 ]).pipe(Schema.toTaggedUnion("type"));
 
+export const TokenUsage = Schema.Struct({
+  /** The thread's running totals. */
+  total: Schema.Struct({
+    totalTokens: Schema.Number,
+    /** Cached input included. */
+    inputTokens: Schema.Number,
+    cachedInputTokens: Schema.Number,
+    /** Reasoning included. */
+    outputTokens: Schema.Number,
+  }),
+  /** The last response: what it read and wrote is what the context holds now. */
+  last: Schema.Struct({ totalTokens: Schema.Number }),
+  modelContextWindow: Schema.NullOr(Schema.Number),
+});
+export type TokenUsage = typeof TokenUsage.Type;
+
 /** The notifications APCode acts on; others are dropped. */
 export const CodexNotification = Schema.Union([
   Schema.Struct({
@@ -122,7 +138,7 @@ export const CodexNotification = Schema.Union([
     method: Schema.Literal("thread/tokenUsage/updated"),
     params: Schema.Struct({
       threadId: Schema.String,
-      tokenUsage: Schema.Struct({ total: Schema.Struct({ totalTokens: Schema.Number }) }),
+      tokenUsage: TokenUsage,
     }),
   }),
   Schema.Struct({
@@ -188,7 +204,11 @@ export const CodexServerRequest = Schema.Union([
 export type CodexServerRequest = typeof CodexServerRequest.Type;
 
 /** What `thread/start` and `thread/resume` answer with. */
-export const ThreadResponse = Schema.Struct({ thread: Schema.Struct({ id: Schema.String }) });
+export const ThreadResponse = Schema.Struct({
+  thread: Schema.Struct({ id: Schema.String }),
+  /** The model it runs, the configured default when none was asked for. */
+  model: Schema.String,
+});
 
 const decodeRpcMessage = Schema.decodeUnknownOption(Schema.fromJsonString(RpcMessage));
 const decodeNotification = Schema.decodeUnknownOption(CodexNotification);

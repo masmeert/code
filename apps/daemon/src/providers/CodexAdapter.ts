@@ -7,9 +7,11 @@ import {
   type ApprovalDecision,
   type Effort,
   type PermissionLevel,
+  type ThreadUsage,
 } from "@apcode/contracts";
 import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {
   CodexNotification,
@@ -20,6 +22,7 @@ import {
   ThreadResponse,
   type CodexElicitation,
   type RpcId,
+  type TokenUsage,
 } from "./codexRpc.ts";
 import { harnessLaunch } from "./launch.ts";
 import {
@@ -61,6 +64,63 @@ const codexSandboxPolicy = (level: PermissionLevel, cwd: string) =>
 
 /** Codex has no "max"; its top level is xhigh. */
 const toCodexEffort = (effort: Effort) => (effort === "max" ? "xhigh" : effort);
+
+const ModelPrice = Schema.Struct({
+  input_cost_per_token: Schema.Number,
+  output_cost_per_token: Schema.Number,
+  cache_read_input_token_cost: Schema.optional(Schema.Number),
+});
+
+/** LiteLLM's price list, the one ccusage and t3code price with; fetched once per run, again after a failure. */
+let prices: Promise<ReadonlyMap<string, typeof ModelPrice.Type>> | undefined;
+
+/** Codex doesn't say what a thread cost, so it's priced from its tokens at API list prices. */
+async function apiCostUsd(
+  model: string,
+  usage: { inputTokens: number; cachedInputTokens: number; outputTokens: number },
+) {
+  prices ??= fetch(
+    "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
+  )
+    .then((response) => response.json())
+    .then(Schema.decodeUnknownPromise(Schema.Record(Schema.String, Schema.Unknown)))
+    .then(
+      (list) =>
+        new Map(
+          Object.entries(list).flatMap(([id, entry]) =>
+            Option.match(Schema.decodeUnknownOption(ModelPrice)(entry), {
+              onNone: () => [],
+              onSome: (price) => [[id, price] as const],
+            }),
+          ),
+        ),
+    )
+    .catch(() => {
+      prices = undefined;
+      return new Map();
+    });
+  const price = (await prices).get(model);
+  if (!price) return null;
+  // ponytail: prices the whole thread at its current model, and ignores long-context surcharges.
+  return (
+    (usage.inputTokens - usage.cachedInputTokens) * price.input_cost_per_token +
+    usage.cachedInputTokens * (price.cache_read_input_token_cost ?? price.input_cost_per_token) +
+    usage.outputTokens * price.output_cost_per_token
+  );
+}
+
+async function threadUsage(
+  { total, last, modelContextWindow }: TokenUsage,
+  model: string,
+): Promise<ThreadUsage> {
+  return {
+    context:
+      modelContextWindow === null
+        ? null
+        : { usedTokens: last.totalTokens, maxTokens: modelContextWindow, categories: [] },
+    costUsd: await apiCostUsd(model, total),
+  };
+}
 
 function elicitationResponse(elicitation: CodexElicitation, decision: ApprovalDecision) {
   if (decision === "deny" || elicitation.mode === "url") return { action: "decline" };
@@ -111,6 +171,7 @@ const start = ({
       { readonly rpcId: RpcId; readonly elicitation: CodexElicitation | null }
     >();
     let codexThreadId = "";
+    let startedModel = "";
     let activeTurnId: string | null = null;
     // Subagents run as Codex threads of their own, and their notifications arrive here tagged with
     // that thread's id. Each maps to the Agent row it shows under, `open` until it ends; a subagent's
@@ -325,6 +386,12 @@ const start = ({
             }
           },
           "thread/tokenUsage/updated": ({ params }) => {
+            if (params.threadId === codexThreadId) {
+              void threadUsage(params.tokenUsage, currentModel ?? startedModel).then((usage) =>
+                emit(RuntimeEvent.cases["thread.usage"].make({ threadId, usage })),
+              );
+              return;
+            }
             const subagent = subagents.get(params.threadId);
             if (!subagent || subagent.nested) return;
             emit(
@@ -444,6 +511,7 @@ const start = ({
         )
       : yield* request("thread/start", threadParams, ThreadResponse);
     codexThreadId = started.thread.id;
+    startedModel = started.model;
     onResumeToken(codexThreadId);
 
     const input = (turn: TurnInput) => {
@@ -565,4 +633,43 @@ const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, dropTurn
     catch: (e) => fail(`Couldn't rewind: ${e instanceof Error ? e.message : String(e)}`),
   });
 
-export const CodexAdapter: ProviderAdapter = { kind: "codex", start, rewind };
+/** Codex reports a thread's token usage as it loads it, so a short-lived app-server resumes it and waits for that. */
+const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, model }) =>
+  Effect.tryPromise({
+    try: async () => {
+      let report: (usage: TokenUsage) => void = () => {};
+      const reported = new Promise<TokenUsage>((resolve) => (report = resolve));
+      const rpc = await connectCodex(
+        cwd,
+        {
+          onNotification: (notification) => {
+            if (
+              CodexNotification.guards["thread/tokenUsage/updated"](notification) &&
+              notification.params.threadId === resumeToken
+            )
+              report(notification.params.tokenUsage);
+          },
+        },
+        harnessLaunch("codex", harness),
+      );
+      try {
+        const resumed = await rpc.request(
+          "thread/resume",
+          { threadId: resumeToken, excludeTurns: true, cwd },
+          ThreadResponse,
+        );
+        const usage = await Promise.race([
+          reported,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
+        return usage
+          ? await threadUsage(usage, model ?? resumed.model)
+          : { context: null, costUsd: null };
+      } finally {
+        rpc.close();
+      }
+    },
+    catch: (e) => fail(`Couldn't read usage: ${e instanceof Error ? e.message : String(e)}`),
+  });
+
+export const CodexAdapter: ProviderAdapter = { kind: "codex", start, rewind, readUsage };

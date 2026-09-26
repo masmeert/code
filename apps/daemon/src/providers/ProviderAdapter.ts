@@ -7,6 +7,7 @@ import type {
   ProviderSettings,
   RuntimeEvent,
   SlashCommand,
+  ThreadUsage,
 } from "@apcode/contracts";
 import type * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
@@ -84,6 +85,13 @@ export interface RewindInput {
   readonly dropTurns: number;
 }
 
+export interface ReadUsageInput {
+  readonly cwd: string;
+  readonly harness: ProviderSettings;
+  readonly resumeToken: string;
+  readonly model: string | undefined;
+}
+
 export interface ProviderAdapter {
   readonly kind: ProviderKind;
   readonly start: (input: StartSessionInput) => Effect.Effect<ProviderSession, ProviderError>;
@@ -92,6 +100,8 @@ export interface ProviderAdapter {
    * running. Resolves to the token to resume from next; null starts over.
    */
   readonly rewind: (input: RewindInput) => Effect.Effect<string | null, ProviderError>;
+  /** The conversation's usage as of its last turn, read with no session running and no turn started. */
+  readonly readUsage: (input: ReadUsageInput) => Effect.Effect<ThreadUsage, ProviderError>;
 }
 
 /** One-line human summary of a tool input, for the transcript. */

@@ -18,6 +18,7 @@ export const KEYBINDINGS = {
   "picker.branch": "mod+shift+g",
   "terminal.toggle": "mod+j",
   "browser.toggle": "mod+shift+b",
+  "usage.toggle": "mod+shift+u",
 } as const;
 
 export type KeybindingId = keyof typeof KEYBINDINGS;

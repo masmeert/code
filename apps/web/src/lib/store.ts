@@ -21,6 +21,7 @@ import {
   type StoredEvent,
   type ThreadInfo,
   type TurnOptions,
+  type UsageLimit,
   isTranscriptEvent,
 } from "@apcode/contracts";
 import type { ToolCall } from "@apcode/ui/agents/tool-group";
@@ -105,6 +106,10 @@ export interface State {
   /** GitHub and GitLab CLI status; null until Settings asks for it. */
   readonly sourceControl: ReadonlyArray<SourceControlStatus> | null;
   readonly authFlows: Partial<Record<ProviderKind, AuthFlow>>;
+  /** Threads whose usage is being read from their harness's log. */
+  readonly readingUsage: Readonly<Record<string, boolean>>;
+  /** Subscription rate limits per harness, read when the usage panel opens. */
+  readonly limits: Partial<Record<ProviderKind, ProviderLimits>>;
   /** Set when a thread this window asked for appears, so the window can open it. */
   readonly createdHere: { readonly threadId: string } | null;
   readonly order: ReadonlyArray<string>;
@@ -127,6 +132,13 @@ export interface State {
   readonly followUps: Readonly<Record<string, ReadonlyArray<FollowUp>>>;
   readonly terminals: Readonly<Record<string, ReadonlyArray<string>>>;
   readonly activeTerminals: Readonly<Record<string, string>>;
+}
+
+export interface ProviderLimits {
+  readonly limits: ReadonlyArray<UsageLimit>;
+  readonly error: string | null;
+  /** A fresh read is on its way; what's above is from the last one. */
+  readonly loading: boolean;
 }
 
 export interface FollowUp {
@@ -206,6 +218,8 @@ const initial: State = {
   providers: [],
   sourceControl: null,
   authFlows: {},
+  limits: {},
+  readingUsage: {},
   createdHere: null,
   order: [],
   threads: {},
@@ -479,15 +493,23 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
     Match.tag("terminal.closed", ({ threadId, terminalId }) =>
       withoutTerminal(state, threadId, terminalId),
     ),
-    Match.tag("thread.status", ({ threadId, status }) =>
-      updateThreadInfo(state, threadId, (info) => ({ ...info, status })),
-    ),
-    Match.tag("thread.model", ({ threadId, model }) =>
-      updateThreadInfo(state, threadId, (info) => ({ ...info, model })),
-    ),
-    Match.tag("thread.archived", ({ threadId, archivedAt }) =>
-      updateThreadInfo(state, threadId, (info) => ({ ...info, archivedAt })),
-    ),
+    Match.tags({
+      "thread.status": ({ threadId, status }) =>
+        updateThreadInfo(state, threadId, (info) => ({ ...info, status })),
+      "thread.model": ({ threadId, model }) =>
+        updateThreadInfo(state, threadId, (info) => ({ ...info, model })),
+      "thread.archived": ({ threadId, archivedAt }) =>
+        updateThreadInfo(state, threadId, (info) => ({ ...info, archivedAt })),
+    }),
+    Match.tag("thread.usage", ({ threadId, usage }) => {
+      const { [threadId]: _reading, ...readingUsage } = state.readingUsage;
+      const next = { ...state, readingUsage };
+      return usage ? updateThreadInfo(next, threadId, (info) => ({ ...info, usage })) : next;
+    }),
+    Match.tag("provider.limits", ({ provider, limits, error }) => ({
+      ...state,
+      limits: { ...state.limits, [provider]: { limits, error, loading: false } },
+    })),
     Match.tag("thread.meta", ({ threadId, title, updatedAt, branch }) =>
       updateThreadInfo(state, threadId, (info) => ({ ...info, title, updatedAt, branch })),
     ),
@@ -886,6 +908,28 @@ export const send = (command: ClientCommand) => {
 };
 
 export const getSettings = () => state.settings;
+
+/** Threads asked about once per window: one that has nothing to read keeps having nothing. */
+const usageRequested = new Set<string>();
+
+export const readUsage = (threadId: string) => {
+  if (usageRequested.has(threadId)) return;
+  usageRequested.add(threadId);
+  setState({ ...state, readingUsage: { ...state.readingUsage, [threadId]: true } });
+  send(ClientCommand.cases["thread.readUsage"].make({ threadId }));
+};
+
+export const readLimits = (provider: ProviderKind) => {
+  const previous = state.limits[provider];
+  setState({
+    ...state,
+    limits: {
+      ...state.limits,
+      [provider]: { limits: previous?.limits ?? [], error: null, loading: true },
+    },
+  });
+  send(ClientCommand.cases["provider.readLimits"].make({ provider }));
+};
 
 /** Applies settings locally right away (theme etc. shouldn't wait on the daemon), then persists them. */
 export const updateSettings = (settings: Settings) => {

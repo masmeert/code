@@ -260,6 +260,40 @@ export const Project = Schema.Struct({
 });
 export type Project = typeof Project.Type;
 
+/** How full a thread's context window was after its last response. */
+export const ContextUsage = Schema.Struct({
+  usedTokens: Schema.Number,
+  maxTokens: Schema.Number,
+  /**
+   * What fills the window, where the harness says (Claude). "free" is what's left, "buffer" is
+   * held back for compaction, and "deferred" rows sit outside the window (tool schemas loaded on use).
+   */
+  categories: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      tokens: Schema.Number,
+      kind: Schema.Literals(["used", "free", "buffer", "deferred"]),
+    }),
+  ),
+});
+export type ContextUsage = typeof ContextUsage.Type;
+
+export const ThreadUsage = Schema.Struct({
+  context: Schema.NullOr(ContextUsage),
+  /** What the thread's tokens would have cost at API list prices, subagents included; null when unknown. */
+  costUsd: Schema.NullOr(Schema.Number),
+});
+export type ThreadUsage = typeof ThreadUsage.Type;
+
+/** One window of a subscription's rate limit, e.g. the 5-hour one. */
+export const UsageLimit = Schema.Struct({
+  label: Schema.String,
+  usedPercent: Schema.Number,
+  /** Epoch ms; null when the window hasn't started. */
+  resetsAt: Schema.NullOr(Schema.Number),
+});
+export type UsageLimit = typeof UsageLimit.Type;
+
 export const ThreadInfo = Schema.Struct({
   id: Schema.String,
   projectId: Schema.String,
@@ -278,6 +312,8 @@ export const ThreadInfo = Schema.Struct({
   archivedAt: Schema.NullOr(Schema.Number),
   /** `cwd` is a git worktree made for this thread (removed with it when it has no changes). */
   worktree: Schema.Boolean,
+  /** Absent until the thread's first turn ends. */
+  usage: Schema.optional(ThreadUsage),
 });
 export type ThreadInfo = typeof ThreadInfo.Type;
 
@@ -381,6 +417,11 @@ export const RuntimeEvent = Schema.Union([
     archivedAt: Schema.NullOr(Schema.Number),
   }),
   Schema.TaggedStruct("thread.status", { threadId: Schema.String, status: ThreadStatus }),
+  /** Null answers a `thread.readUsage` that found nothing: the thread never finished a turn, or its log couldn't be read. */
+  Schema.TaggedStruct("thread.usage", {
+    threadId: Schema.String,
+    usage: Schema.NullOr(ThreadUsage),
+  }),
   /** Title, activity time or branch changed. */
   Schema.TaggedStruct("thread.meta", {
     threadId: Schema.String,
@@ -497,6 +538,12 @@ export const RuntimeEvent = Schema.Union([
     error: Schema.NullOr(Schema.String),
   }),
   Schema.TaggedStruct("auth.flow", { flow: AuthFlow }),
+  /** A subscription's rate limits; answers `provider.readLimits`. Empty with no error when the login has none (API keys). */
+  Schema.TaggedStruct("provider.limits", {
+    provider: ProviderKind,
+    limits: Schema.Array(UsageLimit),
+    error: Schema.NullOr(Schema.String),
+  }),
   Schema.TaggedStruct("sourceControl.updated", { statuses: Schema.Array(SourceControlStatus) }),
   Schema.TaggedStruct("terminal.opened", { threadId: Schema.String, terminalId: Schema.String }),
   Schema.TaggedStruct("terminal.closed", { threadId: Schema.String, terminalId: Schema.String }),
@@ -544,6 +591,8 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("thread.compact", { threadId: Schema.String }),
   /** Answered with a `thread.commands` event. */
   Schema.TaggedStruct("thread.listCommands", { threadId: Schema.String }),
+  /** Reads the usage of a thread that ran before usage was recorded; answered with a `thread.usage` event. */
+  Schema.TaggedStruct("thread.readUsage", { threadId: Schema.String }),
   /** Answered with a `checkpoint.diff` event. */
   Schema.TaggedStruct("checkpoint.diff", { threadId: Schema.String, messageId: Schema.String }),
   /** Full-text search over messages; answered with a `search.results` frame. */
@@ -590,6 +639,8 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("provider.linkCode", { provider: ProviderKind, code: Schema.String }),
   Schema.TaggedStruct("provider.linkCancel", { provider: ProviderKind }),
   Schema.TaggedStruct("provider.unlink", { provider: ProviderKind }),
+  /** Answered with a `provider.limits` event. */
+  Schema.TaggedStruct("provider.readLimits", { provider: ProviderKind }),
   /**
    * Start receiving a thread's transcript. With `after` (the last event id this client
    * has), only what it missed is replayed; otherwise the latest `turnLimit` turns arrive

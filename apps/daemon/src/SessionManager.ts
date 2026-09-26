@@ -344,6 +344,13 @@ const make = Effect.gen(function* () {
       const entry = threads.get(event.threadId);
       if (entry) entry.info = { ...entry.info, status: event.status };
     }
+    if (RuntimeEvent.guards["thread.usage"](event) && event.usage) {
+      const entry = threads.get(event.threadId);
+      if (entry) {
+        entry.info = { ...entry.info, usage: event.usage };
+        store.setUsage(event.threadId, event.usage);
+      }
+    }
     if ("threadId" in event && event.threadId) {
       const entry = threads.get(event.threadId);
       if (entry) entry.activeAt = Date.now();
@@ -685,6 +692,33 @@ const make = Effect.gen(function* () {
     const status = await readRepo(path);
     publish(RuntimeEvent.cases["git.status"].make({ path, status, action: null, error: null }));
   });
+  const readLimits = coalesced(async (provider) => {
+    if (!Schema.is(ProviderKind)(provider)) return;
+    const { limits, error } = await Effect.runPromise(registry.readLimits(provider));
+    publish(RuntimeEvent.cases["provider.limits"].make({ provider, limits: [...limits], error }));
+  });
+  const readUsage = coalesced(async (threadId) => {
+    const entry = threads.get(threadId);
+    if (!entry) return;
+    const { provider, cwd, model } = entry.info;
+    const { resumeToken } = entry;
+    // A live session reports its usage when its turn ends.
+    const usage =
+      entry.info.usage ??
+      (resumeToken && !entry.session
+        ? await Effect.runPromise(
+            Effect.flatMap(settingsStore.get, (settings) =>
+              ADAPTERS[provider].readUsage({
+                cwd,
+                harness: settings.providers[provider],
+                resumeToken,
+                model: model ?? settings.providers[provider].defaultModel ?? undefined,
+              }),
+            ).pipe(Effect.orElseSucceed(() => null)),
+          )
+        : null);
+    publish(RuntimeEvent.cases["thread.usage"].make({ threadId, usage }));
+  });
   const refreshDiff = coalesced((path) =>
     readDiff(path).then((diff) => publish(RuntimeEvent.cases["git.diff"].make({ path, ...diff }))),
   );
@@ -881,6 +915,7 @@ const make = Effect.gen(function* () {
       "thread.rewind": rewind,
       "thread.compact": (command) => compact(command.threadId),
       "thread.listCommands": (command) => listCommands(command.threadId),
+      "thread.readUsage": (command) => Effect.promise(() => readUsage(command.threadId)),
       "checkpoint.diff": (command) =>
         Effect.gen(function* () {
           const entry = yield* getEntry(command.threadId);
@@ -988,6 +1023,7 @@ const make = Effect.gen(function* () {
       "provider.linkCode": (command) => registry.submitCode(command.provider, command.code),
       "provider.linkCancel": (command) => registry.cancelLink(command.provider),
       "provider.unlink": (command) => registry.unlink(command.provider),
+      "provider.readLimits": (command) => Effect.promise(() => readLimits(command.provider)),
       "thread.interrupt": (command) => withLiveSession(command.threadId, (s) => s.interrupt),
       "thread.stopAgent": (command) =>
         withLiveSession(command.threadId, (s) => s.stopAgent?.(command.toolId) ?? Effect.void),

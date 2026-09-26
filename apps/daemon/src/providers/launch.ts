@@ -1,3 +1,4 @@
+import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import type { ProviderKind, ProviderSettings } from "@apcode/contracts";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -49,4 +50,17 @@ export function claudeExtraArgs(args: ReadonlyArray<string>) {
     } else flags[flag!] = null;
   }
   return flags;
+}
+
+/** A Claude session with no prompt: it answers control requests without ever starting a turn. Close it when done. */
+export function promptlessQuery(launch: HarnessLaunch, options: Options = {}) {
+  return query({
+    prompt: { [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => {}) }) },
+    options: {
+      ...options,
+      pathToClaudeCodeExecutable: launch.bin,
+      extraArgs: claudeExtraArgs(launch.args),
+      env: launch.env,
+    },
+  });
 }

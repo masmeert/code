@@ -6,6 +6,7 @@ import {
   type SearchHit,
   type StoredEvent,
   type ThreadInfo,
+  ThreadUsage,
 } from "@apcode/contracts";
 import { Database } from "bun:sqlite";
 import * as Context from "effect/Context";
@@ -78,6 +79,7 @@ export class ThreadStore extends Context.Service<
     /** Messages matching `query` (words, prefix-matched), newest first. */
     readonly search: (query: string, limit: number) => ReadonlyArray<SearchHit>;
     readonly setModel: (threadId: string, model: string | null) => void;
+    readonly setUsage: (threadId: string, usage: ThreadUsage) => void;
     readonly setArchived: (threadId: string, archivedAt: number | null) => void;
     readonly setMeta: (
       threadId: string,
@@ -90,6 +92,7 @@ export class ThreadStore extends Context.Service<
 >()("apcode/ThreadStore") {}
 
 const decodeEvent = Schema.decodeUnknownOption(Schema.fromJsonString(RuntimeEvent));
+const decodeUsage = Schema.decodeUnknownOption(Schema.fromJsonString(ThreadUsage));
 
 const make = Effect.acquireRelease(
   Effect.sync(() => {
@@ -161,6 +164,7 @@ const make = Effect.acquireRelease(
     }
     if (!columns.has("worktree"))
       db.run("ALTER TABLE threads ADD COLUMN worktree INTEGER NOT NULL DEFAULT 0");
+    if (!columns.has("usage")) db.run("ALTER TABLE threads ADD COLUMN usage TEXT");
     // Full-text index of what was said, for search. Filled as messages are stored; built from the log once.
     const hasSearch =
       db.query("SELECT name FROM sqlite_master WHERE name = 'messages_fts'").get() !== null;
@@ -185,6 +189,7 @@ const make = Effect.acquireRelease(
       "UPDATE threads SET title = $title, updated_at = $updatedAt WHERE id = $id",
     );
     const setModel = db.prepare("UPDATE threads SET model = $model WHERE id = $id");
+    const setUsage = db.prepare("UPDATE threads SET usage = $usage WHERE id = $id");
     const setArchived = db.prepare("UPDATE threads SET archived_at = $archivedAt WHERE id = $id");
     const setResumeToken = db.prepare("UPDATE threads SET resume_token = $token WHERE id = $id");
     const appendEvent = db.prepare(
@@ -273,6 +278,7 @@ const make = Effect.acquireRelease(
               archived_at: number | null;
               resume_token: string | null;
               worktree: number;
+              usage: string | null;
             },
             []
           >("SELECT * FROM threads ORDER BY created_at")
@@ -291,6 +297,7 @@ const make = Effect.acquireRelease(
               branch: null,
               archivedAt: row.archived_at,
               worktree: row.worktree === 1,
+              usage: row.usage === null ? undefined : Option.getOrUndefined(decodeUsage(row.usage)),
             },
             resumeToken: row.resume_token,
           })),
@@ -355,6 +362,9 @@ const make = Effect.acquireRelease(
       },
       setModel: (id, model) => {
         setModel.run({ id, model });
+      },
+      setUsage: (id, usage) => {
+        setUsage.run({ id, usage: JSON.stringify(usage) });
       },
       setMeta: (id, meta) => {
         setMeta.run({ id, ...meta });
