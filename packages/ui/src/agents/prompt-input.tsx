@@ -692,7 +692,7 @@ export function PromptSlider({
   }, [open]);
 
   return (
-    <MorphPopover open={open} onOpenChange={setOpen}>
+    <MorphPopover open={open} onOpenChange={setOpen} className="min-w-0">
       <MorphPopoverTrigger>
         <PickerTrigger open={open} disabled={disabled} className={className}>
           {current?.label ?? placeholder}
@@ -864,7 +864,7 @@ export function PromptSelect({
   }, [open, searchable]);
 
   return (
-    <MorphPopover open={open} onOpenChange={setOpen}>
+    <MorphPopover open={open} onOpenChange={setOpen} className="min-w-0">
       <MorphPopoverTrigger>
         <PickerTrigger open={open} disabled={disabled} icon={triggerIcon} className={className}>
           {multi.length ? `${multi.length + 1} models` : (current?.label ?? placeholder)}

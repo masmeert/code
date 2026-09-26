@@ -612,7 +612,7 @@ const ThreadCard = (props: {
             <StatusDot info={info} unread={props.unread} settled={props.settled} />
             <ProviderMark info={info} />
             <span className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="shrink-0">{project.name}</span>
+              <span className="max-w-full shrink-0 truncate">{project.name}</span>
               {info.branch ? (
                 <>
                   <span aria-hidden="true" className="h-3 w-px shrink-0 bg-border" />
