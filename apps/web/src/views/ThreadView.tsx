@@ -220,7 +220,11 @@ export const DraftView = ({
         title="New thread"
       />
       <div className="flex flex-1 items-center justify-center px-6 text-center text-muted-foreground [-webkit-app-region:drag]">
-        {choices.length ? "What should we work on?" : "Link Claude or Codex in Settings to start."}
+        {choices.length
+          ? "What should we work on?"
+          : providers.some((p) => p.checking)
+            ? "Checking Claude and Codex…"
+            : "Link Claude or Codex in Settings to start."}
       </div>
       <Composer
         // Stable across the project pick, so effort/permission choices carry over.
@@ -245,7 +249,9 @@ export const DraftView = ({
         workspace={{ value: workspace, onChange: setWorkspace }}
         placeholder={
           !selected
-            ? "No harness linked"
+            ? providers.some((p) => p.checking)
+              ? "Checking harnesses…"
+              : "No harness linked"
             : !path
               ? "Pick a project below to start…"
               : extraModels.length

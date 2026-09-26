@@ -9,8 +9,9 @@ import {
   type AuthFlow,
   type ModelOption,
   type ProviderKind,
-  type ProviderStatus,
+  ProviderStatus,
 } from "@apcode/contracts";
+import { openJsonFile } from "../storage/jsonFile.ts";
 import { SettingsStore } from "../storage/SettingsStore.ts";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
@@ -205,7 +206,13 @@ const make = Effect.gen(function* () {
         const text = message(e);
         return unknown(kind, text.includes("Could not find") ? null : text);
       });
-  let providers: Array<ProviderStatus> = [unknown("claude"), unknown("codex")];
+  // Checking the CLIs takes seconds; until it's done, clients get what the last check found rather
+  // than "not installed", which hid every model picker and disabled sending on each launch.
+  const lastChecked = yield* openJsonFile("providers.json", Schema.Array(ProviderStatus), [
+    { ...unknown("claude"), checking: true },
+    { ...unknown("codex"), checking: true },
+  ]);
+  let providers = [...(yield* lastChecked.get)];
   let listener: ProviderListener = { providers: () => {}, flow: () => {} };
   /** In-flight sign-in per harness. */
   const flows = new Map<ProviderKind, { child?: ChildProcess; rpc?: CodexRpc; loginId?: string }>();
@@ -221,6 +228,7 @@ const make = Effect.gen(function* () {
     const next = await probe(kind);
     providers = providers.map((p) => (p.kind === kind ? next : p));
     listener.providers(providers);
+    await Effect.runPromise(lastChecked.set(providers));
   };
   async function refreshAll() {
     await Promise.all([refreshOne("claude"), refreshOne("codex")]);

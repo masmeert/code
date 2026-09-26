@@ -226,6 +226,8 @@ export const ProviderStatus = Schema.Struct({
   plan: Schema.NullOr(Schema.String),
   models: Schema.Array(ModelOption),
   error: Schema.NullOr(Schema.String),
+  /** Not checked yet, so nothing above is known: the first check after launch is still running. */
+  checking: Schema.optional(Schema.Boolean),
 });
 export type ProviderStatus = typeof ProviderStatus.Type;
 

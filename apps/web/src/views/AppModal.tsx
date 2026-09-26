@@ -10,6 +10,7 @@ import {
 import { Input } from "@apcode/ui/motion/input";
 import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
 import { Switch } from "@apcode/ui/motion/switch";
+import { Skeleton } from "@apcode/ui/components/skeleton";
 import { Textarea } from "@apcode/ui/components/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@apcode/ui/motion/tabs";
 import { IconButton } from "@/components/icon-button";
@@ -621,7 +622,9 @@ function GitPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => send(ClientCommand.cases["sourceControl.refresh"].make({})), []);
-  useEffect(() => setChecking(false), [sourceControl]);
+  useEffect(() => {
+    if (sourceControl) setChecking(false);
+  }, [sourceControl]);
 
   return (
     <>
@@ -670,15 +673,17 @@ function GitPage() {
                           </span>
                         ) : null}
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        {!status
-                          ? "Checking…"
-                          : status.authenticated
+                      {!status ? (
+                        <Skeleton aria-label="Checking…" className="mt-1 h-3 w-36" />
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          {status.authenticated
                             ? status.account
                               ? `Signed in as ${status.account}`
                               : "Signed in"
                             : status.detail}
-                      </p>
+                        </p>
+                      )}
                     </div>
                   </div>
                 }
@@ -702,7 +707,9 @@ function GitPage() {
                           : "Not signed in"
                         : "Not installed"}
                   </span>
-                ) : null}
+                ) : (
+                  <Skeleton className="h-4 w-16" />
+                )}
               </SettingsRow>
             );
           })}
@@ -788,6 +795,8 @@ function WriterModelSelect() {
   const settings = useStore((s) => s.settings);
   const providers = useStore((s) => s.providers);
   const linked = providers.filter((p) => p.linked && p.models.length);
+  if (!linked.length && providers.some((p) => p.checking))
+    return <Skeleton className="h-7 w-52 rounded-lg" />;
   if (!linked.length)
     return <span className="text-[13px] text-muted-foreground">Link a harness first</span>;
   const saved = settings.commitModel;
@@ -1167,6 +1176,7 @@ const ProviderCard = ({
     (flow.stage === "starting" || flow.stage === "browser" || flow.stage === "awaiting-code");
   const Logo = PROVIDER_LOGO[kind];
 
+  const checking = !status || status.checking === true;
   const statusLine = !status
     ? "Checking…"
     : !status.installed
@@ -1175,7 +1185,9 @@ const ProviderCard = ({
         ? (status.account ?? "Signed in")
         : "Not signed in";
 
-  const action = !status?.installed ? null : inFlow ? (
+  const action = checking ? (
+    <Skeleton className="h-7 w-16 rounded-lg" />
+  ) : !status?.installed ? null : inFlow ? (
     <Button
       size="sm"
       variant="ghost"
@@ -1254,19 +1266,23 @@ const ProviderCard = ({
                   </span>
                 ) : null}
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span
-                  className={cn(
-                    "size-1.5 shrink-0 rounded-full",
-                    status?.linked
-                      ? "bg-emerald-500"
-                      : status?.installed
-                        ? "bg-warning"
-                        : "bg-muted-foreground/40",
-                  )}
-                />
-                <span className="truncate">{statusLine}</span>
-              </div>
+              {checking ? (
+                <Skeleton aria-label="Checking…" className="mt-1 h-3 w-36" />
+              ) : (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span
+                    className={cn(
+                      "size-1.5 shrink-0 rounded-full",
+                      status?.linked
+                        ? "bg-emerald-500"
+                        : status?.installed
+                          ? "bg-warning"
+                          : "bg-muted-foreground/40",
+                    )}
+                  />
+                  <span className="truncate">{statusLine}</span>
+                </div>
+              )}
             </div>
           </div>
         }
