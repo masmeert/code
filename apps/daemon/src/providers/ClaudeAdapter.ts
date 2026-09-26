@@ -164,6 +164,7 @@ const start = ({
         extraArgs: claudeExtraArgs(launch.args),
         settingSources: ["user", "project", "local"],
         includePartialMessages: true,
+        agentProgressSummaries: true,
         canUseTool,
         env: {
           ...launch.env,
@@ -293,12 +294,17 @@ const start = ({
             } else if (msg.subtype === "task_updated" && msg.patch.is_backgrounded) {
               const toolId = agentTools.get(msg.task_id);
               if (toolId) backgroundAgents.add(toolId);
-            } else if (
-              msg.subtype === "task_notification" &&
-              msg.tool_use_id &&
-              backgroundAgents.delete(msg.tool_use_id)
-            ) {
+            } else if (msg.subtype === "task_progress" && msg.tool_use_id && msg.summary) {
+              emit(
+                RuntimeEvent.cases["tool.progress"].make({
+                  threadId,
+                  toolId: msg.tool_use_id,
+                  summary: msg.summary,
+                }),
+              );
+            } else if (msg.subtype === "task_notification") {
               agentTools.delete(msg.task_id);
+              if (!msg.tool_use_id || !backgroundAgents.delete(msg.tool_use_id)) return;
               emit(
                 RuntimeEvent.cases["tool.completed"].make({
                   threadId,
@@ -407,6 +413,15 @@ const start = ({
             ]),
           catch: (e) => fail(String(e)),
         }).pipe(Effect.asVoid),
+        stopAgent: (toolId) =>
+          Effect.tryPromise({
+            try: async () => {
+              const taskId = [...agentTools].find(([, id]) => id === toolId)?.[0];
+              // Already finished: its notification is on the way.
+              if (taskId) await q.stopTask(taskId);
+            },
+            catch: (e) => fail(`Couldn't stop the subagent: ${String(e)}`),
+          }),
         respondApproval: (requestId, decision) =>
           Effect.suspend(() => {
             const entry = pending.get(requestId);

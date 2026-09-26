@@ -13,7 +13,15 @@ import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimm
 import { PromptSelect } from "@apcode/ui/agents/prompt-input";
 import { StreamingResponse } from "@apcode/ui/agents/streaming-response";
 import { ToolApproval, ToolApprovalCode } from "@apcode/ui/agents/tool-approval";
-import { ToolGroup, type ToolCall } from "@apcode/ui/agents/tool-group";
+import {
+  categoryOf,
+  livePhrase,
+  summarize,
+  ToolCallRow,
+  ToolGroup,
+  type ToolCall,
+  type ToolReveal,
+} from "@apcode/ui/agents/tool-group";
 import { ProjectBadge } from "@/components/project-badge";
 import { cn } from "@apcode/ui/lib/utils";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
@@ -21,6 +29,7 @@ import { type Attachment, ClientCommand, type Project, type ProviderKind } from 
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
 import {
   ArrowUp,
+  ChevronRight,
   FileDiff,
   FileText,
   FolderTree,
@@ -28,6 +37,7 @@ import {
   ImageIcon,
   PanelLeft,
   Quote,
+  Square,
   SquareTerminal,
   Undo2,
   X,
@@ -42,6 +52,7 @@ import {
   use,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -287,6 +298,8 @@ const NO_FOLLOW_UPS: ReadonlyArray<FollowUp> = [];
 
 /** Opens the changes panel on one turn; provided by the thread view to the checkpoint chips deep in the transcript. */
 const TurnDiffContext = createContext<(messageId: string) => void>(() => {});
+/** The tool call last picked in the running-subagents list, for its group to open and scroll to. */
+const RevealContext = createContext<ToolReveal | null>(null);
 
 /** Held messages go back into the composer, after whatever is there. */
 const returnToComposer = (threadId: string, followUps: ReadonlyArray<FollowUp>) => {
@@ -412,6 +425,13 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   const current = info.model ?? defaultModel(providers, settings, provider);
   const busy = status === "running" || status === "awaiting-approval";
   const lastItem = items.at(-1);
+  const [reveal, setReveal] = useState<ToolReveal | null>(null);
+  const runningAgents = busy
+    ? items.filter(
+        (item): item is ToolItem =>
+          item.kind === "tool" && categoryOf(item.name) === "agent" && item.output === null,
+      )
+    : [];
   const project = useStore((s) => s.projects.find((p) => p.id === info.projectId));
   // Per thread: switching threads remounts this view, so the panel starts closed.
   const [diffOpen, setDiffOpen] = useState(false);
@@ -542,7 +562,9 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                 </button>
               ) : null}
               <TurnDiffContext value={openTurnDiff}>
-                <TurnList items={items} provider={provider} threadId={threadId} busy={busy} />
+                <RevealContext value={reveal}>
+                  <TurnList items={items} provider={provider} threadId={threadId} busy={busy} />
+                </RevealContext>
               </TurnDiffContext>
 
               {status === "running" &&
@@ -563,6 +585,13 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             </MessageGroup>
           </MessageScroller>
 
+          {runningAgents.length ? (
+            <RunningAgents
+              threadId={threadId}
+              agents={runningAgents}
+              onReveal={(toolId) => setReveal({ toolId })}
+            />
+          ) : null}
           <Composer
             prefsKey={threadId}
             threadId={threadId}
@@ -768,6 +797,144 @@ const EditFromHere = ({ item, threadId }: { item: UserItem; threadId: string }) 
   </div>
 );
 
+/** Latest calls a subagent row unfolds to; older ones are a jump to the chat away. */
+const RECENT_AGENT_CALLS = 5;
+
+/** Subagents still at work, above the composer: what each is doing, its latest calls, a jump to its row, and a stop button. */
+function RunningAgents({
+  threadId,
+  agents,
+  onReveal,
+}: {
+  threadId: string;
+  agents: ReadonlyArray<ToolItem>;
+  onReveal: (toolId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
+  const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
+  const listId = useId();
+  return (
+    <div
+      className="shrink-0 px-3"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || !open) return;
+        event.stopPropagation();
+        setOpen(false);
+      }}
+    >
+      <div className="mx-auto max-w-3xl pb-2">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={listId}
+          onClick={() => setOpen(!open)}
+          className="flex h-7 items-center gap-2 rounded-md px-1 text-xs text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+          {agents.length} {agents.length === 1 ? "subagent" : "subagents"} running
+          <ChevronRight
+            className={cn("size-3.5 transition-transform duration-200", open && "rotate-90")}
+          />
+        </button>
+        {open ? (
+          <ul id={listId} className="mt-1 rounded-xl border border-border bg-background p-1">
+            {agents.map((agent) => {
+              const calls = agent.children ?? [];
+              const last = calls.at(-1);
+              const name = agent.summary || "Subagent";
+              const isUnfolded = unfolded.has(agent.id);
+              const earlier = calls.length - RECENT_AGENT_CALLS;
+              return (
+                <li key={agent.id}>
+                  <div className="flex items-center gap-1 rounded-lg hover:bg-muted/60">
+                    <button
+                      type="button"
+                      aria-expanded={isUnfolded}
+                      aria-label={`${isUnfolded ? "Hide" : "Show"} what ${name} is doing`}
+                      onClick={() => {
+                        const next = new Set(unfolded);
+                        if (!next.delete(agent.id)) next.add(agent.id);
+                        setUnfolded(next);
+                      }}
+                      className="ml-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <ChevronRight
+                        className={cn(
+                          "size-3.5 transition-transform duration-200",
+                          isUnfolded && "rotate-90",
+                        )}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      title="Show it in the chat"
+                      onClick={() => onReveal(agent.id)}
+                      className="flex min-w-0 flex-1 items-baseline gap-2 rounded-lg py-1.5 pr-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className="shrink-0 text-sm text-foreground">{name}</span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {stopping.has(agent.id)
+                          ? "Stopping…"
+                          : (agent.progress ??
+                            (!last
+                              ? "Starting…"
+                              : last.output === null
+                                ? livePhrase(last)
+                                : summarize([last])))}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Stop ${name}`}
+                      title="Stop this subagent"
+                      disabled={stopping.has(agent.id)}
+                      onClick={() => {
+                        setStopping(new Set(stopping).add(agent.id));
+                        send(
+                          ClientCommand.cases["thread.stopAgent"].make({
+                            threadId,
+                            toolId: agent.id,
+                          }),
+                        );
+                      }}
+                      className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                    >
+                      <Square className="size-2.5 fill-current" />
+                    </button>
+                  </div>
+                  {isUnfolded ? (
+                    <div className="mr-2 mb-1 ml-[18px] border-l border-border pl-3 text-sm">
+                      {earlier > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => onReveal(agent.id)}
+                          className="h-7 rounded-md text-xs text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {earlier} earlier {earlier === 1 ? "call" : "calls"} in the chat
+                        </button>
+                      ) : null}
+                      {calls.length ? (
+                        calls
+                          .slice(-RECENT_AGENT_CALLS)
+                          .map((call) => (
+                            <ToolCallRow key={call.id} call={call} live reveal={null} />
+                          ))
+                      ) : (
+                        <p className="py-1 text-xs text-muted-foreground">No calls yet</p>
+                      )}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 /** What a turn changed on disk; opens those changes. */
 const CheckpointChip = ({ item }: { item: Extract<TranscriptItem, { kind: "checkpoint" }> }) => {
   const openTurnDiff = use(TurnDiffContext);
@@ -895,7 +1062,13 @@ const AgentBlockContent = ({
         </MessageBubble>
       );
     case "tools":
-      return <ToolGroup calls={item.calls satisfies ReadonlyArray<ToolCall>} live={live} />;
+      return (
+        <ToolGroup
+          calls={item.calls satisfies ReadonlyArray<ToolCall>}
+          live={live}
+          reveal={use(RevealContext)}
+        />
+      );
     case "approval":
       // Once approved, the tool group shows what ran; only pending and denied requests stay visible.
       if (item.resolved && item.decision !== "deny") return null;

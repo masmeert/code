@@ -403,6 +403,12 @@ export const RuntimeEvent = Schema.Union([
     /** The subagent call (Task/Agent) this one was made inside of. */
     parentToolId: Schema.optional(Schema.String),
   }),
+  /** A one-line, present-tense summary of what the subagent started by `toolId` is doing now. */
+  Schema.TaggedStruct("tool.progress", {
+    threadId: Schema.String,
+    toolId: Schema.String,
+    summary: Schema.String,
+  }),
   Schema.TaggedStruct("tool.completed", {
     threadId: Schema.String,
     toolId: Schema.String,
@@ -546,6 +552,8 @@ export const ClientCommand = Schema.Union([
   /** Answered with a `sourceControl.updated` event. */
   Schema.TaggedStruct("sourceControl.refresh", {}),
   Schema.TaggedStruct("thread.interrupt", { threadId: Schema.String }),
+  /** Stops one subagent, the one started by tool call `toolId`; the turn carries on without it. */
+  Schema.TaggedStruct("thread.stopAgent", { threadId: Schema.String, toolId: Schema.String }),
   Schema.TaggedStruct("thread.close", { threadId: Schema.String }),
   /** Archiving also stops the thread's agent process; it resumes on the next message. */
   Schema.TaggedStruct("thread.archive", { threadId: Schema.String, archived: Schema.Boolean }),
@@ -637,6 +645,7 @@ export function isTranscriptEvent(
       "assistant.delta",
       "assistant.completed",
       "tool.started",
+      "tool.progress",
       "tool.completed",
       "approval.requested",
       "approval.resolved",

@@ -989,6 +989,8 @@ const make = Effect.gen(function* () {
       "provider.linkCancel": (command) => registry.cancelLink(command.provider),
       "provider.unlink": (command) => registry.unlink(command.provider),
       "thread.interrupt": (command) => withLiveSession(command.threadId, (s) => s.interrupt),
+      "thread.stopAgent": (command) =>
+        withLiveSession(command.threadId, (s) => s.stopAgent?.(command.toolId) ?? Effect.void),
       "approval.respond": (command) =>
         withLiveSession(command.threadId, (s) =>
           s.respondApproval(command.requestId, command.decision),

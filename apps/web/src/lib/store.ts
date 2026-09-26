@@ -58,6 +58,8 @@ export type TranscriptItem =
       readonly isError: boolean;
       /** Calls made by the subagent this call started. Missing on items cached before subagents showed. */
       readonly children?: ReadonlyArray<ToolCall>;
+      /** What that subagent is doing now, in its own words; updated every half minute or so. */
+      readonly progress?: string;
     }
   | {
       readonly kind: "approval";
@@ -309,6 +311,13 @@ const reduceItems = (
         children: [...(parent.children ?? []).filter((child) => child.id !== call.id), call],
       }));
     }),
+    Match.tag("tool.progress", (progress) =>
+      items.map((item) =>
+        item.kind === "tool" && item.id === progress.toolId
+          ? { ...item, progress: progress.summary }
+          : item,
+      ),
+    ),
     Match.tag("tool.completed", (tool) =>
       items.map((item) => {
         if (item.kind !== "tool") return item;

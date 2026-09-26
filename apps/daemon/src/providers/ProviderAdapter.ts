@@ -61,6 +61,8 @@ export interface ProviderSession {
   /** Slash commands this session accepts at the start of a message. */
   readonly commands: Effect.Effect<ReadonlyArray<SlashCommand>, ProviderError>;
   readonly interrupt: Effect.Effect<void, ProviderError>;
+  /** Stops the subagent started by tool call `toolId`, for harnesses that run subagents. */
+  readonly stopAgent?: (toolId: string) => Effect.Effect<void, ProviderError>;
   readonly respondApproval: (
     requestId: string,
     decision: ApprovalDecision,

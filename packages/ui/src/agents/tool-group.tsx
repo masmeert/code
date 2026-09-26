@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
 import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
 import { ToolResultOutput } from "@apcode/ui/agents/tool-result";
@@ -37,7 +37,7 @@ const CATEGORY = new Map<string, Category>([
   ["TodoWrite", "todo"],
 ]);
 
-const categoryOf = (name: string): Category =>
+export const categoryOf = (name: string): Category =>
   name.startsWith("mcp__browser__") ? "browser" : (CATEGORY.get(name) ?? "other");
 
 const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
@@ -69,7 +69,7 @@ const phrase = (category: Category, calls: ReadonlyArray<ToolCall>): string => {
 };
 
 /** Present-tense label for the call that is currently running; for a subagent, what it's doing now. */
-const livePhrase = (call: ToolCall): string => {
+export const livePhrase = (call: ToolCall): string => {
   const child = call.children?.findLast((child) => child.output === null);
   if (child) return `${call.summary || "Subagent"}: ${livePhrase(child)}`;
   switch (categoryOf(call.name)) {
@@ -108,7 +108,7 @@ const VERB: Record<Category, string> = {
 
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
-const summarize = (calls: ReadonlyArray<ToolCall>): string => {
+export const summarize = (calls: ReadonlyArray<ToolCall>): string => {
   const byCategory = new Map<Category, Array<ToolCall>>();
   for (const call of calls) {
     const category = categoryOf(call.name);
@@ -132,8 +132,37 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-function ToolCallRow({ call, live }: { call: ToolCall; live: boolean }) {
+/** A call to open and scroll to; a new object each time, so asking again works after closing it. */
+export interface ToolReveal {
+  readonly toolId: string;
+}
+
+/** Opens on a new `reveal`, during render rather than in an effect, so a group and its row open together and the row can be scrolled to. */
+function useRevealOpen(reveal: ToolReveal | null) {
   const [open, setOpen] = useState(false);
+  const [seen, setSeen] = useState(reveal);
+  if (reveal !== seen) {
+    setSeen(reveal);
+    if (reveal) setOpen(true);
+  }
+  return [open, setOpen] as const;
+}
+
+export function ToolCallRow({
+  call,
+  live,
+  reveal,
+}: {
+  call: ToolCall;
+  live: boolean;
+  reveal: ToolReveal | null;
+}) {
+  const revealHere = reveal?.toolId === call.id ? reveal : null;
+  const [open, setOpen] = useRevealOpen(revealHere);
+  const row = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (revealHere) row.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [revealHere]);
   const contentId = useId();
   const running = live && call.output === null;
   const children = call.children ?? [];
@@ -141,7 +170,7 @@ function ToolCallRow({ call, live }: { call: ToolCall; live: boolean }) {
   const category = categoryOf(call.name);
 
   return (
-    <div>
+    <div ref={row}>
       <button
         type="button"
         disabled={!expandable}
@@ -183,7 +212,7 @@ function ToolCallRow({ call, live }: { call: ToolCall; live: boolean }) {
           {children.length ? (
             <div className="mb-1.5 ml-1.5 border-l border-border pl-3">
               {children.map((child) => (
-                <ToolCallRow key={child.id} call={child} live={live} />
+                <ToolCallRow key={child.id} call={child} live={live} reveal={null} />
               ))}
             </div>
           ) : null}
@@ -205,8 +234,17 @@ function ToolCallRow({ call, live }: { call: ToolCall; live: boolean }) {
  * `live` is whether the thread is still working: a call left without output after
  * the thread stops (interrupt, crash, restart) never finished and isn't running.
  */
-export function ToolGroup({ calls, live }: { calls: ReadonlyArray<ToolCall>; live: boolean }) {
-  const [open, setOpen] = useState(false);
+export function ToolGroup({
+  calls,
+  live,
+  reveal = null,
+}: {
+  calls: ReadonlyArray<ToolCall>;
+  live: boolean;
+  reveal?: ToolReveal | null;
+}) {
+  const revealHere = calls.some((call) => call.id === reveal?.toolId) ? reveal : null;
+  const [open, setOpen] = useRevealOpen(revealHere);
   const contentId = useId();
   const running = live ? calls.find((call) => call.output === null) : undefined;
   const failed = calls.filter((call) => call.isError).length;
@@ -233,7 +271,7 @@ export function ToolGroup({ calls, live }: { calls: ReadonlyArray<ToolCall>; liv
       <AgentDisclosure id={contentId} open={open}>
         <div className="mt-0.5 ml-1.5 border-l border-border pl-3">
           {calls.map((call) => (
-            <ToolCallRow key={call.id} call={call} live={live} />
+            <ToolCallRow key={call.id} call={call} live={live} reveal={revealHere} />
           ))}
         </div>
       </AgentDisclosure>
