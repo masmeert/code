@@ -810,6 +810,7 @@ const AssistantTurn = memo(
     const settings = useStore((s) => s.settings);
     const blocks = useMemo(() => toBlocks(items), [items]);
     const lastItem = items.at(-1);
+    const finalTextId = blocks.findLast((block) => block.kind === "assistant")?.id;
     return (
       <Message from="assistant" className={className}>
         <MessageAvatar className={harnessTint(settings, provider).avatar}>
@@ -826,6 +827,7 @@ const AssistantTurn = memo(
               threadId={threadId}
               live={busy}
               streaming={busy && last && block === lastItem}
+              showActions={block.id === finalTextId && !(busy && last)}
             />
           ))}
         </MessageContent>
@@ -847,6 +849,8 @@ interface AgentBlockProps {
   threadId: string;
   live: boolean;
   streaming: boolean;
+  /** Only the turn's final text block gets a copy button, once the turn is done. */
+  showActions: boolean;
 }
 
 const AgentBlock = memo(
@@ -856,13 +860,20 @@ const AgentBlock = memo(
     a.threadId === b.threadId &&
     a.live === b.live &&
     a.streaming === b.streaming &&
+    a.showActions === b.showActions &&
     (a.block === b.block ||
       (a.block.kind === "tools" &&
         b.block.kind === "tools" &&
         sameItems(a.block.calls, b.block.calls))),
 );
 
-const AgentBlockContent = ({ block: item, threadId, live, streaming }: AgentBlockProps) => {
+const AgentBlockContent = ({
+  block: item,
+  threadId,
+  live,
+  streaming,
+  showActions,
+}: AgentBlockProps) => {
   switch (item.kind) {
     case "user":
       return null;
@@ -873,7 +884,7 @@ const AgentBlockContent = ({ block: item, threadId, live, streaming }: AgentBloc
             <StreamingResponse
               status={streaming ? "streaming" : "complete"}
               copyText={item.text}
-              showActions={!streaming}
+              showActions={showActions}
               showFeedback={false}
             >
               <Markdown streaming={streaming} className="selectable leading-relaxed">
