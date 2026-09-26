@@ -84,6 +84,16 @@ export const listBranches = async (cwd: string) => {
   return { current, branches };
 };
 
+/** Tracked and untracked files in `cwd`, minus ignored ones; empty outside a repo. */
+export const listFiles = async (cwd: string) => {
+  const { error, stdout } = await execGit(
+    cwd,
+    ["ls-files", "--cached", "--others", "--exclude-standard", "--deduplicate"],
+    { timeout: 5000, maxBuffer: 32 * 1024 * 1024 },
+  );
+  return error ? [] : stdout.split("\n").filter(Boolean);
+};
+
 /** Switches `cwd` to an existing local branch; resolves to git's error message on failure. */
 export const checkoutBranch = async (cwd: string, branch: string) => {
   const { branches } = await listBranches(cwd);

@@ -41,6 +41,7 @@ import {
   deleteThreadCheckpoints,
   hasCheckpoint,
   listBranches,
+  listFiles,
   pushBranch,
   readBranch,
   readCheckpointDiff,
@@ -931,6 +932,10 @@ const make = Effect.gen(function* () {
           );
         }),
       "git.listBranches": (command) => publishBranches(command.path),
+      "git.listFiles": ({ path }) =>
+        Effect.promise(() => listFiles(path)).pipe(
+          Effect.map((files) => publish(RuntimeEvent.cases["git.files"].make({ path, files }))),
+        ),
       "git.diff": (command) => Effect.promise(() => refreshDiff(command.path)),
       "git.checkout": ({ path, branch }) => changeBranch(path, () => checkoutBranch(path, branch)),
       "git.createBranch": ({ path, branch }) =>

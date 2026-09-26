@@ -522,6 +522,8 @@ export const RuntimeEvent = Schema.Union([
     branches: Schema.Array(Schema.String),
     error: Schema.NullOr(Schema.String),
   }),
+  /** Files in the repo at `path`, relative to it, for `@` mentions. */
+  Schema.TaggedStruct("git.files", { path: Schema.String, files: Schema.Array(Schema.String) }),
   /** Uncommitted changes (vs HEAD, untracked files included) in the repo at `path`, as one unified patch. */
   Schema.TaggedStruct("git.diff", {
     path: Schema.String,
@@ -599,6 +601,8 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("search", { query: Schema.String, requestId: Schema.String }),
   /** Answered with a `git.branches` event. */
   Schema.TaggedStruct("git.listBranches", { path: Schema.String }),
+  /** Answered with a `git.files` event. */
+  Schema.TaggedStruct("git.listFiles", { path: Schema.String }),
   /** Answered with a `git.diff` event. */
   Schema.TaggedStruct("git.diff", { path: Schema.String }),
   Schema.TaggedStruct("git.checkout", { path: Schema.String, branch: Schema.String }),

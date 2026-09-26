@@ -1,5 +1,6 @@
 import { PromptInput, PromptSelect, PromptSlider } from "@apcode/ui/agents/prompt-input";
 import { ProjectBadge } from "@/components/project-badge";
+import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
 import { cn } from "@apcode/ui/lib/utils";
 import {
   ClientCommand,
@@ -21,7 +22,16 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type SyntheticEvent,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { motion, useReducedMotion } from "motion/react";
 import {
   EFFORT_LABEL,
   EFFORTS,
@@ -100,6 +110,28 @@ interface SlashItem {
   readonly run?: () => void;
 }
 
+interface MenuItem {
+  readonly id: string;
+  readonly name: string;
+  readonly hint?: string;
+  readonly description: string;
+}
+
+const MAX_FILE_MATCHES = 50;
+
+/** Paths containing `query`, file-name matches first, then shallower paths. */
+function matchFiles(files: ReadonlyArray<string>, query: string) {
+  function rank(path: string) {
+    const name = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
+    return name.startsWith(query) ? 0 : name.includes(query) ? 1 : 2;
+  }
+  return files
+    .flatMap((path) => (path.toLowerCase().includes(query) ? [{ path, rank: rank(path) }] : []))
+    .sort((a, b) => a.rank - b.rank || a.path.length - b.path.length)
+    .slice(0, MAX_FILE_MATCHES)
+    .map(({ path }) => path);
+}
+
 const byteLength = (text: string) => new TextEncoder().encode(text).length;
 
 export const Composer = (props: ComposerProps) => {
@@ -133,10 +165,9 @@ export const Composer = (props: ComposerProps) => {
   const commands = useStore((s) => (threadId ? s.commands[threadId] : undefined));
   const slashQuery =
     threadId && /^\/\S*$/.test(draft.text) ? draft.text.slice(1).toLowerCase() : null;
-  const [slashDismissed, setSlashDismissed] = useState<string | null>(null);
-  const [slashIndex, setSlashIndex] = useState(0);
+  const [dismissed, setDismissed] = useState<string | null>(null);
   const slashItems: Array<SlashItem> =
-    slashQuery === null || slashDismissed === draft.text
+    slashQuery === null || dismissed === draft.text
       ? []
       : [
           {
@@ -149,12 +180,10 @@ export const Composer = (props: ComposerProps) => {
             .filter((c) => c.name !== "compact")
             .map((c) => ({ name: c.name, description: c.description, hint: c.argumentHint })),
         ].filter((item) => item.name.toLowerCase().startsWith(slashQuery));
-  const slashOpen = slashItems.length > 0;
   const slashTyped = slashQuery !== null;
   useEffect(() => {
     if (slashTyped && threadId) send(ClientCommand.cases["thread.listCommands"].make({ threadId }));
   }, [slashTyped, threadId]);
-  useEffect(() => setSlashIndex(0), [slashQuery]);
 
   const pickSlash = (item: SlashItem) => {
     if (item.run) {
@@ -163,22 +192,87 @@ export const Composer = (props: ComposerProps) => {
     } else setText(`/${item.name} `);
   };
 
+  // --- @ mentions: "@" at the start or after whitespace searches the project's files.
+  const input = useRef<HTMLTextAreaElement | null>(null);
+  const [caret, setCaret] = useState(0);
+  function trackCaret(event: SyntheticEvent<HTMLTextAreaElement>) {
+    input.current = event.currentTarget;
+    setCaret(event.currentTarget.selectionStart);
+  }
+  const mention = props.cwd ? /(?:^|\s)@(\S*)$/.exec(draft.text.slice(0, caret)) : null;
+  const mentionQuery = mention && dismissed !== draft.text ? mention[1]!.toLowerCase() : null;
+  const repoFiles = useStore((s) => (props.cwd ? s.files[props.cwd] : undefined));
+  const fileMatches = useMemo(
+    () => (repoFiles && mentionQuery !== null ? matchFiles(repoFiles, mentionQuery) : []),
+    [repoFiles, mentionQuery],
+  );
+  const mentionTyped = mention !== null;
+  useEffect(() => {
+    if (mentionTyped && props.cwd)
+      send(ClientCommand.cases["git.listFiles"].make({ path: props.cwd }));
+  }, [mentionTyped, props.cwd]);
+
+  const pickFile = (path: string) => {
+    const start = caret - mention![1]!.length - 1;
+    const end = caret + /^\S*/.exec(draft.text.slice(caret))![0].length;
+    // Quoted so a path with spaces still reads as one mention.
+    const token = /\s/.test(path) ? `@"${path}" ` : `@${path} `;
+    const rest = draft.text.slice(end).replace(/^ +/, "");
+    const nextCaret = start + token.length;
+    setText(draft.text.slice(0, start) + token + rest);
+    setCaret(nextCaret);
+    requestAnimationFrame(() => input.current?.setSelectionRange(nextCaret, nextCaret));
+  };
+
+  const menu =
+    slashItems.length > 0
+      ? {
+          label: "Commands",
+          items: slashItems.map((item) => ({
+            id: item.name,
+            name: `/${item.name}`,
+            hint: item.hint,
+            description: item.description,
+          })),
+          pick: (index: number) => pickSlash(slashItems[index]!),
+          empty: null,
+        }
+      : mentionQuery !== null
+        ? {
+            label: "Files",
+            items: fileMatches.map((path) => ({
+              id: path,
+              name: path.slice(path.lastIndexOf("/") + 1),
+              description: path.slice(0, path.lastIndexOf("/") + 1),
+            })),
+            pick: (index: number) => pickFile(fileMatches[index]!),
+            empty: repoFiles ? "No matching files" : "Loading files…",
+          }
+        : null;
+  const reduceMotion = useReducedMotion();
+  const {
+    activeIndex: menuIndex,
+    pointed,
+    moveTo,
+    moveActive,
+  } = useRowCursor(menu?.items ?? [], slashQuery ?? mentionQuery ?? "", { loop: true });
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (slashOpen) {
+    input.current = event.currentTarget;
+    if (menu && event.key === "Escape") {
+      event.preventDefault();
+      setDismissed(draft.text);
+      return;
+    }
+    if (menu?.items.length) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
-        const step = event.key === "ArrowDown" ? 1 : -1;
-        setSlashIndex((i) => (i + step + slashItems.length) % slashItems.length);
+        moveActive(event.key === "ArrowDown" ? 1 : -1);
         return;
       }
       if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
         event.preventDefault();
-        pickSlash(slashItems[Math.min(slashIndex, slashItems.length - 1)]!);
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setSlashDismissed(draft.text);
+        menu.pick(menuIndex);
         return;
       }
     }
@@ -223,14 +317,28 @@ export const Composer = (props: ComposerProps) => {
   return (
     <div className="shrink-0 px-3 pb-3">
       <div className="relative mx-auto max-w-3xl">
-        {slashOpen ? <SlashMenu items={slashItems} active={slashIndex} onPick={pickSlash} /> : null}
+        {menu ? (
+          <SuggestionMenu
+            label={menu.label}
+            items={menu.items}
+            empty={menu.empty}
+            active={menuIndex}
+            // Glides after the pointer only, like the command palette: arrow keys want each step at once.
+            glide={pointed && !reduceMotion}
+            onPoint={moveTo}
+            onPick={menu.pick}
+          />
+        ) : null}
         <PromptInput
           value={draft.text}
           onValueChange={(text) => {
             if (recall.current && text !== recall.current.text) recall.current = null;
             setText(text);
+            setCaret(input.current?.selectionStart ?? text.length);
           }}
           onKeyDown={onKeyDown}
+          onSelect={trackCaret}
+          onFocus={trackCaret}
           loading={props.busy ?? false}
           disabled={props.disabled ?? false}
           submitDisabled={props.sendDisabled ?? false}
@@ -327,45 +435,75 @@ export const Composer = (props: ComposerProps) => {
   );
 };
 
-const SlashMenu = ({
+function SuggestionMenu({
+  label,
   items,
+  empty,
   active,
+  glide,
+  onPoint,
   onPick,
 }: {
-  items: ReadonlyArray<SlashItem>;
+  label: string;
+  items: ReadonlyArray<MenuItem>;
+  /** Shown when there are no items. */
+  empty: string | null;
   active: number;
-  onPick: (item: SlashItem) => void;
-}) => (
-  <div
-    role="listbox"
-    aria-label="Commands"
-    className="absolute inset-x-0 bottom-full z-20 mb-2 max-h-72 overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-1 shadow-panel"
-  >
-    {items.map((item, index) => (
-      <button
-        key={item.name}
-        type="button"
-        role="option"
-        aria-selected={index === active}
-        // Keep focus in the textarea.
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => onPick(item)}
-        className={cn(
-          "flex w-full items-baseline gap-2 rounded-md px-2 py-1.5 text-left text-[13px] outline-none",
-          index === active ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60",
-        )}
-      >
-        <span className="shrink-0 font-mono text-foreground">/{item.name}</span>
-        {item.hint ? (
-          <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">
-            {item.hint}
-          </span>
-        ) : null}
-        <span className="min-w-0 truncate text-xs">{item.description}</span>
-      </button>
-    ))}
-  </div>
-);
+  /** Whether the highlight glides to the active row, rather than appearing there. */
+  glide: boolean;
+  onPoint: (id: string) => void;
+  onPick: (index: number) => void;
+}) {
+  const highlightId = useId();
+  return (
+    // layoutScroll: the glide accounts for how far the list is scrolled. isolate: the highlight
+    // passes under the rows it crosses instead of over the ones before its own.
+    <motion.div
+      role="listbox"
+      aria-label={label}
+      layoutScroll
+      className="absolute inset-x-0 bottom-full isolate z-20 mb-2 max-h-72 overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-1.5 shadow-panel"
+    >
+      {items.length ? null : (
+        <div className="px-2.5 py-1.5 text-xs text-muted-foreground">{empty}</div>
+      )}
+      {items.map((item, index) => (
+        <button
+          key={item.id}
+          type="button"
+          role="option"
+          tabIndex={-1}
+          aria-selected={index === active}
+          ref={index === active ? (node) => node?.scrollIntoView({ block: "nearest" }) : undefined}
+          // Not mouseenter: rows scrolling under a resting pointer would take the highlight from the keyboard.
+          onMouseMove={index === active ? undefined : () => onPoint(item.id)}
+          // Keep focus in the textarea.
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onPick(index)}
+          className={cn(
+            "relative flex w-full items-baseline gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] outline-none",
+            index === active ? "text-foreground" : "text-muted-foreground",
+          )}
+        >
+          {index === active ? (
+            <motion.span
+              layoutId={highlightId}
+              transition={glide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }}
+              className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-muted"
+            />
+          ) : null}
+          <span className="shrink-0 font-mono text-foreground">{item.name}</span>
+          {item.hint ? (
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">
+              {item.hint}
+            </span>
+          ) : null}
+          <span className="min-w-0 truncate text-xs">{item.description}</span>
+        </button>
+      ))}
+    </motion.div>
+  );
+}
 
 const StashSelect = ({ prefsKey, openSignal }: { prefsKey: string; openSignal: number }) => {
   const stashes = useStashes();

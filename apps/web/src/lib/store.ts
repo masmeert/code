@@ -121,6 +121,8 @@ export interface State {
   readonly seen: Readonly<Record<string, SeenMark>>;
   /** Local branches per repo path, fetched on demand by the branch picker. */
   readonly branches: Readonly<Record<string, BranchList>>;
+  /** Files per repo path, fetched when an `@` mention starts. */
+  readonly files: Readonly<Record<string, ReadonlyArray<string>>>;
   /** Uncommitted changes per repo path, fetched on demand by the diff panel. */
   readonly diffs: Readonly<Record<string, RepoDiff>>;
   /** Working-tree/upstream state per repo path, fetched on demand by the git menu. */
@@ -227,6 +229,7 @@ const initial: State = {
   transcripts: {},
   seen: readSeen(),
   branches: {},
+  files: {},
   diffs: {},
   repos: {},
   commands: {},
@@ -427,10 +430,13 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
       "providers.updated": ({ providers }) => ({ ...state, providers }),
       "sourceControl.updated": ({ statuses }) => ({ ...state, sourceControl: statuses }),
     }),
-    Match.tag("git.branches", ({ path, current, branches, error }) => ({
-      ...state,
-      branches: { ...state.branches, [path]: { current, branches, error } },
-    })),
+    Match.tags({
+      "git.branches": ({ path, current, branches, error }) => ({
+        ...state,
+        branches: { ...state.branches, [path]: { current, branches, error } },
+      }),
+      "git.files": ({ path, files }) => ({ ...state, files: { ...state.files, [path]: files } }),
+    }),
     Match.tag("git.diff", ({ path, patch, truncated, error }) => ({
       ...state,
       diffs: { ...state.diffs, [path]: { patch, truncated, error } },
