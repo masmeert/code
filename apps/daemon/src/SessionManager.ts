@@ -36,6 +36,7 @@ import {
   checkoutBranch,
   checkpointRef,
   commitAll,
+  copyCheckpoints,
   createBranch,
   deleteCheckpoints,
   deleteThreadCheckpoints,
@@ -450,7 +451,8 @@ const make = Effect.gen(function* () {
       void (async () => {
         await deleteThreadCheckpoints(cwd, threadId);
         // A worktree with work left in it stays for the user to deal with; its branch always stays.
-        if (worktree) {
+        // A fork shares its thread's worktree, so the last one out removes it.
+        if (worktree && ![...threads.values()].some((other) => other.info.cwd === cwd)) {
           const root = await repoRoot(cwd);
           if (root) await removeWorktreeIfClean(root);
         }
@@ -587,6 +589,67 @@ const make = Effect.gen(function* () {
         return yield* Effect.fail(
           fail(`Rewound the conversation, but couldn't restore the files: ${error}`),
         );
+    });
+
+  /** Starts a new thread with the conversation through a message's turn: the provider's copy first (the step that can refuse), then the transcript and file snapshots. */
+  const fork = (command: Extract<ClientCommand, { _tag: "thread.fork" }>) =>
+    Effect.gen(function* () {
+      const source = yield* getEntry(command.threadId);
+      const { cwd, provider } = source.info;
+      if (isBusy(source)) return yield* Effect.fail(fail("Stop the agent before forking"));
+      const cut = store.findTurnsAfter(source.info.id, command.messageId);
+      if (!cut) return yield* Effect.fail(fail("That message is gone"));
+      const resumeToken = source.resumeToken
+        ? yield* ADAPTERS[provider].fork({
+            cwd,
+            harness: (yield* settingsStore.get).providers[provider],
+            resumeToken: source.resumeToken,
+            messageId: cut.from[0]?.messageId ?? null,
+            keep: cut.before,
+            dropTurns: cut.from.filter((message) => !message.steer).length,
+          })
+        : null;
+      const now = Date.now();
+      const info: ThreadInfo = {
+        id: crypto.randomUUID(),
+        projectId: source.info.projectId,
+        provider,
+        model: source.info.model,
+        cwd,
+        title: source.info.title.startsWith("Fork of ")
+          ? source.info.title
+          : titleFrom(`Fork of ${source.info.title}`, source.info.title),
+        status: "idle",
+        createdAt: now,
+        updatedAt: now,
+        branch: source.info.branch,
+        archivedAt: null,
+        worktree: source.info.worktree,
+      };
+      threads.set(info.id, {
+        info,
+        session: null,
+        resumeToken,
+        activeAt: now,
+        currentTurn: null,
+        lock: yield* Semaphore.make(1),
+      });
+      store.insertThread(info);
+      store.copyEvents(source.info.id, info.id, cut.seq);
+      if (resumeToken) store.setResumeToken(info.id, resumeToken);
+      publish(
+        RuntimeEvent.cases["thread.created"].make({
+          thread: info,
+          requestId: command.requestId,
+          hasTranscript: true,
+        }),
+      );
+      void copyCheckpoints(
+        cwd,
+        source.info.id,
+        info.id,
+        cut.from.map((message) => message.messageId),
+      );
     });
 
   const compact = (threadId: string) =>
@@ -914,6 +977,7 @@ const make = Effect.gen(function* () {
           send(entry, command.text, command.options),
         ),
       "thread.rewind": rewind,
+      "thread.fork": fork,
       "thread.compact": (command) => compact(command.threadId),
       "thread.listCommands": (command) => listCommands(command.threadId),
       "thread.readUsage": (command) => Effect.promise(() => readUsage(command.threadId)),

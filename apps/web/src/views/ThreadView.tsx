@@ -71,6 +71,7 @@ import {
 import {
   createThread,
   type FollowUp,
+  forkThread,
   loadOlder,
   markSeen,
   queueFollowUp,
@@ -1062,6 +1063,7 @@ const AgentBlockContent = ({
   streaming,
   showActions,
 }: AgentBlockProps) => {
+  const forking = useStore((s) => s.forking?.messageId === item.id);
   switch (item.kind) {
     case "user":
       return null;
@@ -1072,6 +1074,8 @@ const AgentBlockContent = ({
             <StreamingResponse
               status={streaming ? "streaming" : "complete"}
               copyText={item.text}
+              onFork={live ? undefined : () => forkThread(threadId, item.id)}
+              forking={forking}
               showActions={showActions}
               showFeedback={false}
             >

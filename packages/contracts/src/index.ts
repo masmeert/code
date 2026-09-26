@@ -407,6 +407,8 @@ export const RuntimeEvent = Schema.Union([
   Schema.TaggedStruct("thread.created", {
     thread: ThreadInfo,
     requestId: Schema.NullOr(Schema.String),
+    /** It starts with a transcript (a fork), for clients to fetch rather than start empty. */
+    hasTranscript: Schema.optional(Schema.Boolean),
   }),
   Schema.TaggedStruct("thread.model", {
     threadId: Schema.String,
@@ -588,6 +590,15 @@ export const ClientCommand = Schema.Union([
     threadId: Schema.String,
     messageId: Schema.String,
     restoreFiles: Schema.Boolean,
+  }),
+  /**
+   * Starts a new thread with the conversation through the turn of message `messageId`;
+   * the original stays as it is. Both work in the same folder.
+   */
+  Schema.TaggedStruct("thread.fork", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+    requestId: Schema.String,
   }),
   /** Summarizes the conversation so far to free up context. */
   Schema.TaggedStruct("thread.compact", { threadId: Schema.String }),

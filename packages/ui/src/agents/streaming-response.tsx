@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Copy, RotateCcw, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Check, ChevronRight, Copy, GitFork, RotateCcw, ThumbsDown, ThumbsUp } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { type CitationItem, CitationList, CitationStack } from "@apcode/ui/agents/citations";
@@ -19,6 +19,10 @@ export interface StreamingResponseProps {
   /** Overrides the built-in clipboard action. */
   onCopy?: () => void | Promise<void>;
   onRetry?: () => void;
+  /** Continues the conversation from this response in a new thread. */
+  onFork?: () => void;
+  /** A fork asked for from here is on its way. */
+  forking?: boolean;
   /** Optional sources shown as a compact footer disclosure after streaming. */
   sources?: CitationItem[];
   sourcesOpen?: boolean;
@@ -77,6 +81,8 @@ export function StreamingResponse({
   copyText,
   onCopy,
   onRetry,
+  onFork,
+  forking = false,
   sources = [],
   sourcesOpen,
   defaultSourcesOpen = false,
@@ -106,7 +112,9 @@ export function StreamingResponse({
   const canCopy = Boolean(copyText || onCopy);
   const hasSources = sources.length > 0;
   const shouldShowActions =
-    showActions && !streaming && (canCopy || onRetry || (complete && showFeedback) || hasSources);
+    showActions &&
+    !streaming &&
+    (canCopy || onRetry || onFork || (complete && showFeedback) || hasSources);
   const sourcesContentId = `${baseId}-sources`;
   const resolvedSourcePrefix = sourceIdPrefix ?? `response-source-${baseId.replace(/:/g, "")}`;
 
@@ -172,6 +180,11 @@ export function StreamingResponse({
               {onRetry ? (
                 <ResponseAction label="Retry response" onClick={onRetry}>
                   <RotateCcw className="size-3.5" />
+                </ResponseAction>
+              ) : null}
+              {onFork ? (
+                <ResponseAction label={forking ? "Forking…" : "Fork from here"} onClick={onFork}>
+                  <GitFork className={cn("size-3.5", forking && "animate-pulse")} />
                 </ResponseAction>
               ) : null}
               {complete && showFeedback ? (

@@ -203,7 +203,7 @@ export const CodexServerRequest = Schema.Union([
 ]).pipe(Schema.toTaggedUnion("method"));
 export type CodexServerRequest = typeof CodexServerRequest.Type;
 
-/** What `thread/start` and `thread/resume` answer with. */
+/** What `thread/start`, `thread/resume` and `thread/fork` answer with. */
 export const ThreadResponse = Schema.Struct({
   thread: Schema.Struct({ id: Schema.String }),
   /** The model it runs, the configured default when none was asked for. */

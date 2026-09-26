@@ -29,6 +29,7 @@ import {
   ProviderError,
   summarizeToolInput,
   textWithFiles,
+  type ForkInput,
   type ProviderAdapter,
   type ProviderSession,
   type StartSessionInput,
@@ -532,43 +533,48 @@ function isPrompt(entry: SessionMessage) {
 }
 
 /**
- * Forks the session just before the message: the original stays intact, and the fork
- * is what later turns resume. Messages carry our id when we sent them; older ones are
- * found by counting prompts.
+ * Forks the session just before the message (all of it without one): the original stays
+ * intact, and the fork is what later turns resume. Messages carry our id when we sent
+ * them; older ones are found by counting prompts.
  */
-const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, messageId, keep }) =>
+async function forkBefore({ cwd, harness, resumeToken, messageId, keep }: ForkInput) {
+  if (messageId !== null && keep === 0) return null;
+  // The SDK's session-log helpers read CLAUDE_CONFIG_DIR from our own env, not from options.
+  // ponytail: swaps process.env for the call; a CLI spawned meanwhile without its own config dir would see it.
+  const configDir = harnessLaunch("claude", harness).env.CLAUDE_CONFIG_DIR;
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  if (configDir !== undefined) process.env.CLAUDE_CONFIG_DIR = configDir;
+  try {
+    if (messageId === null) return (await forkSession(resumeToken, { dir: cwd })).sessionId;
+    const entries = await getSessionMessages(resumeToken, { dir: cwd });
+    let index = entries.findIndex((entry) => entry.uuid === messageId);
+    if (index === -1) {
+      let prompts = 0;
+      index = entries.findIndex((entry) => isPrompt(entry) && prompts++ === keep);
+    }
+    if (index <= 0) throw new Error("couldn't find that message in Claude's session log");
+    const { sessionId } = await forkSession(resumeToken, {
+      dir: cwd,
+      upToMessageId: entries[index - 1]!.uuid,
+    });
+    return sessionId;
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previous;
+  }
+}
+
+const rewind: ProviderAdapter["rewind"] = (input) =>
   Effect.tryPromise({
-    try: async () => {
-      if (keep === 0) return null;
-      // The SDK's session-log helpers read CLAUDE_CONFIG_DIR from our own env, not from options.
-      // ponytail: swaps process.env for the call; a CLI spawned meanwhile without its own config dir would see it.
-      const configDir = harnessLaunch("claude", harness).env.CLAUDE_CONFIG_DIR;
-      const previous = process.env.CLAUDE_CONFIG_DIR;
-      if (configDir !== undefined) process.env.CLAUDE_CONFIG_DIR = configDir;
-      try {
-        return await forkBefore(cwd, resumeToken, messageId, keep);
-      } finally {
-        if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
-        else process.env.CLAUDE_CONFIG_DIR = previous;
-      }
-    },
+    try: () => forkBefore(input),
     catch: (e) => fail(`Couldn't rewind: ${e instanceof Error ? e.message : String(e)}`),
   });
 
-async function forkBefore(cwd: string, resumeToken: string, messageId: string, keep: number) {
-  const entries = await getSessionMessages(resumeToken, { dir: cwd });
-  let index = entries.findIndex((entry) => entry.uuid === messageId);
-  if (index === -1) {
-    let prompts = 0;
-    index = entries.findIndex((entry) => isPrompt(entry) && prompts++ === keep);
-  }
-  if (index <= 0) throw new Error("couldn't find that message in Claude's session log");
-  const { sessionId } = await forkSession(resumeToken, {
-    dir: cwd,
-    upToMessageId: entries[index - 1]!.uuid,
+const fork: ProviderAdapter["fork"] = (input) =>
+  Effect.tryPromise({
+    try: () => forkBefore(input),
+    catch: (e) => fail(`Couldn't fork: ${e instanceof Error ? e.message : String(e)}`),
   });
-  return sessionId;
-}
 
 /** A prompt-less session resumed from the log answers as the live one would; the cost call is experimental, so it may come back empty. */
 const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, model }) =>
@@ -593,4 +599,4 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
     catch: (e) => fail(`Couldn't read usage: ${e instanceof Error ? e.message : String(e)}`),
   });
 
-export const ClaudeAdapter: ProviderAdapter = { kind: "claude", start, rewind, readUsage };
+export const ClaudeAdapter: ProviderAdapter = { kind: "claude", start, rewind, fork, readUsage };

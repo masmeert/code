@@ -74,6 +74,21 @@ export class ThreadStore extends Context.Service<
       readonly before: number;
       readonly from: ReadonlyArray<Extract<RuntimeEvent, { _tag: "user.message" }>>;
     } | null;
+    /**
+     * Where the turns after message `messageId` (of any kind) start: the first user message
+     * not sent mid-turn, null when that message's turn is the last.
+     */
+    readonly findTurnsAfter: (
+      threadId: string,
+      messageId: string,
+    ) => {
+      readonly seq: number | null;
+      /** User messages before it. */
+      readonly before: number;
+      readonly from: ReadonlyArray<Extract<RuntimeEvent, { _tag: "user.message" }>>;
+    } | null;
+    /** Copies a thread's events before id `before` (all of them when null) to another thread. */
+    readonly copyEvents: (fromThreadId: string, toThreadId: string, before: number | null) => void;
     /** Deletes the thread's events from id `seq` on. */
     readonly truncate: (threadId: string, seq: number) => void;
     /** Messages matching `query` (words, prefix-matched), newest first. */
@@ -201,6 +216,18 @@ const make = Effect.acquireRelease(
     const selectUserMessages = db.prepare<{ seq: number; json: string }, { threadId: string }>(
       "SELECT seq, json FROM events WHERE thread_id = $threadId AND kind = 'user.message' ORDER BY seq",
     );
+    const selectMessageSeq = db.prepare<{ seq: number }, { threadId: string; messageId: string }>(
+      "SELECT seq FROM events WHERE thread_id = $threadId AND json_extract(json, '$.messageId') = $messageId ORDER BY seq LIMIT 1",
+    );
+    const copyEvents = db.prepare(
+      "INSERT INTO events (thread_id, kind, json) SELECT $to, kind, json_set(json, '$.threadId', $to) FROM events WHERE thread_id = $from AND seq < $before ORDER BY seq",
+    );
+    const indexThread = db.prepare(
+      `INSERT INTO messages_fts (text, thread_id, message_id, sender, seq)
+        SELECT json_extract(json, '$.text'), thread_id, json_extract(json, '$.messageId'),
+          CASE kind WHEN 'user.message' THEN 'user' ELSE 'assistant' END, seq
+        FROM events WHERE thread_id = $threadId AND kind IN ('user.message', 'assistant.completed') AND json_extract(json, '$.text') != ''`,
+    );
     const truncateEvents = db.prepare(
       "DELETE FROM events WHERE thread_id = $threadId AND seq >= $seq",
     );
@@ -224,6 +251,10 @@ const make = Effect.acquireRelease(
           onNone: () => [],
           onSome: (event) => [{ id: row.seq, event }],
         }),
+      );
+    const userMessages = (threadId: string) =>
+      toStored(selectUserMessages.all({ threadId })).flatMap(({ id, event }) =>
+        RuntimeEvent.guards["user.message"](event) ? [{ seq: id, event }] : [],
       );
     const selectAfter = db.prepare<
       { seq: number; json: string },
@@ -381,9 +412,7 @@ const make = Effect.acquireRelease(
         return seq;
       },
       findUserMessage: (threadId, messageId) => {
-        const messages = toStored(selectUserMessages.all({ threadId })).flatMap(({ id, event }) =>
-          RuntimeEvent.guards["user.message"](event) ? [{ seq: id, event }] : [],
-        );
+        const messages = userMessages(threadId);
         const index = messages.findIndex((m) => m.event.messageId === messageId);
         if (index === -1) return null;
         return {
@@ -392,6 +421,24 @@ const make = Effect.acquireRelease(
           before: index,
           from: messages.slice(index).map((m) => m.event),
         };
+      },
+      findTurnsAfter: (threadId, messageId) => {
+        const after = selectMessageSeq.get({ threadId, messageId });
+        if (!after) return null;
+        const messages = userMessages(threadId);
+        const index = messages.findIndex((m) => m.seq > after.seq && !m.event.steer);
+        if (index === -1) return { seq: null, before: messages.length, from: [] };
+        return {
+          seq: messages[index]!.seq,
+          before: index,
+          from: messages.slice(index).map((m) => m.event),
+        };
+      },
+      copyEvents: (from, to, before) => {
+        db.transaction(() => {
+          copyEvents.run({ from, to, before: before ?? Number.MAX_SAFE_INTEGER });
+          indexThread.run({ threadId: to });
+        })();
       },
       truncate: (threadId, seq) => {
         db.transaction(() => {

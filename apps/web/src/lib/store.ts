@@ -111,6 +111,8 @@ export interface State {
   readonly readingUsage: Readonly<Record<string, boolean>>;
   /** Subscription rate limits per harness, read when the usage panel opens. */
   readonly limits: Partial<Record<ProviderKind, ProviderLimits>>;
+  /** The message this window asked to fork from, until the fork appears or fails. */
+  readonly forking: { readonly threadId: string; readonly messageId: string } | null;
   /** Set when a thread this window asked for appears, so the window can open it. */
   readonly createdHere: { readonly threadId: string } | null;
   readonly order: ReadonlyArray<string>;
@@ -223,6 +225,7 @@ const initial: State = {
   authFlows: {},
   limits: {},
   readingUsage: {},
+  forking: null,
   createdHere: null,
   order: [],
   threads: {},
@@ -240,7 +243,8 @@ const initial: State = {
 };
 
 /** `thread.create` commands sent from this window, by request id. */
-const ownRequests = new Map<string, { readonly open: boolean; readonly options: TurnOptions }>();
+/** A fork has no options of its own to start its composer from. */
+const ownRequests = new Map<string, { readonly open: boolean; readonly options?: TurnOptions }>();
 /** What threads created here sent their first message with, so their composer starts from the draft's picks. */
 const firstOptions = new Map<string, TurnOptions>();
 export const firstTurnOptions = (threadId: string) => firstOptions.get(threadId);
@@ -457,15 +461,21 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
       ...state,
       authFlows: { ...state.authFlows, [flow.provider]: flow },
     })),
-    Match.tag("thread.created", ({ thread, requestId }) => {
+    Match.tag("thread.created", ({ thread, requestId, hasTranscript }) => {
       const request = requestId === null ? undefined : ownRequests.get(requestId);
       if (requestId !== null) ownRequests.delete(requestId);
-      if (request) firstOptions.set(thread.id, request.options);
-      return {
+      if (request?.options) firstOptions.set(thread.id, request.options);
+      const next = {
         ...state,
+        forking: request ? null : state.forking,
         createdHere: request?.open ? { threadId: thread.id } : state.createdHere,
         order: [thread.id, ...state.order.filter((id) => id !== thread.id)],
         threads: { ...state.threads, [thread.id]: thread },
+      };
+      // A fork's transcript loads like any other's once it's opened.
+      if (hasTranscript) return next;
+      return {
+        ...next,
         // Brand new: nothing to fetch, it's live from its first event.
         transcripts: {
           ...state.transcripts,
@@ -797,6 +807,9 @@ const onFrame = (frame: ServerFrame) =>
           ),
       ),
     event: ({ event, id }) => {
+      // A failed fork reports on the thread it was forked from.
+      if (RuntimeEvent.guards.error(event) && event.threadId === state.forking?.threadId)
+        setState({ ...state, forking: null });
       if (!isTranscriptEvent(event)) return applyShellEvent(event);
       const transcript = state.transcripts[event.threadId];
       // Not following this thread, or already have it (a replay can overlap live events).
@@ -976,6 +989,15 @@ export const createThread = (input: {
   const requestId = crypto.randomUUID();
   ownRequests.set(requestId, { open, options: command.options });
   send(ClientCommand.cases["thread.create"].make({ requestId, ...command }));
+};
+
+/** Starts a new thread with the conversation through a message's turn, and switches to it. */
+export const forkThread = (threadId: string, messageId: string) => {
+  if (state.forking) return;
+  const requestId = crypto.randomUUID();
+  ownRequests.set(requestId, { open: true });
+  setState({ ...state, forking: { threadId, messageId } });
+  send(ClientCommand.cases["thread.fork"].make({ threadId, messageId, requestId }));
 };
 
 // --- follow-ups ----------------------------------------------------------------

@@ -636,6 +636,31 @@ const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, dropTurn
     catch: (e) => fail(`Couldn't rewind: ${e instanceof Error ? e.message : String(e)}`),
   });
 
+/** Forks the thread in a short-lived app-server and drops the fork's last turns. */
+const fork: ProviderAdapter["fork"] = ({ cwd, harness, resumeToken, dropTurns }) =>
+  Effect.tryPromise({
+    try: async () => {
+      const rpc = await connectCodex(cwd, {}, harnessLaunch("codex", harness));
+      try {
+        const { thread } = await rpc.request(
+          "thread/fork",
+          { threadId: resumeToken, excludeTurns: true, cwd },
+          ThreadResponse,
+        );
+        if (dropTurns > 0)
+          await rpc.request(
+            "thread/rollback",
+            { threadId: thread.id, numTurns: dropTurns },
+            Schema.Unknown,
+          );
+        return thread.id;
+      } finally {
+        rpc.close();
+      }
+    },
+    catch: (e) => fail(`Couldn't fork: ${e instanceof Error ? e.message : String(e)}`),
+  });
+
 /** Codex reports a thread's token usage as it loads it, so a short-lived app-server resumes it and waits for that. */
 const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, model }) =>
   Effect.tryPromise({
@@ -675,4 +700,4 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
     catch: (e) => fail(`Couldn't read usage: ${e instanceof Error ? e.message : String(e)}`),
   });
 
-export const CodexAdapter: ProviderAdapter = { kind: "codex", start, rewind, readUsage };
+export const CodexAdapter: ProviderAdapter = { kind: "codex", start, rewind, fork, readUsage };

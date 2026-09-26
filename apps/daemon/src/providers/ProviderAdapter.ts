@@ -75,16 +75,20 @@ export interface ProviderSession {
   readonly close: Effect.Effect<void>;
 }
 
-export interface RewindInput {
+export interface ForkInput {
   readonly cwd: string;
   readonly harness: ProviderSettings;
   readonly resumeToken: string;
-  /** The user message to rewind to before (it goes too). */
-  readonly messageId: string;
+  /** The user message to cut before (it goes too); null keeps the whole conversation. */
+  readonly messageId: string | null;
   /** User messages before it that stay. */
   readonly keep: number;
   /** Turns from it on that go (steered messages don't start one). */
   readonly dropTurns: number;
+}
+
+export interface RewindInput extends ForkInput {
+  readonly messageId: string;
 }
 
 export interface ReadUsageInput {
@@ -102,6 +106,11 @@ export interface ProviderAdapter {
    * running. Resolves to the token to resume from next; null starts over.
    */
   readonly rewind: (input: RewindInput) => Effect.Effect<string | null, ProviderError>;
+  /**
+   * Copies the provider-side conversation, cut like `rewind` would, leaving the original
+   * as it is. Resolves to the copy's token; null starts over.
+   */
+  readonly fork: (input: ForkInput) => Effect.Effect<string | null, ProviderError>;
   /** The conversation's usage as of its last turn, read with no session running and no turn started. */
   readonly readUsage: (input: ReadUsageInput) => Effect.Effect<ThreadUsage, ProviderError>;
 }

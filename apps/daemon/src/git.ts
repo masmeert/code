@@ -547,6 +547,28 @@ export const deleteThreadCheckpoints = async (cwd: string, threadId: string) => 
   );
 };
 
+/** Gives another thread the same snapshots, except those of the given messages' turns. */
+export const copyCheckpoints = async (
+  cwd: string,
+  fromThreadId: string,
+  toThreadId: string,
+  exceptMessageIds: ReadonlyArray<string>,
+) => {
+  const source = `${CHECKPOINT_REFS}/${fromThreadId}`;
+  const prefix = `${source}/`;
+  const refs = await git(cwd, ["for-each-ref", "--format=%(objectname) %(refname)", source]);
+  if (!refs.ok || !refs.stdout) return;
+  const except = new Set(exceptMessageIds);
+  const updates = refs.stdout.split("\n").flatMap((line) => {
+    const [objectId, ref] = line.split(" ");
+    if (!objectId || !ref?.startsWith(prefix)) return [];
+    const path = ref.slice(prefix.length);
+    if (except.has(path.split("/")[0]!)) return [];
+    return [`update ${CHECKPOINT_REFS}/${toThreadId}/${path} ${objectId}\n`];
+  });
+  if (updates.length) await updateRefs(cwd, updates.join(""));
+};
+
 const updateRefs = async (cwd: string, stdin: string) => {
   await acquire();
   try {
