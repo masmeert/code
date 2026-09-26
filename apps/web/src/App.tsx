@@ -11,6 +11,7 @@ import { MotionConfig } from "motion/react";
 import { useEffect, useState } from "react";
 import { toggleBrowser } from "./lib/browser.ts";
 import { describe, useKeybinding } from "./lib/keybindings.ts";
+import "./lib/notifications.ts";
 import { toggleTerminalPanel, useStore } from "./lib/store.ts";
 import { useShortcut } from "./lib/useShortcut.ts";
 import { useTheme } from "./lib/useTheme.ts";
@@ -56,6 +57,7 @@ export const App = () => {
   const [palette, setPalette] = useState(false);
   useKeybinding("palette.open", () => setPalette((open) => !open));
   useTheme(theme);
+  useEffect(() => window.desktop?.onOpenThread((id) => setView({ kind: "thread", id })), []);
 
   // Main window with nothing chosen yet: show the latest thread, else a new one.
   const view: View =

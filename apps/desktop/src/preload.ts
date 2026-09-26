@@ -44,4 +44,13 @@ contextBridge.exposeInMainWorld("desktop", {
   },
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
+  notify: (notification) => ipcRenderer.invoke("notify", notification),
+  setBadgeCount: (count) => ipcRenderer.invoke("set-badge-count", count),
+  onOpenThread: (listener) => {
+    function forward(_event: IpcRendererEvent, threadId: string) {
+      listener(threadId);
+    }
+    ipcRenderer.on("open-thread", forward);
+    return () => ipcRenderer.removeListener("open-thread", forward);
+  },
 } satisfies DesktopBridge);

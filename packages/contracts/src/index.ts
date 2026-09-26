@@ -81,6 +81,16 @@ export interface DesktopBridge {
   readonly onUpdateStatus: (listener: (status: UpdateStatus) => void) => () => void;
   readonly checkForUpdates: () => Promise<void>;
   readonly installUpdate: () => Promise<void>;
+  /** A system notification about a thread, shown only while no APCode window is focused. */
+  readonly notify: (notification: {
+    readonly threadId: string;
+    readonly title: string;
+    readonly body: string;
+  }) => Promise<void>;
+  /** The number on the dock icon; 0 clears it. */
+  readonly setBadgeCount: (count: number) => Promise<void>;
+  /** A notification about the thread was clicked in this window. */
+  readonly onOpenThread: (listener: (threadId: string) => void) => () => void;
 }
 
 /** Reasoning effort. Each harness takes a subset: Claude low…max, Codex minimal…xhigh. */
@@ -194,6 +204,8 @@ export const Settings = Schema.Struct({
   writingInstructions: Schema.optional(Schema.String),
   /** Pull request bodies follow the repo's template when it has one. Absent counts as on. */
   followTemplates: Schema.optional(Schema.Boolean),
+  /** System notifications when a thread finishes or needs you, while APCode is in the background. Absent counts as on. */
+  notifications: Schema.optional(Schema.Boolean),
 });
 export type Settings = typeof Settings.Type;
 export const DEFAULT_SETTLE_DELAY_MINUTES = 15;

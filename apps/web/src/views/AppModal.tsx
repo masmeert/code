@@ -461,6 +461,21 @@ function GeneralPage() {
             </Tabs>
           </SettingsRow>
           <SettingsRow
+            label={
+              <RowLabel
+                title="Notifications"
+                description="When a thread finishes or needs you, while APCode is in the background"
+              />
+            }
+          >
+            <Switch
+              size="sm"
+              checked={settings.notifications !== false}
+              onCheckedChange={(notifications) => updateSettings({ ...settings, notifications })}
+              ariaLabel="Notifications"
+            />
+          </SettingsRow>
+          <SettingsRow
             label={<RowLabel title="Follow-up behavior" description="⌘↩ does the opposite once" />}
           >
             <SettingsSelect

@@ -1,5 +1,5 @@
 import { BrowserAction, Theme } from "@apcode/contracts";
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification } from "electron";
 import * as Schema from "effect/Schema";
 import { homedir } from "node:os";
 import { automateBrowser } from "./browserAutomation.ts";
@@ -18,6 +18,11 @@ function handle<S extends Schema.ConstraintDecoder<unknown>, Result>(
     return listener(window, Schema.decodeUnknownSync(schema)(arg));
   });
 }
+
+/** When each thread change was last announced; every open window reports the same change. */
+const announced = new Map<string, number>();
+/** Shown notifications, kept referenced so their click handler outlives garbage collection. */
+const shown = new Set<Notification>();
 
 export function registerBridge(daemon: () => Promise<{ port: number; token: string }> | null) {
   handle("daemon", Schema.Undefined, () => daemon());
@@ -58,4 +63,29 @@ export function registerBridge(daemon: () => Promise<{ port: number; token: stri
   handle("update-status", Schema.Undefined, updateStatus);
   handle("check-for-updates", Schema.Undefined, checkForUpdates);
   handle("install-update", Schema.Undefined, installUpdate);
+  handle(
+    "notify",
+    Schema.Struct({ threadId: Schema.String, title: Schema.String, body: Schema.String }),
+    (window, { threadId, title, body }) => {
+      if (BrowserWindow.getFocusedWindow() || !Notification.isSupported()) return;
+      const key = `${threadId}:${body}`;
+      // ponytail: fixed 3s window to merge the windows' reports; per-event ids if it ever drops a real repeat
+      if (Date.now() - (announced.get(key) ?? 0) < 3000) return;
+      announced.set(key, Date.now());
+      const notification = new Notification({ title, body });
+      shown.add(notification);
+      notification.on("close", () => shown.delete(notification));
+      notification.on("click", () => {
+        shown.delete(notification);
+        if (window.isDestroyed()) return;
+        window.show();
+        window.focus();
+        window.webContents.send("open-thread", threadId);
+      });
+      notification.show();
+    },
+  );
+  handle("set-badge-count", Schema.Number, (_window, count) => {
+    app.setBadgeCount(count);
+  });
 }

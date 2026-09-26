@@ -528,6 +528,12 @@ function withoutTerminal(state: State, threadId: string, terminalId: string): St
 
 let state = initial;
 const listeners = new Set<() => void>();
+/** Called on every change, frame or not: hidden windows get no animation frames, so no renders. */
+const watchers = new Set<(prev: State, next: State) => void>();
+export const watchState = (watcher: (prev: State, next: State) => void) => {
+  watchers.add(watcher);
+  return () => watchers.delete(watcher);
+};
 let notifyScheduled = false;
 const notify = () => {
   notifyScheduled = false;
@@ -537,6 +543,7 @@ const notify = () => {
 const setState = (next: State) => {
   const prev = state;
   state = next;
+  for (const watcher of watchers) watcher(prev, next);
   // Deltas can arrive faster than frames: re-render at most once per frame.
   if (!notifyScheduled) {
     notifyScheduled = true;
