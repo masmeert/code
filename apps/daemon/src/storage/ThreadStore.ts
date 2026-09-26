@@ -26,7 +26,9 @@ export interface StoredThread {
 export function isPersisted(
   event: RuntimeEvent,
 ): event is Extract<RuntimeEvent, { threadId: string }> {
-  return isTranscriptEvent(event) && !RuntimeEvent.guards["assistant.delta"](event);
+  return (
+    isTranscriptEvent(event) && !RuntimeEvent.isAnyOf(["assistant.delta", "tool.progress"])(event)
+  );
 }
 
 export class ThreadStore extends Context.Service<

@@ -134,7 +134,7 @@ const start = ({
       const pending = new Map<string, PendingApproval>();
       let nextRequest = 0;
 
-      const canUseTool: CanUseTool = (toolName, input, { signal, suggestions }) =>
+      const canUseTool: CanUseTool = (toolName, input, { signal, suggestions, agentID }) =>
         new Promise<PermissionResult>((resolve) => {
           const requestId = `claude-perm-${++nextRequest}`;
           pending.set(requestId, { input, suggestions, resolve });
@@ -151,6 +151,7 @@ const start = ({
               requestId,
               title: toolName,
               detail: summarizeToolInput(Option.getOrNull(decodeToolInput(input))),
+              agent: agentID === undefined ? undefined : agentNames.get(agentID),
             }),
           );
         });
@@ -193,6 +194,8 @@ const start = ({
       // Subagents launched in the background: their tool call returns a placeholder at once, and the
       // real end comes later as a task notification, so the call stays running until then.
       const agentTools = new Map<string, string>();
+      // Subagents' descriptions by task id, to say which one asks for an approval.
+      const agentNames = new Map<string, string>();
       const backgroundAgents = new Set<string>();
       // Claude Code's own running/idle, which covers turns it starts itself and waits out background
       // agents. CLIs too old to send it get idle at the end of each turn instead.
@@ -290,20 +293,26 @@ const start = ({
               msg.tool_use_id
             ) {
               agentTools.set(msg.task_id, msg.tool_use_id);
+              agentNames.set(msg.task_id, msg.description);
               if (msg.is_backgrounded) backgroundAgents.add(msg.tool_use_id);
             } else if (msg.subtype === "task_updated" && msg.patch.is_backgrounded) {
               const toolId = agentTools.get(msg.task_id);
               if (toolId) backgroundAgents.add(toolId);
-            } else if (msg.subtype === "task_progress" && msg.tool_use_id && msg.summary) {
-              emit(
-                RuntimeEvent.cases["tool.progress"].make({
-                  threadId,
-                  toolId: msg.tool_use_id,
-                  summary: msg.summary,
-                }),
-              );
+            } else if (msg.subtype === "task_progress") {
+              const toolId = agentTools.get(msg.task_id);
+              if (toolId)
+                emit(
+                  RuntimeEvent.cases["tool.progress"].make({
+                    threadId,
+                    toolId,
+                    summary: msg.summary,
+                    tokens: msg.usage.total_tokens,
+                    durationMs: msg.usage.duration_ms,
+                  }),
+                );
             } else if (msg.subtype === "task_notification") {
               agentTools.delete(msg.task_id);
+              agentNames.delete(msg.task_id);
               if (!msg.tool_use_id || !backgroundAgents.delete(msg.tool_use_id)) return;
               emit(
                 RuntimeEvent.cases["tool.completed"].make({

@@ -589,6 +589,8 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             <RunningAgents
               threadId={threadId}
               agents={runningAgents}
+              // Stopping one Codex subagent leaves the main agent waiting on it; Stop ends them all.
+              canStopOne={provider === "claude"}
               onReveal={(toolId) => setReveal({ toolId })}
             />
           ) : null}
@@ -804,10 +806,12 @@ const RECENT_AGENT_CALLS = 5;
 function RunningAgents({
   threadId,
   agents,
+  canStopOne,
   onReveal,
 }: {
   threadId: string;
   agents: ReadonlyArray<ToolItem>;
+  canStopOne: boolean;
   onReveal: (toolId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -884,24 +888,35 @@ function RunningAgents({
                                 : summarize([last])))}
                       </span>
                     </button>
-                    <button
-                      type="button"
-                      aria-label={`Stop ${name}`}
-                      title="Stop this subagent"
-                      disabled={stopping.has(agent.id)}
-                      onClick={() => {
-                        setStopping(new Set(stopping).add(agent.id));
-                        send(
-                          ClientCommand.cases["thread.stopAgent"].make({
-                            threadId,
-                            toolId: agent.id,
-                          }),
-                        );
-                      }}
-                      className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-                    >
-                      <Square className="size-2.5 fill-current" />
-                    </button>
+                    {agent.tokens === undefined ? null : (
+                      <span className="shrink-0 pr-2 text-xs text-muted-foreground/70 tabular-nums">
+                        {new Intl.NumberFormat("en", { notation: "compact" }).format(agent.tokens)}{" "}
+                        tokens
+                        {agent.durationMs === undefined
+                          ? null
+                          : ` · ${agent.durationMs >= 60_000 ? `${Math.floor(agent.durationMs / 60_000)}m ` : ""}${Math.floor(agent.durationMs / 1000) % 60}s`}
+                      </span>
+                    )}
+                    {canStopOne ? (
+                      <button
+                        type="button"
+                        aria-label={`Stop ${name}`}
+                        title="Stop this subagent"
+                        disabled={stopping.has(agent.id)}
+                        onClick={() => {
+                          setStopping(new Set(stopping).add(agent.id));
+                          send(
+                            ClientCommand.cases["thread.stopAgent"].make({
+                              threadId,
+                              toolId: agent.id,
+                            }),
+                          );
+                        }}
+                        className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                      >
+                        <Square className="size-2.5 fill-current" />
+                      </button>
+                    ) : null}
                   </div>
                   {isUnfolded ? (
                     <div className="mr-2 mb-1 ml-[18px] border-l border-border pl-3 text-sm">
@@ -1075,7 +1090,7 @@ const AgentBlockContent = ({
       return (
         <ToolApproval
           tool={item.title}
-          title={`Allow ${item.title}?`}
+          title={`Allow ${item.title}${item.agent ? ` for ${item.agent}` : ""}?`}
           status={item.decision === "deny" ? "denied" : item.decision ? "approving" : "pending"}
           defaultOpen
           parameters={[

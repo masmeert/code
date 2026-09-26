@@ -403,11 +403,15 @@ export const RuntimeEvent = Schema.Union([
     /** The subagent call (Task/Agent) this one was made inside of. */
     parentToolId: Schema.optional(Schema.String),
   }),
-  /** A one-line, present-tense summary of what the subagent started by `toolId` is doing now. */
+  /** How the subagent started by `toolId` is getting on. Live only: never stored. */
   Schema.TaggedStruct("tool.progress", {
     threadId: Schema.String,
     toolId: Schema.String,
-    summary: Schema.String,
+    /** A one-line, present-tense summary of what it's doing now. */
+    summary: Schema.optional(Schema.String),
+    tokens: Schema.optional(Schema.Number),
+    /** Absent where the harness doesn't say (Codex). */
+    durationMs: Schema.optional(Schema.Number),
   }),
   Schema.TaggedStruct("tool.completed", {
     threadId: Schema.String,
@@ -420,6 +424,8 @@ export const RuntimeEvent = Schema.Union([
     requestId: Schema.String,
     title: Schema.String,
     detail: Schema.String,
+    /** The subagent asking, when it isn't the main agent. */
+    agent: Schema.optional(Schema.String),
   }),
   Schema.TaggedStruct("approval.resolved", { threadId: Schema.String, requestId: Schema.String }),
   Schema.TaggedStruct("turn.completed", {

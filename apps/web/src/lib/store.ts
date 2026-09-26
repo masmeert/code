@@ -60,12 +60,16 @@ export type TranscriptItem =
       readonly children?: ReadonlyArray<ToolCall>;
       /** What that subagent is doing now, in its own words; updated every half minute or so. */
       readonly progress?: string;
+      readonly tokens?: number;
+      readonly durationMs?: number;
     }
   | {
       readonly kind: "approval";
       readonly id: string;
       readonly title: string;
       readonly detail: string;
+      /** The subagent asking, when it isn't the main agent. */
+      readonly agent?: string;
       readonly resolved: boolean;
       readonly decision: ApprovalDecision | null;
     }
@@ -314,7 +318,12 @@ const reduceItems = (
     Match.tag("tool.progress", (progress) =>
       items.map((item) =>
         item.kind === "tool" && item.id === progress.toolId
-          ? { ...item, progress: progress.summary }
+          ? {
+              ...item,
+              progress: progress.summary ?? item.progress,
+              tokens: progress.tokens ?? item.tokens,
+              durationMs: progress.durationMs ?? item.durationMs,
+            }
           : item,
       ),
     ),
@@ -339,6 +348,7 @@ const reduceItems = (
         id: approval.requestId,
         title: approval.title,
         detail: approval.detail,
+        agent: approval.agent,
         resolved: false,
         decision: null,
       })),

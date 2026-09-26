@@ -46,6 +46,14 @@ export const StartedItem = Schema.Union([
 /** An item as `item/completed` reports it, for the kinds shown in the transcript. */
 export const CompletedItem = Schema.Union([
   Schema.Struct({ type: Schema.Literal("agentMessage"), id: Schema.String, text: Schema.String }),
+  /** A subagent starting or ending; it runs as a thread of its own, `agentThreadId`. */
+  Schema.Struct({
+    type: Schema.Literal("subAgentActivity"),
+    id: Schema.String,
+    kind: Schema.Literals(["started", "interacted", "interrupted", "completed"]),
+    agentThreadId: Schema.String,
+    agentPath: Schema.String,
+  }),
   Schema.Struct({
     type: Schema.Literal("commandExecution"),
     id: Schema.String,
@@ -77,23 +85,24 @@ export const CompletedItem = Schema.Union([
 export const CodexNotification = Schema.Union([
   Schema.Struct({
     method: Schema.Literal("turn/started"),
-    params: Schema.Struct({ turn: Schema.Struct({ id: Schema.String }) }),
+    params: Schema.Struct({ threadId: Schema.String, turn: Schema.Struct({ id: Schema.String }) }),
   }),
   Schema.Struct({
     method: Schema.Literal("item/agentMessage/delta"),
-    params: Schema.Struct({ itemId: Schema.String, delta: Schema.String }),
+    params: Schema.Struct({ threadId: Schema.String, itemId: Schema.String, delta: Schema.String }),
   }),
   Schema.Struct({
     method: Schema.Literal("item/started"),
-    params: Schema.Struct({ item: StartedItem }),
+    params: Schema.Struct({ threadId: Schema.String, item: StartedItem }),
   }),
   Schema.Struct({
     method: Schema.Literal("item/completed"),
-    params: Schema.Struct({ item: CompletedItem }),
+    params: Schema.Struct({ threadId: Schema.String, item: CompletedItem }),
   }),
   Schema.Struct({
     method: Schema.Literal("turn/completed"),
     params: Schema.Struct({
+      threadId: Schema.String,
       turn: Schema.Struct({
         status: Schema.String,
         error: Schema.NullOr(ErrorMessage),
@@ -103,7 +112,18 @@ export const CodexNotification = Schema.Union([
   }),
   Schema.Struct({
     method: Schema.Literal("error"),
-    params: Schema.Struct({ error: ErrorMessage, willRetry: Schema.Boolean }),
+    params: Schema.Struct({
+      threadId: Schema.String,
+      error: ErrorMessage,
+      willRetry: Schema.Boolean,
+    }),
+  }),
+  Schema.Struct({
+    method: Schema.Literal("thread/tokenUsage/updated"),
+    params: Schema.Struct({
+      threadId: Schema.String,
+      tokenUsage: Schema.Struct({ total: Schema.Struct({ totalTokens: Schema.Number }) }),
+    }),
   }),
   Schema.Struct({
     method: Schema.Literal("account/login/completed"),
@@ -145,6 +165,7 @@ export const CodexElicitation = Schema.Struct({
 export type CodexElicitation = typeof CodexElicitation.Type;
 
 const ApprovalParams = Schema.Struct({
+  threadId: Schema.String,
   command: Schema.optional(Schema.NullOr(Schema.String)),
   reason: Schema.optional(Schema.NullOr(Schema.String)),
 });

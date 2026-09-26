@@ -9,6 +9,7 @@ import {
   type PermissionLevel,
 } from "@apcode/contracts";
 import * as Effect from "effect/Effect";
+import * as Match from "effect/Match";
 import * as Schema from "effect/Schema";
 import {
   CodexNotification,
@@ -111,6 +112,47 @@ const start = ({
     >();
     let codexThreadId = "";
     let activeTurnId: string | null = null;
+    // Subagents run as Codex threads of their own, and their notifications arrive here tagged with
+    // that thread's id. Each maps to the Agent row it shows under, `open` until it ends; a subagent's
+    // own subagents are `nested` and fold into the same row.
+    const subagents = new Map<
+      string,
+      {
+        readonly toolId: string;
+        readonly name: string;
+        readonly nested: boolean;
+        open: boolean;
+        lastMessage: string;
+      }
+    >();
+    // Live turns of every thread but this one, even those not yet known as subagents: a subagent's
+    // traffic can come before the activity announcing it, and Stop has to reach it either way.
+    const childTurns = new Map<string, string>();
+
+    /** Ends a subagent's row, once: its turn ending, an error, or Codex's own report can each do it. */
+    function closeSubagent(
+      subagent: { readonly toolId: string; readonly nested: boolean; open: boolean },
+      output: string,
+      isError: boolean,
+    ) {
+      if (subagent.nested || !subagent.open) return;
+      subagent.open = false;
+      emit(
+        RuntimeEvent.cases["tool.completed"].make({
+          threadId,
+          toolId: subagent.toolId,
+          output,
+          isError,
+        }),
+      );
+      if (activeTurnId === null && !subagentsRunning())
+        emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
+    }
+
+    /** The main agent can end its turn while subagents it started keep working; the thread isn't idle until they're done. */
+    function subagentsRunning() {
+      return [...subagents.values()].some((subagent) => !subagent.nested && subagent.open);
+    }
     let currentModel = model ?? null;
     let permission = initialPermission;
     let effort = initialEffort;
@@ -120,20 +162,25 @@ const start = ({
         notification,
         {
           "turn/started": ({ params }) => {
-            activeTurnId = params.turn.id;
+            if (params.threadId === codexThreadId) activeTurnId = params.turn.id;
+            else childTurns.set(params.threadId, params.turn.id);
           },
-          "item/agentMessage/delta": ({ params }) =>
+          "item/agentMessage/delta": ({ params }) => {
+            if (params.threadId !== codexThreadId) return;
             emit(
               RuntimeEvent.cases["assistant.delta"].make({
                 threadId,
                 messageId: params.itemId,
                 delta: params.delta,
               }),
-            ),
-          "item/started": ({ params }) =>
+            );
+          },
+          "item/started": ({ params }) => {
+            const subagent = subagents.get(params.threadId);
+            if (params.threadId !== codexThreadId && !subagent) return;
             emit(
-              RuntimeEvent.cases["tool.started"].make(
-                StartedItem.match(params.item, {
+              RuntimeEvent.cases["tool.started"].make({
+                ...StartedItem.match(params.item, {
                   commandExecution: (item) => ({
                     threadId,
                     toolId: item.id,
@@ -153,45 +200,103 @@ const start = ({
                     summary: summarizeToolInput(item.arguments),
                   }),
                 }),
-              ),
-            ),
-          "item/completed": ({ params }) =>
-            emit(
-              CompletedItem.match(params.item, {
-                agentMessage: (item) =>
-                  RuntimeEvent.cases["assistant.completed"].make({
-                    threadId,
-                    messageId: item.id,
-                    text: item.text,
-                  }),
-                commandExecution: (item) =>
-                  RuntimeEvent.cases["tool.completed"].make({
-                    threadId,
-                    toolId: item.id,
-                    output: item.aggregatedOutput ?? "",
-                    isError: (item.exitCode ?? 0) !== 0,
-                  }),
-                fileChange: (item) =>
-                  RuntimeEvent.cases["tool.completed"].make({
-                    threadId,
-                    toolId: item.id,
-                    output: item.changes.map((change) => change.diff).join("\n"),
-                    isError: item.status === "failed",
-                  }),
-                mcpToolCall: (item) =>
-                  RuntimeEvent.cases["tool.completed"].make({
-                    threadId,
-                    toolId: item.id,
-                    output:
-                      item.error?.message ||
-                      (item.result?.content ?? [])
-                        .map((part) => (part.type === "text" ? part.text : `[${part.type}]`))
-                        .join("\n"),
-                    isError: item.status === "failed" || item.error !== null,
-                  }),
+                parentToolId: subagent?.toolId,
               }),
-            ),
+            );
+          },
+          "item/completed": ({ params }) => {
+            const subagent = subagents.get(params.threadId);
+            if (params.threadId !== codexThreadId && !subagent) return;
+            const event = CompletedItem.match(params.item, {
+              agentMessage: (item) => {
+                // A subagent's messages are its report, not the thread's.
+                if (subagent) {
+                  subagent.lastMessage = item.text;
+                  return null;
+                }
+                return RuntimeEvent.cases["assistant.completed"].make({
+                  threadId,
+                  messageId: item.id,
+                  text: item.text,
+                });
+              },
+              subAgentActivity: (item) => {
+                // Subagents also report on the main thread ("/root"); taking it for one of them
+                // would swallow the main agent's answer as a subagent's report.
+                if (item.agentThreadId === codexThreadId) return null;
+                const known = subagents.get(item.agentThreadId);
+                if (item.kind === "started" && !known) {
+                  const leaf = item.agentPath.split("/").at(-1)?.replaceAll("_", " ") ?? "";
+                  const name = subagent?.name ?? leaf.charAt(0).toUpperCase() + leaf.slice(1);
+                  subagents.set(item.agentThreadId, {
+                    toolId: subagent?.toolId ?? item.id,
+                    name,
+                    nested: subagent !== undefined,
+                    open: true,
+                    lastMessage: "",
+                  });
+                  if (subagent) return null;
+                  return RuntimeEvent.cases["tool.started"].make({
+                    threadId,
+                    toolId: item.id,
+                    name: "Agent",
+                    summary: name,
+                  });
+                }
+                if (known && (item.kind === "completed" || item.kind === "interrupted"))
+                  closeSubagent(
+                    known,
+                    item.kind === "interrupted" ? "Stopped" : known.lastMessage || "Finished",
+                    false,
+                  );
+                return null;
+              },
+              commandExecution: (item) =>
+                RuntimeEvent.cases["tool.completed"].make({
+                  threadId,
+                  toolId: item.id,
+                  output: item.aggregatedOutput ?? "",
+                  isError: (item.exitCode ?? 0) !== 0,
+                }),
+              fileChange: (item) =>
+                RuntimeEvent.cases["tool.completed"].make({
+                  threadId,
+                  toolId: item.id,
+                  output: item.changes.map((change) => change.diff).join("\n"),
+                  isError: item.status === "failed",
+                }),
+              mcpToolCall: (item) =>
+                RuntimeEvent.cases["tool.completed"].make({
+                  threadId,
+                  toolId: item.id,
+                  output:
+                    item.error?.message ||
+                    (item.result?.content ?? [])
+                      .map((part) => (part.type === "text" ? part.text : `[${part.type}]`))
+                      .join("\n"),
+                  isError: item.status === "failed" || item.error !== null,
+                }),
+            });
+            if (event) emit(event);
+          },
           "turn/completed": ({ params }) => {
+            if (params.threadId !== codexThreadId) {
+              childTurns.delete(params.threadId);
+              // A subagent's turn ending is its end: Codex doesn't always report it on the main
+              // thread, and says nothing there when Stop interrupts it.
+              const subagent = subagents.get(params.threadId);
+              if (subagent)
+                closeSubagent(
+                  subagent,
+                  Match.value(params.turn.status).pipe(
+                    Match.when("interrupted", () => "Stopped"),
+                    Match.when("failed", () => params.turn.error?.message ?? "Failed"),
+                    Match.orElse(() => subagent.lastMessage || "Finished"),
+                  ),
+                  params.turn.status === "failed",
+                );
+              return;
+            }
             activeTurnId = null;
             if (params.turn.status === "failed")
               emit(
@@ -206,11 +311,29 @@ const start = ({
                 durationMs: params.turn.durationMs,
               }),
             );
-            emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
+            if (!subagentsRunning())
+              emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
           },
           error: ({ params }) => {
-            if (!params.willRetry)
+            if (params.willRetry) return;
+            if (params.threadId === codexThreadId)
               emit(RuntimeEvent.cases.error.make({ threadId, message: params.error.message }));
+            else {
+              // A subagent's error is its own: it ends its row instead of showing on the thread.
+              const subagent = subagents.get(params.threadId);
+              if (subagent) closeSubagent(subagent, params.error.message, true);
+            }
+          },
+          "thread/tokenUsage/updated": ({ params }) => {
+            const subagent = subagents.get(params.threadId);
+            if (!subagent || subagent.nested) return;
+            emit(
+              RuntimeEvent.cases["tool.progress"].make({
+                threadId,
+                toolId: subagent.toolId,
+                tokens: params.tokenUsage.total.totalTokens,
+              }),
+            );
           },
         },
         () => {},
@@ -222,11 +345,20 @@ const start = ({
       elicitation: CodexElicitation | null,
       title: string,
       detail: string,
+      fromThreadId?: string,
     ) {
       const requestId = `codex-${rpcId}`;
       pendingApprovals.set(requestId, { rpcId, elicitation });
       emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "awaiting-approval" }));
-      emit(RuntimeEvent.cases["approval.requested"].make({ threadId, requestId, title, detail }));
+      emit(
+        RuntimeEvent.cases["approval.requested"].make({
+          threadId,
+          requestId,
+          title,
+          detail,
+          agent: subagents.get(fromThreadId ?? "")?.name,
+        }),
+      );
       return true;
     }
 
@@ -245,9 +377,15 @@ const start = ({
           );
         },
         "item/commandExecution/requestApproval": ({ params }) =>
-          requestApproval(id, null, "Run command", params.command ?? params.reason ?? ""),
+          requestApproval(
+            id,
+            null,
+            "Run command",
+            params.command ?? params.reason ?? "",
+            params.threadId,
+          ),
         "item/fileChange/requestApproval": ({ params }) =>
-          requestApproval(id, null, "Apply file changes", params.reason ?? ""),
+          requestApproval(id, null, "Apply file changes", params.reason ?? "", params.threadId),
       });
     }
 
@@ -360,14 +498,24 @@ const start = ({
         );
       }),
       commands: Effect.succeed([]),
+      // Subagents are threads with turns of their own: interrupting only the parent would leave them
+      // running. Best effort per subagent, so one that won't stop can't block the rest.
       interrupt: Effect.suspend(() =>
-        activeTurnId
-          ? request(
-              "turn/interrupt",
-              { threadId: codexThreadId, turnId: activeTurnId },
-              Schema.Unknown,
-            ).pipe(Effect.asVoid)
-          : Effect.void,
+        Effect.forEach(
+          [...childTurns].map(([childThreadId, turnId]) => ({ threadId: childThreadId, turnId })),
+          (turn) => request("turn/interrupt", turn, Schema.Unknown).pipe(Effect.ignore),
+          { concurrency: "unbounded", discard: true },
+        ).pipe(
+          Effect.andThen(
+            activeTurnId
+              ? request(
+                  "turn/interrupt",
+                  { threadId: codexThreadId, turnId: activeTurnId },
+                  Schema.Unknown,
+                ).pipe(Effect.asVoid)
+              : Effect.void,
+          ),
+        ),
       ),
       respondApproval: (requestId, decision) =>
         Effect.suspend(() => {
