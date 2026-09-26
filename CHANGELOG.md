@@ -2,6 +2,30 @@
 
 Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unreleased` to `X.Y.Z - YYYY-MM-DD`; the release workflow publishes that section as the GitHub release notes and fails if it is missing.
 
+## Unreleased
+
+### Added
+
+- Claude's questions show as a card with options, previews and a free-text answer, answerable from the keyboard.
+- Fork a thread from any finished reply into a new one; the original stays as it is.
+- Mention project files with `@` in the composer.
+- A ring in the composer shows context usage, API cost and plan limits (⌘⇧U).
+- System notifications when a thread finishes, fails or needs you, and a dock badge counting threads that need you.
+- Subagents show their tool calls under their Agent row, and a chip above the composer lists the running ones with progress and a stop button each. Works for Claude and Codex.
+
+### Changed
+
+- The Claude harness is called "Claude", not "Claude Code".
+- One copy button per assistant turn, on its final message.
+- A shorter composer placeholder while the agent works.
+- Long branch and project names are truncated in the composer footer and thread list.
+
+### Fixed
+
+- Threads stay running while Claude's background subagents work.
+- Harnesses no longer show as missing for a few seconds after each launch.
+- New threads opened from a worktree thread start in its project instead of adding the worktree as a project.
+
 ## 0.0.3 - 2026-09-25
 
 ### Fixed
