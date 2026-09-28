@@ -243,7 +243,7 @@ function SettingsView() {
           ))}
         </SharedLayoutBg>
       </nav>
-      <div className="min-w-0 flex-1 overflow-y-auto overscroll-contain p-5">
+      <div className="min-w-0 flex-1 [scrollbar-width:thin] [scrollbar-color:var(--color-border-strong)_transparent] overflow-y-auto overscroll-contain p-5">
         {Match.value(page).pipe(
           Match.when("general", () => <GeneralPage />),
           Match.when("appearance", () => (
