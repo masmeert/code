@@ -11,6 +11,7 @@ import { Input } from "@apcode/ui/motion/input";
 import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
 import { Switch } from "@apcode/ui/motion/switch";
 import { Skeleton } from "@apcode/ui/components/skeleton";
+import { ScrollArea } from "@apcode/ui/components/scroll-area";
 import { Textarea } from "@apcode/ui/components/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@apcode/ui/motion/tabs";
 import { IconButton } from "@/components/icon-button";
@@ -243,37 +244,39 @@ function SettingsView() {
           ))}
         </SharedLayoutBg>
       </nav>
-      <div className="min-w-0 flex-1 [scrollbar-width:thin] [scrollbar-color:var(--color-border-strong)_transparent] overflow-y-auto overscroll-contain p-5">
-        {Match.value(page).pipe(
-          Match.when("general", () => <GeneralPage />),
-          Match.when("appearance", () => (
-            <SettingsGroup>
-              <SettingsRow label="Theme">
-                <Tabs
-                  value={settings.theme}
-                  onValueChange={(v) =>
-                    Schema.is(Theme)(v) && updateSettings({ ...settings, theme: v })
-                  }
-                >
-                  <TabsList>
-                    {THEMES.map(({ value, label, icon: Icon }) => (
-                      <TabsTrigger key={value} value={value}>
-                        <span className="flex items-center gap-1.5">
-                          <Icon className="size-3.5" />
-                          {label}
-                        </span>
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
-              </SettingsRow>
-            </SettingsGroup>
-          )),
-          Match.when("harnesses", () => <HarnessesPage />),
-          Match.when("git", () => <GitPage />),
-          Match.exhaustive,
-        )}
-      </div>
+      <ScrollArea className="min-w-0 flex-1 [&>[data-slot=scroll-area-scrollbar]]:py-7 [&>[data-slot=scroll-area-scrollbar]]:pr-0.5">
+        <div className="p-5">
+          {Match.value(page).pipe(
+            Match.when("general", () => <GeneralPage />),
+            Match.when("appearance", () => (
+              <SettingsGroup>
+                <SettingsRow label="Theme">
+                  <Tabs
+                    value={settings.theme}
+                    onValueChange={(v) =>
+                      Schema.is(Theme)(v) && updateSettings({ ...settings, theme: v })
+                    }
+                  >
+                    <TabsList>
+                      {THEMES.map(({ value, label, icon: Icon }) => (
+                        <TabsTrigger key={value} value={value}>
+                          <span className="flex items-center gap-1.5">
+                            <Icon className="size-3.5" />
+                            {label}
+                          </span>
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </Tabs>
+                </SettingsRow>
+              </SettingsGroup>
+            )),
+            Match.when("harnesses", () => <HarnessesPage />),
+            Match.when("git", () => <GitPage />),
+            Match.exhaustive,
+          )}
+        </div>
+      </ScrollArea>
     </div>
   );
 }
