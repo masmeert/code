@@ -32,6 +32,7 @@ import {
   type ToolReveal,
 } from "@apcode/ui/agents/tool-group";
 import { ProjectBadge } from "@/components/project-badge";
+import { addProject } from "../lib/projects.ts";
 import { cn } from "@apcode/ui/lib/utils";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import {
@@ -48,6 +49,7 @@ import {
   FileDiff,
   FileText,
   GitFork,
+  FolderPlus,
   FolderTree,
   Globe,
   ImageIcon,
@@ -207,6 +209,51 @@ const Header = ({
   );
 };
 
+const ADD_PROJECT = "\u0000add-project";
+
+/** Which project a draft starts in; also the way to add one. */
+const ProjectSelect = ({
+  cwd,
+  onPick,
+  openSignal,
+}: {
+  cwd: string | null;
+  onPick: (path: string | null) => void;
+  openSignal: number;
+}) => {
+  const projects = useStore((s) => s.projects);
+  const options = [
+    ...[...projects]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((project) => ({
+        value: project.path,
+        label: project.name,
+        icon: <ProjectBadge project={project} />,
+      })),
+    { value: ADD_PROJECT, label: "Add project…", icon: <FolderPlus /> },
+  ];
+  return (
+    <PromptSelect
+      title="Project"
+      options={options}
+      value={cwd ?? undefined}
+      placeholder="a project"
+      onChange={(value) =>
+        value === ADD_PROJECT
+          ? void addProject().then((path) => path && onPick(path))
+          : onPick(value)
+      }
+      side="bottom"
+      width="w-64"
+      openSignal={openSignal}
+      numbered
+      variant="inline"
+      // The heading is a window drag region, which would swallow the click.
+      className="[-webkit-app-region:no-drag]"
+    />
+  );
+};
+
 /** A new chat that only exists in this window until its first message creates the thread. */
 export const DraftView = ({
   path,
@@ -234,6 +281,11 @@ export const DraftView = ({
   const [extras, setExtras] = useState<Array<string>>([]);
   const extraModels = extras.filter((c) => c !== selected && choices.some((o) => o.value === c));
   const [workspace, setWorkspace] = useState(settings.workspace ?? "local");
+  const [projectSignal, setProjectSignal] = useState(0);
+  const needsProject = !path && Boolean(selected);
+  useEffect(() => {
+    if (needsProject) setProjectSignal((n) => n + 1);
+  }, [needsProject]);
 
   return (
     <>
@@ -246,20 +298,25 @@ export const DraftView = ({
         title="New thread"
       />
       <div className="flex flex-1 items-center justify-center px-6 text-center text-muted-foreground [-webkit-app-region:drag]">
-        {choices.length
-          ? "What should we work on?"
-          : providers.some((p) => p.checking)
-            ? "Checking Claude and Codex…"
-            : "Link Claude or Codex in Settings to start."}
+        {choices.length ? (
+          <span>
+            {path ? "What should we work on in " : "Start a thread in "}
+            <ProjectSelect cwd={path} onPick={onPickProject} openSignal={projectSignal} />
+            {path ? "?" : null}
+          </span>
+        ) : providers.some((p) => p.checking) ? (
+          "Checking Claude and Codex…"
+        ) : (
+          "Link Claude or Codex in Settings to start."
+        )}
       </div>
       <Composer
         // Stable across the project pick, so effort/permission choices carry over.
         prefsKey="draft:new"
         provider={selected ? decodeChoice(selected).provider : settings.lastProvider}
         cwd={path}
-        onPickProject={onPickProject}
+        onNeedProject={() => setProjectSignal((n) => n + 1)}
         disabled={!selected}
-        sendDisabled={!path}
         models={choices}
         model={selected}
         onModelChange={(value) => {
@@ -279,7 +336,7 @@ export const DraftView = ({
               ? "Checking harnesses…"
               : "No harness linked"
             : !path
-              ? "Pick a project below to start…"
+              ? "Pick a project above to start…"
               : extraModels.length
                 ? `Ask ${extraModels.length + 1} models, each in its own worktree…`
                 : `Ask ${harnessLabel(settings, decodeChoice(selected).provider)}…`
@@ -835,7 +892,7 @@ const EditFromHere = ({ item, threadId }: { item: UserItem; threadId: string }) 
       side="bottom"
       align="end"
       width="w-72"
-      className="h-6 text-[11px]"
+      variant="plain"
       onChange={(choice) => {
         // An unsent draft stays, above the restored prompt.
         setDraft(threadId, (prev) => ({

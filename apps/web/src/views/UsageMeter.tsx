@@ -72,7 +72,7 @@ export function UsageMeter({
         title={`Context and usage (${describe("usage.toggle")})`}
         aria-label={context ? `Context ${percent}% full` : "Context and usage"}
         className={cn(
-          "flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+          "flex h-8 items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
           percent >= 90 && "text-destructive hover:text-destructive",
         )}
       >

@@ -34,7 +34,7 @@ import {
 } from "@apcode/ui/motion/popover-morph";
 import { RangeSlider } from "@apcode/ui/motion/range-slider";
 import { EASE_OUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
-import { matches } from "@apcode/ui/lib/keys";
+import { formatBinding, matches } from "@apcode/ui/lib/keys";
 import { cn } from "@apcode/ui/lib/utils";
 
 /** One row in a composer picker (model, effort, permissions, branch…). */
@@ -100,7 +100,9 @@ export interface PromptInputProps extends Omit<
   minRows?: number;
   maxRows?: number;
   leadingAction?: ReactNode;
-  /** Extra pickers after the model menu, each separated by a hairline. */
+  /** Toolbar items just before attach and send. */
+  trailingAction?: ReactNode;
+  /** Extra pickers after the model menu. */
   controls?: ReactNode[];
   attachments?: PromptAttachment[];
   /** Shows the paperclip button. */
@@ -135,6 +137,7 @@ export function PromptInput({
   minRows = 2,
   maxRows = 8,
   leadingAction,
+  trailingAction,
   controls = [],
   attachments = [],
   onAttach,
@@ -263,54 +266,56 @@ export function PromptInput({
       <form
         onSubmit={submit}
         className={cn(
-          "relative z-10 w-full rounded-2xl border border-border bg-card p-2 transition-colors focus-within:border-primary/25",
-          disabled && "opacity-60",
+          "relative z-10 w-full rounded-2xl border border-border bg-card p-1.5",
+          disabled && "*:opacity-60",
         )}
       >
-        <div
-          ref={measurementRef}
-          aria-hidden="true"
-          className="pointer-events-none invisible absolute inset-x-2 top-0 px-2 text-sm leading-6 [overflow-wrap:break-word] whitespace-pre-wrap"
-        >
-          {`${currentValue}\u200b`}
+        <div className="relative rounded-xl border border-border bg-background p-2">
+          <div
+            ref={measurementRef}
+            aria-hidden="true"
+            className="pointer-events-none invisible absolute inset-x-2 top-0 px-2 text-sm leading-6 [overflow-wrap:break-word] whitespace-pre-wrap"
+          >
+            {`${currentValue}\u200b`}
+          </div>
+          <textarea
+            ref={textareaRef}
+            value={currentValue}
+            disabled={disabled}
+            placeholder={placeholder}
+            aria-label={ariaLabel}
+            rows={minRows}
+            {...textareaProps}
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            className="scrollbar-hide block w-full resize-none overflow-y-auto bg-transparent px-2 pt-1.5 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground/55"
+          />
+
+          <AnimatePresence initial={false}>
+            {attachments.length ? (
+              <motion.div
+                initial={reduce ? { opacity: 1 } : { opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                transition={reduce ? { duration: 0 } : SPRING_SWAP}
+                className="overflow-hidden"
+              >
+                <div className="flex flex-wrap gap-1.5 px-1 pt-2">
+                  {attachments.map((attachment) => (
+                    <AttachmentChip
+                      key={attachment.id}
+                      attachment={attachment}
+                      onRemove={onRemoveAttachment}
+                    />
+                  ))}
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </div>
-        <textarea
-          ref={textareaRef}
-          value={currentValue}
-          disabled={disabled}
-          placeholder={placeholder}
-          aria-label={ariaLabel}
-          rows={minRows}
-          {...textareaProps}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          className="scrollbar-hide block w-full resize-none overflow-y-auto bg-transparent px-2 pt-1.5 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground/55"
-        />
 
-        <AnimatePresence initial={false}>
-          {attachments.length ? (
-            <motion.div
-              initial={reduce ? { opacity: 1 } : { opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
-              transition={reduce ? { duration: 0 } : SPRING_SWAP}
-              className="overflow-hidden"
-            >
-              <div className="flex flex-wrap gap-1.5 px-1 pt-2">
-                {attachments.map((attachment) => (
-                  <AttachmentChip
-                    key={attachment.id}
-                    attachment={attachment}
-                    onRemove={onRemoveAttachment}
-                  />
-                ))}
-              </div>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-
-        <div className="mt-2 flex min-h-8 items-center gap-1">
+        <div className="flex min-h-8 items-center gap-1.5 px-0.5 pt-1.5">
           {actions.length ? (
             <MorphPopover open={actionsOpen} onOpenChange={setActionsOpen}>
               <MorphPopoverTrigger>
@@ -320,7 +325,7 @@ export function PromptInput({
                   size="icon"
                   disabled={disabled || loading}
                   aria-label="Add to prompt"
-                  className="size-8 rounded-lg"
+                  className="size-8 rounded-full border border-border bg-background"
                 >
                   <motion.span
                     aria-hidden="true"
@@ -371,18 +376,10 @@ export function PromptInput({
             </MorphPopover>
           ) : null}
           {leadingAction}
-          <div className="flex min-w-0 items-center gap-0.5">
-            {pickers.map((picker, index) => (
-              <div key={index} className="flex min-w-0 items-center gap-0.5">
-                {index > 0 ? (
-                  <span aria-hidden="true" className="mx-0.5 h-4 w-px shrink-0 bg-rule" />
-                ) : null}
-                {picker}
-              </div>
-            ))}
-          </div>
+          <div className="flex min-w-0 items-center gap-1.5">{pickers}</div>
 
-          <div className="ml-auto flex shrink-0 items-center gap-1">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {trailingAction}
             {onAttach ? (
               <Button
                 type="button"
@@ -391,7 +388,7 @@ export function PromptInput({
                 disabled={disabled}
                 aria-label="Attach files"
                 onClick={onAttach}
-                className="size-8 rounded-lg"
+                className="size-8 rounded-full border border-border bg-background"
               >
                 <Paperclip className="size-4" />
               </Button>
@@ -408,7 +405,7 @@ export function PromptInput({
                     : "Send prompt"
               }
               onClick={showStop ? onStop : undefined}
-              className="size-8 rounded-lg"
+              className="size-8 rounded-full"
             >
               <AnimatePresence initial={false} mode="popLayout">
                 <motion.span
@@ -440,7 +437,7 @@ export function PromptInput({
       </form>
 
       {footer ? (
-        <div className="mx-3 flex h-8 items-center justify-between gap-3 rounded-b-xl border border-t-0 border-border bg-background px-1.5 text-xs text-muted-foreground">
+        <div className="mx-3 -mt-4 flex h-12 items-center justify-between gap-3 rounded-b-xl border border-t-0 border-border bg-background px-1.5 pt-4 text-xs text-muted-foreground">
           {footer}
         </div>
       ) : null}
@@ -513,6 +510,7 @@ function PickerTrigger({
   open,
   disabled,
   icon,
+  variant = "pill",
   className,
   children,
   ...rest
@@ -520,6 +518,7 @@ function PickerTrigger({
   open: boolean;
   disabled: boolean;
   icon?: ReactNode;
+  variant?: PickerVariant;
   className?: string;
   children: ReactNode;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & { ref?: Ref<HTMLButtonElement> }) {
@@ -529,7 +528,11 @@ function PickerTrigger({
       type="button"
       disabled={disabled}
       className={cn(
-        "flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+        "flex max-w-56 min-w-0 items-center gap-1.5 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+        variant === "pill" && "h-8 rounded-full border border-border bg-background px-3 text-xs",
+        variant === "plain" && "h-6 rounded-lg px-2 text-[11px]",
+        variant === "inline" &&
+          "-mx-1 inline-flex rounded-md px-1 align-baseline text-foreground underline decoration-muted-foreground/50 decoration-dotted underline-offset-4",
         open && "bg-muted text-foreground",
         className,
       )}
@@ -538,7 +541,7 @@ function PickerTrigger({
         <span className="grid size-3.5 shrink-0 place-items-center [&_svg]:size-3.5">{icon}</span>
       ) : null}
       <span className="truncate">{children}</span>
-      <ChevronDown className="size-3 shrink-0 opacity-60" />
+      {variant === "inline" ? null : <ChevronDown className="size-3 shrink-0 opacity-60" />}
     </button>
   );
 }
@@ -757,6 +760,8 @@ export function PromptSlider({
   );
 }
 
+type PickerVariant = "pill" | "plain" | "inline";
+
 export interface PromptSelectProps {
   options: PromptOption[];
   value: string | undefined;
@@ -788,6 +793,10 @@ export interface PromptSelectProps {
   openSignal?: number;
   /** Values picked alongside `value` (multi-select by shift-click). */
   multi?: string[];
+  /** While open, ⌘1–⌘9 pick the first nine options, each row showing its shortcut. */
+  numbered?: boolean;
+  /** `plain` for a quiet trigger outside the toolbar, like the strip under the card; `inline` to sit in a sentence. */
+  variant?: PickerVariant;
   /** Shift-click on an option; without it, shift-click picks like a click. */
   onToggle?: (value: string) => void;
   className?: string;
@@ -817,6 +826,8 @@ export function PromptSelect({
   openSignal,
   multi = [],
   onToggle,
+  numbered = false,
+  variant,
   className,
 }: PromptSelectProps) {
   const [open, setOpenState] = useState(false);
@@ -850,6 +861,26 @@ export function PromptSelect({
     : options;
   const canCreate =
     Boolean(onCreate && trimmed) && !options.some((option) => option.value === trimmed);
+  const numberedValues = numbered
+    ? visible
+        .filter((option) => !option.disabled)
+        .slice(0, 9)
+        .map((option) => option.value)
+    : [];
+
+  // Resubscribes every render, so the handler always sees the current filter and onChange.
+  useEffect(() => {
+    if (!open || !numberedValues.length) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      const picked = numberedValues[Number(event.key) - 1];
+      if (!picked || !matches(event, `mod+${event.key}`)) return;
+      event.preventDefault();
+      onChange(picked);
+      setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const create = () => {
     onCreate?.(trimmed);
@@ -866,7 +897,13 @@ export function PromptSelect({
   return (
     <MorphPopover open={open} onOpenChange={setOpen} className="min-w-0">
       <MorphPopoverTrigger>
-        <PickerTrigger open={open} disabled={disabled} icon={triggerIcon} className={className}>
+        <PickerTrigger
+          open={open}
+          disabled={disabled}
+          icon={triggerIcon}
+          variant={variant}
+          className={className}
+        >
           {multi.length ? `${multi.length + 1} models` : (current?.label ?? placeholder)}
         </PickerTrigger>
       </MorphPopoverTrigger>
@@ -1018,6 +1055,11 @@ export function PromptSelect({
                         </span>
                       ) : null}
                     </span>
+                    {numberedValues.includes(option.value) ? (
+                      <span className="shrink-0 text-[11px] text-muted-foreground/70 tabular-nums">
+                        {formatBinding(`mod+${numberedValues.indexOf(option.value) + 1}`)}
+                      </span>
+                    ) : null}
                     {selected ? <Check className="size-3.5 shrink-0" /> : null}
                   </button>
                 )}

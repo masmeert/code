@@ -73,11 +73,12 @@ export const App = () => {
   }, [switchTo]);
 
   const draft = (path: string | null) => setView({ kind: "draft", path });
-  // A worktree thread's cwd is its worktree, so new threads go by its project instead.
+  const projectPath = (threadId: string | undefined) =>
+    projects.find((project) => project.id === threads[threadId ?? ""]?.projectId)?.path ?? null;
+  // Where a new thread starts: the project on screen, else the latest thread's. A worktree
+  // thread's cwd is its worktree, so this goes by the thread's project instead.
   const currentPath =
-    view.kind === "thread"
-      ? (projects.find((project) => project.id === threads[view.id]?.projectId)?.path ?? null)
-      : view.path;
+    (view.kind === "thread" ? projectPath(view.id) : view.path) ?? projectPath(order[0]);
 
   // Like Claude Code: a new thread starts in the project on screen, if any.
   useShortcut("n", () => draft(currentPath));

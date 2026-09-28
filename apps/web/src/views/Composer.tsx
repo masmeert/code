@@ -1,5 +1,4 @@
 import { PromptInput, PromptSelect, PromptSlider } from "@apcode/ui/agents/prompt-input";
-import { ProjectBadge } from "@/components/project-badge";
 import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
 import { cn } from "@apcode/ui/lib/utils";
 import {
@@ -14,7 +13,6 @@ import {
   Archive,
   FilePen,
   Folder,
-  FolderPlus,
   FolderTree,
   GitBranch,
   ListChecks,
@@ -47,7 +45,6 @@ import {
 import { restoreStash, setDraft, stashDraft, useDraft, useStashes } from "../lib/drafts.ts";
 import { describe, KEYBINDINGS, useKeybinding } from "../lib/keybindings.ts";
 import { defaultEffort, type modelChoices, recommendedBadge } from "../lib/models.ts";
-import { addProject } from "../lib/projects.ts";
 import { send, useStore } from "../lib/store.ts";
 import { ago, useNow } from "../lib/time.ts";
 import { UsageMeter } from "./UsageMeter.tsx";
@@ -80,8 +77,8 @@ export interface ComposerProps {
   threadId?: string;
   /** Prompts sent in this thread, oldest first, for ↑ recall. */
   history?: ReadonlyArray<string>;
-  /** Drafts only: turns the folder chip into a project picker. */
-  onPickProject?: (path: string | null) => void;
+  /** Drafts only: called instead of sending while no project is picked. */
+  onNeedProject?: () => void;
   /** Drafts only: where the new thread will run. */
   workspace?: {
     readonly value: "local" | "worktree";
@@ -89,8 +86,6 @@ export interface ComposerProps {
   };
   busy?: boolean;
   disabled?: boolean;
-  /** Keeps the composer usable but blocks sending (e.g. no project picked yet). */
-  sendDisabled?: boolean;
   models: ReturnType<typeof modelChoices>;
   model: string | undefined;
   onModelChange: (value: string) => void;
@@ -142,6 +137,7 @@ export const Composer = (props: ComposerProps) => {
   const providers = useStore((s) => s.providers);
   const stashes = useStashes();
   const [stashSignal, setStashSignal] = useState(0);
+  const worktree = useStore((s) => (threadId ? s.threads[threadId]?.worktree : undefined));
   // No pick means the model's own default, which the menu stars; picking the starred level keeps following it.
   const fallbackEffort = defaultEffort(providers, props.model);
   const effortOptions = EFFORTS[props.provider].map((effort) => ({
@@ -308,6 +304,10 @@ export const Composer = (props: ComposerProps) => {
   });
 
   const submit = (text: string, how: { alternate: boolean }) => {
+    if (props.onNeedProject && !props.cwd) {
+      props.onNeedProject();
+      return;
+    }
     recall.current = null;
     const options = toTurnOptions(prefs, files.take());
     setDraft(prefsKey, { text: "", attachments: [] });
@@ -341,7 +341,6 @@ export const Composer = (props: ComposerProps) => {
           onFocus={trackCaret}
           loading={props.busy ?? false}
           disabled={props.disabled ?? false}
-          submitDisabled={props.sendDisabled ?? false}
           models={props.models}
           model={props.model}
           onModelChange={props.onModelChange}
@@ -396,32 +395,41 @@ export const Composer = (props: ComposerProps) => {
           maxRows={10}
           placeholder={props.placeholder}
           data-composer=""
+          trailingAction={
+            threadId ? (
+              <UsageMeter
+                threadId={threadId}
+                provider={props.provider}
+                busy={props.busy ?? false}
+              />
+            ) : null
+          }
           footer={
             <>
               <span className="flex min-w-0 items-center gap-0.5">
-                {props.onPickProject ? (
-                  <ProjectSelect cwd={props.cwd} onPick={props.onPickProject} />
-                ) : (
-                  <span className="flex min-w-0 items-center gap-1.5 px-1.5">
-                    <Folder className="size-3.5 shrink-0" />
-                    <span className="truncate">{props.cwd?.split("/").at(-1) ?? props.cwd}</span>
+                {props.workspace ? (
+                  <WorkspaceSelect {...props.workspace} disabled={props.disabled} />
+                ) : worktree === undefined ? null : (
+                  <span className="flex min-w-0 items-center gap-1.5 px-2 text-[11px]">
+                    {worktree ? (
+                      <FolderTree className="size-3.5 shrink-0" />
+                    ) : (
+                      <Folder className="size-3.5 shrink-0" />
+                    )}
+                    {worktree ? "Worktree" : "Local checkout"}
                   </span>
                 )}
-                {props.workspace ? <WorkspaceSelect {...props.workspace} /> : null}
               </span>
               <span className="flex min-w-0 items-center gap-0.5">
-                {threadId ? (
-                  <UsageMeter
-                    threadId={threadId}
-                    provider={props.provider}
-                    busy={props.busy ?? false}
-                  />
-                ) : null}
                 {stashes.length ? (
                   <StashSelect prefsKey={prefsKey} openSignal={stashSignal} />
                 ) : null}
                 {props.cwd ? (
-                  <BranchPicker cwd={props.cwd} disabled={props.busy ?? false} />
+                  <BranchPicker
+                    cwd={props.cwd}
+                    worktree={props.workspace?.value === "worktree"}
+                    disabled={(props.disabled || props.busy) ?? false}
+                  />
                 ) : (
                   <span />
                 )}
@@ -523,13 +531,18 @@ const StashSelect = ({ prefsKey, openSignal }: { prefsKey: string; openSignal: n
       openSignal={openSignal}
       align="end"
       width="w-80"
-      className="h-6 text-[11px]"
+      variant="plain"
     />
   );
 };
 
 const WORKSPACE_OPTIONS = [
-  { value: "local", label: "Local", description: "Work in the project folder", icon: <Folder /> },
+  {
+    value: "local",
+    label: "Local checkout",
+    description: "Work in the project folder",
+    icon: <Folder />,
+  },
   {
     value: "worktree",
     label: "New worktree",
@@ -541,9 +554,11 @@ const WORKSPACE_OPTIONS = [
 const WorkspaceSelect = ({
   value,
   onChange,
+  disabled,
 }: {
   value: "local" | "worktree";
   onChange: (value: "local" | "worktree") => void;
+  disabled: boolean | undefined;
 }) => (
   <PromptSelect
     title="Workspace"
@@ -551,54 +566,26 @@ const WorkspaceSelect = ({
     value={value}
     onChange={(next) => onChange(next === "worktree" ? "worktree" : "local")}
     shortcut={KEYBINDINGS["picker.workspace"]}
+    disabled={disabled}
     showOptionIcon
     width="w-72"
-    className="h-6 text-[11px]"
+    variant="plain"
   />
 );
 
-const ADD_PROJECT = "\u0000add-project";
-
-/** Which project a draft starts in; also the way to add one. */
-const ProjectSelect = ({
-  cwd,
-  onPick,
-}: {
-  cwd: string | null;
-  onPick: (path: string | null) => void;
-}) => {
-  const projects = useStore((s) => s.projects);
-  const options = [
-    ...[...projects]
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((project) => ({
-        value: project.path,
-        label: project.name,
-        icon: <ProjectBadge project={project} />,
-      })),
-    { value: ADD_PROJECT, label: "Add project…", icon: <FolderPlus /> },
-  ];
-  return (
-    <PromptSelect
-      title="Project"
-      icon={<Folder />}
-      options={options}
-      value={cwd ?? undefined}
-      placeholder="Pick a project"
-      onChange={(value) =>
-        value === ADD_PROJECT
-          ? void addProject().then((path) => path && onPick(path))
-          : onPick(value)
-      }
-      width="w-64"
-      className={cwd ? "h-6 text-[11px]" : "h-6 text-[11px] text-foreground"}
-    />
-  );
-};
-
 /** Current branch of the project folder; picking another checks it out. */
-const BranchPicker = ({ cwd, disabled }: { cwd: string; disabled: boolean }) => {
+const BranchPicker = ({
+  cwd,
+  worktree,
+  disabled,
+}: {
+  cwd: string;
+  /** A new worktree will start from this branch, so it reads "From main". */
+  worktree: boolean;
+  disabled: boolean;
+}) => {
   const list = useStore((s) => s.branches[cwd]);
+  const fromOrigin = useStore((s) => s.settings.worktreeFromOrigin === true);
   useEffect(() => send(ClientCommand.cases["git.listBranches"].make({ path: cwd })), [cwd]);
 
   if (!list) return null;
@@ -606,7 +593,7 @@ const BranchPicker = ({ cwd, disabled }: { cwd: string; disabled: boolean }) => 
     return <span className="px-1.5 text-muted-foreground/70">Not a git repo</span>;
   return (
     <PromptSelect
-      title="Switch branch"
+      title={worktree ? "Start the worktree from" : "Switch branch"}
       icon={<GitBranch />}
       searchPlaceholder="Find or create a branch…"
       onCreate={(branch) =>
@@ -614,10 +601,13 @@ const BranchPicker = ({ cwd, disabled }: { cwd: string; disabled: boolean }) => 
       }
       createLabel={(branch) => (
         <>
-          Create <span className="font-mono">{branch}</span>
+          Create <span className="text-foreground">{branch}</span>
         </>
       )}
-      options={list.branches.map((branch) => ({ value: branch, label: branch }))}
+      options={list.branches.map((branch) => ({
+        value: branch,
+        label: worktree ? `From ${fromOrigin ? "origin/" : ""}${branch}` : branch,
+      }))}
       value={list.current ?? undefined}
       placeholder="Detached"
       onChange={(branch) =>
@@ -636,7 +626,7 @@ const BranchPicker = ({ cwd, disabled }: { cwd: string; disabled: boolean }) => 
       }
       align="end"
       width="w-72"
-      className="h-6 font-mono text-[11px]"
+      variant="plain"
     />
   );
 };
