@@ -2,6 +2,17 @@
 
 Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unreleased` to `X.Y.Z - YYYY-MM-DD`; the release workflow publishes that section as the GitHub release notes and fails if it is missing.
 
+## Unreleased
+
+### Changed
+
+- Threads settle once they've been idle for a set number of days (7 by default), read or not. Settle and Unsettle from the thread menu hold until the thread's next turn starts. Settings has one "Settle idle threads" option in place of the settle delay and auto-settle switch.
+- Which threads are settled or unread is kept by APCode itself, so every window shows the same lists. Existing threads start out read.
+
+### Fixed
+
+- The permissions and model menus in a new thread respond to clicks on every option, not only the ones below the heading.
+
 ## 0.0.8 - 2026-09-28
 
 ### Added
