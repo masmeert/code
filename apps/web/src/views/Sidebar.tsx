@@ -26,14 +26,7 @@ import { ProjectBadge } from "@/components/project-badge";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import { cn } from "@apcode/ui/lib/utils";
 import { isMac } from "@apcode/ui/lib/keys";
-import {
-  ClientCommand,
-  DEFAULT_AUTO_SETTLE_DAYS,
-  DEFAULT_SETTLE_DELAY_MINUTES,
-  type Project,
-  type ThreadInfo,
-  UpdateStatus,
-} from "@apcode/contracts";
+import { ClientCommand, type Project, type ThreadInfo, UpdateStatus } from "@apcode/contracts";
 import {
   Archive,
   ArchiveRestore,
@@ -52,7 +45,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useMemo, useState } from "react";
-import { canSettle, isSeen, isSettled, send, setSettled, useStore } from "../lib/store.ts";
+import { canSettle, isSeen, send, setSettled, useStore } from "../lib/store.ts";
 import { addProject } from "../lib/projects.ts";
 import { useThreadListView } from "../lib/threadListView.ts";
 import { ago, useNow } from "../lib/time.ts";
@@ -91,14 +84,6 @@ export const Sidebar = (props: {
 }) => {
   const projects = useStore((s) => s.projects);
   const threads = useStore((s) => s.threads);
-  const seen = useStore((s) => s.seen);
-  const settleDelayMs =
-    useStore((s) => s.settings.settleDelayMinutes ?? DEFAULT_SETTLE_DELAY_MINUTES) * 60_000;
-  const inactiveMs = useStore((s) =>
-    s.settings.autoSettle
-      ? (s.settings.autoSettleDays ?? DEFAULT_AUTO_SETTLE_DAYS) * 86_400_000
-      : null,
-  );
   const [query, setQuery] = useState("");
   const [view, setView] = useThreadListView();
   const now = useNow();
@@ -137,14 +122,14 @@ export const Sidebar = (props: {
     const current = infos.filter((info) => info.archivedAt === null);
     return {
       infos,
-      active: current.filter((info) => !isSettled(info, seen, now, settleDelayMs, inactiveMs)),
-      settled: current.filter((info) => isSettled(info, seen, now, settleDelayMs, inactiveMs)),
+      active: current.filter((info) => !info.settled),
+      settled: current.filter((info) => info.settled),
       archived: infos.filter((info) => info.archivedAt !== null),
       projectGroups: [...new Set(infos.map((info) => info.projectId))].map((projectId) =>
         infos.filter((info) => info.projectId === projectId),
       ),
     };
-  }, [projects, threads, seen, query, view, now, settleDelayMs, inactiveMs]);
+  }, [projects, threads, query, view, now]);
 
   const projectOf = (info: ThreadInfo) =>
     projects.find((p) => p.id === info.projectId) ?? {
@@ -171,10 +156,8 @@ export const Sidebar = (props: {
             info={info}
             project={projectOf(info)}
             active={info.id === props.activeId}
-            unread={info.archivedAt === null && !isSeen(info, seen)}
-            settled={
-              info.archivedAt !== null || isSettled(info, seen, now, settleDelayMs, inactiveMs)
-            }
+            unread={info.archivedAt === null && !isSeen(info)}
+            settled={info.archivedAt !== null || info.settled}
             now={now}
             onSelect={() => props.onSelect(info.id)}
           />

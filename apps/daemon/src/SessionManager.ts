@@ -1,6 +1,7 @@
 import {
   AttachmentInput,
   ClientCommand,
+  DEFAULT_AUTO_SETTLE_DAYS,
   isTurnActive,
   ProviderKind,
   RuntimeEvent,
@@ -77,7 +78,7 @@ import { ProviderRegistry } from "./providers/ProviderRegistry.ts";
 import { DATA_DIR } from "./storage/jsonFile.ts";
 import { ProjectsStore } from "./storage/ProjectsStore.ts";
 import { SettingsStore } from "./storage/SettingsStore.ts";
-import { isPersisted, ThreadStore } from "./storage/ThreadStore.ts";
+import { isPersisted, type SettleOverride, ThreadStore } from "./storage/ThreadStore.ts";
 import { type Browsers, createBrowsers } from "./browsers.ts";
 import { createMcp, type Mcp } from "./mcp.ts";
 import { createTerminals, type Terminals } from "./terminals.ts";
@@ -119,11 +120,30 @@ const REAP_INTERVAL_MS = 5 * 60 * 1000;
 
 type AssistantDelta = Extract<RuntimeEvent, { _tag: "assistant.delta" }>;
 
+/**
+ * Settled threads aren't working or waiting on you, and were either settled by hand or idle
+ * for `autoSettleDays`, read or not (as in t3code). A turn starting clears the hand-set override.
+ */
+function isSettled(
+  info: ThreadInfo,
+  settleOverride: SettleOverride,
+  now: number,
+  settings: Settings,
+) {
+  if (isTurnActive(info.status)) return false;
+  if (settleOverride !== null) return settleOverride === "settled";
+  return (
+    settings.autoSettle !== false &&
+    now - info.updatedAt >= (settings.autoSettleDays ?? DEFAULT_AUTO_SETTLE_DAYS) * 86_400_000
+  );
+}
+
 interface ThreadEntry {
   info: ThreadInfo;
   /** Null until the first message after creation or restart; agent processes start lazily. */
   session: ProviderSession | null;
   resumeToken: string | null;
+  settleOverride: SettleOverride;
   /** Last time the thread's agent did or was asked anything; the reaper stops long-idle sessions. */
   activeAt: number;
   /** The user message that started the turn in progress; its snapshots bracket the turn. */
@@ -256,12 +276,15 @@ const make = Effect.gen(function* () {
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let seq = 0;
 
+  let latestSettings = yield* settingsStore.get;
+
   // --- restore -------------------------------------------------------------
-  for (const { info, resumeToken } of yield* store.load) {
+  for (const { info, resumeToken, settleOverride } of yield* store.load) {
     threads.set(info.id, {
-      info,
+      info: { ...info, settled: isSettled(info, settleOverride, Date.now(), latestSettings) },
       session: null,
       resumeToken,
+      settleOverride,
       activeAt: Date.now(),
       currentTurn: null,
       lock: yield* Semaphore.make(1),
@@ -346,6 +369,8 @@ const make = Effect.gen(function* () {
     if (RuntimeEvent.guards["thread.status"](event)) {
       const entry = threads.get(event.threadId);
       if (entry) entry.info = { ...entry.info, status: event.status };
+      if (entry && isTurnActive(event.status) && entry.settleOverride !== null)
+        setSettleOverride(entry, null);
     }
     if (RuntimeEvent.guards["thread.usage"](event) && event.usage) {
       const entry = threads.get(event.threadId);
@@ -360,6 +385,32 @@ const make = Effect.gen(function* () {
     }
     PubSub.publishUnsafe(pubsub, { seq: ++seq, id, event });
     if (RuntimeEvent.isAnyOf(["user.message", "turn.completed"])(event)) touch(event.threadId);
+    if (RuntimeEvent.guards["settings.updated"](event)) {
+      latestSettings = event.settings;
+      for (const entry of threads.values()) resettle(entry);
+    }
+    if ("threadId" in event && event.threadId) {
+      const entry = threads.get(event.threadId);
+      if (entry) resettle(entry);
+    }
+  };
+
+  /** Announces the thread's settled state when it changed. */
+  const resettle = (entry: ThreadEntry) => {
+    const settled = isSettled(entry.info, entry.settleOverride, Date.now(), latestSettings);
+    if (settled === entry.info.settled) return;
+    entry.info = { ...entry.info, settled };
+    publish(RuntimeEvent.cases["thread.settled"].make({ threadId: entry.info.id, settled }));
+  };
+  // Idle threads settle with time alone; the threshold is in days, so a check a minute is plenty.
+  const settler = setInterval(() => {
+    for (const entry of threads.values()) resettle(entry);
+  }, 60_000);
+  yield* Effect.addFinalizer(() => Effect.sync(() => clearInterval(settler)));
+
+  const setSettleOverride = (entry: ThreadEntry, override: SettleOverride) => {
+    entry.settleOverride = override;
+    store.setSettleOverride(entry.info.id, override);
   };
 
   for (const entry of threads.values()) refreshMeta(entry);
@@ -625,11 +676,14 @@ const make = Effect.gen(function* () {
         branch: source.info.branch,
         archivedAt: null,
         worktree: source.info.worktree,
+        seenRev: 0,
+        settled: false,
       };
       threads.set(info.id, {
         info,
         session: null,
         resumeToken,
+        settleOverride: null,
         activeAt: now,
         currentTurn: null,
         lock: yield* Semaphore.make(1),
@@ -944,11 +998,14 @@ const make = Effect.gen(function* () {
         branch: yield* Effect.promise(() => readBranch(cwd)),
         archivedAt: null,
         worktree: command.workspace === "worktree",
+        seenRev: 0,
+        settled: false,
       };
       const entry: ThreadEntry = {
         info,
         session: null,
         resumeToken: null,
+        settleOverride: null,
         activeAt: now,
         currentTurn: null,
         lock: yield* Semaphore.make(1),
@@ -1111,6 +1168,19 @@ const make = Effect.gen(function* () {
       "thread.close": (command) => removeThread(command.threadId),
       "thread.archive": (command) =>
         Effect.flatMap(getEntry(command.threadId), (entry) => setArchived(entry, command.archived)),
+      // A window showing an older update than another already marked can't take the mark back.
+      "thread.seen": ({ threadId, rev }) =>
+        Effect.map(getEntry(threadId), (entry) => {
+          if (rev <= entry.info.seenRev) return;
+          entry.info = { ...entry.info, seenRev: rev };
+          store.setSeenRev(threadId, rev);
+          publish(RuntimeEvent.cases["thread.seen"].make({ threadId, seenRev: rev }));
+        }),
+      "thread.settle": ({ threadId, settled }) =>
+        Effect.map(getEntry(threadId), (entry) => {
+          setSettleOverride(entry, settled ? "settled" : "active");
+          resettle(entry);
+        }),
       "project.remove": (command) =>
         Effect.gen(function* () {
           if (!(yield* projectsStore.remove(command.projectId))) return;

@@ -204,8 +204,6 @@ export const Settings = Schema.Struct({
   /** Harness preselected in new chats; follows the last one used. */
   lastProvider: ProviderKind,
   providers: Schema.Struct({ claude: ProviderSettings, codex: ProviderSettings }),
-  /** Minutes a finished, seen thread stays in Active before it settles. Optional so older settings files still load. */
-  settleDelayMinutes: Schema.optional(Schema.Number),
   /** A message sent while the agent works: held until the turn ends ("queue"), or sent into it right away ("steer"). */
   followUp: Schema.optional(Schema.Literals(["queue", "steer"])),
   /** Model new threads start with, as `provider:model`; null/absent follows the last harness used. */
@@ -215,7 +213,7 @@ export const Settings = Schema.Struct({
   newThreadPermission: Schema.optional(PermissionLevel),
   /** Where new threads start: the project folder, or a git worktree of their own. */
   workspace: Schema.optional(Schema.Literals(["local", "worktree"])),
-  /** Settles threads with no activity for `autoSettleDays`, read or not. */
+  /** Settles threads with no activity for `autoSettleDays`, read or not. Absent counts as on. */
   autoSettle: Schema.optional(Schema.Boolean),
   autoSettleDays: Schema.optional(Schema.Number),
   diffLayout: Schema.optional(Schema.Literals(["unified", "split"])),
@@ -240,7 +238,6 @@ export const Settings = Schema.Struct({
   notifications: Schema.optional(Schema.Boolean),
 });
 export type Settings = typeof Settings.Type;
-export const DEFAULT_SETTLE_DELAY_MINUTES = 15;
 export const DEFAULT_AUTO_SETTLE_DAYS = 7;
 export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
@@ -346,6 +343,10 @@ export const ThreadInfo = Schema.Struct({
   worktree: Schema.Boolean,
   /** Absent until the thread's first turn ends. */
   usage: Schema.optional(ThreadUsage),
+  /** `updatedAt` as of the last time you looked at the thread; lower means unread. */
+  seenRev: Schema.Number,
+  /** Idle long enough, or settled by hand; the daemon decides, so every window agrees. */
+  settled: Schema.Boolean,
 });
 export type ThreadInfo = typeof ThreadInfo.Type;
 
@@ -451,6 +452,8 @@ export const RuntimeEvent = Schema.Union([
     archivedAt: Schema.NullOr(Schema.Number),
   }),
   Schema.TaggedStruct("thread.status", { threadId: Schema.String, status: ThreadStatus }),
+  Schema.TaggedStruct("thread.settled", { threadId: Schema.String, settled: Schema.Boolean }),
+  Schema.TaggedStruct("thread.seen", { threadId: Schema.String, seenRev: Schema.Number }),
   /** Null answers a `thread.readUsage` that found nothing: the thread never finished a turn, or its log couldn't be read. */
   Schema.TaggedStruct("thread.usage", {
     threadId: Schema.String,
@@ -604,6 +607,35 @@ export type RuntimeEvent = typeof RuntimeEvent.Type;
 // Client -> daemon commands
 // ---------------------------------------------------------------------------
 
+/** Repository commands, a union of their own so `ClientCommand` stays within TypeScript's type depth limit. */
+const GitCommand = Schema.Union([
+  /** Answered with a `git.branches` event. */
+  Schema.TaggedStruct("git.listBranches", { path: Schema.String }),
+  /** Answered with a `git.files` event. */
+  Schema.TaggedStruct("git.listFiles", { path: Schema.String }),
+  /** Answered with a `git.diff` event. */
+  Schema.TaggedStruct("git.diff", { path: Schema.String }),
+  Schema.TaggedStruct("git.checkout", { path: Schema.String, branch: Schema.String }),
+  /** Creates a branch from HEAD and switches to it. */
+  Schema.TaggedStruct("git.createBranch", { path: Schema.String, branch: Schema.String }),
+  /** Answered with a `git.status` event. */
+  Schema.TaggedStruct("git.status", { path: Schema.String }),
+  /** Stages everything and commits it, then pushes if `push`; answered with a `git.status` event. An empty `message` is written by the commit model. */
+  Schema.TaggedStruct("git.commit", {
+    path: Schema.String,
+    message: Schema.String,
+    push: Schema.Boolean,
+  }),
+  /** Answered with a `git.status` event. */
+  Schema.TaggedStruct("git.push", { path: Schema.String }),
+  /** Pushes if needed, writes the title and body with the commit model, and opens it; answered with a `git.status` event. */
+  Schema.TaggedStruct("git.createPullRequest", { path: Schema.String }),
+  /** Merges the branch's open pull request on its host; answered with a `git.status` event. */
+  Schema.TaggedStruct("git.mergePullRequest", { path: Schema.String, method: MergeMethod }),
+  /** Answered with a `sourceControl.updated` event. */
+  Schema.TaggedStruct("sourceControl.refresh", {}),
+]);
+
 export const ClientCommand = Schema.Union([
   /** Creates a thread and sends its first message (drafts only exist client-side until then). */
   Schema.TaggedStruct("thread.create", {
@@ -656,37 +688,17 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("checkpoint.diff", { threadId: Schema.String, messageId: Schema.String }),
   /** Full-text search over messages; answered with a `search.results` frame. */
   Schema.TaggedStruct("search", { query: Schema.String, requestId: Schema.String }),
-  /** Answered with a `git.branches` event. */
-  Schema.TaggedStruct("git.listBranches", { path: Schema.String }),
-  /** Answered with a `git.files` event. */
-  Schema.TaggedStruct("git.listFiles", { path: Schema.String }),
-  /** Answered with a `git.diff` event. */
-  Schema.TaggedStruct("git.diff", { path: Schema.String }),
-  Schema.TaggedStruct("git.checkout", { path: Schema.String, branch: Schema.String }),
-  /** Creates a branch from HEAD and switches to it. */
-  Schema.TaggedStruct("git.createBranch", { path: Schema.String, branch: Schema.String }),
-  /** Answered with a `git.status` event. */
-  Schema.TaggedStruct("git.status", { path: Schema.String }),
-  /** Stages everything and commits it, then pushes if `push`; answered with a `git.status` event. An empty `message` is written by the commit model. */
-  Schema.TaggedStruct("git.commit", {
-    path: Schema.String,
-    message: Schema.String,
-    push: Schema.Boolean,
-  }),
-  /** Answered with a `git.status` event. */
-  Schema.TaggedStruct("git.push", { path: Schema.String }),
-  /** Pushes if needed, writes the title and body with the commit model, and opens it; answered with a `git.status` event. */
-  Schema.TaggedStruct("git.createPullRequest", { path: Schema.String }),
-  /** Merges the branch's open pull request on its host; answered with a `git.status` event. */
-  Schema.TaggedStruct("git.mergePullRequest", { path: Schema.String, method: MergeMethod }),
-  /** Answered with a `sourceControl.updated` event. */
-  Schema.TaggedStruct("sourceControl.refresh", {}),
+  GitCommand,
   Schema.TaggedStruct("thread.interrupt", { threadId: Schema.String }),
   /** Stops one subagent, the one started by tool call `toolId`; the turn carries on without it. */
   Schema.TaggedStruct("thread.stopAgent", { threadId: Schema.String, toolId: Schema.String }),
   Schema.TaggedStruct("thread.close", { threadId: Schema.String }),
   /** Archiving also stops the thread's agent process; it resumes on the next message. */
   Schema.TaggedStruct("thread.archive", { threadId: Schema.String, archived: Schema.Boolean }),
+  /** You looked at the thread as of its `updatedAt` `rev`. */
+  Schema.TaggedStruct("thread.seen", { threadId: Schema.String, rev: Schema.Number }),
+  /** Settle/Unsettle from the thread menu; holds until the thread's next turn starts. */
+  Schema.TaggedStruct("thread.settle", { threadId: Schema.String, settled: Schema.Boolean }),
   /** Questions are answered with "allow" and `answers`, and skipped with "deny". */
   Schema.TaggedStruct("approval.respond", {
     threadId: Schema.String,

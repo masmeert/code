@@ -18,9 +18,13 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./jsonFile.ts";
 
+/** A Settle/Unsettle from the thread menu, kept until the thread's next turn starts. */
+export type SettleOverride = "settled" | "active" | null;
+
 export interface StoredThread {
   readonly info: ThreadInfo;
   readonly resumeToken: string | null;
+  readonly settleOverride: SettleOverride;
 }
 
 /** Events worth replaying after a restart: the transcript, with deltas folded into `assistant.completed`. */
@@ -96,6 +100,8 @@ export class ThreadStore extends Context.Service<
     readonly setModel: (threadId: string, model: string | null) => void;
     readonly setUsage: (threadId: string, usage: ThreadUsage) => void;
     readonly setArchived: (threadId: string, archivedAt: number | null) => void;
+    readonly setSeenRev: (threadId: string, seenRev: number) => void;
+    readonly setSettleOverride: (threadId: string, override: SettleOverride) => void;
     readonly setMeta: (
       threadId: string,
       meta: { readonly title: string; readonly updatedAt: number },
@@ -180,6 +186,13 @@ const make = Effect.acquireRelease(
     if (!columns.has("worktree"))
       db.run("ALTER TABLE threads ADD COLUMN worktree INTEGER NOT NULL DEFAULT 0");
     if (!columns.has("usage")) db.run("ALTER TABLE threads ADD COLUMN usage TEXT");
+    if (!columns.has("seen_rev")) {
+      db.run("ALTER TABLE threads ADD COLUMN seen_rev INTEGER NOT NULL DEFAULT 0");
+      // Threads from before the daemon tracked this count as looked at.
+      db.run("UPDATE threads SET seen_rev = updated_at");
+    }
+    if (!columns.has("settle_override"))
+      db.run("ALTER TABLE threads ADD COLUMN settle_override TEXT");
     // Full-text index of what was said, for search. Filled as messages are stored; built from the log once.
     const hasSearch =
       db.query("SELECT name FROM sqlite_master WHERE name = 'messages_fts'").get() !== null;
@@ -206,6 +219,10 @@ const make = Effect.acquireRelease(
     const setModel = db.prepare("UPDATE threads SET model = $model WHERE id = $id");
     const setUsage = db.prepare("UPDATE threads SET usage = $usage WHERE id = $id");
     const setArchived = db.prepare("UPDATE threads SET archived_at = $archivedAt WHERE id = $id");
+    const setSeenRev = db.prepare("UPDATE threads SET seen_rev = $seenRev WHERE id = $id");
+    const setSettleOverride = db.prepare(
+      "UPDATE threads SET settle_override = $override WHERE id = $id",
+    );
     const setResumeToken = db.prepare("UPDATE threads SET resume_token = $token WHERE id = $id");
     const appendEvent = db.prepare(
       "INSERT INTO events (thread_id, kind, json) VALUES ($threadId, $kind, $json)",
@@ -310,6 +327,8 @@ const make = Effect.acquireRelease(
               resume_token: string | null;
               worktree: number;
               usage: string | null;
+              seen_rev: number;
+              settle_override: SettleOverride;
             },
             []
           >("SELECT * FROM threads ORDER BY created_at")
@@ -329,8 +348,11 @@ const make = Effect.acquireRelease(
               archivedAt: row.archived_at,
               worktree: row.worktree === 1,
               usage: row.usage === null ? undefined : Option.getOrUndefined(decodeUsage(row.usage)),
+              seenRev: row.seen_rev,
+              settled: false,
             },
             resumeToken: row.resume_token,
+            settleOverride: row.settle_override,
           })),
       ),
       unresolvedApprovals: () => {
@@ -390,6 +412,12 @@ const make = Effect.acquireRelease(
       },
       setArchived: (id, archivedAt) => {
         setArchived.run({ id, archivedAt });
+      },
+      setSeenRev: (id, seenRev) => {
+        setSeenRev.run({ id, seenRev });
+      },
+      setSettleOverride: (id, override) => {
+        setSettleOverride.run({ id, override });
       },
       setModel: (id, model) => {
         setModel.run({ id, model });

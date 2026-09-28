@@ -136,8 +136,6 @@ export interface State {
   /** The thread list. Transcripts live apart, so streaming text doesn't re-render the sidebar. */
   readonly threads: Readonly<Record<string, ThreadInfo>>;
   readonly transcripts: Readonly<Record<string, Transcript>>;
-  /** When each thread was last looked at (its `updatedAt` then); shared across windows via localStorage. */
-  readonly seen: Readonly<Record<string, SeenMark>>;
   /** Local branches per repo path, fetched on demand by the branch picker. */
   readonly branches: Readonly<Record<string, BranchList>>;
   /** Files per repo path, fetched when an `@` mention starts. */
@@ -190,47 +188,6 @@ export interface BranchList {
   readonly error: string | null;
 }
 
-/**
- * What you last saw of a thread: its `updatedAt` then (`rev`) and when (`at`).
- * `manual` is a Settle/Unsettle from the menu, which skips the settle delay.
- */
-export const SeenMark = Schema.Struct({
-  rev: Schema.Number,
-  at: Schema.Number,
-  manual: Schema.optionalKey(Schema.Boolean),
-});
-export type SeenMark = typeof SeenMark.Type;
-
-const SEEN_KEY = "apcode.seen";
-const hasSeenKey = () => {
-  try {
-    return localStorage.getItem(SEEN_KEY) !== null;
-  } catch {
-    return true;
-  }
-};
-const writeSeen = (seen: Record<string, SeenMark>) => {
-  try {
-    localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
-  } catch {}
-};
-const readSeen = (): Record<string, SeenMark> => {
-  try {
-    const raw = Schema.decodeUnknownSync(
-      Schema.fromJsonString(Schema.Record(Schema.String, Schema.Union([Schema.Number, SeenMark]))),
-    )(localStorage.getItem(SEEN_KEY) ?? "{}");
-    // Marks used to be the bare `updatedAt`.
-    return Object.fromEntries(
-      Object.entries(raw).map(([id, mark]) => [
-        id,
-        typeof mark === "number" ? { rev: mark, at: mark } : mark,
-      ]),
-    );
-  } catch {
-    return {};
-  }
-};
-
 const initial: State = {
   connected: false,
   source: "none",
@@ -247,7 +204,6 @@ const initial: State = {
   order: [],
   threads: {},
   transcripts: {},
-  seen: readSeen(),
   branches: {},
   files: {},
   diffs: {},
@@ -548,6 +504,10 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, model })),
       "thread.archived": ({ threadId, archivedAt }) =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, archivedAt })),
+      "thread.settled": ({ threadId, settled }) =>
+        updateThreadInfo(state, threadId, (info) => ({ ...info, settled })),
+      "thread.seen": ({ threadId, seenRev }) =>
+        updateThreadInfo(state, threadId, (info) => ({ ...info, seenRev })),
     }),
     Match.tag("thread.usage", ({ threadId, usage }) => {
       const { [threadId]: _reading, ...readingUsage } = state.readingUsage;
@@ -724,7 +684,7 @@ const onShell = (frame: Extract<ServerFrame, { _tag: "shell" }>) => {
   for (const { threadId, terminalId } of [...frame.terminals, ...screens.values()]) {
     if (!terminals[threadId]?.includes(terminalId)) (terminals[threadId] ??= []).push(terminalId);
   }
-  let next: State = {
+  setState({
     ...state,
     connected: true,
     source: "daemon",
@@ -744,15 +704,7 @@ const onShell = (frame: Extract<ServerFrame, { _tag: "shell" }>) => {
         return active ? [[threadId, active]] : [];
       }),
     ),
-  };
-  // First run with seen-tracking: everything that already exists counts as looked at.
-  if (!hasSeenKey())
-    next = {
-      ...next,
-      seen: Object.fromEntries(frame.threads.map((t) => [t.id, { rev: t.updatedAt, at: 0 }])),
-    };
-  setState(next);
-  if (!hasSeenKey()) writeSeen(next.seen);
+  });
   for (const threadId of wanted.keys()) {
     if (transcripts[threadId] || !sameData) subscribe(threadId);
     // Not in memory yet: read the cache first so the daemon only sends what's new.
@@ -1188,59 +1140,19 @@ export function closeTerminal(threadId: string, terminalId: string) {
   setState(withoutTerminal(state, threadId, terminalId));
 }
 
-/** Marks a thread's latest activity as seen; it settles once idle and the settle delay has passed. */
+/** Marks a thread's latest activity as seen, which clears its unread state. */
 export const markSeen = (threadId: string) => {
   const info = state.threads[threadId];
-  if (!info || state.seen[threadId]?.rev === info.updatedAt) return;
-  setSeen(threadId, { rev: info.updatedAt, at: Date.now() });
+  if (info && !isSeen(info))
+    send(ClientCommand.cases["thread.seen"].make({ threadId, rev: info.updatedAt }));
 };
 
-/**
- * Manual override from the thread menu. Settling is immediate, skipping the delay;
- * unsettling brings it back as new activity, so it waits to be seen again.
- */
-export const setSettled = (threadId: string, settled: boolean) => {
-  const info = state.threads[threadId];
-  if (info) setSeen(threadId, { rev: settled ? info.updatedAt : 0, at: Date.now(), manual: true });
-};
-
-const setSeen = (threadId: string, mark: SeenMark) => {
-  const seen = { ...state.seen, [threadId]: mark };
-  setState({ ...state, seen });
-  writeSeen(seen);
-};
-
-// Other windows mark threads seen too.
-window.addEventListener("storage", (e) => {
-  if (e.key === SEEN_KEY) setState({ ...state, seen: readSeen() });
-});
+/** Settle/Unsettle from the thread menu; holds until the thread's next turn starts. */
+export const setSettled = (threadId: string, settled: boolean) =>
+  send(ClientCommand.cases["thread.settle"].make({ threadId, settled }));
 
 /** Nothing new (an error included) since you last opened the thread. */
-export const isSeen = (info: ThreadInfo, seen: State["seen"]) =>
-  (seen[info.id]?.rev ?? 0) >= info.updatedAt;
-
-/**
- * Settled threads need nothing from you: not working, not waiting on approval,
- * seen, and seen at least `delayMs` ago (so a thread you just watched finish
- * doesn't jump sections under you). A manual Settle skips the wait. With
- * `inactiveMs`, threads idle that long settle unread too, unless unsettled by hand.
- */
-export const isSettled = (
-  info: ThreadInfo,
-  seen: State["seen"],
-  now: number,
-  delayMs: number,
-  inactiveMs: number | null,
-) => {
-  const mark = seen[info.id];
-  if (!canSettle(info)) return false;
-  if (isSeen(info, seen)) return mark?.manual === true || now - mark!.at >= delayMs;
-  return (
-    inactiveMs !== null &&
-    now - info.updatedAt >= inactiveMs &&
-    !(mark?.manual === true && mark.rev === 0)
-  );
-};
+export const isSeen = (info: ThreadInfo) => info.seenRev >= info.updatedAt;
 
 /** Working threads, or ones waiting on you, can't be settled by hand. */
 export const canSettle = (info: ThreadInfo) => !isTurnActive(info.status);

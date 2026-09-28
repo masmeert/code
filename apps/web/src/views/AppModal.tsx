@@ -21,7 +21,6 @@ import { cn } from "@apcode/ui/lib/utils";
 import {
   ClientCommand,
   DEFAULT_AUTO_SETTLE_DAYS,
-  DEFAULT_SETTLE_DELAY_MINUTES,
   Effort,
   HarnessColor,
   MergeMethod,
@@ -170,15 +169,6 @@ function RowLabel({ title, description }: { title: string; description: string }
   );
 }
 
-const SETTLE_DELAYS: Array<{ minutes: number; label: string }> = [
-  { minutes: 0, label: "Right away" },
-  { minutes: 1, label: "After 1 minute" },
-  { minutes: 5, label: "After 5 minutes" },
-  { minutes: 15, label: "After 15 minutes" },
-  { minutes: 30, label: "After 30 minutes" },
-  { minutes: 60, label: "After 1 hour" },
-];
-
 const AUTO_SETTLE_DAYS = [1, 3, 7, 14, 30];
 
 const THEMES: Array<{ value: Theme; label: string; icon: typeof Sun }> = [
@@ -299,7 +289,6 @@ function GeneralPage() {
   const effortProvider =
     modelValue === "last" ? settings.lastProvider : decodeChoice(modelValue).provider;
   const savedEffort = settings.newThreadEffort;
-  const autoSettle = settings.autoSettle === true;
 
   return (
     <>
@@ -388,52 +377,31 @@ function GeneralPage() {
           <SettingsRow
             label={
               <RowLabel
-                title="Settle threads"
-                description="How long a seen, finished thread stays active"
+                title="Settle idle threads"
+                description="Read or not; new activity brings them back"
               />
             }
           >
             <SettingsSelect
-              value={String(settings.settleDelayMinutes ?? DEFAULT_SETTLE_DELAY_MINUTES)}
-              onChange={(value) =>
-                updateSettings({ ...settings, settleDelayMinutes: Number(value) })
+              value={
+                settings.autoSettle === false
+                  ? "never"
+                  : String(settings.autoSettleDays ?? DEFAULT_AUTO_SETTLE_DAYS)
               }
-              options={SETTLE_DELAYS.map(({ minutes, label }) => ({
-                value: String(minutes),
-                label,
-              }))}
-            />
-          </SettingsRow>
-          <SettingsRow
-            label={
-              <RowLabel
-                title="Auto-settle inactive threads"
-                description="Idle threads settle, even unread"
-              />
-            }
-          >
-            <Switch
-              checked={autoSettle}
-              ariaLabel="Auto-settle inactive threads"
-              onCheckedChange={(checked) => updateSettings({ ...settings, autoSettle: checked })}
-              size="sm"
-            />
-          </SettingsRow>
-          <SettingsRow
-            label={
-              <p className={cn(!autoSettle && "text-muted-foreground")}>
-                Days of inactivity before auto-settle
-              </p>
-            }
-          >
-            <SettingsSelect
-              value={String(settings.autoSettleDays ?? DEFAULT_AUTO_SETTLE_DAYS)}
-              onChange={(value) => updateSettings({ ...settings, autoSettleDays: Number(value) })}
-              options={AUTO_SETTLE_DAYS.map((days) => ({
-                value: String(days),
-                label: days === 1 ? "1 day" : `${days} days`,
-              }))}
-              disabled={!autoSettle}
+              onChange={(value) =>
+                updateSettings(
+                  value === "never"
+                    ? { ...settings, autoSettle: false }
+                    : { ...settings, autoSettle: true, autoSettleDays: Number(value) },
+                )
+              }
+              options={[
+                { value: "never", label: "Never" },
+                ...AUTO_SETTLE_DAYS.map((days) => ({
+                  value: String(days),
+                  label: days === 1 ? "After 1 day" : `After ${days} days`,
+                })),
+              ]}
             />
           </SettingsRow>
         </SettingsGroup>

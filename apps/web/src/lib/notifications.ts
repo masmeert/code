@@ -38,12 +38,12 @@ watchState((prev, next) => {
 });
 
 watchState((prev, next) => {
-  if (!window.desktop || (next.threads === prev.threads && next.seen === prev.seen)) return;
+  if (!window.desktop || next.threads === prev.threads) return;
   const needingYou = next.order.filter((id) => {
     const info = next.threads[id]!;
     return (
       info.archivedAt === null &&
-      (isAwaitingUser(info.status) || (info.status !== "running" && !isSeen(info, next.seen)))
+      (isAwaitingUser(info.status) || (info.status !== "running" && !isSeen(info)))
     );
   }).length;
   if (needingYou === badge) return;
