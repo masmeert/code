@@ -328,7 +328,8 @@ export function MorphPopoverContent({
             visibility: layout ? "visible" : "hidden",
             transformOrigin: originFor(side, align),
           }}
-          className="fixed z-[9999] [filter:drop-shadow(0_1px_1px_rgb(0_0_0/0.06))_drop-shadow(0_8px_20px_rgb(0_0_0/0.12))]"
+          // Electron hit-tests `app-region: drag` regardless of stacking, so a panel over a drag area would lose its clicks.
+          className="fixed z-[9999] [filter:drop-shadow(0_1px_1px_rgb(0_0_0/0.06))_drop-shadow(0_8px_20px_rgb(0_0_0/0.12))] [-webkit-app-region:no-drag]"
         >
           <motion.div
             ref={ctx.contentRef}
