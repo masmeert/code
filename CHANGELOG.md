@@ -2,6 +2,12 @@
 
 Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unreleased` to `X.Y.Z - YYYY-MM-DD`; the release workflow publishes that section as the GitHub release notes and fails if it is missing.
 
+## Unreleased
+
+### Changed
+
+- The settings scrollbar only shows while you hover or scroll, and stays clear of the panel's rounded corners.
+
 ## 0.0.6 - 2026-09-28
 
 ### Fixed
