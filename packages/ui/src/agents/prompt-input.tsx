@@ -26,6 +26,7 @@ import {
   useState,
 } from "react";
 import { Button } from "@apcode/ui/motion/button";
+import { Fold } from "@apcode/ui/motion/fold";
 import {
   MorphPopover,
   MorphPopoverContent,
@@ -115,6 +116,8 @@ export interface PromptInputProps extends Omit<
    * `plain` is set for ⌘⇧V / Ctrl+Shift+V, which asks to keep a paste as text.
    */
   onPasteText?: (text: string, plain: boolean) => boolean;
+  /** Above the card, for `PromptInputTray`s. */
+  header?: ReactNode;
   /** Strip tucked under the card; children lay out left-to-right, spread apart. */
   footer?: ReactNode;
   className?: string;
@@ -147,6 +150,7 @@ export function PromptInput({
   extraModels,
   onToggleModel,
   modelShortcut,
+  header,
   footer,
   className,
   disabled,
@@ -263,6 +267,7 @@ export function PromptInput({
 
   return (
     <div className={cn("w-full", className)}>
+      {header}
       <form
         onSubmit={submit}
         className={cn(
@@ -442,6 +447,33 @@ export function PromptInput({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * A card above the composer (queued messages, running subagents) that folds in and out.
+ * Tucked behind the composer's top edge, or `detached` to stand on its own above it.
+ */
+export function PromptInputTray({
+  open,
+  detached = false,
+  children,
+}: {
+  open: boolean;
+  detached?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Fold open={open}>
+      <div
+        className={cn(
+          "relative mx-3 max-h-80 overflow-y-auto overscroll-contain border border-border bg-background px-1.5 text-xs text-muted-foreground",
+          detached ? "mb-2 rounded-xl py-1" : "-mb-4 rounded-t-xl border-b-0 pt-1 pb-5",
+        )}
+      >
+        {children}
+      </div>
+    </Fold>
   );
 }
 

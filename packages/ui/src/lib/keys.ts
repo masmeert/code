@@ -32,6 +32,8 @@ export const formatBinding = (binding: string) =>
           ? "⇧"
           : part === "alt"
             ? "⌥"
-            : part.toUpperCase(),
+            : part === "enter"
+              ? "↩"
+              : part.toUpperCase(),
     )
     .join("");

@@ -11,6 +11,7 @@ export const KEYBINDINGS = {
   "thread.new": "mod+n",
   "settings.open": "mod+,",
   "composer.stash": "mod+s",
+  "composer.steerQueued": "mod+shift+enter",
   "picker.model": "mod+shift+m",
   "picker.effort": "mod+shift+e",
   "picker.permission": "mod+shift+a",

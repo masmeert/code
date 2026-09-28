@@ -18,7 +18,7 @@ import {
   MorphPopoverMenu,
   MorphPopoverTrigger,
 } from "@apcode/ui/motion/popover-morph";
-import { EASE_OUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
+import { FOLD, SPRING_SWAP } from "@apcode/ui/lib/ease";
 import { NumberTicker } from "@apcode/ui/motion/number-ticker";
 import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
 import { Separator } from "@apcode/ui/components/separator";
@@ -50,7 +50,7 @@ import {
   SquarePen,
   Trash2,
 } from "lucide-react";
-import { AnimatePresence, motion, type Transition, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useMemo, useState } from "react";
 import { canSettle, isSeen, isSettled, send, setSettled, useStore } from "../lib/store.ts";
 import { addProject } from "../lib/projects.ts";
@@ -61,15 +61,8 @@ import { usePersistedFlag } from "../lib/usePersistedFlag.ts";
 import type { ModalView } from "./AppModal.tsx";
 import { ThreadListMenu } from "./ThreadListMenu.tsx";
 
-// A plain ease: a bouncy spring overshoots past zero height, which clamps and stutters.
 /** Only the macOS desktop window draws traffic lights over the top-left corner. */
 export const hasTrafficLights = Boolean(window.desktop) && isMac;
-
-const FOLD: Transition = {
-  duration: 0.24,
-  ease: EASE_OUT,
-  opacity: { duration: 0.12, ease: EASE_OUT },
-};
 
 const IconButton = ({
   label,

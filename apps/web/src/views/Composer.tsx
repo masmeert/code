@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import {
   type KeyboardEvent,
+  type ReactNode,
   type SyntheticEvent,
   useEffect,
   useId,
@@ -84,6 +85,8 @@ export interface ComposerProps {
     readonly value: "local" | "worktree";
     readonly onChange: (value: "local" | "worktree") => void;
   };
+  /** Card on top of the composer, e.g. queued messages. */
+  header?: ReactNode;
   busy?: boolean;
   disabled?: boolean;
   models: ReturnType<typeof modelChoices>;
@@ -404,6 +407,7 @@ export const Composer = (props: ComposerProps) => {
               />
             ) : null
           }
+          header={props.header}
           footer={
             <>
               <span className="flex min-w-0 items-center gap-0.5">

@@ -10,7 +10,8 @@ import {
 } from "@apcode/ui/agents/message";
 import { Markdown } from "@apcode/ui/agents/markdown";
 import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
-import { PromptSelect } from "@apcode/ui/agents/prompt-input";
+import { PromptInputTray, PromptSelect } from "@apcode/ui/agents/prompt-input";
+import { Fold } from "@apcode/ui/motion/fold";
 import { StreamingResponse } from "@apcode/ui/agents/streaming-response";
 import { ApprovalCard } from "@apcode/ui/agents/approval-card";
 import {
@@ -44,8 +45,8 @@ import {
 } from "@apcode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
 import {
-  ArrowUp,
   ChevronRight,
+  CornerDownRight,
   FileDiff,
   FileText,
   GitFork,
@@ -54,11 +55,11 @@ import {
   Globe,
   ImageIcon,
   PanelLeft,
+  Pencil,
   Quote,
   Square,
   SquareTerminal,
   Undo2,
-  X,
 } from "lucide-react";
 import {
   createContext,
@@ -397,27 +398,49 @@ const returnToComposer = (threadId: string, followUps: ReadonlyArray<FollowUp>) 
   focusComposer();
 };
 
-/** A message waiting for the turn to end: sends by itself then, or now, or goes back to the composer. */
-const FollowUpBubble = ({ threadId, followUp }: { threadId: string; followUp: FollowUp }) => (
-  <Message from="user" animateIn>
-    <MessageContent className="items-end gap-1">
-      <div className="max-w-full rounded-2xl border border-dashed border-border px-3.5 py-2 text-sm whitespace-pre-wrap text-muted-foreground">
-        {followUp.text}
-      </div>
-      <div className="flex items-center gap-0.5 text-muted-foreground">
-        <span className="px-1 text-[11px]">Sends when the turn ends</span>
-        <IconAction label="Send now" onClick={() => sendFollowUpNow(threadId, followUp.id)}>
-          <ArrowUp className="size-3.5" />
-        </IconAction>
-        <IconAction
-          label="Back to the composer"
-          onClick={() => returnToComposer(threadId, takeFollowUps(threadId, followUp.id))}
-        >
-          <X className="size-3.5" />
-        </IconAction>
-      </div>
-    </MessageContent>
-  </Message>
+/** A message waiting for the turn to end: sends by itself then, or steers it now, or goes back to the composer. */
+const QueuedFollowUp = ({
+  threadId,
+  followUp,
+  next,
+}: {
+  threadId: string;
+  followUp: FollowUp;
+  /** First in line: it goes out at the next boundary, and the steer shortcut sends it. */
+  next: boolean;
+}) => (
+  <div
+    className="flex h-8 items-center gap-2 pl-1.5"
+    title={
+      next
+        ? "Sends after the next tool call, or when the turn ends"
+        : "Sends after the messages above it"
+    }
+  >
+    <CornerDownRight className="size-3.5 shrink-0" />
+    <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/80">{followUp.text}</span>
+    {followUp.options.attachments.length ? (
+      <span className="shrink-0">
+        {followUp.options.attachments.length} file
+        {followUp.options.attachments.length === 1 ? "" : "s"}
+      </span>
+    ) : null}
+    <button
+      type="button"
+      title={`Send now, into the running turn${next ? ` (${describe("composer.steerQueued")})` : ""}`}
+      onClick={() => sendFollowUpNow(threadId, followUp.id)}
+      className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <CornerDownRight className="size-3.5" />
+      Steer
+    </button>
+    <IconAction
+      label="Edit in the composer"
+      onClick={() => returnToComposer(threadId, takeFollowUps(threadId, followUp.id))}
+    >
+      <Pencil className="size-3.5" />
+    </IconAction>
+  </div>
 );
 
 const IconAction = (props: { label: string; onClick: () => void; children: ReactNode }) => (
@@ -540,6 +563,11 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   }, [diffTurnGone]);
   const followUps = useStore((s) => s.followUps[threadId]) ?? NO_FOLLOW_UPS;
   const followUpMode = useStore((s) => s.settings.followUp ?? "queue");
+  // Leaves the draft alone, and waits while the agent needs an approval or an answer.
+  useKeybinding(
+    followUps[0] && status === "running" ? "composer.steerQueued" : undefined,
+    () => followUps[0] && sendFollowUpNow(threadId, followUps[0].id),
+  );
   const history = useMemo(
     () => items.flatMap((item) => (item.kind === "user" && item.text ? [item.text] : [])),
     [items],
@@ -668,21 +696,9 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                   </MessageContent>
                 </Message>
               ) : null}
-              {followUps.map((followUp) => (
-                <FollowUpBubble key={followUp.id} threadId={threadId} followUp={followUp} />
-              ))}
             </MessageGroup>
           </MessageScroller>
 
-          {runningAgents.length ? (
-            <RunningAgents
-              threadId={threadId}
-              agents={runningAgents}
-              // Stopping one Codex subagent leaves the main agent waiting on it; Stop ends them all.
-              canStopOne={provider === "claude"}
-              onReveal={(toolId) => setReveal({ toolId })}
-            />
-          ) : null}
           <Composer
             prefsKey={threadId}
             threadId={threadId}
@@ -690,6 +706,29 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             provider={provider}
             cwd={info.cwd}
             busy={busy}
+            header={
+              <>
+                <PromptInputTray open={runningAgents.length > 0} detached>
+                  <RunningAgents
+                    threadId={threadId}
+                    agents={runningAgents}
+                    // Stopping one Codex subagent leaves the main agent waiting on it; Stop ends them all.
+                    canStopOne={provider === "claude"}
+                    onReveal={(toolId) => setReveal({ toolId })}
+                  />
+                </PromptInputTray>
+                <PromptInputTray open={followUps.length > 0}>
+                  {followUps.map((followUp, index) => (
+                    <QueuedFollowUp
+                      key={followUp.id}
+                      threadId={threadId}
+                      followUp={followUp}
+                      next={index === 0}
+                    />
+                  ))}
+                </PromptInputTray>
+              </>
+            }
             models={choices}
             model={current ? encodeChoice(provider, current) : undefined}
             onModelChange={(value) =>
@@ -1004,134 +1043,137 @@ function RunningAgents({
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
   const listId = useId();
+  // Beyond two, the rows fold into one summary so the tray stays short.
+  const grouped = agents.length > 2;
   return (
     <div
-      className="shrink-0 px-3"
       onKeyDown={(event) => {
         if (event.key !== "Escape" || !open) return;
         event.stopPropagation();
         setOpen(false);
       }}
     >
-      <div className="mx-auto max-w-3xl pb-2">
+      {grouped ? (
         <button
           type="button"
           aria-expanded={open}
           aria-controls={listId}
           onClick={() => setOpen(!open)}
-          className="flex h-7 items-center gap-2 rounded-md px-1 text-xs text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex h-8 w-full items-center gap-2 rounded-md pl-1.5 text-left transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
-          {agents.length} {agents.length === 1 ? "subagent" : "subagents"} running
+          <span className="grid size-3.5 shrink-0 place-items-center">
+            <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+          </span>
+          <span className="flex-1 text-[13px] text-foreground/80">
+            {agents.length} subagents running
+          </span>
           <ChevronRight
-            className={cn("size-3.5 transition-transform duration-200", open && "rotate-90")}
+            className={cn("mr-2 size-3.5 transition-transform duration-200", open && "rotate-90")}
           />
         </button>
-        {open ? (
-          <ul id={listId} className="mt-1 rounded-xl border border-border bg-background p-1">
-            {agents.map((agent) => {
-              const calls = agent.children ?? [];
-              const last = calls.at(-1);
-              const name = agent.summary || "Subagent";
-              const isUnfolded = unfolded.has(agent.id);
-              const earlier = calls.length - RECENT_AGENT_CALLS;
-              return (
-                <li key={agent.id}>
-                  <div className="flex items-center gap-1 rounded-lg hover:bg-muted/60">
+      ) : null}
+      <Fold open={!grouped || open}>
+        <ul id={listId}>
+          {agents.map((agent) => {
+            const calls = agent.children ?? [];
+            const last = calls.at(-1);
+            const name = agent.summary || "Subagent";
+            const isUnfolded = unfolded.has(agent.id);
+            const earlier = calls.length - RECENT_AGENT_CALLS;
+            return (
+              <li key={agent.id}>
+                <div className="flex h-8 items-center gap-2 pl-1.5">
+                  <span className="grid size-3.5 shrink-0 place-items-center">
+                    <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+                  </span>
+                  <button
+                    type="button"
+                    title="Show it in the chat"
+                    onClick={() => onReveal(agent.id)}
+                    className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="shrink-0 text-[13px] text-foreground/80">{name}</span>
+                    <span className="truncate">
+                      {stopping.has(agent.id)
+                        ? "Stopping…"
+                        : (agent.progress ??
+                          (!last
+                            ? "Starting…"
+                            : last.output === null
+                              ? livePhrase(last)
+                              : summarize([last])))}
+                    </span>
+                  </button>
+                  {agent.tokens === undefined ? null : (
+                    <span className="shrink-0 text-muted-foreground/70 tabular-nums">
+                      {new Intl.NumberFormat("en", { notation: "compact" }).format(agent.tokens)}{" "}
+                      tokens
+                      {agent.durationMs === undefined
+                        ? null
+                        : ` in ${agent.durationMs >= 60_000 ? `${Math.floor(agent.durationMs / 60_000)}m ` : ""}${Math.floor(agent.durationMs / 1000) % 60}s`}
+                    </span>
+                  )}
+                  <IconAction
+                    label={`${isUnfolded ? "Hide" : "Show"} what ${name} is doing`}
+                    onClick={() => {
+                      const next = new Set(unfolded);
+                      if (!next.delete(agent.id)) next.add(agent.id);
+                      setUnfolded(next);
+                    }}
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "size-3.5 transition-transform duration-200",
+                        isUnfolded && "rotate-90",
+                      )}
+                    />
+                  </IconAction>
+                  {canStopOne ? (
                     <button
                       type="button"
-                      aria-expanded={isUnfolded}
-                      aria-label={`${isUnfolded ? "Hide" : "Show"} what ${name} is doing`}
+                      aria-label={`Stop ${name}`}
+                      title="Stop this subagent"
+                      disabled={stopping.has(agent.id)}
                       onClick={() => {
-                        const next = new Set(unfolded);
-                        if (!next.delete(agent.id)) next.add(agent.id);
-                        setUnfolded(next);
+                        setStopping(new Set(stopping).add(agent.id));
+                        send(
+                          ClientCommand.cases["thread.stopAgent"].make({
+                            threadId,
+                            toolId: agent.id,
+                          }),
+                        );
                       }}
-                      className="ml-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                      className="grid size-6 shrink-0 place-items-center rounded-md transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                     >
-                      <ChevronRight
-                        className={cn(
-                          "size-3.5 transition-transform duration-200",
-                          isUnfolded && "rotate-90",
-                        )}
-                      />
+                      <Square className="size-2.5 fill-current" />
                     </button>
-                    <button
-                      type="button"
-                      title="Show it in the chat"
-                      onClick={() => onReveal(agent.id)}
-                      className="flex min-w-0 flex-1 items-baseline gap-2 rounded-lg py-1.5 pr-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <span className="shrink-0 text-sm text-foreground">{name}</span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {stopping.has(agent.id)
-                          ? "Stopping…"
-                          : (agent.progress ??
-                            (!last
-                              ? "Starting…"
-                              : last.output === null
-                                ? livePhrase(last)
-                                : summarize([last])))}
-                      </span>
-                    </button>
-                    {agent.tokens === undefined ? null : (
-                      <span className="shrink-0 pr-2 text-xs text-muted-foreground/70 tabular-nums">
-                        {new Intl.NumberFormat("en", { notation: "compact" }).format(agent.tokens)}{" "}
-                        tokens
-                        {agent.durationMs === undefined
-                          ? null
-                          : ` · ${agent.durationMs >= 60_000 ? `${Math.floor(agent.durationMs / 60_000)}m ` : ""}${Math.floor(agent.durationMs / 1000) % 60}s`}
-                      </span>
-                    )}
-                    {canStopOne ? (
+                  ) : null}
+                </div>
+                <Fold open={isUnfolded}>
+                  <div className="mr-2 mb-1 ml-[13px] border-l border-border pl-3 text-sm">
+                    {earlier > 0 ? (
                       <button
                         type="button"
-                        aria-label={`Stop ${name}`}
-                        title="Stop this subagent"
-                        disabled={stopping.has(agent.id)}
-                        onClick={() => {
-                          setStopping(new Set(stopping).add(agent.id));
-                          send(
-                            ClientCommand.cases["thread.stopAgent"].make({
-                              threadId,
-                              toolId: agent.id,
-                            }),
-                          );
-                        }}
-                        className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                        onClick={() => onReveal(agent.id)}
+                        className="h-7 rounded-md text-xs text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                       >
-                        <Square className="size-2.5 fill-current" />
+                        {earlier} earlier {earlier === 1 ? "call" : "calls"} in the chat
                       </button>
                     ) : null}
+                    {calls.length ? (
+                      calls
+                        .slice(-RECENT_AGENT_CALLS)
+                        .map((call) => <ToolCallRow key={call.id} call={call} live reveal={null} />)
+                    ) : (
+                      <p className="py-1 text-xs text-muted-foreground">No calls yet</p>
+                    )}
                   </div>
-                  {isUnfolded ? (
-                    <div className="mr-2 mb-1 ml-[18px] border-l border-border pl-3 text-sm">
-                      {earlier > 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => onReveal(agent.id)}
-                          className="h-7 rounded-md text-xs text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          {earlier} earlier {earlier === 1 ? "call" : "calls"} in the chat
-                        </button>
-                      ) : null}
-                      {calls.length ? (
-                        calls
-                          .slice(-RECENT_AGENT_CALLS)
-                          .map((call) => (
-                            <ToolCallRow key={call.id} call={call} live reveal={null} />
-                          ))
-                      ) : (
-                        <p className="py-1 text-xs text-muted-foreground">No calls yet</p>
-                      )}
-                    </div>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
-      </div>
+                </Fold>
+              </li>
+            );
+          })}
+        </ul>
+      </Fold>
     </div>
   );
 }
