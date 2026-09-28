@@ -2,6 +2,26 @@
 
 Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unreleased` to `X.Y.Z - YYYY-MM-DD`; the release workflow publishes that section as the GitHub release notes and fails if it is missing.
 
+## Unreleased
+
+### Added
+
+- Queued messages sit in a card above the composer: steer one into the running turn, or take it back to edit. ⌘⇧↩ steers the oldest.
+- Running subagents get their own card above the composer, with what each is doing, its tokens and time, and a stop button.
+- ⌘1 to ⌘9 pick a project in the project menu.
+
+### Changed
+
+- The composer's text box sits in its own frame, and its pickers are rounded pills.
+- A new thread asks for its project in the heading ("What should we work on in …?"), opens the project menu on its own, and starts in your latest thread's project.
+- The strip under the composer shows where the thread works (local checkout or a new worktree) and the branch it starts from.
+- The context meter moved into the composer, next to attach and send.
+- A queued message goes out after the agent's next tool call, not only when the turn ends.
+
+### Fixed
+
+- The project, workspace and branch pickers stay disabled until a harness is linked, like the others.
+
 ## 0.0.7 - 2026-09-28
 
 ### Changed
