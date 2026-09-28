@@ -840,6 +840,12 @@ const onFrame = (frame: ServerFrame) =>
         event.threadId === state.forking.threadId
       )
         setState({ ...state, forking: { ...state.forking, error: event.message } });
+      if (RuntimeEvent.guards["tool.started"](event) && event.parentToolId)
+        subagentCalls.add(event.toolId);
+      // A finished tool call is where the agent picks up steering, so the next held message
+      // goes out there rather than at the end of the turn (t3code does the same).
+      if (RuntimeEvent.guards["tool.completed"](event) && !subagentCalls.delete(event.toolId))
+        sendNextFollowUp(event.threadId);
       if (!isTranscriptEvent(event)) return applyShellEvent(event);
       const transcript = state.transcripts[event.threadId];
       // Not following this thread, or already have it (a replay can overlap live events).
@@ -1074,6 +1080,9 @@ export const takeFollowUps = (threadId: string, id?: string): ReadonlyArray<Foll
   setFollowUps(threadId, id ? list.filter((f) => f.id !== id) : []);
   return taken;
 };
+
+/** Calls made inside a subagent; finishing one isn't a boundary the main agent reads messages at. */
+const subagentCalls = new Set<string>();
 
 const sendNextFollowUp = (threadId: string) => {
   const [next, ...rest] = state.followUps[threadId] ?? [];
