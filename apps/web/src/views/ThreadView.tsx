@@ -646,8 +646,8 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             placeholder={
               busy
                 ? followUpMode === "queue"
-                  ? "Queue a follow-up · ⌘↩ to send now"
-                  : `Steer ${harnessLabel(settings, provider)} · ⌘↩ to queue`
+                  ? "Queue a follow-up (⌘↩ to send now)"
+                  : `Steer ${harnessLabel(settings, provider)} (⌘↩ to queue)`
                 : `Ask ${harnessLabel(settings, provider)}…`
             }
             onSubmit={(text, options, how) => {
@@ -1320,7 +1320,7 @@ const AgentBlockContent = ({
                       (question) =>
                         `${questions.length > 1 ? `${question.header}: ` : ""}${(answers[question.id] ?? []).join(", ")}`,
                     )
-                    .join(" · ")
+                    .join("; ")
                 : "Went on without an answer"
             }
           />

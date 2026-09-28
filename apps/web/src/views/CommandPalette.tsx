@@ -143,7 +143,7 @@ const Palette = (props: PaletteProps) => {
                 section: needle ? "Threads" : "Recent threads",
                 icon: project ? <ProjectBadge project={project} /> : <MessageSquare />,
                 label: thread.title,
-                detail: `${project?.name ?? thread.cwd.split("/").at(-1)}${thread.archivedAt ? " · archived" : ""}`,
+                detail: `${project?.name ?? thread.cwd.split("/").at(-1)}${thread.archivedAt ? ", archived" : ""}`,
                 run: choose(latest, (p) => p.onOpenThread(thread.id)),
               };
             }),
@@ -184,7 +184,7 @@ const Palette = (props: PaletteProps) => {
         section: "Messages",
         icon: <Search />,
         label: <Snippet text={hit.snippet} />,
-        detail: `${hit.from === "user" ? "You" : "Agent"} · ${threads[hit.threadId]?.title ?? ""}`,
+        detail: `${hit.from === "user" ? "You" : "Agent"} in ${threads[hit.threadId]?.title ?? ""}`,
         run: choose(latest, (p) => p.onOpenThread(hit.threadId)),
       })),
     [shownHits, threads],

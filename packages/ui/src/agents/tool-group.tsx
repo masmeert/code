@@ -264,7 +264,7 @@ export function ToolGroup({
           <span className="truncate">{summarize(calls)}</span>
         )}
         {failed > 0 ? (
-          <span className="shrink-0 text-rose-600 dark:text-rose-400">· {failed} failed</span>
+          <span className="shrink-0 text-rose-600 dark:text-rose-400">{failed} failed</span>
         ) : null}
         <Chevron open={open} />
       </button>

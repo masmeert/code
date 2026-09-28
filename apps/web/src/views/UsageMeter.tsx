@@ -69,7 +69,7 @@ export function UsageMeter({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        title={`Context and usage · ${describe("usage.toggle")}`}
+        title={`Context and usage (${describe("usage.toggle")})`}
         aria-label={context ? `Context ${percent}% full` : "Context and usage"}
         className={cn(
           "flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
@@ -223,7 +223,7 @@ function LimitsSection({ provider }: { provider: ProviderKind }) {
     <div className="mt-3 border-t border-border pt-3 text-xs">
       <div className="flex items-center justify-between">
         <span className="text-muted-foreground">
-          Usage limits{plan ? ` · ${plan.charAt(0).toUpperCase()}${plan.slice(1)}` : ""}
+          Usage limits{plan ? ` (${plan.charAt(0).toUpperCase()}${plan.slice(1)})` : ""}
         </span>
         <button
           type="button"

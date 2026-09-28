@@ -260,8 +260,8 @@ function FileUploadRow({
                 {item.name}
               </p>
               <p className={cn("mt-0.5 text-xs text-muted-foreground", classNames?.meta)}>
-                {fileKind(item)} · {formatBytes(item.size)}
-                {status === "error" && item.error ? ` · ${item.error}` : null}
+                {fileKind(item)}, {formatBytes(item.size)}
+                {status === "error" && item.error ? `, ${item.error}` : null}
               </p>
             </div>
 

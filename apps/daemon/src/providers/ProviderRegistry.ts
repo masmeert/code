@@ -196,11 +196,11 @@ const readClaudeLimits = async (launch: HarnessLaunch): Promise<Array<UsageLimit
     return (
       [
         ["5-hour limit", limits.five_hour],
-        ["Weekly · all models", limits.seven_day],
-        ["Weekly · Opus", limits.seven_day_opus],
-        ["Weekly · Sonnet", limits.seven_day_sonnet],
+        ["Weekly, all models", limits.seven_day],
+        ["Weekly, Opus", limits.seven_day_opus],
+        ["Weekly, Sonnet", limits.seven_day_sonnet],
         ...(limits.model_scoped ?? []).map(
-          (window) => [`Weekly · ${window.display_name}`, window] as const,
+          (window) => [`Weekly, ${window.display_name}`, window] as const,
         ),
       ] as const
     ).flatMap(([label, window]) =>

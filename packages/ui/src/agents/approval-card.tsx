@@ -483,9 +483,9 @@ export function ApprovalCard({
                 {pending ? (
                   <span className="hidden min-w-0 truncate text-xs text-muted-foreground/65 group-focus-within/approval:inline">
                     {question?.options?.length
-                      ? `1–${Math.min(question.options.length, 9)} to pick · `
+                      ? `1–${Math.min(question.options.length, 9)} to pick, `
                       : ""}
-                    ↵ to continue{onDismiss ? " · Esc to skip" : ""}
+                    ↵ to continue{onDismiss ? ", Esc to skip" : ""}
                   </span>
                 ) : null}
                 <Button

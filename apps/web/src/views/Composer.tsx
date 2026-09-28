@@ -510,12 +510,12 @@ const StashSelect = ({ prefsKey, openSignal }: { prefsKey: string; openSignal: n
   const now = useNow();
   return (
     <PromptSelect
-      title={`Stashed prompts · ${describe("composer.stash")} stashes the current one`}
+      title={`Stashed prompts (${describe("composer.stash")} stashes the current one)`}
       icon={<Archive />}
       options={stashes.map((stash) => ({
         value: stash.id,
         label: stash.text.split("\n")[0] || `${stash.attachments.length} files`,
-        description: `${ago(stash.at, now)}${stash.attachments.length ? ` · ${stash.attachments.length} files` : ""}`,
+        description: `${ago(stash.at, now)}${stash.attachments.length ? `, ${stash.attachments.length} files` : ""}`,
       }))}
       value={undefined}
       placeholder={String(stashes.length)}

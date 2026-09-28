@@ -101,8 +101,8 @@ export function WheelPicker({
   const drumRef = useRef<HTMLUListElement>(null);
   const bandRef = useRef<HTMLUListElement>(null);
   // Scroll position measured in rows (a float index). One source of truth for
-  // both layers: the drum rotates by `itemAngle·scroll`, the crisp band slides
-  // by `itemHeight·scroll`.
+  // both layers: the drum rotates by `itemAngle × scroll`, the crisp band slides
+  // by `itemHeight × scroll`.
   const scroll = useRef(indexOf(currentValue));
   const raf = useRef(0);
   const emitted = useRef(currentValue);
