@@ -268,7 +268,7 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
               {MergeMethod.literals.map((method) => (
                 <label
                   key={method}
-                  className="flex h-8 cursor-default items-center gap-2 rounded-lg px-2 text-sm text-foreground hover:bg-muted/60 has-focus-visible:bg-muted/60"
+                  className="flex h-8 items-center gap-2 rounded-lg px-2 text-sm text-foreground hover:bg-muted/60 has-focus-visible:bg-muted/60"
                 >
                   <input
                     type="radio"

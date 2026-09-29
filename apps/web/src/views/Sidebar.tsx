@@ -841,7 +841,7 @@ const ThreadCard = (props: {
               }, 120);
             }}
             className={cn(
-              "group/card cursor-default rounded-xl px-3 transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring",
+              "group/card rounded-xl px-3 transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring",
               props.shelved ? "py-1.5" : "py-2.5",
               props.active && "bg-muted",
             )}
