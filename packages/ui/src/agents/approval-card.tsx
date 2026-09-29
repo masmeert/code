@@ -98,14 +98,9 @@ function QuestionOptions({
     <div className="mt-3">
       {question.options?.length ? (
         question.multiple ? (
-          <div className="grid gap-0.5" onPointerLeave={() => setLookedAt(undefined)}>
+          <div className="grid gap-0.5">
             {question.options.map((option) => (
-              <div
-                key={option.value}
-                className="flex"
-                onPointerEnter={() => setLookedAt(option.value)}
-                onFocus={() => setLookedAt(option.value)}
-              >
+              <div key={option.value} className="flex" onFocus={() => setLookedAt(option.value)}>
                 <Checkbox
                   checked={answer.selected.includes(option.value)}
                   disabled={disabled || option.disabled}
@@ -134,13 +129,7 @@ function QuestionOptions({
             className="gap-0.5"
           >
             {question.options.map((option) => (
-              <div
-                key={option.value}
-                className="flex"
-                onPointerEnter={() => setLookedAt(option.value)}
-                onPointerLeave={() => setLookedAt(undefined)}
-                onFocus={() => setLookedAt(option.value)}
-              >
+              <div key={option.value} className="flex" onFocus={() => setLookedAt(option.value)}>
                 <RadioGroupItem
                   value={option.value}
                   label={option.label}

@@ -1536,7 +1536,9 @@ const AgentBlockContent = ({
                   : {
                       ...choice,
                       preview: (
-                        <Markdown className="text-xs leading-relaxed">{option.preview}</Markdown>
+                        <pre className="bg-muted/50 p-3 font-mono text-xs leading-relaxed">
+                          {option.preview}
+                        </pre>
                       ),
                     };
               }),
