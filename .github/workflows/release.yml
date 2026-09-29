@@ -2,14 +2,29 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
-  release:
+  # Keeps a release PR open with the next version and changelog; merging it tags a draft release for the build below.
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+
+  build:
+    needs: release-please
+    if: needs.release-please.outputs.created == 'true'
     runs-on: macos-latest
+    env:
+      TAG: ${{ needs.release-please.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -20,20 +35,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
-      - name: Check tag matches desktop version
-        run: |
-          version=$(node -p "require('./apps/desktop/package.json').version")
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match apps/desktop/package.json version $version. Bump the version or retag."
-            exit 1
-          fi
-      - name: Extract release notes from CHANGELOG.md
-        run: |
-          awk -v version="${GITHUB_REF_NAME#v}" '/^## /{found = $2 == version; next} found' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
-          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"; then
-            echo "CHANGELOG.md has no notes under '## ${GITHUB_REF_NAME#v} - <date>'. Rename the Unreleased section and retag."
-            exit 1
-          fi
       - run: pnpm install --frozen-lockfile
       # electron-builder's own CSC_LINK import unlocks its keychain with the .p12 password, which macOS rejects
       - name: Import signing certificate
@@ -51,10 +52,6 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" > /dev/null
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           rm "$RUNNER_TEMP/cert.p12"
-      # electron-builder uploads in parallel and each upload creates its own draft if none exists yet
-      - run: gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -64,10 +61,10 @@ jobs:
       # Remote hosts get the daemon from here: the app downloads the one for the host and uploads it over SSH
       - run: |
           pnpm --filter @apcode/daemon build:linux
-          gh release upload "$GITHUB_REF_NAME" apps/daemon/dist/apcode-daemon-linux-*.gz
+          gh release upload "$TAG" apps/daemon/dist/apcode-daemon-linux-*.gz
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # electron-builder uploads into the existing draft but never publishes it, and the updater only sees published releases
-      - run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+      - run: gh release edit "$TAG" --draft=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,6 @@
+#!/bin/sh
+# release-please builds CHANGELOG.md from these subjects: feat → Added, fix → Fixed, perf → Changed.
+head -1 "$1" | grep -qE '^((feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\([^)]+\))?!?: .+|Merge |Revert |fixup! |squash! )' && exit 0
+echo "Commit subject must be a Conventional Commit, e.g. \"fix: stop the sidebar flickering\"." >&2
+echo "Types: feat fix perf refactor docs test build ci chore style revert. Add ! for a breaking change." >&2
+exit 1
