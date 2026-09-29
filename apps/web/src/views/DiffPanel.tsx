@@ -9,7 +9,7 @@ import { IconButton } from "../components/icon-button.tsx";
 import { ClientCommand } from "@apcode/contracts";
 import { getSettings, send, updateSettings, useStore } from "../lib/store.ts";
 import { ChangedFilesTree } from "./ChangedFilesTree.tsx";
-import { HIGHLIGHT, THEMES, useDiffWorkersReady, useResolvedTheme } from "./DiffWorkers.tsx";
+import { HIGHLIGHT, useDiffWorkersReady } from "./DiffWorkers.tsx";
 
 export const PANEL_WIDTH_KEY = "apcode.diffPanelWidth";
 export const defaultPanelWidth = () => Math.min(960, Math.round(window.innerWidth * 0.45));
@@ -101,7 +101,6 @@ export const DiffPanel = ({
       ),
     [cwd, turnThreadId, turnMessageId],
   );
-  const theme = useResolvedTheme();
   const workersReady = useDiffWorkersReady();
   const style = useStore((s) => s.settings.diffLayout ?? "unified");
   const [showTree, setShowTree] = useState(readTree);
@@ -150,18 +149,18 @@ export const DiffPanel = ({
       }),
     [files],
   );
-  // One theme, matching the worker pool's (see DiffWorkers), so its cached highlighting is used as is.
+  // Matches the worker pool's options (see DiffWorkers), so its cached highlighting is used as is.
+  // A fixed themeType: changing it rebuilds every diff. CSS picks the theme instead (see className).
   const options = useMemo(
     () => ({
       ...HIGHLIGHT,
       diffStyle: style,
-      themeType: theme,
-      theme: THEMES[theme],
+      themeType: "system" as const,
       overflow: "scroll" as const,
       stickyHeaders: true,
       layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
     }),
-    [style, theme],
+    [style],
   );
   const truncated = diff?.truncated ?? false;
   const renderFooter = useCallback(
@@ -185,7 +184,8 @@ export const DiffPanel = ({
       <CodeView
         ref={viewer}
         items={items}
-        className="h-full min-w-0 flex-1 overflow-auto overscroll-contain"
+        // Each diff's shadow root says `color-scheme: light dark` (the OS's); follow the app's theme instead.
+        className="h-full min-w-0 flex-1 overflow-auto overscroll-contain [&_diffs-container]:[color-scheme:light] dark:[&_diffs-container]:[color-scheme:dark]"
         options={options}
         renderCodeViewFooter={renderFooter}
       />

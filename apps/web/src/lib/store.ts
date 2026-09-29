@@ -447,7 +447,10 @@ const applyStreaming = (
 const reduceShell = (state: State, event: RuntimeEvent): State =>
   Match.value(event).pipe(
     Match.withReturnType<State>(),
-    Match.tag("settings.updated", ({ settings }) => ({ ...state, settings })),
+    // Usually the echo of our own updateSettings: keeping the old object spares every settings reader a re-render.
+    Match.tag("settings.updated", ({ settings }) =>
+      JSON.stringify(settings) === JSON.stringify(state.settings) ? state : { ...state, settings },
+    ),
     Match.tag("project.added", ({ project }) => ({
       ...state,
       projects: [...state.projects.filter((p) => p.id !== project.id), project],

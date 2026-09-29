@@ -973,31 +973,38 @@ export const TurnList = ({
     const frame = requestAnimationFrame(() => setSettled(true));
     return () => cancelAnimationFrame(frame);
   }, [hasTurns]);
-  return turns.map((turn, index) => {
-    // The latest exchange stays fully rendered: it's what streams and what the scroller follows.
-    const className = settled && index < turns.length - 2 ? OFFSCREEN_SKIP : KEEP_RENDERED;
-    if (turn.from === "fork") return <ForkedFrom key={turn.id} item={turn.item} />;
-    return turn.from === "user" ? (
-      <UserTurn
-        key={turn.id}
-        item={turn.item}
-        threadId={threadId}
-        busy={busy}
-        animateIn={settled}
-        className={className}
-      />
-    ) : (
-      <AssistantTurn
-        key={turn.id}
-        items={turn.items}
-        provider={provider}
-        threadId={threadId}
-        busy={busy}
-        last={index === turns.length - 1}
-        className={className}
-      />
-    );
-  });
+  return (
+    // Lighter than virtualizing (the message rail reads every turn's text from the DOM): the turns
+    // stay in the document but cost nothing while scrolled away. Set here rather than on each turn,
+    // so settling doesn't re-render them all. The latest exchange stays fully rendered: it's what
+    // streams and what the scroller follows.
+    <div
+      data-settled={settled || undefined}
+      className="contents *:[contain-intrinsic-size:auto_240px] data-settled:[&>*:nth-last-child(n+3)]:[content-visibility:auto]"
+    >
+      {turns.map((turn, index) => {
+        if (turn.from === "fork") return <ForkedFrom key={turn.id} item={turn.item} />;
+        return turn.from === "user" ? (
+          <UserTurn
+            key={turn.id}
+            item={turn.item}
+            threadId={threadId}
+            busy={busy}
+            animateIn={settled}
+          />
+        ) : (
+          <AssistantTurn
+            key={turn.id}
+            items={turn.items}
+            provider={provider}
+            threadId={threadId}
+            busy={busy}
+            last={index === turns.length - 1}
+          />
+        );
+      })}
+    </div>
+  );
 };
 
 /** Where a fork's own conversation starts, with the way back to the original. */
@@ -1023,28 +1030,19 @@ function ForkedFrom({ item }: { item: ForkedItem }) {
   );
 }
 
-/**
- * Lighter than virtualizing (the message rail reads every turn's text from the DOM):
- * the turns stay in the document but cost nothing while scrolled away.
- */
-const OFFSCREEN_SKIP = "[content-visibility:auto] [contain-intrinsic-size:auto_240px]";
-const KEEP_RENDERED = "[contain-intrinsic-size:auto_240px]";
-
 const UserTurn = memo(
   ({
     item,
     threadId,
     busy,
     animateIn,
-    className,
   }: {
     item: UserItem;
     threadId: string;
     busy: boolean;
     animateIn: boolean;
-    className: string;
   }) => (
-    <Message from="user" animateIn={animateIn} className={cn("group/turn", className)}>
+    <Message from="user" animateIn={animateIn} className="group/turn">
       <MessageContent className="gap-1.5">
         {item.attachments.length ? <AttachmentList attachments={item.attachments} /> : null}
         {item.text ? (
@@ -1059,6 +1057,8 @@ const UserTurn = memo(
       </MessageContent>
     </Message>
   ),
+  // `animateIn` is only read on mount, so it flipping once the list settles is no reason to re-render.
+  (a, b) => a.item === b.item && a.threadId === b.threadId && a.busy === b.busy,
 );
 
 const REWIND_OPTIONS = [
@@ -1363,24 +1363,25 @@ interface AssistantTurnProps {
   busy: boolean;
   /** The newest turn: its last block is the one streaming. */
   last: boolean;
-  className: string;
 }
 
 const AssistantTurn = memo(
-  ({ items, provider, threadId, busy, last, className }: AssistantTurnProps) => {
+  ({ items, provider, threadId, busy, last }: AssistantTurnProps) => {
     const ProviderLogo = PROVIDER_LOGO[provider];
-    const settings = useStore((s) => s.settings);
+    // Strings, so any other settings change leaves every turn alone.
+    const avatarTint = useStore((s) => harnessTint(s.settings, provider).avatar);
+    const label = useStore((s) => harnessLabel(s.settings, provider));
     const blocks = useMemo(() => toBlocks(items), [items]);
     const lastItem = items.at(-1);
     const finalTextId = blocks.findLast((block) => block.kind === "assistant")?.id;
     return (
-      <Message from="assistant" className={className}>
-        <MessageAvatar className={harnessTint(settings, provider).avatar}>
+      <Message from="assistant">
+        <MessageAvatar className={avatarTint}>
           <ProviderLogo />
         </MessageAvatar>
         <MessageContent className="gap-3">
           <MessageHeader>
-            <span>{harnessLabel(settings, provider)}</span>
+            <span>{label}</span>
           </MessageHeader>
           {blocks.map((block) => (
             <AgentBlock
@@ -1402,7 +1403,6 @@ const AssistantTurn = memo(
     a.threadId === b.threadId &&
     a.busy === b.busy &&
     a.last === b.last &&
-    a.className === b.className &&
     sameItems(a.items, b.items),
 );
 

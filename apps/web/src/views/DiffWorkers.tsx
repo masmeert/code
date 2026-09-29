@@ -1,21 +1,6 @@
 import { useWorkerPool, WorkerPoolContextProvider } from "@pierre/diffs/react";
 import WorkerUrl from "@pierre/diffs/worker/worker.js?worker&url";
-import { useEffect, useState, useSyncExternalStore } from "react";
-
-export const THEMES = { dark: "pierre-dark", light: "pierre-light" } as const;
-export type DiffTheme = keyof typeof THEMES;
-
-const isDark = () => document.documentElement.classList.contains("dark");
-
-const subscribeToTheme = (onChange: () => void) => {
-  const observer = new MutationObserver(onChange);
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-  return () => observer.disconnect();
-};
-
-/** The theme on screen, with "system" resolved: follows <html class="dark">. */
-export const useResolvedTheme = (): DiffTheme =>
-  useSyncExternalStore(subscribeToTheme, () => (isDark() ? "dark" : "light"));
+import { useEffect, useState } from "react";
 
 const cores = navigator.hardwareConcurrency || 4;
 
@@ -32,11 +17,12 @@ const POOL_OPTIONS = {
 
 /**
  * Keep in step with the panel's CodeView options, or cached results won't match.
- * - One theme at a time: highlighting both at once doubles the tokenizing and every token's markup.
+ * - Both themes at once, picked by CSS: highlighting one at a time is about twice as fast, but
+ *   then a theme switch throws every highlighted diff away and re-renders it (a second of jank).
  * - The WASM regex engine: faster than the default JS one and can't backtrack catastrophically.
- * Together they highlight a large diff about twice as fast, with a fifth less to send back.
  */
 export const HIGHLIGHT = {
+  theme: { dark: "pierre-dark", light: "pierre-light" },
   preferredHighlighter: "shiki-wasm",
   lineDiffType: "word",
   tokenizeMaxLineLength: 1_000,
@@ -44,7 +30,6 @@ export const HIGHLIGHT = {
 
 const HIGHLIGHTER_OPTIONS = {
   ...HIGHLIGHT,
-  theme: THEMES[isDark() ? "dark" : "light"],
   // Preloaded so the first diff doesn't wait on a lazy grammar load; others still load on demand.
   langs: [
     "typescript",
@@ -59,17 +44,6 @@ const HIGHLIGHTER_OPTIONS = {
     "yaml",
     "bash",
   ],
-};
-
-/** The pool is created once; a theme switch re-highlights with the other theme instead. */
-const ThemeSync = () => {
-  const pool = useWorkerPool();
-  const theme = THEMES[useResolvedTheme()];
-  useEffect(() => {
-    if (!pool || pool.getDiffRenderOptions().theme === theme) return;
-    void pool.setRenderOptions({ theme }).catch(() => {});
-  }, [pool, theme]);
-  return null;
 };
 
 /**
@@ -95,7 +69,6 @@ export const useDiffWorkersReady = () => {
 /** Mount once near the root: the pool (and its render cache) outlives any one panel. */
 export const DiffWorkers = ({ children }: { children: React.ReactNode }) => (
   <WorkerPoolContextProvider poolOptions={POOL_OPTIONS} highlighterOptions={HIGHLIGHTER_OPTIONS}>
-    <ThemeSync />
     {children}
   </WorkerPoolContextProvider>
 );
