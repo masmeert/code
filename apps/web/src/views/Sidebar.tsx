@@ -21,7 +21,6 @@ import {
 import { SPRING_LAYOUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
 import { NumberTicker } from "@apcode/ui/motion/number-ticker";
 import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
-import { Separator } from "@apcode/ui/components/separator";
 import { ProjectBadge, projectLabel } from "@/components/project-badge";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import { cn } from "@apcode/ui/lib/utils";
@@ -42,9 +41,8 @@ import {
   Archive,
   ArchiveRestore,
   ArrowDownToLine,
-  ArrowUpToLine,
+  Check,
   ChevronRight,
-  FolderPlus,
   type LucideIcon,
   MoreHorizontal,
   PanelLeft,
@@ -52,6 +50,7 @@ import {
   Settings,
   SquarePen,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   animate,
@@ -71,7 +70,8 @@ import {
   useProjectHost,
   useStore,
 } from "../lib/store.ts";
-import { addProject, projectKey } from "../lib/projects.ts";
+import { describe } from "../lib/keybindings.ts";
+import { projectKey } from "../lib/projects.ts";
 import { useThreadListView } from "../lib/threadListView.ts";
 import { ago, useNow } from "../lib/time.ts";
 import { useUpdateStatus } from "../lib/updates.ts";
@@ -396,10 +396,17 @@ export const Sidebar = (props: {
         <AnimatedSidebarTrigger className="size-7 rounded-lg text-muted-foreground [-webkit-app-region:no-drag] hover:bg-muted/60 hover:text-foreground">
           <PanelLeft className="size-4" />
         </AnimatedSidebarTrigger>
-        <span className="text-sm font-semibold text-foreground">APCode</span>
+        <div className="ml-auto [-webkit-app-region:no-drag]">
+          <IconButton
+            label={`New thread ${describe("thread.new")}`}
+            onClick={() => props.onDraft(props.currentPath)}
+          >
+            <SquarePen className="size-4" />
+          </IconButton>
+        </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-0.5 px-3 pt-1">
+      <div className="shrink-0 px-3 pt-1">
         <Input
           value={query}
           onChange={setQuery}
@@ -407,29 +414,18 @@ export const Sidebar = (props: {
           placeholder="Search"
           aria-label="Search threads"
           leftIcon={<Search />}
-          className="min-w-0 flex-1"
+          rightIcon={<ThreadListMenu view={view} projects={projects} onChange={setView} />}
           classNames={{
             field:
               "h-7 rounded-lg border-transparent ring-0 hover:bg-muted/60 data-[state=focused]:bg-muted",
             leftIcon: "left-1.5",
-            input: "selectable pl-8 text-sm placeholder:text-muted-foreground",
+            rightIcon: "right-0 [&_button]:size-7",
+            input: "selectable pr-8 pl-8 text-sm placeholder:text-muted-foreground",
           }}
         />
-        <ThreadListMenu view={view} projects={projects} onChange={setView} />
-        <IconButton
-          label="Add project"
-          onClick={() => void addProject().then((path) => path && props.onDraft(path))}
-        >
-          <FolderPlus className="size-4" />
-        </IconButton>
-        <IconButton label="New thread" onClick={() => props.onDraft(props.currentPath)}>
-          <SquarePen className="size-4" />
-        </IconButton>
       </div>
 
-      <Separator className="mx-5 mt-3 mb-1 w-auto!" />
-
-      <div className="relative min-h-0 flex-1">
+      <div className="relative mt-2 min-h-0 flex-1">
         <motion.div
           layoutScroll
           className="flex h-full [scrollbar-width:none] flex-col overflow-y-auto overscroll-contain px-2 pb-2 [&::-webkit-scrollbar]:hidden"
@@ -438,7 +434,7 @@ export const Sidebar = (props: {
             <p className="px-3 pt-2 text-xs text-muted-foreground">
               {Object.keys(threads).length > 0
                 ? "No matching threads."
-                : "No threads yet. Start one with the pen above."}
+                : `No threads yet. Press ${describe("thread.new")} to start one.`}
             </p>
           ) : view.groupBy === "none" ? (
             renderCards(infos)
@@ -485,13 +481,8 @@ export const Sidebar = (props: {
                     needsYou.length + active.length > 0 && "border-t border-border/60 pt-2",
                   )}
                 >
-                  {renderFolding(
-                    "shelved",
-                    "Shelved",
-                    <ArrowDownToLine />,
-                    shelved,
-                    showShelved,
-                    () => setShowShelved(!showShelved),
+                  {renderFolding("shelved", "Shelved", <Check />, shelved, showShelved, () =>
+                    setShowShelved(!showShelved),
                   )}
                   {renderFolding("archived", "Archived", <Archive />, archived, showArchived, () =>
                     setShowArchived((open) => !open),
@@ -660,7 +651,7 @@ const useThreadActions = (
           {
             key: "shelve",
             label: shelved ? "Unshelve" : "Shelve",
-            icon: shelved ? ArrowUpToLine : ArrowDownToLine,
+            icon: shelved ? X : Check,
             onSelect: () => onShelve(!shelved),
             disabled: !canShelve(info),
           },
@@ -783,11 +774,7 @@ const ThreadCard = (props: {
               }}
               className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
             >
-              {props.shelved ? (
-                <ArrowUpToLine className="size-3.5" />
-              ) : (
-                <ArrowDownToLine className="size-3.5" />
-              )}
+              {props.shelved ? <X className="size-3.5" /> : <Check className="size-3.5" />}
             </button>
           </Tooltip>
         ) : null}
@@ -830,11 +817,7 @@ const ThreadCard = (props: {
             style={{ opacity: swipeReveal }}
             className="pointer-events-none absolute inset-y-0 right-3 grid place-items-center text-muted-foreground"
           >
-            {props.shelved ? (
-              <ArrowUpToLine className="size-4" />
-            ) : (
-              <ArrowDownToLine className="size-4" />
-            )}
+            {props.shelved ? <X className="size-4" /> : <Check className="size-4" />}
           </motion.span>
           <motion.div
             role="button"
