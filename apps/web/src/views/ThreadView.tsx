@@ -379,6 +379,13 @@ export const DraftView = ({
         projectKey(candidate) === projectKey(project) &&
         (projectHosts[candidate.id] ?? null) === machine,
     );
+  // A scan on the picked machine can find its copy after the clone offer shows.
+  const arrivedPath = missingOn ? copyOn(missingOn.machine)?.path : undefined;
+  useEffect(() => {
+    if (!arrivedPath) return;
+    setMissing(null);
+    onPickProject(arrivedPath);
+  }, [arrivedPath, onPickProject]);
   const choices = modelChoices(providers, settings);
   const saved = settings.newThreadModel;
   const lastModel = defaultModel(providers, settings, settings.lastProvider);
