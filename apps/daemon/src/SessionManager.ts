@@ -31,7 +31,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { basename, extname, join, relative } from "node:path";
+import { basename, extname, join, relative, resolve } from "node:path";
 import {
   addWorktree,
   autoPull,
@@ -59,7 +59,7 @@ import {
   repoRoot,
   restoreCheckpoint,
 } from "./git.ts";
-import { listFolders } from "./folders.ts";
+import { expandHome, listFolders } from "./folders.ts";
 import { ClaudeAdapter } from "./providers/ClaudeAdapter.ts";
 import {
   detectSourceControl,
@@ -1158,20 +1158,26 @@ const make = Effect.gen(function* () {
         ),
       "project.scan": (command) =>
         Effect.gen(function* () {
-          const { path, folders } = yield* Effect.promise(() => listFolders(command.path));
-          yield* Effect.forEach(
-            folders
-              .map((name) => join(path, name))
-              .filter((folder) => existsSync(join(folder, ".git"))),
-            (folder) =>
-              projectsStore.ensure(folder).pipe(
-                Effect.map(({ project, created }) =>
-                  created
-                    ? publish(RuntimeEvent.cases["project.added"].make({ project }))
-                    : undefined,
-                ),
-                Effect.ignore,
+          async function reposIn(folder: string, levels: number): Promise<Array<string>> {
+            if (existsSync(join(folder, ".git"))) return [folder];
+            if (levels === 0) return [];
+            const { path, folders } = await listFolders(folder);
+            return (
+              await Promise.all(folders.map((name) => reposIn(join(path, name), levels - 1)))
+            ).flat();
+          }
+          // Three levels, never inside a repo: the home folder's default still finds ~/code/group/repo,
+          // without walking dependency and cache trees.
+          const repos = yield* Effect.promise(() => reposIn(resolve(expandHome(command.path)), 3));
+          yield* Effect.forEach(repos, (folder) =>
+            projectsStore.ensure(folder).pipe(
+              Effect.map(({ project, created }) =>
+                created
+                  ? publish(RuntimeEvent.cases["project.added"].make({ project }))
+                  : undefined,
               ),
+              Effect.ignore,
+            ),
           );
         }),
       "providers.refresh": () => registry.refresh,
