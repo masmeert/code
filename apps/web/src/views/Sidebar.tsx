@@ -18,15 +18,26 @@ import {
   MorphPopoverMenu,
   MorphPopoverTrigger,
 } from "@apcode/ui/motion/popover-morph";
-import { FOLD, SPRING_SWAP } from "@apcode/ui/lib/ease";
+import { SPRING_LAYOUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
 import { NumberTicker } from "@apcode/ui/motion/number-ticker";
 import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
 import { Separator } from "@apcode/ui/components/separator";
 import { ProjectBadge, projectLabel } from "@/components/project-badge";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import { cn } from "@apcode/ui/lib/utils";
-import { isMac } from "@apcode/ui/lib/keys";
-import { ClientCommand, type Project, type ThreadInfo, UpdateStatus } from "@apcode/contracts";
+import { formatBinding, isMac } from "@apcode/ui/lib/keys";
+import {
+  ClientCommand,
+  HostStatus,
+  isAwaitingUser,
+  type Project,
+  type ThreadActivity,
+  type ThreadInfo,
+  UpdateStatus,
+} from "@apcode/contracts";
+import { categoryOf, livePhrase } from "@apcode/ui/agents/tool-group";
+import { AnimatedToastStack, useAnimatedToastStack } from "@apcode/ui/motion/animated-toast-stack";
+import { TextShimmer } from "@apcode/ui/motion/text-shimmer";
 import {
   Archive,
   ArchiveRestore,
@@ -43,9 +54,24 @@ import {
   SquarePen,
   Trash2,
 } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { type ReactNode, useMemo, useState } from "react";
-import { canSettle, isSeen, send, setSettled, useProjectHost, useStore } from "../lib/store.ts";
+import {
+  animate,
+  AnimatePresence,
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  useTransform,
+} from "motion/react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  canSettle,
+  isSeen,
+  respondApproval,
+  send,
+  setSettled,
+  useProjectHost,
+  useStore,
+} from "../lib/store.ts";
 import { addProject, projectKey } from "../lib/projects.ts";
 import { useThreadListView } from "../lib/threadListView.ts";
 import { ago, useNow } from "../lib/time.ts";
@@ -53,6 +79,11 @@ import { useUpdateStatus } from "../lib/updates.ts";
 import { usePersistedFlag } from "../lib/usePersistedFlag.ts";
 import type { ModalView } from "./AppModal.tsx";
 import { ThreadListMenu } from "./ThreadListMenu.tsx";
+
+/** Waiting on you: an approval, an answer, or a look at what went wrong. */
+function waitsOnYou(info: ThreadInfo) {
+  return isAwaitingUser(info.status) || info.status === "error";
+}
 
 /** Only the macOS desktop window draws traffic lights over the top-left corner. */
 export const hasTrafficLights = Boolean(window.desktop) && isMac;
@@ -89,12 +120,17 @@ export const Sidebar = (props: {
   const now = useNow();
   const reduce = useReducedMotion();
   const updateStatus = useUpdateStatus();
+  const hosts = useStore((s) => s.hosts);
+  const localConnected = useStore((s) => s.connected);
+  const { toasts, showToast, dismissToast } = useAnimatedToastStack();
 
   // Grouped by state: whatever still needs you on top, then settled threads, then archived ones.
   const [showArchived, setShowArchived] = useState(false);
   const [showSettled, setShowSettled] = usePersistedFlag("apcode.sidebar.settledOpen", true);
   const [collapsedProjects, setCollapsedProjects] = useState<ReadonlyArray<string>>([]);
-  const { infos, active, settled, archived, projectGroups } = useMemo(() => {
+  // Sections render a page of rows at a time: recent history is the common lookup, the deep tail shouldn't dominate the list.
+  const [shownCounts, setShownCounts] = useState<Readonly<Record<string, number>>>({});
+  const { infos, needsYou, active, settled, archived, projectGroups } = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const byId = new Map(projects.map((p) => [p.id, p]));
     const keyOf = (projectId: string) => {
@@ -126,7 +162,8 @@ export const Sidebar = (props: {
     const current = infos.filter((info) => info.archivedAt === null);
     return {
       infos,
-      active: current.filter((info) => !info.settled),
+      needsYou: current.filter((info) => !info.settled && waitsOnYou(info)),
+      active: current.filter((info) => !info.settled && !waitsOnYou(info)),
       settled: current.filter((info) => info.settled),
       archived: infos.filter((info) => info.archivedAt !== null),
       // One group per repo, whichever machines its threads run on.
@@ -144,13 +181,92 @@ export const Sidebar = (props: {
       addedAt: 0,
     };
 
-  // One hover pill glides between rows. Each row carries the hairline above it, centred in the gap
-  // and hidden next to a filled (hovered or current) row.
+  const shownOf = (key: string, infos: Array<ThreadInfo>) =>
+    query ? infos : infos.slice(0, shownCounts[key] ?? 10);
+
+  // ⌘1–9 open the first nine threads in the order they're drawn; holding ⌘ shows each one's shortcut.
+  const jumpIds = (
+    view.groupBy === "none"
+      ? infos
+      : view.groupBy === "project"
+        ? projectGroups.flatMap((group) => {
+            const key = projectKey(projectOf(group[0]!));
+            return collapsedProjects.includes(key) && !query ? [] : shownOf(key, group);
+          })
+        : view.status === "archived"
+          ? archived
+          : [
+              ...needsYou,
+              ...active,
+              ...(showSettled || query ? shownOf("settled", settled) : []),
+              ...(showArchived || query ? shownOf("archived", archived) : []),
+            ]
+  )
+    .slice(0, 9)
+    .map((info) => info.id);
+  const [showDigits, setShowDigits] = useState(false);
+  const latestJump = useRef({ ids: jumpIds, onSelect: props.onSelect });
+  latestJump.current = { ids: jumpIds, onSelect: props.onSelect };
+  useEffect(() => {
+    const modifier = isMac ? "Meta" : "Control";
+    let hintTimer: ReturnType<typeof setTimeout> | undefined;
+    function hideDigits() {
+      clearTimeout(hintTimer);
+      setShowDigits(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === modifier) {
+        // A delay, so the hints don't flash for every other ⌘ shortcut.
+        hintTimer = setTimeout(() => setShowDigits(true), 200);
+        return;
+      }
+      hideDigits();
+      const held = isMac ? event.metaKey : event.ctrlKey;
+      if (event.defaultPrevented || !held || event.shiftKey || event.altKey) return;
+      const id = /^[1-9]$/.test(event.key) ? latestJump.current.ids[Number(event.key) - 1] : null;
+      if (!id) return;
+      event.preventDefault();
+      latestJump.current.onSelect(id);
+    }
+    function onKeyUp(event: KeyboardEvent) {
+      if (event.key === modifier) hideDigits();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", hideDigits);
+    return () => {
+      hideDigits();
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", hideDigits);
+    };
+  }, []);
+
+  function settle(info: ThreadInfo, next: boolean) {
+    setSettled(info.id, next);
+    showToast({
+      title: next ? "Settled" : "Unsettled",
+      description: info.title,
+      action: {
+        label: "Undo",
+        onClick: (toast) => {
+          setSettled(info.id, !next);
+          dismissToast(toast.id);
+        },
+      },
+    });
+  }
+
+  // One hover pill glides between rows; rows glide too, so one leaving closes its gap smoothly.
+  // Each row carries the hairline above it, centred in the gap and hidden next to a filled
+  // (hovered or current) row.
   const renderCards = (infos: Array<ThreadInfo>) => (
     <SharedLayoutBg inset={0} pillClassName="rounded-xl bg-muted/50" className="gap-1">
       {infos.map((info) => (
-        <div
+        <motion.div
           key={info.id}
+          layout="position"
+          transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
           className={cn(
             "before:pointer-events-none before:absolute before:inset-x-3 before:-top-[2.5px] before:h-px before:bg-border/60",
             "first:before:hidden hover:before:hidden has-[[aria-current=page]]:before:hidden",
@@ -164,23 +280,30 @@ export const Sidebar = (props: {
             unread={info.archivedAt === null && !isSeen(info)}
             settled={info.archivedAt !== null || info.settled}
             now={now}
+            digit={showDigits && jumpIds.includes(info.id) ? jumpIds.indexOf(info.id) + 1 : null}
             onSelect={() => props.onSelect(info.id)}
+            onSettle={(next) => settle(info, next)}
           />
-        </div>
+        </motion.div>
       ))}
     </SharedLayoutBg>
   );
 
-  const renderList = (label: string, infos: Array<ThreadInfo>) =>
+  const renderList = (label: ReactNode, infos: Array<ThreadInfo>) =>
     infos.length === 0 ? null : (
       <section className="flex flex-col">
-        <h3 className="px-3 pt-2 pb-1 text-[11px] font-medium text-muted-foreground">{label}</h3>
+        <h3 className="flex items-center gap-2 px-3 pt-2 pb-1 text-[11px] font-medium text-muted-foreground">
+          {label}
+        </h3>
         {renderCards(infos)}
       </section>
     );
 
   // Foldable sections open themselves while searching, so matches are never hidden.
   // The header is a full-width row, sticky while open so it can be folded from anywhere in the list.
+  // No height animation: rows fade while sections glide to their new positions, so a shelf
+  // pinned to the bottom rises as one block. popLayout lifts closing rows out of flow at once;
+  // positioned in their section, they ride its glide as they fade.
   const renderFolding = (
     key: string,
     label: string,
@@ -192,8 +315,14 @@ export const Sidebar = (props: {
     if (infos.length === 0) return null;
     const expanded = open || Boolean(query);
     const snap = reduce || Boolean(query);
+    const shown = shownOf(key, infos);
     return (
-      <section key={key} className="flex flex-col gap-1">
+      <motion.section
+        key={key}
+        layout="position"
+        transition={snap ? { duration: 0 } : SPRING_LAYOUT}
+        className="relative flex flex-col gap-1"
+      >
         <button
           type="button"
           aria-expanded={expanded}
@@ -223,30 +352,32 @@ export const Sidebar = (props: {
             <ChevronRight className="size-3.5" />
           </motion.span>
         </button>
-        <AnimatePresence initial={false}>
+        <AnimatePresence initial={false} mode="popLayout">
           {expanded ? (
             <motion.div
               key="rows"
-              // Clip only while moving, so focus rings aren't cut once open.
-              initial={snap ? false : { height: 0, opacity: 0, overflow: "hidden" }}
-              animate={{
-                height: "auto",
-                opacity: 1,
-                transitionEnd: { overflow: "visible" },
-              }}
-              exit={{
-                height: 0,
-                opacity: 0,
-                overflow: "hidden",
-                transition: snap ? { duration: 0 } : FOLD,
-              }}
-              transition={FOLD}
+              initial={snap ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={snap ? { duration: 0 } : { duration: 0.2, ease: "easeOut" }}
+              className="w-full"
             >
-              {renderCards(infos)}
+              {renderCards(shown)}
+              {infos.length > shown.length ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShownCounts((counts) => ({ ...counts, [key]: shown.length + 25 }))
+                  }
+                  className="mt-1 flex h-8 w-full items-center rounded-xl px-3 text-left text-xs text-muted-foreground transition-colors outline-none hover:bg-muted/50 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+                >
+                  Show {Math.min(25, infos.length - shown.length)} more
+                </button>
+              ) : null}
             </motion.div>
           ) : null}
         </AnimatePresence>
-      </section>
+      </motion.section>
     );
   };
 
@@ -302,7 +433,10 @@ export const Sidebar = (props: {
       <Separator className="mx-5 mt-3 mb-1 w-auto!" />
 
       <div className="relative min-h-0 flex-1">
-        <div className="h-full [scrollbar-width:none] overflow-y-auto overscroll-contain px-2 pb-8 [&::-webkit-scrollbar]:hidden">
+        <motion.div
+          layoutScroll
+          className="flex h-full [scrollbar-width:none] flex-col overflow-y-auto overscroll-contain px-2 pb-8 [&::-webkit-scrollbar]:hidden"
+        >
           {infos.length === 0 ? (
             <p className="px-3 pt-2 text-xs text-muted-foreground">
               {Object.keys(threads).length > 0
@@ -331,34 +465,40 @@ export const Sidebar = (props: {
                 );
               })}
             </div>
+          ) : view.status === "archived" ? (
+            renderList("Archived", archived)
           ) : (
             <>
+              {renderList(
+                <>
+                  <span className="size-1.5 rounded-full bg-warning" />
+                  <span className="text-foreground">Needs you</span>
+                  <span className="tabular-nums">{needsYou.length}</span>
+                </>,
+                needsYou,
+              )}
               {renderList("Active", active)}
               {settled.length + archived.length > 0 ? (
-                <div
+                <motion.div
+                  // Pinned to the bottom while folded, like t3code's shelf; unfolding rises into the free space.
+                  layout="position"
+                  transition={reduce || query ? { duration: 0 } : SPRING_LAYOUT}
                   className={cn(
-                    "flex flex-col gap-0.5",
-                    active.length > 0 && "mt-2 border-t border-border/60 pt-2",
+                    "mt-auto flex flex-col gap-0.5",
+                    needsYou.length + active.length > 0 && "border-t border-border/60 pt-2",
                   )}
                 >
                   {renderFolding("settled", "Settled", <CircleCheck />, settled, showSettled, () =>
                     setShowSettled(!showSettled),
                   )}
-                  {view.status === "archived"
-                    ? renderList("Archived", archived)
-                    : renderFolding(
-                        "archived",
-                        "Archived",
-                        <Archive />,
-                        archived,
-                        showArchived,
-                        () => setShowArchived((open) => !open),
-                      )}
-                </div>
+                  {renderFolding("archived", "Archived", <Archive />, archived, showArchived, () =>
+                    setShowArchived((open) => !open),
+                  )}
+                </motion.div>
               ) : null}
             </>
           )}
-        </div>
+        </motion.div>
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-sidebar to-transparent"
@@ -366,6 +506,31 @@ export const Sidebar = (props: {
       </div>
 
       <div className="flex shrink-0 flex-col gap-1 px-3 pt-1 pb-3">
+        {Object.keys(hosts).length > 0 ? (
+          <button
+            type="button"
+            onClick={() => props.onModal("settings")}
+            aria-label="Machines, open settings"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+          >
+            {[
+              { name: "This Mac", tone: localConnected ? "bg-emerald-500" : "bg-destructive" },
+              ...Object.entries(hosts).map(([alias, host]) => ({
+                name: alias,
+                tone: host.connected
+                  ? "bg-emerald-500"
+                  : HostStatus.guards.failed(host.status)
+                    ? "bg-destructive"
+                    : "bg-warning",
+              })),
+            ].map((machine) => (
+              <span key={machine.name} className="flex min-w-0 items-center gap-1.5">
+                <span className={cn("size-1.5 shrink-0 rounded-full", machine.tone)} />
+                <span className="truncate">{machine.name}</span>
+              </span>
+            ))}
+          </button>
+        ) : null}
         {updateStatus && UpdateStatus.guards.ready(updateStatus) ? (
           <Button
             variant="ghost"
@@ -387,6 +552,12 @@ export const Sidebar = (props: {
         </Button>
       </div>
       <AnimatedSidebarRail />
+      <AnimatedToastStack
+        toasts={toasts}
+        onDismiss={dismissToast}
+        position="bottom-left"
+        placement="fixed"
+      />
     </AnimatedSidebar>
   );
 };
@@ -419,6 +590,20 @@ const StatusDot = ({
     <span role="img" aria-label={label} className={cn("size-2 shrink-0 rounded-full", tone)} />
   );
 };
+
+/** What a running thread is doing: the command it runs, else the tool call in words. */
+const activityLabel = (activity: ThreadActivity | undefined) =>
+  !activity
+    ? "Thinking…"
+    : categoryOf(activity.tool) === "run"
+      ? activity.summary
+      : livePhrase({
+          id: activity.toolId,
+          name: activity.tool,
+          summary: activity.summary,
+          output: null,
+          isError: false,
+        });
 
 /** Provider mark; spins while the agent works. */
 const ProviderMark = ({ info }: { info: ThreadInfo }) => {
@@ -458,7 +643,11 @@ interface CardAction {
 }
 
 /** One action list, shared by the ⋯ menu and the right-click menu. */
-const useThreadActions = (info: ThreadInfo, settled: boolean) => {
+const useThreadActions = (
+  info: ThreadInfo,
+  settled: boolean,
+  onSettle: (settled: boolean) => void,
+) => {
   const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null);
   const confirmArchive = useStore((s) => s.settings.confirmArchive === true);
   const confirmDelete = useStore((s) => s.settings.confirmDelete !== false);
@@ -484,7 +673,7 @@ const useThreadActions = (info: ThreadInfo, settled: boolean) => {
             key: "settle",
             label: settled ? "Unsettle" : "Settle",
             icon: settled ? CircleDot : CircleCheck,
-            onSelect: () => setSettled(info.id, !settled),
+            onSelect: () => onSettle(!settled),
             disabled: !canSettle(info),
           },
           confirmArchive && confirming !== "archive"
@@ -557,116 +746,240 @@ const ThreadCard = (props: {
   unread: boolean;
   settled: boolean;
   now: number;
+  /** The ⌘-number that opens it, shown while ⌘ is held; null otherwise. */
+  digit: number | null;
   onSelect: () => void;
+  onSettle: (settled: boolean) => void;
 }) => {
   const { info, project } = props;
   const host = useProjectHost(project.id);
+  const reduce = useReducedMotion();
   const [menuOpen, setMenuOpenState] = useState(false);
-  const { actions, resetConfirm } = useThreadActions(info, props.settled);
+  const [responding, setResponding] = useState(false);
+  const { actions, resetConfirm } = useThreadActions(info, props.settled, props.onSettle);
   const setMenuOpen = (open: boolean) => {
     setMenuOpenState(open);
     if (!open) resetConfirm();
   };
+  const urgent = !props.settled && waitsOnYou(info);
+  const request = info.request;
+  // Two-finger swipe left settles (or unsettles): the row follows the fingers, and past the
+  // threshold letting go commits; short of it, it springs back.
+  const swipeX = useMotionValue(0);
+  const swipeEnd = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const swipeReveal = useTransform(swipeX, [-64, -16], [1, 0]);
+  useEffect(() => () => clearTimeout(swipeEnd.current), []);
+  useEffect(() => setResponding(false), [request?.requestId]);
+
+  const trailing = (
+    <>
+      <span className={cn("shrink-0 text-xs", menuOpen ? "hidden" : "group-hover/card:hidden")}>
+        <TrailingLabel info={info} now={props.now} />
+      </span>
+      <span
+        className={cn(
+          "-my-1 -mr-1 shrink-0 items-center gap-0.5 text-muted-foreground",
+          menuOpen ? "flex" : "hidden group-hover/card:flex",
+        )}
+      >
+        {info.archivedAt === null ? (
+          <Tooltip content={props.settled ? "Unsettle" : "Settle"} side="bottom">
+            <button
+              type="button"
+              tabIndex={-1}
+              disabled={!canSettle(info)}
+              aria-label={props.settled ? "Unsettle" : "Settle"}
+              onClick={(e) => {
+                e.stopPropagation();
+                props.onSettle(!props.settled);
+              }}
+              className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
+            >
+              {props.settled ? (
+                <CircleDot className="size-3.5" />
+              ) : (
+                <CircleCheck className="size-3.5" />
+              )}
+            </button>
+          </Tooltip>
+        ) : null}
+        <MorphPopover open={menuOpen} onOpenChange={setMenuOpen}>
+          <MorphPopoverTrigger>
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label={`Actions for ${info.title}`}
+              onClick={(e) => e.stopPropagation()}
+              className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground"
+            >
+              <MoreHorizontal className="size-4" />
+            </button>
+          </MorphPopoverTrigger>
+          <MorphPopoverContent
+            side="bottom"
+            align="end"
+            sideOffset={8}
+            radius={12}
+            className="w-48 p-1.5"
+          >
+            <MorphPopoverMenu onClick={(e) => e.stopPropagation()}>
+              {actions.map((action) => (
+                <MenuRow key={action.key} action={action} onDone={() => setMenuOpen(false)} />
+              ))}
+            </MorphPopoverMenu>
+          </MorphPopoverContent>
+        </MorphPopover>
+      </span>
+    </>
+  );
 
   return (
     <ContextMenu onOpenChange={(open) => !open && resetConfirm()}>
       <ContextMenuTrigger>
-        <div
-          role="button"
-          tabIndex={0}
-          aria-current={props.active ? "page" : undefined}
-          onClick={props.onSelect}
-          onKeyDown={(e) => {
-            if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-            e.preventDefault();
-            props.onSelect();
-          }}
-          className={cn(
-            "group/card cursor-default rounded-xl px-3 py-2.5 transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring",
-            props.active && "bg-muted",
-          )}
-        >
-          <p
+        <div className="relative">
+          <motion.span
+            aria-hidden="true"
+            style={{ opacity: swipeReveal }}
+            className="pointer-events-none absolute inset-y-0 right-3 grid place-items-center text-muted-foreground"
+          >
+            {props.settled ? <CircleDot className="size-4" /> : <CircleCheck className="size-4" />}
+          </motion.span>
+          <motion.div
+            role="button"
+            tabIndex={0}
+            aria-current={props.active ? "page" : undefined}
+            style={{ x: swipeX }}
+            onClick={props.onSelect}
+            onKeyDown={(e) => {
+              if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+              e.preventDefault();
+              props.onSelect();
+            }}
+            onWheel={(e) => {
+              if (info.archivedAt !== null || !canSettle(info)) return;
+              if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+              swipeX.set(Math.max(-96, Math.min(0, swipeX.get() - e.deltaX)));
+              clearTimeout(swipeEnd.current);
+              swipeEnd.current = setTimeout(() => {
+                if (swipeX.get() <= -64) props.onSettle(!props.settled);
+                animate(swipeX, 0, reduce ? { duration: 0 } : SPRING_SWAP);
+              }, 120);
+            }}
             className={cn(
-              "truncate text-sm text-foreground",
-              props.unread ? "font-semibold" : "font-medium",
-              props.settled && !props.active && "text-foreground/75",
+              "group/card cursor-default rounded-xl px-3 transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring",
+              props.settled ? "py-1.5" : "py-2.5",
+              props.active && "bg-muted",
             )}
           >
-            {info.title}
-          </p>
-          <div className="mt-1 flex h-5 items-center gap-2 text-xs text-muted-foreground">
-            <StatusDot info={info} unread={props.unread} settled={props.settled} />
-            <ProviderMark info={info} />
-            <span className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="max-w-full shrink-0 truncate">
-                {projectLabel(project.name, host)}
-              </span>
-              {info.branch ? (
-                <>
-                  <span aria-hidden="true" className="h-3 w-px shrink-0 bg-border" />
-                  <span className="min-w-0 truncate text-muted-foreground/70">{info.branch}</span>
-                </>
-              ) : null}
-            </span>
-            <span className={cn("shrink-0", menuOpen ? "hidden" : "group-hover/card:hidden")}>
-              <TrailingLabel info={info} now={props.now} />
-            </span>
-            <span
-              className={cn(
-                "-my-1 -mr-1 shrink-0 items-center gap-0.5",
-                menuOpen ? "flex" : "hidden group-hover/card:flex",
-              )}
-            >
-              {info.archivedAt === null ? (
-                <Tooltip content={props.settled ? "Unsettle" : "Settle"} side="bottom">
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    disabled={!canSettle(info)}
-                    aria-label={props.settled ? "Unsettle" : "Settle"}
+            {props.settled ? (
+              <div className="flex h-5 min-w-0 items-center gap-2 text-muted-foreground">
+                <p
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-sm",
+                    props.active ? "text-foreground" : "text-foreground/60",
+                  )}
+                >
+                  {info.title}
+                </p>
+                {trailing}
+              </div>
+            ) : (
+              <div className="min-w-0">
+                <p
+                  className={cn(
+                    "truncate text-sm text-foreground",
+                    props.unread || urgent ? "font-semibold" : "font-medium",
+                  )}
+                >
+                  {info.title}
+                </p>
+                <div className="mt-1 flex h-5 items-center gap-2 text-xs text-muted-foreground">
+                  <StatusDot info={info} unread={props.unread} settled={props.settled} />
+                  <ProviderMark info={info} />
+                  {info.status === "running" ? (
+                    <TextShimmer
+                      className={cn(
+                        "block min-w-0 flex-1 truncate",
+                        info.activity && categoryOf(info.activity.tool) === "run" && "font-mono",
+                      )}
+                    >
+                      {activityLabel(info.activity)}
+                    </TextShimmer>
+                  ) : (
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="max-w-full shrink-0 truncate">
+                        {projectLabel(project.name, host)}
+                      </span>
+                      {info.branch ? (
+                        <>
+                          <span aria-hidden="true" className="h-3 w-px shrink-0 bg-border" />
+                          <span className="min-w-0 truncate text-muted-foreground/70">
+                            {info.branch}
+                          </span>
+                        </>
+                      ) : null}
+                    </span>
+                  )}
+                  {trailing}
+                </div>
+                {urgent && request && !request.asksQuestions && request.title !== "ExitPlanMode" ? (
+                  <>
+                    <p className="mt-2 truncate rounded-lg bg-muted/70 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                      <span className="text-foreground">{request.title}</span> {request.detail}
+                    </p>
+                    <div className="mt-2 flex gap-1.5">
+                      <Button
+                        size="sm"
+                        disabled={responding}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setResponding(true);
+                          respondApproval(info.id, request.requestId, "allow");
+                        }}
+                        className="h-7 rounded-lg px-2.5"
+                      >
+                        Allow
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={responding}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setResponding(true);
+                          respondApproval(info.id, request.requestId, "deny");
+                        }}
+                        className="h-7 rounded-lg px-2.5"
+                      >
+                        Deny
+                      </Button>
+                    </div>
+                  </>
+                ) : urgent && request ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSettled(info.id, !props.settled);
+                      props.onSelect();
                     }}
-                    className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
+                    className="mt-2 h-7 rounded-lg px-2.5"
                   >
-                    {props.settled ? (
-                      <CircleDot className="size-3.5" />
-                    ) : (
-                      <CircleCheck className="size-3.5" />
-                    )}
-                  </button>
-                </Tooltip>
-              ) : null}
-              <MorphPopover open={menuOpen} onOpenChange={setMenuOpen}>
-                <MorphPopoverTrigger>
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    aria-label={`Actions for ${info.title}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground"
-                  >
-                    <MoreHorizontal className="size-4" />
-                  </button>
-                </MorphPopoverTrigger>
-                <MorphPopoverContent
-                  side="bottom"
-                  align="end"
-                  sideOffset={8}
-                  radius={12}
-                  className="w-48 p-1.5"
-                >
-                  <MorphPopoverMenu onClick={(e) => e.stopPropagation()}>
-                    {actions.map((action) => (
-                      <MenuRow key={action.key} action={action} onDone={() => setMenuOpen(false)} />
-                    ))}
-                  </MorphPopoverMenu>
-                </MorphPopoverContent>
-              </MorphPopover>
-            </span>
-          </div>
+                    {request.asksQuestions ? "Answer" : "Review plan"}
+                  </Button>
+                ) : null}
+              </div>
+            )}
+          </motion.div>
+          {props.digit === null ? null : (
+            // Overlaid, like t3code's: it never displaces the time or status, nor catches clicks.
+            <kbd
+              aria-hidden="true"
+              className="pointer-events-none absolute top-1/2 right-1.5 z-10 inline-flex h-5 -translate-y-1/2 items-center rounded-full border border-border/80 bg-background/95 px-1.5 font-mono text-[10px] font-medium tracking-tight text-foreground shadow-sm"
+            >
+              {formatBinding(`mod+${props.digit}`)}
+            </kbd>
+          )}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent ariaLabel={`Actions for ${info.title}`} className="min-w-48">

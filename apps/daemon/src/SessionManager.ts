@@ -2,6 +2,7 @@ import {
   AttachmentInput,
   ClientCommand,
   DEFAULT_AUTO_SETTLE_DAYS,
+  isAwaitingUser,
   isTurnActive,
   ProviderKind,
   RuntimeEvent,
@@ -388,6 +389,10 @@ const make = Effect.gen(function* () {
       if (entry) entry.activeAt = Date.now();
     }
     PubSub.publishUnsafe(pubsub, { seq: ++seq, id, event });
+    if ("threadId" in event && event.threadId) {
+      const entry = threads.get(event.threadId);
+      if (entry) trackLive(entry, event);
+    }
     if (RuntimeEvent.isAnyOf(["user.message", "turn.completed"])(event)) touch(event.threadId);
     if (RuntimeEvent.guards["settings.updated"](event)) {
       latestSettings = event.settings;
@@ -397,6 +402,45 @@ const make = Effect.gen(function* () {
       const entry = threads.get(event.threadId);
       if (entry) resettle(entry);
     }
+  };
+
+  /** Keeps the thread's in-flight tool call and pending request current, announcing each change. */
+  const trackLive = (entry: ThreadEntry, event: RuntimeEvent) => {
+    const threadId = entry.info.id;
+    const { activity, request } = entry.info;
+    const stopped = RuntimeEvent.guards["thread.status"](event) && event.status !== "running";
+    const nextActivity = RuntimeEvent.guards["tool.started"](event)
+      ? { toolId: event.toolId, tool: event.name, summary: event.summary }
+      : stopped ||
+          (RuntimeEvent.guards["tool.completed"](event) && event.toolId === activity?.toolId)
+        ? undefined
+        : activity;
+    const nextRequest = RuntimeEvent.guards["approval.requested"](event)
+      ? {
+          requestId: event.requestId,
+          title: event.title,
+          detail: event.detail,
+          asksQuestions: event.questions !== undefined,
+        }
+      : (RuntimeEvent.guards["thread.status"](event) && !isAwaitingUser(event.status)) ||
+          (RuntimeEvent.guards["approval.resolved"](event) &&
+            event.requestId === request?.requestId)
+        ? undefined
+        : request;
+    if (nextActivity === activity && nextRequest === request) return;
+    const { activity: _activity, request: _request, ...rest } = entry.info;
+    let info: ThreadInfo = rest;
+    if (nextActivity) info = { ...info, activity: nextActivity };
+    if (nextRequest) info = { ...info, request: nextRequest };
+    entry.info = info;
+    if (nextActivity !== activity)
+      publish(
+        RuntimeEvent.cases["thread.activity"].make({ threadId, activity: nextActivity ?? null }),
+      );
+    if (nextRequest !== request)
+      publish(
+        RuntimeEvent.cases["thread.request"].make({ threadId, request: nextRequest ?? null }),
+      );
   };
 
   /** Announces the thread's settled state when it changed. */

@@ -553,6 +553,10 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, settled })),
       "thread.seen": ({ threadId, seenRev }) =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, seenRev })),
+      "thread.activity": ({ threadId, activity }) =>
+        updateThreadInfo(state, threadId, (info) => ({ ...info, activity: activity ?? undefined })),
+      "thread.request": ({ threadId, request }) =>
+        updateThreadInfo(state, threadId, (info) => ({ ...info, request: request ?? undefined })),
     }),
     Match.tag("thread.usage", ({ threadId, usage }) => {
       const { [threadId]: _reading, ...readingUsage } = state.readingUsage;

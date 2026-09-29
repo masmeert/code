@@ -379,6 +379,23 @@ export const UsageLimit = Schema.Struct({
 });
 export type UsageLimit = typeof UsageLimit.Type;
 
+/** The tool call a thread's agent has in flight. */
+export const ThreadActivity = Schema.Struct({
+  toolId: Schema.String,
+  tool: Schema.String,
+  summary: Schema.String,
+});
+export type ThreadActivity = typeof ThreadActivity.Type;
+
+/** The permission or questions a thread is waiting on you for. */
+export const PendingRequest = Schema.Struct({
+  requestId: Schema.String,
+  title: Schema.String,
+  detail: Schema.String,
+  asksQuestions: Schema.Boolean,
+});
+export type PendingRequest = typeof PendingRequest.Type;
+
 export const ThreadInfo = Schema.Struct({
   id: Schema.String,
   projectId: Schema.String,
@@ -403,6 +420,10 @@ export const ThreadInfo = Schema.Struct({
   seenRev: Schema.Number,
   /** Idle long enough, or settled by hand; the daemon decides, so every window agrees. */
   settled: Schema.Boolean,
+  /** Live only, never stored: lets the thread list show progress without subscribing to transcripts. */
+  activity: Schema.optional(ThreadActivity),
+  /** Live only, never stored: lets the thread list answer approvals without opening the thread. */
+  request: Schema.optional(PendingRequest),
 });
 export type ThreadInfo = typeof ThreadInfo.Type;
 
@@ -510,6 +531,14 @@ export const RuntimeEvent = Schema.Union([
   Schema.TaggedStruct("thread.status", { threadId: Schema.String, status: ThreadStatus }),
   Schema.TaggedStruct("thread.settled", { threadId: Schema.String, settled: Schema.Boolean }),
   Schema.TaggedStruct("thread.seen", { threadId: Schema.String, seenRev: Schema.Number }),
+  Schema.TaggedStruct("thread.activity", {
+    threadId: Schema.String,
+    activity: Schema.NullOr(ThreadActivity),
+  }),
+  Schema.TaggedStruct("thread.request", {
+    threadId: Schema.String,
+    request: Schema.NullOr(PendingRequest),
+  }),
   /** Null answers a `thread.readUsage` that found nothing: the thread never finished a turn, or its log couldn't be read. */
   Schema.TaggedStruct("thread.usage", {
     threadId: Schema.String,
