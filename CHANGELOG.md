@@ -2,6 +2,16 @@
 
 Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unreleased` to `X.Y.Z - YYYY-MM-DD`; the release workflow publishes that section as the GitHub release notes and fails if it is missing.
 
+## 0.0.11 - 2026-09-29
+
+### Added
+
+- Each remote host has a Projects folder in Settings → Connections (its home folder when unset). The git repos directly inside it are added as projects on that host when it connects, so projects already there no longer show as not cloned. Clones to that host and its folder browser in Add project start there too.
+
+### Fixed
+
+- Switching between machines in Add project no longer leaves a copy of the host's folder list behind each time.
+
 ## 0.0.10 - 2026-09-29
 
 ### Added
