@@ -40,7 +40,7 @@ export interface AgentCodeLineProps {
 }
 
 const LIGHT_THEME = "github-light-high-contrast";
-const DARK_THEME = "github-dark-high-contrast";
+const DARK_THEME = "vesper";
 const THEMES = { light: LIGHT_THEME, dark: DARK_THEME } as const;
 /** Past this, a block renders plain: tokenizing it would stall the main thread. */
 const MAX_HIGHLIGHT_CHARS = 200_000;

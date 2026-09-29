@@ -22,7 +22,7 @@ const POOL_OPTIONS = {
  * - The WASM regex engine: faster than the default JS one and can't backtrack catastrophically.
  */
 export const HIGHLIGHT = {
-  theme: { dark: "pierre-dark", light: "pierre-light" },
+  theme: { dark: "vesper", light: "pierre-light" },
   preferredHighlighter: "shiki-wasm",
   lineDiffType: "word",
   tokenizeMaxLineLength: 1_000,

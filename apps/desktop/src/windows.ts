@@ -7,7 +7,7 @@ import { APP_URL } from "./renderer.ts";
 const BOUNDS_PATH = join(app.getPath("userData"), "window-bounds.json");
 
 function backgroundColor() {
-  return nativeTheme.shouldUseDarkColors ? "#151515" : "#fcfcfc";
+  return nativeTheme.shouldUseDarkColors ? "#101010" : "#fcfcfc";
 }
 
 function isOnScreen(bounds: Rectangle) {

@@ -538,7 +538,7 @@ const StatusDot = ({
           : info.status === "running"
             ? ["Working", "bg-foreground animate-pulse"]
             : unread
-              ? ["New activity", "bg-foreground"]
+              ? ["New activity", "bg-brand"]
               : shelved
                 ? ["Shelved", "bg-muted-foreground/25"]
                 : ["Idle", "bg-muted-foreground/60"];
