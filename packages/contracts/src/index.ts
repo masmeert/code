@@ -1001,6 +1001,25 @@ export function isTranscriptEvent(
   );
 }
 
+/**
+ * Why rewinding a thread's files isn't allowed, or null when it is. Snapshots hold the whole
+ * folder, so a restore is only safe in a worktree no other thread works in, around or inside.
+ */
+export function fileRestoreBlocker(
+  thread: ThreadInfo,
+  others: Iterable<ThreadInfo>,
+): string | null {
+  if (!thread.worktree)
+    return "Only threads in their own worktree can restore files. Start the thread in a new worktree to be able to.";
+  const { cwd } = thread;
+  for (const other of others) {
+    if (other.id === thread.id) continue;
+    if (cwd === other.cwd || cwd.startsWith(`${other.cwd}/`) || other.cwd.startsWith(`${cwd}/`))
+      return `"${other.title}" also works in this folder, so restoring files could undo its work. Delete that thread to restore files here.`;
+  }
+  return null;
+}
+
 export const ServerFrame = Schema.Union([
   /**
    * Sent on connect: everything but transcripts, which load per thread. `dataId`

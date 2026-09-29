@@ -138,6 +138,7 @@ import {
   switchToThread,
   takeFollowUps,
   toggleTerminalPanel,
+  useFileRestoreBlocker,
   usePathHost,
   useProjectHost,
   useProviders,
@@ -1440,46 +1441,52 @@ const UserTurn = memo(
   (a, b) => a.item === b.item && a.threadId === b.threadId && a.busy === b.busy,
 );
 
-const REWIND_OPTIONS = [
-  { value: "keep", label: "Rewind conversation", description: "The files stay as they are now" },
-  {
-    value: "files",
-    label: "Rewind conversation and files",
-    description: "The folder goes back to how it was when this was sent",
-  },
-];
-
 /** Rewinds to before this message and puts it back in the composer to edit and resend. */
-const EditFromHere = ({ item, threadId }: { item: UserItem; threadId: string }) => (
-  <div className="flex justify-end opacity-0 transition-opacity group-hover/turn:opacity-100 has-[[aria-expanded=true]]:opacity-100">
-    <PromptSelect
-      title="Edit from here"
-      icon={<Undo2 />}
-      options={REWIND_OPTIONS}
-      value={undefined}
-      placeholder="Edit from here"
-      side="bottom"
-      align="end"
-      width="w-72"
-      variant="plain"
-      onChange={(choice) => {
-        // An unsent draft stays, above the restored prompt.
-        setDraft(threadId, (prev) => ({
-          text: prev.text.trim() ? `${prev.text.trimEnd()}\n\n${item.text}` : item.text,
-          attachments: [...prev.attachments, ...item.attachments.map(fromSent)],
-        }));
-        send(
-          ClientCommand.cases["thread.rewind"].make({
-            threadId,
-            messageId: item.id,
-            restoreFiles: choice === "files",
-          }),
-        );
-        focusComposer();
-      }}
-    />
-  </div>
-);
+function EditFromHere({ item, threadId }: { item: UserItem; threadId: string }) {
+  const restoreBlocker = useFileRestoreBlocker(threadId);
+  return (
+    <div className="flex justify-end opacity-0 transition-opacity group-hover/turn:opacity-100 has-[[aria-expanded=true]]:opacity-100">
+      <PromptSelect
+        title="Edit from here"
+        icon={<Undo2 />}
+        options={[
+          {
+            value: "keep",
+            label: "Rewind conversation",
+            description: "The files stay as they are now",
+          },
+          {
+            value: "files",
+            label: "Rewind conversation and files",
+            description: restoreBlocker ?? "The folder goes back to how it was when this was sent",
+            disabled: restoreBlocker !== null,
+          },
+        ]}
+        value={undefined}
+        placeholder="Edit from here"
+        side="bottom"
+        align="end"
+        width="w-72"
+        variant="plain"
+        onChange={(choice) => {
+          // An unsent draft stays, above the restored prompt.
+          setDraft(threadId, (prev) => ({
+            text: prev.text.trim() ? `${prev.text.trimEnd()}\n\n${item.text}` : item.text,
+            attachments: [...prev.attachments, ...item.attachments.map(fromSent)],
+          }));
+          send(
+            ClientCommand.cases["thread.rewind"].make({
+              threadId,
+              messageId: item.id,
+              restoreFiles: choice === "files",
+            }),
+          );
+          focusComposer();
+        }}
+      />
+    </div>
+  );
+}
 
 /** Asks before forking, and stays up with progress until the fork opens (or says why it didn't). */
 function ForkDialog({

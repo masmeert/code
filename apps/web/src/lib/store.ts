@@ -29,6 +29,7 @@ import {
   type UsageLimit,
   type UserAnswers,
   type UserQuestion,
+  fileRestoreBlocker,
   isTranscriptEvent,
   isTurnActive,
 } from "@apcode/contracts";
@@ -1363,6 +1364,17 @@ export const send = (command: ClientCommand, host = commandHost(command)) => {
 };
 
 export const useThreadHost = (threadId: string) => useStore((s) => threadHost(s, threadId));
+/** Why this thread can't rewind its files, or null when it can; only threads on its host share its folders. */
+export const useFileRestoreBlocker = (threadId: string) =>
+  useStore((s) => {
+    const thread = s.threads[threadId];
+    if (!thread) return null;
+    const host = threadHost(s, threadId);
+    return fileRestoreBlocker(
+      thread,
+      Object.values(s.threads).filter((other) => onHost(s, host, other.projectId)),
+    );
+  });
 export const usePathHost = (path: string | null) =>
   useStore((s) => (path === null ? null : pathHost(s, path)));
 export const useProjectHost = (projectId: string) =>

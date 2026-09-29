@@ -2,6 +2,7 @@ import {
   AttachmentInput,
   ClientCommand,
   DEFAULT_AUTO_SHELVE_DAYS,
+  fileRestoreBlocker,
   isAwaitingUser,
   isTurnActive,
   peerOf,
@@ -713,17 +714,11 @@ const make = Effect.gen(function* () {
       if (found.event.steer)
         return yield* Effect.fail(fail("A message sent mid-turn can't be rewound to"));
       if (command.restoreFiles) {
-        if (
-          [...threads.values()].some(
-            (other) => other !== entry && other.info.cwd === cwd && isBusy(other),
-          )
-        ) {
-          return yield* Effect.fail(
-            fail(
-              "Another thread is working in this folder; restoring files would undo its changes too",
-            ),
-          );
-        }
+        const blocker = fileRestoreBlocker(
+          entry.info,
+          [...threads.values()].map((other) => other.info),
+        );
+        if (blocker) return yield* Effect.fail(fail(blocker));
         if (!(yield* Effect.promise(() => hasCheckpoint(cwd, threadId, command.messageId)))) {
           return yield* Effect.fail(fail("There's no snapshot of the files from that point"));
         }
