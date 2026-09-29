@@ -2,6 +2,14 @@
 
 Release notes for the APCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.0.16](https://github.com/masmeert/code/compare/v0.0.15...v0.0.16) (2026-09-29)
+
+
+### Fixed
+
+* darken and blur the backdrop behind every modal ([9bc21d0](https://github.com/masmeert/code/commit/9bc21d0bca3414247233e7c0aee743b96e33a5fd))
+* run Claude on hosts signed in as root, asking once before Full access there ([bb971be](https://github.com/masmeert/code/commit/bb971be9bc635a8e8ed48eba43919372c74b218b))
+
 ## [0.0.15](https://github.com/masmeert/code/compare/v0.0.14...v0.0.15) (2026-09-29)
 
 
