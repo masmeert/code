@@ -19,6 +19,7 @@ import {
   type SearchHit,
   type Settings,
   type StoredEvent,
+  type CommandRun,
   type TerminalInfo,
   type ThreadInfo,
   type TurnOptions,
@@ -233,6 +234,18 @@ export class SessionManager extends Context.Service<
 >()("apcode/SessionManager") {}
 
 const fail = (message: string) => new ProviderError({ provider: "none", message });
+
+/** What the agent reads after the user runs a command from its reply. */
+function describeRun({ command, exitCode, output }: CommandRun) {
+  // Longer than any backtick run inside, so neither the command nor its output can close it early.
+  function fence(text: string) {
+    return "`".repeat(Math.max(3, ...(text.match(/`+/g) ?? []).map((run) => run.length + 1)));
+  }
+  const ran = `I ran this command from your reply, in the thread's folder:\n\n${fence(command)}bash\n${command}\n${fence(command)}`;
+  return output
+    ? `${ran}\n\nIt exited with code ${exitCode} and printed:\n\n${fence(output)}\n${output}\n${fence(output)}`
+    : `${ran}\n\nIt exited with code ${exitCode} and printed nothing.`;
+}
 
 /** A thread is named after its first message, like a chat title. */
 const titleFrom = (text: string, fallback: string) => {
@@ -600,7 +613,7 @@ const make = Effect.gen(function* () {
       }
     });
 
-  const send = (entry: ThreadEntry, text: string, options: TurnOptions) =>
+  const send = (entry: ThreadEntry, text: string, options: TurnOptions, run?: CommandRun) =>
     Effect.gen(function* () {
       const threadId = entry.info.id;
       // Writing in an archived thread brings it back.
@@ -617,11 +630,13 @@ const make = Effect.gen(function* () {
           skills.mentionedIn(entry.info.provider, entry.info.cwd, text),
         ),
       };
-      const message = RuntimeEvent.cases["user.message"].make(
-        attachments.length
-          ? { threadId, messageId, text, attachments }
-          : { threadId, messageId, text },
-      );
+      const message = RuntimeEvent.cases["user.message"].make({
+        threadId,
+        messageId,
+        text,
+        ...(attachments.length > 0 && { attachments }),
+        ...(run && { run }),
+      });
       // A turn is running: the message joins it.
       const { status } = entry.info;
       if (entry.session && isTurnActive(status)) {
@@ -1387,6 +1402,23 @@ const make = Effect.gen(function* () {
         ),
       "terminal.close": (command) =>
         Effect.sync(() => terminals.close(command.threadId, command.terminalId)),
+      "terminal.run": ({ threadId, terminalId, command, columns, rows, options }) =>
+        Effect.flatMap(getEntry(threadId), (entry) => {
+          const failed = terminals.run(threadId, terminalId, command, columns, rows, (exit) =>
+            Effect.runFork(
+              send(entry, describeRun({ command, ...exit }), options, { command, ...exit }).pipe(
+                Effect.catch((error) =>
+                  Effect.sync(() =>
+                    publish(RuntimeEvent.cases.error.make({ threadId, message: error.message })),
+                  ),
+                ),
+              ),
+            ),
+          );
+          return failed
+            ? Effect.fail(fail(`Couldn't run the command: ${failed.message}`))
+            : Effect.void;
+        }),
       // Per connection; the server answers these.
       "thread.subscribe": () => Effect.void,
       "thread.unsubscribe": () => Effect.void,

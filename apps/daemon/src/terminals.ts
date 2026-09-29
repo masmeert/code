@@ -6,6 +6,8 @@ import { accessSync, constants, existsSync } from "node:fs";
 import { basename } from "node:path";
 
 const IN_FLIGHT_CHARACTER_LIMIT = 128 * 1024;
+/** How much of a run's output the agent gets: the end, where results and errors usually are. */
+const RUN_OUTPUT_CHARACTER_LIMIT = 16 * 1024;
 
 export interface TerminalViewer {
   send(frame: ServerFrame): void;
@@ -19,8 +21,15 @@ interface Attachment {
   stale: boolean;
 }
 
+export interface RunExit {
+  readonly exitCode: number;
+  readonly output: string;
+}
+
 interface TerminalSession extends TerminalInfo {
   readonly shell: Bun.Subprocess;
+  /** Set on a run; left out, or once cancelled, its exit goes unreported. */
+  onExit: ((exit: RunExit) => void) | null;
   readonly screen: HeadlessTerminal;
   readonly serializer: SerializeAddon;
   readonly viewers: Map<TerminalViewer, Attachment>;
@@ -38,6 +47,8 @@ export function createTerminals(options: {
   closed(terminal: TerminalInfo): void;
 }) {
   const sessions = new Map<string, TerminalSession>();
+  // Every run's key, kept after it exits: a viewer attaching late must not start a shell in its place.
+  const runs = new Set<string>();
 
   function keyOf(threadId: string, terminalId: string) {
     return `${threadId}\u0000${terminalId}`;
@@ -48,6 +59,7 @@ export function createTerminals(options: {
     terminalId: string,
     columns: number,
     rows: number,
+    run?: { readonly command: string; readonly onExit: (exit: RunExit) => void },
   ): TerminalSession | Error {
     const folder = options.folderOf(threadId);
     if (folder === null) return new Error("This thread is gone.");
@@ -77,13 +89,20 @@ export function createTerminals(options: {
       const session: TerminalSession = {
         threadId,
         terminalId,
+        ...(run && { command: run.command }),
+        onExit: run?.onExit ?? null,
         shell: Bun.spawn(
           [
             shellPath,
             ...(process.platform === "darwin" && (shellName === "zsh" || shellName === "bash")
               ? ["-l"]
               : []),
-            ...(shellName === "zsh" ? ["-o", "nopromptsp"] : []),
+            // Interactive, so the rc files set up PATH, nvm and aliases as in the user's terminal.
+            ...(run
+              ? [...(shellName === "zsh" || shellName === "bash" ? ["-i"] : []), "-c", run.command]
+              : shellName === "zsh"
+                ? ["-o", "nopromptsp"]
+                : []),
           ],
           {
             cwd: folder,
@@ -118,8 +137,9 @@ export function createTerminals(options: {
         flushTimer: null,
       };
       sessions.set(keyOf(threadId, terminalId), session);
-      void session.shell.exited.then(() => finish(session));
-      options.opened({ threadId, terminalId });
+      if (run) runs.add(keyOf(threadId, terminalId));
+      void session.shell.exited.then((exitCode) => finish(session, exitCode));
+      options.opened({ threadId, terminalId, ...(run && { command: run.command }) });
       return session;
     } catch (error) {
       screen.dispose();
@@ -203,19 +223,24 @@ export function createTerminals(options: {
     session.screen.resize(columns, rows);
   }
 
-  function finish(session: TerminalSession) {
+  function finish(session: TerminalSession, exitCode: number) {
     flush(session);
     session.shell.terminal?.close();
-    session.screen.dispose();
-    const key = keyOf(session.threadId, session.terminalId);
-    if (sessions.get(key) !== session) return;
-    sessions.delete(key);
-    options.closed({ threadId: session.threadId, terminalId: session.terminalId });
+    // The screen parses writes asynchronously; an empty write's callback runs once it has caught up.
+    session.screen.write("", () => {
+      session.onExit?.({ exitCode, output: printedText(session.screen) });
+      session.screen.dispose();
+      const key = keyOf(session.threadId, session.terminalId);
+      if (sessions.get(key) !== session) return;
+      sessions.delete(key);
+      options.closed({ threadId: session.threadId, terminalId: session.terminalId });
+    });
   }
 
   function close(threadId: string, terminalId: string) {
     const session = sessions.get(keyOf(threadId, terminalId));
     if (!session) return;
+    session.onExit = null;
     session.shell.kill("SIGHUP");
     setTimeout(() => {
       if (sessions.get(keyOf(threadId, terminalId)) === session) session.shell.kill("SIGKILL");
@@ -224,7 +249,25 @@ export function createTerminals(options: {
 
   return {
     list(): Array<TerminalInfo> {
-      return [...sessions.values()].map(({ threadId, terminalId }) => ({ threadId, terminalId }));
+      return [...sessions.values()].map(({ threadId, terminalId, command }) => ({
+        threadId,
+        terminalId,
+        ...(command !== undefined && { command }),
+      }));
+    },
+    /** Runs `command` in the thread's folder; `onExit` gets how it ended, unless it's closed first. */
+    run(
+      threadId: string,
+      terminalId: string,
+      command: string,
+      columns: number,
+      rows: number,
+      onExit: (exit: RunExit) => void,
+    ): Error | null {
+      if (sessions.has(keyOf(threadId, terminalId)) || runs.has(keyOf(threadId, terminalId)))
+        return new Error("That command is already running.");
+      const session = start(threadId, terminalId, columns, rows, { command, onExit });
+      return session instanceof Error ? session : null;
     },
     attach(
       threadId: string,
@@ -235,7 +278,11 @@ export function createTerminals(options: {
     ) {
       const existing = sessions.get(keyOf(threadId, terminalId));
       if (existing) resize(existing, columns, rows);
-      const session = existing ?? start(threadId, terminalId, columns, rows);
+      const session =
+        existing ??
+        (runs.has(keyOf(threadId, terminalId))
+          ? new Error("This command already finished.")
+          : start(threadId, terminalId, columns, rows));
       if (session instanceof Error)
         return viewer.send(
           ServerFrame.cases["terminal.error"].make({
@@ -297,7 +344,25 @@ export function createTerminals(options: {
         if (session.threadId === threadId) close(threadId, session.terminalId);
     },
     closeAll() {
-      for (const session of sessions.values()) session.shell.kill("SIGHUP");
+      for (const session of sessions.values()) {
+        session.onExit = null;
+        session.shell.kill("SIGHUP");
+      }
     },
   };
+}
+
+/** The screen as plain text, wrapped lines joined back up; cut to its end when long. */
+function printedText(screen: HeadlessTerminal) {
+  const buffer = screen.buffer.active;
+  const lines: Array<string> = [];
+  for (let index = 0; index < buffer.length; index++) {
+    const line = buffer.getLine(index);
+    if (!line) continue;
+    const text = line.translateToString(true);
+    if (line.isWrapped && lines.length > 0) lines[lines.length - 1] += text;
+    else lines.push(text);
+  }
+  const text = lines.join("\n").replace(/^\n+/, "").trimEnd();
+  return text.length > RUN_OUTPUT_CHARACTER_LIMIT ? text.slice(-RUN_OUTPUT_CHARACTER_LIMIT) : text;
 }

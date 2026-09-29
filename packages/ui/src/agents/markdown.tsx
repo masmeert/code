@@ -2,12 +2,15 @@ import { createContext, isValidElement, memo, type ReactElement, use } from "rea
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "@apcode/ui/agents/code-block";
+import { CommandBlock } from "@apcode/ui/agents/command-block";
 import { cn } from "@apcode/ui/lib/utils";
 
 export interface MarkdownProps {
   children: string;
   /** While true, a code fence still open at the end of the text shows as writing. */
   streaming?: boolean;
+  /** Shows shell blocks as commands with a Run button that hands the command to this. */
+  onRunCommand?: (command: string) => void;
   className?: string;
 }
 
@@ -22,6 +25,8 @@ const SourceContext = createContext<{ readonly text: string; readonly streaming:
   streaming: false,
 });
 
+const RunCommandContext = createContext<((command: string) => void) | undefined>(undefined);
+
 /**
  * Module-level, so element types stay the same between renders: a new object each
  * render would remount every paragraph and code block on every streamed token.
@@ -29,13 +34,24 @@ const SourceContext = createContext<{ readonly text: string; readonly streaming:
 const components: Components = {
   pre: function Pre({ node, children }) {
     const { text, streaming } = use(SourceContext);
+    const runCommand = use(RunCommandContext);
     const code = isValidElement(children) ? (children as CodeElement) : null;
     const source = String(code?.props.children ?? "").replace(/\n$/, "");
     const open = streaming && node?.position?.end.offset === text.length;
+    const language = languageOf(code?.props.className);
+    if (runCommand && ["bash", "sh", "shell", "zsh"].includes(language))
+      return (
+        <CommandBlock
+          command={source}
+          streaming={open}
+          onRun={() => runCommand(source)}
+          className="my-3"
+        />
+      );
     return (
       <CodeBlock
         code={source}
-        language={languageOf(code?.props.className)}
+        language={language}
         status={open ? "streaming" : "complete"}
         showStatus={false}
         maxHeight={360}
@@ -149,15 +165,18 @@ const MarkdownPart = memo(function MarkdownPart({
 export const Markdown = memo(function Markdown({
   children,
   streaming = false,
+  onRunCommand,
   className,
 }: MarkdownProps) {
   const cut = stableEnd(children);
   return (
     <div className={cn("min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}>
-      {cut > 0 ? <MarkdownPart text={children.slice(0, cut)} streaming={false} /> : null}
-      {cut < children.length ? (
-        <MarkdownPart text={children.slice(cut)} streaming={streaming} />
-      ) : null}
+      <RunCommandContext value={onRunCommand}>
+        {cut > 0 ? <MarkdownPart text={children.slice(0, cut)} streaming={false} /> : null}
+        {cut < children.length ? (
+          <MarkdownPart text={children.slice(cut)} streaming={streaming} />
+        ) : null}
+      </RunCommandContext>
     </div>
   );
 });

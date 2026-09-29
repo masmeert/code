@@ -185,7 +185,17 @@ export function TerminalPanel({
   );
 }
 
-function TerminalView({ threadId, terminalId }: { threadId: string; terminalId: string }) {
+export function TerminalView({
+  threadId,
+  terminalId,
+  autoFocus = true,
+  className,
+}: {
+  threadId: string;
+  terminalId: string;
+  autoFocus?: boolean;
+  className?: string;
+}) {
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let cancelled = false;
@@ -278,7 +288,7 @@ function TerminalView({ threadId, terminalId }: { threadId: string; terminalId: 
           attributes: true,
           attributeFilter: ["class"],
         });
-        terminal.focus();
+        if (autoFocus) terminal.focus();
 
         dispose = () => {
           cancelAnimationFrame(frame);
@@ -292,9 +302,9 @@ function TerminalView({ threadId, terminalId }: { threadId: string; terminalId: 
       cancelled = true;
       dispose();
     };
-  }, [threadId, terminalId]);
+  }, [threadId, terminalId, autoFocus]);
   return (
-    <div className="min-h-0 flex-1 pb-1 pl-3">
+    <div className={cn("min-h-0 flex-1 pb-1 pl-3", className)}>
       <div ref={host} className="size-full" />
     </div>
   );

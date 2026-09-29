@@ -461,8 +461,22 @@ export const SearchHit = Schema.Struct({
 });
 export type SearchHit = typeof SearchHit.Type;
 
-export const TerminalInfo = Schema.Struct({ threadId: Schema.String, terminalId: Schema.String });
+export const TerminalInfo = Schema.Struct({
+  threadId: Schema.String,
+  terminalId: Schema.String,
+  /** Set on a terminal running one command from an agent's reply; it shows in the transcript, not the terminal panel. */
+  command: Schema.optionalKey(Schema.String),
+});
 export type TerminalInfo = typeof TerminalInfo.Type;
+
+/** A command the user ran from an agent's reply, and how it ended. */
+export const CommandRun = Schema.Struct({
+  command: Schema.String,
+  exitCode: Schema.Number,
+  /** The end of what it printed, as plain text. */
+  output: Schema.String,
+});
+export type CommandRun = typeof CommandRun.Type;
 
 const TerminalColumns = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 }));
 const TerminalRows = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }));
@@ -577,6 +591,8 @@ export const RuntimeEvent = Schema.Union([
     attachments: Schema.optionalKey(Schema.Array(Attachment)),
     /** Sent into a running turn rather than starting one; can't be rewound to. */
     steer: Schema.optionalKey(Schema.Boolean),
+    /** Sent by a finished command run rather than typed; `text` is what the agent reads. */
+    run: Schema.optionalKey(CommandRun),
   }),
   Schema.TaggedStruct("assistant.delta", {
     threadId: Schema.String,
@@ -713,7 +729,11 @@ export const RuntimeEvent = Schema.Union([
     error: Schema.NullOr(Schema.String),
   }),
   Schema.TaggedStruct("sourceControl.updated", { statuses: Schema.Array(SourceControlStatus) }),
-  Schema.TaggedStruct("terminal.opened", { threadId: Schema.String, terminalId: Schema.String }),
+  Schema.TaggedStruct("terminal.opened", {
+    threadId: Schema.String,
+    terminalId: Schema.String,
+    command: Schema.optionalKey(Schema.String),
+  }),
   Schema.TaggedStruct("terminal.closed", { threadId: Schema.String, terminalId: Schema.String }),
 ]).pipe(Schema.toTaggedUnion("_tag"));
 export type RuntimeEvent = typeof RuntimeEvent.Type;
@@ -880,6 +900,18 @@ export const ClientCommand = Schema.Union([
     terminalId: Schema.String,
     columns: TerminalColumns,
     rows: TerminalRows,
+  }),
+  /**
+   * Runs one command in the thread's folder, in a terminal of its own. When it exits, what it
+   * printed goes to the agent as the next message; closing the terminal first cancels that.
+   */
+  Schema.TaggedStruct("terminal.run", {
+    threadId: Schema.String,
+    terminalId: Schema.String,
+    command: Schema.String,
+    columns: TerminalColumns,
+    rows: TerminalRows,
+    options: TurnOptions,
   }),
   Schema.TaggedStruct("terminal.detach", { threadId: Schema.String, terminalId: Schema.String }),
   Schema.TaggedStruct("terminal.write", {

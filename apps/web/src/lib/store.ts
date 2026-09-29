@@ -12,6 +12,7 @@ import {
   type Settings,
   type ApprovalDecision,
   type Attachment,
+  type CommandRun,
   ClientCommand,
   type GitAction,
   type PageInfo,
@@ -46,6 +47,8 @@ export type TranscriptItem =
       readonly attachments: ReadonlyArray<Attachment>;
       /** Sent into a running turn; those can't be rewound to. */
       readonly steer: boolean;
+      /** Set when a finished command run sent it, rather than the user typing it. */
+      readonly run: CommandRun | null;
     }
   /** What a turn changed on disk; `id` is `checkpoint:<messageId>` of the message that started it. */
   | {
@@ -174,6 +177,8 @@ export interface State {
   readonly followUps: Readonly<Record<string, ReadonlyArray<FollowUp>>>;
   readonly terminals: Readonly<Record<string, ReadonlyArray<string>>>;
   readonly activeTerminals: Readonly<Record<string, string>>;
+  /** Commands from agents' replies still running, per thread; shown in the transcript, not the terminal panel. */
+  readonly runs: Readonly<Record<string, ReadonlyArray<RunningCommand>>>;
   /**
    * Remote hosts by SSH alias, each with its own daemon. Their threads and projects are merged
    * into the lists above (ids are UUIDs, so they never clash); the fields above that describe
@@ -269,6 +274,7 @@ const initial: State = {
   followUps: {},
   terminals: {},
   activeTerminals: {},
+  runs: {},
   hosts: {},
   projectHosts: {},
 };
@@ -328,6 +334,7 @@ const reduceItems = (
         text: message.text,
         attachments: message.attachments ?? [],
         steer: message.steer === true,
+        run: message.run ?? null,
       })),
     ),
     Match.tag("turn.checkpoint", ({ messageId, files, additions, deletions }) => {
@@ -571,6 +578,7 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
       const { [threadId]: _transcript, ...transcripts } = state.transcripts;
       const { [threadId]: _terminals, ...terminals } = state.terminals;
       const { [threadId]: _activeTerminal, ...activeTerminals } = state.activeTerminals;
+      const { [threadId]: _runs, ...runs } = state.runs;
       const dataId = dataIdOf(state, threadId);
       if (dataId) removeTranscript(dataId, threadId);
       return {
@@ -580,9 +588,18 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
         transcripts,
         terminals,
         activeTerminals,
+        runs,
       };
     }),
-    Match.tag("terminal.opened", ({ threadId, terminalId }) => {
+    Match.tag("terminal.opened", ({ threadId, terminalId, command }) => {
+      if (command !== undefined) {
+        const running = state.runs[threadId] ?? [];
+        if (running.some((run) => run.terminalId === terminalId)) return state;
+        return {
+          ...state,
+          runs: { ...state.runs, [threadId]: [...running, { terminalId, command }] },
+        };
+      }
       const terminalIds = state.terminals[threadId] ?? [];
       if (terminalIds.includes(terminalId)) return state;
       return {
@@ -651,6 +668,10 @@ function withoutTerminal(state: State, threadId: string, terminalId: string): St
     ...state,
     terminals: { ...state.terminals, [threadId]: remaining },
     activeTerminals: nextActive ? { ...activeTerminals, [threadId]: nextActive } : activeTerminals,
+    runs: {
+      ...state.runs,
+      [threadId]: (state.runs[threadId] ?? []).filter((run) => run.terminalId !== terminalId),
+    },
   };
 }
 
@@ -841,8 +862,21 @@ const onShell = (connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
   const terminals: Record<string, Array<string>> = {};
   for (const [threadId, terminalIds] of Object.entries(state.terminals))
     if (others[threadId]) terminals[threadId] = [...terminalIds];
-  const ownScreens = [...screens.values()].filter((screen) => incoming[screen.threadId]);
-  for (const { threadId, terminalId } of [...frame.terminals, ...ownScreens]) {
+  const runs: Record<string, Array<RunningCommand>> = {};
+  for (const [threadId, running] of Object.entries(state.runs))
+    if (others[threadId]) runs[threadId] = [...running];
+  for (const { threadId, terminalId, command } of frame.terminals)
+    if (command !== undefined) (runs[threadId] ??= []).push({ terminalId, command });
+  // A run that ended while disconnected is simply gone; its window must not come back as a tab.
+  const ownScreens = [...screens.values()].filter(
+    (screen) =>
+      incoming[screen.threadId] &&
+      !state.runs[screen.threadId]?.some((run) => run.terminalId === screen.terminalId),
+  );
+  for (const { threadId, terminalId } of [
+    ...frame.terminals.filter((terminal) => terminal.command === undefined),
+    ...ownScreens,
+  ]) {
     if (!terminals[threadId]?.includes(terminalId)) (terminals[threadId] ??= []).push(terminalId);
   }
   const projectHosts =
@@ -867,6 +901,7 @@ const onShell = (connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
     threads,
     transcripts,
     terminals,
+    runs,
     activeTerminals: Object.fromEntries(
       Object.entries(state.activeTerminals).flatMap(([threadId, terminalId]) => {
         const active = terminals[threadId]?.includes(terminalId)
@@ -1204,6 +1239,7 @@ function removeConnection(connection: Connection & { readonly host: string }) {
     transcripts: keep(state.transcripts),
     terminals: keep(state.terminals),
     activeTerminals: keep(state.activeTerminals),
+    runs: keep(state.runs),
   });
 }
 
@@ -1556,6 +1592,11 @@ export const searchMessages = async (query: string): Promise<ReadonlyArray<Searc
 
 // --- terminals -------------------------------------------------------------------
 
+export interface RunningCommand {
+  readonly terminalId: string;
+  readonly command: string;
+}
+
 export interface TerminalScreen {
   readonly threadId: string;
   readonly terminalId: string;
@@ -1627,6 +1668,24 @@ export function showTerminal(threadId: string, terminalId: string) {
   setState({ ...state, activeTerminals: { ...state.activeTerminals, [threadId]: terminalId } });
 }
 
+/**
+ * Runs a command from an agent's reply in a terminal of its own, shown under the transcript once
+ * the daemon has started it; when it exits, its output goes to the agent as the next message.
+ */
+export function runCommand(threadId: string, command: string, options: TurnOptions) {
+  send(
+    ClientCommand.cases["terminal.run"].make({
+      threadId,
+      terminalId: crypto.randomUUID(),
+      command,
+      columns: 100,
+      rows: 12,
+      options,
+    }),
+  );
+}
+
+/** Also stops a running command, without telling its agent. */
 export function closeTerminal(threadId: string, terminalId: string) {
   send(ClientCommand.cases["terminal.close"].make({ threadId, terminalId }));
   setState(withoutTerminal(state, threadId, terminalId));

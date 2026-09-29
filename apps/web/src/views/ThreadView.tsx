@@ -42,6 +42,7 @@ import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import {
   type Attachment,
   ClientCommand,
+  type CommandRun,
   isTurnActive,
   peerOf,
   type Project,
@@ -71,6 +72,7 @@ import {
   Square,
   SquareTerminal,
   Undo2,
+  X,
 } from "lucide-react";
 import {
   createContext,
@@ -88,7 +90,14 @@ import {
   useState,
 } from "react";
 import { toggleBrowser, useBrowser } from "../lib/browser.ts";
-import { approvePlan, BUILD_WITH_LABEL, fromSent, useNeedsRootConsent } from "../lib/composer.ts";
+import {
+  approvePlan,
+  BUILD_WITH_LABEL,
+  fromSent,
+  toTurnOptions,
+  useNeedsRootConsent,
+  useTurnPrefs,
+} from "../lib/composer.ts";
 import { appendToDraft, focusComposer, getDraft, setDraft } from "../lib/drafts.ts";
 import { describe, useKeybinding } from "../lib/keybindings.ts";
 import { useNow } from "../lib/time.ts";
@@ -100,6 +109,7 @@ import {
   modelChoices,
 } from "../lib/models.ts";
 import {
+  closeTerminal,
   cloneProject,
   closePeerReview,
   createThread,
@@ -111,6 +121,8 @@ import {
   openPeerReview,
   queueFollowUp,
   respondApproval,
+  runCommand,
+  type RunningCommand,
   send,
   sendFollowUpNow,
   startPeerReview,
@@ -138,6 +150,9 @@ const PANEL_WIDTH_KEY = "apcode.diffPanelWidth";
 const DiffPanel = lazy(() => import("./DiffPanel.tsx").then((m) => ({ default: m.DiffPanel })));
 const TerminalPanel = lazy(() =>
   import("./TerminalPanel.tsx").then((m) => ({ default: m.TerminalPanel })),
+);
+const TerminalView = lazy(() =>
+  import("./TerminalPanel.tsx").then((m) => ({ default: m.TerminalView })),
 );
 
 /** Consecutive agent items form one turn under a single avatar. */
@@ -645,11 +660,14 @@ const AttachmentList = ({ attachments }: { attachments: ReadonlyArray<Attachment
 
 const NO_ITEMS: ReadonlyArray<TranscriptItem> = [];
 const NO_FOLLOW_UPS: ReadonlyArray<FollowUp> = [];
+const NO_RUNS: ReadonlyArray<RunningCommand> = [];
 
 /** Opens the changes panel on one turn; provided by the thread view to the checkpoint chips deep in the transcript. */
 const TurnDiffContext = createContext<(messageId: string) => void>(() => {});
 /** The tool call last picked in the running-subagents list, for its group to open and scroll to. */
 const RevealContext = createContext<ToolReveal | null>(null);
+/** Hands a shell block's command to the agent as a message; provided by the thread view to its replies. */
+const RunCommandContext = createContext<((command: string) => void) | undefined>(undefined);
 
 /** Held messages go back into the composer, after whatever is there. */
 const returnToComposer = (threadId: string, followUps: ReadonlyArray<FollowUp>) => {
@@ -789,7 +807,8 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   // Loaded on open: from the local cache first, then caught up by the daemon.
   const transcript = useTranscript(threadId);
   const items = transcript?.items ?? NO_ITEMS;
-  const providers = useProviders(useThreadHost(threadId));
+  const host = useThreadHost(threadId);
+  const providers = useProviders(host);
   const settings = useStore((s) => s.settings);
   const { status, provider } = info;
   // The harness is fixed per thread; only its model can change.
@@ -823,6 +842,13 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   }, [diffTurnGone]);
   const followUps = useStore((s) => s.followUps[threadId]) ?? NO_FOLLOW_UPS;
   const followUpMode = useStore((s) => s.settings.followUp ?? "queue");
+  const [{ effort, permission }] = useTurnPrefs(threadId, provider, host);
+  // The turn its output starts runs at the composer's effort and permission level.
+  const runReplyCommand = useCallback(
+    (command: string) => runCommand(threadId, command, toTurnOptions({ effort, permission }, [])),
+    [threadId, effort, permission],
+  );
+  const runs = useStore((s) => s.runs[threadId]) ?? NO_RUNS;
   // Leaves the draft alone, and waits while the agent needs an approval or an answer.
   useKeybinding(
     followUps[0] && status === "running" ? "composer.steerQueued" : undefined,
@@ -972,7 +998,12 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
               ) : null}
               <TurnDiffContext value={openTurnDiff}>
                 <RevealContext value={reveal}>
-                  <TurnList items={items} provider={provider} threadId={threadId} busy={busy} />
+                  <RunCommandContext value={runReplyCommand}>
+                    <TurnList items={items} provider={provider} threadId={threadId} busy={busy} />
+                  </RunCommandContext>
+                  {runs.map((run) => (
+                    <RunningCommandWindow key={run.terminalId} threadId={threadId} run={run} />
+                  ))}
                 </RevealContext>
               </TurnDiffContext>
 
@@ -1159,6 +1190,64 @@ export const TurnList = ({
   );
 };
 
+/** A command from a reply while it runs: its terminal, live, and a way to stop it before it reaches the agent. */
+function RunningCommandWindow({ threadId, run }: { threadId: string; run: RunningCommand }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-border">
+      <div className="flex h-9 items-center gap-2 border-b border-border pr-1.5 pl-3 text-xs">
+        <LoaderCircle className="size-3.5 shrink-0 text-muted-foreground motion-safe:animate-spin" />
+        <code className="min-w-0 flex-1 truncate font-mono text-foreground/85">{run.command}</code>
+        <button
+          type="button"
+          title="Stop it; the agent won't hear about this run"
+          onClick={() => closeTerminal(threadId, run.terminalId)}
+          className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Square className="size-3" />
+          Stop
+        </button>
+      </div>
+      <Suspense fallback={<div className="h-48" />}>
+        <TerminalView
+          threadId={threadId}
+          terminalId={run.terminalId}
+          autoFocus={false}
+          className="h-48 flex-none py-2"
+        />
+      </Suspense>
+    </div>
+  );
+}
+
+/** A finished run in the transcript, where its message to the agent would otherwise be. */
+function CommandRunResult({ run }: { run: CommandRun }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-border">
+      <div className="flex h-9 items-center gap-2 border-b border-border px-3 text-xs">
+        {run.exitCode === 0 ? (
+          <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+        ) : (
+          <X className="size-3.5 shrink-0 text-destructive" />
+        )}
+        <code className="min-w-0 flex-1 truncate font-mono text-foreground/85">{run.command}</code>
+        {run.exitCode === 0 ? null : (
+          <span className="shrink-0 text-destructive">Exit code {run.exitCode}</span>
+        )}
+      </div>
+      {run.output ? (
+        // Reversed, so it opens scrolled to the end, where results and errors are.
+        <div className="flex max-h-48 flex-col-reverse overflow-auto">
+          <pre className="selectable m-0 px-3 py-2 font-mono text-xs leading-5 whitespace-pre text-foreground/85">
+            {run.output}
+          </pre>
+        </div>
+      ) : (
+        <p className="px-3 py-2 text-xs text-muted-foreground">No output</p>
+      )}
+    </div>
+  );
+}
+
 /** Where a fork's own conversation starts, with the way back to the original. */
 function ForkedFrom({ item }: { item: ForkedItem }) {
   const original = useStore((s) => s.threads[item.fromThreadId]);
@@ -1264,22 +1353,25 @@ const UserTurn = memo(
     threadId: string;
     busy: boolean;
     animateIn: boolean;
-  }) => (
-    <Message from="user" animateIn={animateIn} className="group/turn">
-      <MessageContent className="gap-1.5">
-        {item.attachments.length ? <AttachmentList attachments={item.attachments} /> : null}
-        {item.text ? (
-          <MessageBubble variant="soft">
-            <MessageBubbleContent className="selectable whitespace-pre-wrap">
-              {item.text}
-            </MessageBubbleContent>
-          </MessageBubble>
-        ) : null}
-        {/* A message sent mid-turn has no turn of its own to go back to. */}
-        {busy || item.steer ? null : <EditFromHere item={item} threadId={threadId} />}
-      </MessageContent>
-    </Message>
-  ),
+  }) =>
+    item.run ? (
+      <CommandRunResult run={item.run} />
+    ) : (
+      <Message from="user" animateIn={animateIn} className="group/turn">
+        <MessageContent className="gap-1.5">
+          {item.attachments.length ? <AttachmentList attachments={item.attachments} /> : null}
+          {item.text ? (
+            <MessageBubble variant="soft">
+              <MessageBubbleContent className="selectable whitespace-pre-wrap">
+                {item.text}
+              </MessageBubbleContent>
+            </MessageBubble>
+          ) : null}
+          {/* A message sent mid-turn has no turn of its own to go back to. */}
+          {busy || item.steer ? null : <EditFromHere item={item} threadId={threadId} />}
+        </MessageContent>
+      </Message>
+    ),
   // `animateIn` is only read on mount, so it flipping once the list settles is no reason to re-render.
   (a, b) => a.item === b.item && a.threadId === b.threadId && a.busy === b.busy,
 );
@@ -1749,6 +1841,7 @@ const AgentBlockContent = ({
   const host = useThreadHost(threadId);
   const needsRootConsent = useNeedsRootConsent(host);
   const [confirmingRoot, setConfirmingRoot] = useState(false);
+  const runCommand = use(RunCommandContext);
   switch (item.kind) {
     case "user":
       return null;
@@ -1764,7 +1857,11 @@ const AgentBlockContent = ({
               showActions={showActions}
               showFeedback={false}
             >
-              <Markdown streaming={streaming} className="selectable leading-relaxed">
+              <Markdown
+                streaming={streaming}
+                onRunCommand={runCommand}
+                className="selectable leading-relaxed"
+              >
                 {item.text}
               </Markdown>
             </StreamingResponse>
