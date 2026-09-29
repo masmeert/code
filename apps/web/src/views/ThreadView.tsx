@@ -62,6 +62,7 @@ import {
   Globe,
   ImageIcon,
   LoaderCircle,
+  MessageSquare,
   Monitor,
   PanelLeft,
   Pencil,
@@ -100,6 +101,14 @@ import {
 } from "../lib/composer.ts";
 import { appendToDraft, focusComposer, getDraft, setDraft } from "../lib/drafts.ts";
 import { describe, useKeybinding } from "../lib/keybindings.ts";
+import {
+  describeRange,
+  removeReviewComment,
+  type ReviewComment,
+  takeReviewComments,
+  useReviewComments,
+  withReviewComments,
+} from "../lib/reviewComments.ts";
 import { useNow } from "../lib/time.ts";
 import {
   decodeChoice,
@@ -721,6 +730,37 @@ const QueuedFollowUp = ({
   </div>
 );
 
+/** A diff comment waiting to go out with the next message; clicking it shows it in the diff. */
+function ReviewCommentRow({
+  threadId,
+  comment,
+  onReveal,
+}: {
+  threadId: string;
+  comment: ReviewComment;
+  onReveal: () => void;
+}) {
+  return (
+    <div className="flex h-8 items-center gap-2 pl-1.5">
+      <MessageSquare className="size-3.5 shrink-0" />
+      <button
+        type="button"
+        title={`Show in the diff: ${comment.path}, ${describeRange(comment.range)}`}
+        onClick={onReveal}
+        className="flex min-w-0 flex-1 items-baseline gap-2 text-left outline-none focus-visible:underline"
+      >
+        <span className="shrink-0 font-mono text-[11px]">
+          {comment.path.slice(comment.path.lastIndexOf("/") + 1)}, {describeRange(comment.range)}
+        </span>
+        <span className="min-w-0 truncate text-[13px] text-foreground/80">{comment.text}</span>
+      </button>
+      <IconAction label="Delete comment" onClick={() => removeReviewComment(threadId, comment.id)}>
+        <X className="size-3.5" />
+      </IconAction>
+    </div>
+  );
+}
+
 const IconAction = (props: { label: string; onClick: () => void; children: ReactNode }) => (
   <button
     type="button"
@@ -840,6 +880,9 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   useEffect(() => {
     if (diffTurnGone) setDiffTurn(null);
   }, [diffTurnGone]);
+  const reviewComments = useReviewComments(threadId);
+  const [revealedComment, setRevealedComment] = useState<ReviewComment | null>(null);
+  const clearRevealedComment = useCallback(() => setRevealedComment(null), []);
   const followUps = useStore((s) => s.followUps[threadId]) ?? NO_FOLLOW_UPS;
   const followUpMode = useStore((s) => s.settings.followUp ?? "queue");
   const [{ effort, permission }] = useTurnPrefs(threadId, provider, host);
@@ -1049,7 +1092,18 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                     onReveal={(toolId) => setReveal({ toolId })}
                   />
                 </PromptInputTray>
-                <PromptInputTray open={followUps.length > 0}>
+                <PromptInputTray open={followUps.length > 0 || reviewComments.length > 0}>
+                  {reviewComments.map((comment) => (
+                    <ReviewCommentRow
+                      key={comment.id}
+                      threadId={threadId}
+                      comment={comment}
+                      onReveal={() => {
+                        setDiffOpen(true);
+                        setRevealedComment(comment);
+                      }}
+                    />
+                  ))}
                   {followUps.map((followUp, index) => (
                     <QueuedFollowUp
                       key={followUp.id}
@@ -1078,7 +1132,9 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                   : `Steer ${harnessLabel(settings, provider)} (⌘↩ to queue)`
                 : `Ask ${harnessLabel(settings, provider)}…`
             }
-            onSubmit={(text, options, how) => {
+            pendingContent={reviewComments.length > 0}
+            onSubmit={(typed, options, how) => {
+              const text = withReviewComments(takeReviewComments(threadId), typed);
               // While the agent works, a message waits for the turn to end, or steers it; ⌘Enter flips that.
               const steer = (followUpMode === "steer") !== how.alternate;
               if (busy && !steer) queueFollowUp(threadId, text, options);
@@ -1105,9 +1161,12 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             }
           >
             <DiffPanel
+              threadId={threadId}
               cwd={info.cwd}
               refreshKey={diffKey}
               turn={diffTurn ? { threadId, messageId: diffTurn } : null}
+              reveal={revealedComment}
+              onRevealed={clearRevealedComment}
               onShowAll={() => setDiffTurn(null)}
               onClose={() => setDiffOpen(false)}
             />

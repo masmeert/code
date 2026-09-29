@@ -23,6 +23,7 @@ export const KEYBINDINGS = {
   "usage.toggle": "mod+shift+u",
   // Not mod+shift+r: Electron's default menu takes it for Force Reload.
   "thread.peerReview": "mod+shift+p",
+  "diff.saveComment": "mod+enter",
 } as const;
 
 export type KeybindingId = keyof typeof KEYBINDINGS;

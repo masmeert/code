@@ -109,6 +109,8 @@ export interface ComposerProps {
   };
   /** Card on top of the composer, e.g. queued messages. */
   header?: ReactNode;
+  /** Something goes out with the next message besides its text, so an empty prompt can send. */
+  pendingContent?: boolean;
   busy?: boolean;
   disabled?: boolean;
   models: ReturnType<typeof modelChoices>;
@@ -487,6 +489,7 @@ export const Composer = (props: ComposerProps) => {
             ) : null
           }
           header={props.header}
+          pendingContent={props.pendingContent ?? false}
           footer={
             <>
               <span className="flex min-w-0 items-center gap-0.5">

@@ -96,6 +96,8 @@ export interface PromptInputProps extends Omit<
   onSubmit?: (value: string, model?: string, how?: { alternate: boolean }) => void | Promise<void>;
   /** Blocks sending only; typing and the pickers stay usable. */
   submitDisabled?: boolean;
+  /** Something to send besides the text and attachments (e.g. review comments), so an empty prompt can go. */
+  pendingContent?: boolean;
   loading?: boolean;
   onStop?: () => void;
   minRows?: number;
@@ -135,6 +137,7 @@ export function PromptInput({
   onAction,
   onSubmit,
   submitDisabled = false,
+  pendingContent = false,
   loading = false,
   onStop,
   minRows = 2,
@@ -167,7 +170,7 @@ export function PromptInput({
   const [actionsOpen, setActionsOpen] = useState(false);
   const currentValue = value ?? internalValue;
   const currentModelValue = model ?? internalModel;
-  const hasContent = Boolean(currentValue.trim()) || attachments.length > 0;
+  const hasContent = Boolean(currentValue.trim()) || attachments.length > 0 || pendingContent;
   // While the agent works, a message can still go (queued or steering); the button stops it only when there's nothing to send.
   const canSubmit = hasContent && !disabled && !submitDisabled;
   const showStop = loading && !hasContent;

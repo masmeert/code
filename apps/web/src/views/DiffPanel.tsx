@@ -1,4 +1,9 @@
-import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
+import {
+  parsePatchFiles,
+  type DiffLineAnnotation,
+  type FileDiffMetadata,
+  type SelectedLineRange,
+} from "@pierre/diffs";
 import { CodeView, type CodeViewHandle, type CodeViewItem } from "@pierre/diffs/react";
 import { ChevronLeft, Columns2, ListTree, RefreshCw, Rows2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -7,8 +12,17 @@ import { cn } from "@apcode/ui/lib/utils";
 import { useResizable } from "@apcode/ui/hooks/use-resizable";
 import { IconButton } from "../components/icon-button.tsx";
 import { ClientCommand } from "@apcode/contracts";
+import {
+  isAnchoredIn,
+  removeReviewComment,
+  type ReviewComment,
+  saveReviewComment,
+  selectRows,
+  useReviewComments,
+} from "../lib/reviewComments.ts";
 import { getSettings, send, updateSettings, useStore } from "../lib/store.ts";
 import { ChangedFilesTree } from "./ChangedFilesTree.tsx";
+import { DiffComment, DiffCommentForm } from "./DiffComment.tsx";
 import { HIGHLIGHT, useDiffWorkersReady } from "./DiffWorkers.tsx";
 
 export const PANEL_WIDTH_KEY = "apcode.diffPanelWidth";
@@ -55,6 +69,35 @@ const parseFiles = (patch: string): Array<FileDiffMetadata> => {
   return files;
 };
 
+/** What sits under one diff line: its saved comments, and the one being written. */
+interface CommentSlot {
+  readonly entries: ReadonlyArray<{ readonly comment: ReviewComment; readonly editing: boolean }>;
+}
+
+/** Comments grouped under the last line each covers, the one being written included. */
+function commentAnnotations(
+  comments: ReadonlyArray<ReviewComment>,
+  draft: ReviewComment | null,
+): Array<DiffLineAnnotation<CommentSlot>> {
+  const slots = new Map<string, DiffLineAnnotation<CommentSlot>>();
+  const shown = comments.map((comment) =>
+    comment.id === draft?.id ? { comment: draft, editing: true } : { comment, editing: false },
+  );
+  if (draft && !comments.some((comment) => comment.id === draft.id))
+    shown.push({ comment: draft, editing: true });
+  for (const entry of shown) {
+    const { end, endSide } = entry.comment.range;
+    const key = `${endSide}:${end}`;
+    const slot = slots.get(key);
+    slots.set(key, {
+      side: endSide,
+      lineNumber: end,
+      metadata: { entries: [...(slot?.metadata.entries ?? []), entry] },
+    });
+  }
+  return [...slots.values()];
+}
+
 const countLines = (files: ReadonlyArray<FileDiffMetadata>) => {
   let additions = 0;
   let deletions = 0;
@@ -73,15 +116,23 @@ const countLines = (files: ReadonlyArray<FileDiffMetadata>) => {
  * `refreshKey` changes whenever the thread may have touched files, which re-reads the diff.
  */
 export const DiffPanel = ({
+  threadId,
   cwd,
   refreshKey,
   turn,
+  reveal,
+  onRevealed,
   onShowAll,
   onClose,
 }: {
+  /** Whose review comments the diff shows and takes. */
+  threadId: string;
   cwd: string;
   refreshKey: string;
   turn: { readonly threadId: string; readonly messageId: string } | null;
+  /** A comment to scroll to, once its file is in the diff. */
+  reveal: ReviewComment | null;
+  onRevealed: () => void;
   onShowAll: () => void;
   onClose: () => void;
 }) => {
@@ -104,7 +155,10 @@ export const DiffPanel = ({
   const workersReady = useDiffWorkersReady();
   const style = useStore((s) => s.settings.diffLayout ?? "unified");
   const [showTree, setShowTree] = useState(readTree);
-  const viewer = useRef<CodeViewHandle<undefined, undefined>>(null);
+  const viewer = useRef<CodeViewHandle<CommentSlot, undefined>>(null);
+  const comments = useReviewComments(threadId);
+  // The comment being written or edited; it only reaches the thread's comments once saved.
+  const [draft, setDraft] = useState<ReviewComment | null>(null);
   const aside = useRef<HTMLElement>(null);
   const panel = useResizable({
     key: PANEL_WIDTH_KEY,
@@ -136,19 +190,80 @@ export const DiffPanel = ({
   }, [refresh, turnKey, changesKey]);
 
   const files = useMemo(() => parseFiles(diff?.patch ?? ""), [diff?.patch]);
-  // CodeView reconciles by id; a file whose content changed keeps its id, so its version must go up.
+  // CodeView reconciles by id; a file whose content or comments changed keeps its id, so its version must go up.
   const versions = useRef(new Map<string, { key: string; version: number }>());
   const items = useMemo(
     () =>
-      files.map((file): CodeViewItem<undefined> => {
-        const key = file.cacheKey ?? "";
+      files.map((file): CodeViewItem<CommentSlot> => {
+        const annotations = commentAnnotations(
+          comments.filter((comment) => comment.path === file.name && isAnchoredIn(comment, file)),
+          draft?.path === file.name ? draft : null,
+        );
+        const key = `${file.cacheKey ?? ""}|${annotations
+          .flatMap((slot) =>
+            slot.metadata.entries.map(
+              ({ comment, editing }) => `${comment.id}:${editing}:${comment.text}`,
+            ),
+          )
+          .join("|")}`;
         const seen = versions.current.get(file.name);
         const version = !seen ? 0 : seen.key === key ? seen.version : seen.version + 1;
         versions.current.set(file.name, { key, version });
-        return { id: file.name, type: "diff", fileDiff: file, version };
+        return { id: file.name, type: "diff", fileDiff: file, annotations, version };
       }),
-    [files],
+    [files, comments, draft],
   );
+  const startComment = useCallback((range: SelectedLineRange, fileDiff: FileDiffMetadata) => {
+    const rows = selectRows(fileDiff, range);
+    if (!rows) return;
+    setDraft({ id: crypto.randomUUID(), path: fileDiff.name, ...rows, text: "" });
+  }, []);
+  const closeComment = useCallback(() => {
+    setDraft(null);
+    viewer.current?.clearSelectedLines();
+  }, []);
+  const renderAnnotation = useCallback(
+    (annotation: { metadata?: CommentSlot }) => (
+      <div className="flex flex-col gap-px">
+        {annotation.metadata?.entries.map(({ comment, editing }) =>
+          editing ? (
+            <DiffCommentForm
+              key={comment.id}
+              comment={comment}
+              onSave={(text) => {
+                saveReviewComment(threadId, { ...comment, text });
+                closeComment();
+              }}
+              onCancel={closeComment}
+            />
+          ) : (
+            <DiffComment
+              key={comment.id}
+              comment={comment}
+              onEdit={() => setDraft(comment)}
+              onRemove={() => removeReviewComment(threadId, comment.id)}
+            />
+          ),
+        )}
+      </div>
+    ),
+    [threadId, closeComment],
+  );
+
+  useEffect(() => {
+    if (!reveal || !items.some((item) => item.id === reveal.path)) return;
+    viewer.current?.scrollTo({
+      type: "line",
+      id: reveal.path,
+      lineNumber: reveal.range.start,
+      side: reveal.range.side,
+      align: "center",
+      behavior: "smooth",
+    });
+    onRevealed();
+  }, [reveal, items, onRevealed]);
+
+  const writing = draft !== null;
   // Matches the worker pool's options (see DiffWorkers), so its cached highlighting is used as is.
   // A fixed themeType: changing it rebuilds every diff. CSS picks the theme instead (see className).
   const options = useMemo(
@@ -159,8 +274,18 @@ export const DiffPanel = ({
       overflow: "scroll" as const,
       stickyHeaders: true,
       layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
+      // Hovering a line offers a comment button in its gutter; dragging it covers several lines.
+      // Off while one is being written, so a stray click doesn't throw that one away.
+      enableGutterUtility: !writing,
+      enableLineSelection: !writing,
+      onGutterUtilityClick: (
+        range: SelectedLineRange,
+        context: { item: CodeViewItem<CommentSlot> },
+      ) => {
+        if (context.item.type === "diff") startComment(range, context.item.fileDiff);
+      },
     }),
-    [style],
+    [style, writing, startComment],
   );
   const truncated = diff?.truncated ?? false;
   const renderFooter = useCallback(
@@ -188,9 +313,10 @@ export const DiffPanel = ({
         className="h-full min-w-0 flex-1 overflow-auto overscroll-contain [&_diffs-container]:[color-scheme:light] dark:[&_diffs-container]:[color-scheme:dark]"
         options={options}
         renderCodeViewFooter={renderFooter}
+        renderAnnotation={renderAnnotation}
       />
     ),
-    [items, options, renderFooter],
+    [items, options, renderFooter, renderAnnotation],
   );
 
   const toggleTree = () => {
