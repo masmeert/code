@@ -2,6 +2,13 @@
 
 Release notes for the APCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.0.15](https://github.com/masmeert/code/compare/v0.0.14...v0.0.15) (2026-09-29)
+
+
+### Fixed
+
+* stop showing a toast when shelving or unshelving a thread ([8689f19](https://github.com/masmeert/code/commit/8689f191bb1bd33299de248ca055ec5a7342ee19))
+
 ## 0.0.14 - 2026-09-29
 
 ### Added
