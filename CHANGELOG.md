@@ -2,11 +2,30 @@
 
 Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unreleased` to `X.Y.Z - YYYY-MM-DD`; the release workflow publishes that section as the GitHub release notes and fails if it is missing.
 
-## Unreleased
+## 0.0.14 - 2026-09-29
+
+### Added
+
+- Threads waiting on you sit in a "Needs you" group at the top of the sidebar, with Allow and Deny right on the row. Running threads show the tool call they're on.
+- ⌘1–9 open the first nine threads in the sidebar; hold ⌘ to see which number goes where.
+- Swipe a thread row sideways to shelve or unshelve it. Shelving or unshelving shows a toast with Undo.
 
 ### Changed
 
-- Settle is now Shelve: the thread menu, row button and swipe shelve or unshelve a thread, shelved threads sit under Shelved, and Settings has "Shelve idle threads". Your idle-thread setting and shelved threads carry over.
+- Settle is now Shelve: the thread menu, row button and swipe shelve (a check) or unshelve (an X) a thread, shelved threads sit under Shelved, and Settings has "Shelve idle threads". Your idle-thread setting and shelved threads carry over.
+- The Shelved section stays at the bottom of the sidebar and opens into the free space above it. Long groups show 10 threads, then 25 more at a time.
+- New thread moved to the sidebar header, the view menu sits inside the search field, and the machines row is gone (Settings → Connections shows the same).
+- A new thread lists your projects under a search field, most recently used first, with their paths and machines and Add project at the end. Arrow keys and Enter pick one and put you back in the prompt.
+- Model and branch pickers find options by the name and description they show, not only their internal value.
+- APCode asks before downloading an update instead of fetching it on its own.
+- A subagent's run time ticks every second, and its progress stays in its own row instead of repeating in the chat.
+- Every clickable button, link, menu item and row shows a pointer cursor.
+
+### Fixed
+
+- Switching the theme with the diff panel open no longer stalls for a second, and opening a thread doesn't re-render every turn.
+- Question previews show their text as written and no longer flicker when you hover the options.
+- The tab pill stays level while a modal resizes to fit a shorter tab.
 
 ## 0.0.13 - 2026-09-29
 
