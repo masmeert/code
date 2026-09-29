@@ -2,10 +2,12 @@ import {
   DEFAULT_DAEMON_PORT,
   DEFAULT_SETTINGS,
   type AuthFlow,
+  HostStatus,
   type Project,
   type ProviderKind,
   type ProviderSettings,
   type ProviderStatus,
+  type RemoteHost,
   type SourceControlStatus,
   type Settings,
   type ApprovalDecision,
@@ -152,6 +154,26 @@ export interface State {
   readonly followUps: Readonly<Record<string, ReadonlyArray<FollowUp>>>;
   readonly terminals: Readonly<Record<string, ReadonlyArray<string>>>;
   readonly activeTerminals: Readonly<Record<string, string>>;
+  /**
+   * Remote hosts by SSH alias, each with its own daemon. Their threads and projects are merged
+   * into the lists above (ids are UUIDs, so they never clash); the fields above that describe
+   * one daemon (settings, providers, sign-in…) are this Mac's.
+   */
+  readonly hosts: Readonly<Record<string, HostState>>;
+  /** The remote host each remote project is on; a project missing here is on this Mac. */
+  readonly projectHosts: Readonly<Record<string, string>>;
+}
+
+/** A remote daemon's own state, where this Mac's lives at the top of `State`. */
+export interface HostState {
+  readonly status: HostStatus;
+  readonly connected: boolean;
+  readonly dataId: string | null;
+  readonly settings: Settings | null;
+  readonly providers: ReadonlyArray<ProviderStatus>;
+  readonly sourceControl: ReadonlyArray<SourceControlStatus> | null;
+  readonly authFlows: Partial<Record<ProviderKind, AuthFlow>>;
+  readonly limits: Partial<Record<ProviderKind, ProviderLimits>>;
 }
 
 export interface ProviderLimits {
@@ -213,7 +235,25 @@ const initial: State = {
   followUps: {},
   terminals: {},
   activeTerminals: {},
+  hosts: {},
+  projectHosts: {},
 };
+
+/** The remote host a thread runs on; null for this Mac. */
+function threadHost(state: State, threadId: string): string | null {
+  const projectId = state.threads[threadId]?.projectId;
+  return (projectId && state.projectHosts[projectId]) || null;
+}
+
+/** The database a thread's cached transcript belongs to: its host's. */
+function dataIdOf(state: State, threadId: string) {
+  const host = threadHost(state, threadId);
+  return host === null ? state.dataId : (state.hosts[host]?.dataId ?? null);
+}
+
+/** Whether a thread or project is on `host` (null: this Mac). */
+const onHost = (state: State, host: string | null, projectId: string) =>
+  (state.projectHosts[projectId] ?? null) === host;
 
 /** `thread.create` commands sent from this window, by request id. */
 /** A fork has no options of its own to start its composer from. */
@@ -408,10 +448,10 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
       ...state,
       projects: [...state.projects.filter((p) => p.id !== project.id), project],
     })),
-    Match.tag("project.removed", ({ projectId }) => ({
-      ...state,
-      projects: state.projects.filter((p) => p.id !== projectId),
-    })),
+    Match.tag("project.removed", ({ projectId }) => {
+      const { [projectId]: _host, ...projectHosts } = state.projectHosts;
+      return { ...state, projects: state.projects.filter((p) => p.id !== projectId), projectHosts };
+    }),
     Match.tags({
       "providers.updated": ({ providers }) => ({ ...state, providers }),
       "sourceControl.updated": ({ statuses }) => ({ ...state, sourceControl: statuses }),
@@ -476,7 +516,8 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
       const { [threadId]: _transcript, ...transcripts } = state.transcripts;
       const { [threadId]: _terminals, ...terminals } = state.terminals;
       const { [threadId]: _activeTerminal, ...activeTerminals } = state.activeTerminals;
-      if (state.dataId) removeTranscript(state.dataId, threadId);
+      const dataId = dataIdOf(state, threadId);
+      if (dataId) removeTranscript(dataId, threadId);
       return {
         ...state,
         order: state.order.filter((id) => id !== threadId),
@@ -579,17 +620,28 @@ const setState = (next: State) => {
     notifyScheduled = true;
     requestAnimationFrame(notify);
   }
-  if (next.dataId === null) return;
   if (
     next.source === "daemon" &&
+    next.dataId !== null &&
     (prev.threads !== next.threads ||
       prev.order !== next.order ||
       prev.projects !== next.projects ||
       prev.settings !== next.settings ||
       prev.providers !== next.providers)
   ) {
-    const { dataId, settings, projects, providers, order, threads } = next;
-    saveShell({ dataId, settings, projects, providers, order, threads });
+    // ponytail: only this Mac's shell is cached; remote hosts' threads appear once they connect
+    const { dataId, settings, providers } = next;
+    const threads = Object.fromEntries(
+      Object.entries(next.threads).filter(([, info]) => onHost(next, null, info.projectId)),
+    );
+    saveShell({
+      dataId,
+      settings,
+      providers,
+      projects: next.projects.filter((project) => onHost(next, null, project.id)),
+      order: next.order.filter((id) => threads[id]),
+      threads,
+    });
   }
   if (prev.transcripts !== next.transcripts || prev.threads !== next.threads) {
     for (const [threadId, transcript] of Object.entries(next.transcripts)) {
@@ -600,8 +652,10 @@ const setState = (next: State) => {
       if (running) continue;
       const settled = prev.threads[threadId]?.status === "running";
       if (transcript === prev.transcripts[threadId] && !settled) continue;
+      const dataId = dataIdOf(next, threadId);
+      if (!dataId) continue;
       const { items, cursor, page } = transcript;
-      saveTranscript(next.dataId, threadId, { items, cursor, page });
+      saveTranscript(dataId, threadId, { items, cursor, page });
     }
   }
 };
@@ -613,13 +667,13 @@ const readingCache = new Set<string>();
 
 /** Puts a thread's cached transcript in memory, if it isn't there yet. */
 const loadCachedTranscript = async (threadId: string) => {
-  const dataId = state.dataId;
+  const dataId = dataIdOf(state, threadId);
   if (!dataId || state.transcripts[threadId] || readingCache.has(threadId)) return;
   readingCache.add(threadId);
   const cached = await loadTranscript(dataId, threadId);
   readingCache.delete(threadId);
   // The daemon may have answered meanwhile, or a new shell may be from another database.
-  if (!cached || state.dataId !== dataId || state.transcripts[threadId]) return;
+  if (!cached || dataIdOf(state, threadId) !== dataId || state.transcripts[threadId]) return;
   const { items, cursor, page } = cached;
   setState(
     setTranscript(state, threadId, { items, cursor, page, status: "cached", loadingOlder: false }),
@@ -638,13 +692,34 @@ export const ready: Promise<void> = loadShell().then(async (cached) => {
   if (order[0]) await loadCachedTranscript(order[0]);
 });
 
-let socket: WebSocket | null = null;
+/** One daemon's WebSocket, reconnected for as long as its host is in the app. */
+interface Connection {
+  /** Null for this Mac. */
+  readonly host: string | null;
+  socket: WebSocket | null;
+  attempt: number;
+  retry: ReturnType<typeof setTimeout> | null;
+  /** Commands sent while it's down (the UI is up from cache by then). */
+  readonly queued: Array<ClientCommand>;
+  removed: boolean;
+}
 
-const socketOpen = () => socket?.readyState === WebSocket.OPEN;
+const connections = new Map<string | null, Connection>();
+
+const openSocket = (host: string | null) => {
+  const socket = connections.get(host)?.socket;
+  return socket?.readyState === WebSocket.OPEN ? socket : null;
+};
+
+/** The host's daemon sent its shell on this connection, so its threads can be asked about. */
+const hasShell = (host: string | null) =>
+  host === null ? state.source === "daemon" : state.hosts[host]?.connected === true;
 
 /** Asks for a thread's transcript: a replay after the cursor when we have one, else the latest turns. */
 const subscribe = (threadId: string) => {
-  if (!socketOpen() || state.source !== "daemon" || readingCache.has(threadId)) return;
+  const host = threadHost(state, threadId);
+  const socket = openSocket(host);
+  if (!socket || !hasShell(host) || readingCache.has(threadId)) return;
   const transcript = state.transcripts[threadId];
   if (transcript) {
     if (transcript.status === "cached")
@@ -661,38 +736,74 @@ const subscribe = (threadId: string) => {
     );
   }
   const after = transcript && transcript.items.length > 0 ? transcript.cursor : null;
-  socket!.send(
+  socket.send(
     JSON.stringify(
       ClientCommand.cases["thread.subscribe"].make({ threadId, after, turnLimit: TURN_LIMIT }),
     ),
   );
 };
 
-const onShell = (frame: Extract<ServerFrame, { _tag: "shell" }>) => {
-  attempt = 0;
-  const sameData = frame.dataId === state.dataId;
-  const threads = Object.fromEntries(frame.threads.map((info) => [info.id, info]));
+const NO_PROVIDERS: ReadonlyArray<ProviderStatus> = [];
+
+const newHost = (status: HostStatus): HostState => ({
+  status,
+  connected: false,
+  dataId: null,
+  settings: null,
+  providers: NO_PROVIDERS,
+  sourceControl: null,
+  authFlows: {},
+  limits: {},
+});
+
+function updateHost(state: State, host: string, update: (current: HostState) => HostState): State {
+  const current = state.hosts[host];
+  return current ? { ...state, hosts: { ...state.hosts, [host]: update(current) } } : state;
+}
+
+/** Replaces one host's threads and projects with what its daemon sent; other hosts' stay. */
+const onShell = (connection: Connection, frame: Extract<ServerFrame, { _tag: "shell" }>) => {
+  connection.attempt = 0;
+  const { host } = connection;
+  const previousDataId = host === null ? state.dataId : (state.hosts[host]?.dataId ?? null);
+  const sameData = frame.dataId === previousDataId;
+  const incoming = Object.fromEntries(frame.threads.map((info) => [info.id, info]));
+  const others = Object.fromEntries(
+    Object.entries(state.threads).filter(([, info]) => !onHost(state, host, info.projectId)),
+  );
+  const threads = { ...others, ...incoming };
   // Keep transcripts of threads that still exist; they resume from their cursor.
   const transcripts: Record<string, Transcript> = {};
-  if (sameData) {
-    for (const [threadId, transcript] of Object.entries(state.transcripts)) {
-      if (threads[threadId]) transcripts[threadId] = transcript;
-      else removeTranscript(frame.dataId, threadId);
-    }
+  for (const [threadId, transcript] of Object.entries(state.transcripts)) {
+    if (others[threadId] || (sameData && incoming[threadId])) transcripts[threadId] = transcript;
+    else if (sameData) removeTranscript(frame.dataId, threadId);
   }
   const terminals: Record<string, Array<string>> = {};
-  for (const { threadId, terminalId } of [...frame.terminals, ...screens.values()]) {
+  for (const [threadId, terminalIds] of Object.entries(state.terminals))
+    if (others[threadId]) terminals[threadId] = [...terminalIds];
+  const ownScreens = [...screens.values()].filter((screen) => incoming[screen.threadId]);
+  for (const { threadId, terminalId } of [...frame.terminals, ...ownScreens]) {
     if (!terminals[threadId]?.includes(terminalId)) (terminals[threadId] ??= []).push(terminalId);
   }
-  setState({
+  const projectHosts =
+    host === null
+      ? state.projectHosts
+      : {
+          ...Object.fromEntries(
+            Object.entries(state.projectHosts).filter(([, projectHost]) => projectHost !== host),
+          ),
+          ...Object.fromEntries(frame.projects.map((project) => [project.id, host])),
+        };
+  const merged: State = {
     ...state,
-    connected: true,
-    source: "daemon",
-    dataId: frame.dataId,
-    settings: frame.settings,
-    projects: frame.projects,
-    providers: frame.providers,
-    order: [...frame.threads].sort((a, b) => b.createdAt - a.createdAt).map((t) => t.id),
+    projects: [
+      ...state.projects.filter((project) => !onHost(state, host, project.id)),
+      ...frame.projects,
+    ],
+    projectHosts,
+    order: Object.values(threads)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((t) => t.id),
     threads,
     transcripts,
     terminals,
@@ -704,19 +815,65 @@ const onShell = (frame: Extract<ServerFrame, { _tag: "shell" }>) => {
         return active ? [[threadId, active]] : [];
       }),
     ),
-  });
+  };
+  setState(
+    host === null
+      ? {
+          ...merged,
+          connected: true,
+          source: "daemon",
+          dataId: frame.dataId,
+          settings: frame.settings,
+          providers: frame.providers,
+        }
+      : updateHost(merged, host, (current) => ({
+          ...current,
+          connected: true,
+          dataId: frame.dataId,
+          settings: frame.settings,
+          providers: frame.providers,
+        })),
+  );
   for (const threadId of wanted.keys()) {
+    if (threadHost(state, threadId) !== host) continue;
     if (transcripts[threadId] || !sameData) subscribe(threadId);
     // Not in memory yet: read the cache first so the daemon only sends what's new.
     else
       void loadCachedTranscript(threadId).then(() => wanted.has(threadId) && subscribe(threadId));
   }
-  for (const screen of screens.values()) openScreen(screen);
+  for (const screen of ownScreens) openScreen(screen);
+  if (host !== null) syncSettings(host);
 };
 
-const onFrame = (frame: ServerFrame) =>
+/** Answers to requests carrying a `requestId`, by that id. */
+const replies = new Map<string, (frame: ServerFrame) => void>();
+
+const answer = (frame: Extract<ServerFrame, { requestId: string }>) => {
+  replies.get(frame.requestId)?.(frame);
+  replies.delete(frame.requestId);
+};
+
+/** Sends a command answered by a frame of its own; null when the host is down or never answers. */
+function request<Frame extends ServerFrame>(
+  host: string | null,
+  command: Extract<ClientCommand, { requestId: string }>,
+  timeoutMs: number,
+) {
+  return new Promise<Frame | null>((resolve) => {
+    const socket = openSocket(host);
+    if (!socket) return resolve(null);
+    // SAFETY: a daemon answers each request with its own kind of frame, carrying the same id.
+    replies.set(command.requestId, (frame) => resolve(frame as Frame));
+    socket.send(JSON.stringify(command));
+    setTimeout(() => {
+      if (replies.delete(command.requestId)) resolve(null);
+    }, timeoutMs);
+  });
+}
+
+const onFrame = (connection: Connection, frame: ServerFrame) =>
   ServerFrame.match(frame, {
-    shell: onShell,
+    shell: (shell) => onShell(connection, shell),
     "thread.snapshot": (snapshot) => {
       const items = applyStreaming(foldStored([], snapshot.events, 0), snapshot.streaming);
       setState(
@@ -761,10 +918,9 @@ const onFrame = (frame: ServerFrame) =>
         }),
       );
     },
-    "search.results": ({ requestId, hits }) => {
-      searches.get(requestId)?.(hits);
-      searches.delete(requestId);
-    },
+    "search.results": answer,
+    "folder.entries": answer,
+    "project.cloned": answer,
     "terminal.snapshot": ({ threadId, terminalId, data }) =>
       screens.get(screenKey(threadId, terminalId))?.reset(data),
     "terminal.output": ({ threadId, terminalId, data }) =>
@@ -774,7 +930,10 @@ const onFrame = (frame: ServerFrame) =>
     "browser.request": ({ threadId, requestId, action }) =>
       void performBrowserAction(threadId, action).then(
         (result) =>
-          send(ClientCommand.cases["browser.respond"].make({ requestId, result, error: null })),
+          send(
+            ClientCommand.cases["browser.respond"].make({ requestId, result, error: null }),
+            connection.host,
+          ),
         (error) =>
           send(
             ClientCommand.cases["browser.respond"].make({
@@ -782,6 +941,7 @@ const onFrame = (frame: ServerFrame) =>
               result: null,
               error: error instanceof Error ? error.message : String(error),
             }),
+            connection.host,
           ),
       ),
     event: ({ event, id }) => {
@@ -798,7 +958,7 @@ const onFrame = (frame: ServerFrame) =>
       // goes out there rather than at the end of the turn (t3code does the same).
       if (RuntimeEvent.guards["tool.completed"](event) && !subagentCalls.delete(event.toolId))
         sendNextFollowUp(event.threadId);
-      if (!isTranscriptEvent(event)) return applyShellEvent(event);
+      if (!isTranscriptEvent(event)) return applyShellEvent(connection.host, event);
       const transcript = state.transcripts[event.threadId];
       // Not following this thread, or already have it (a replay can overlap live events).
       if (!transcript || (id !== null && id <= transcript.cursor)) return;
@@ -813,9 +973,49 @@ const onFrame = (frame: ServerFrame) =>
     },
   });
 
-function applyShellEvent(event: RuntimeEvent) {
+/** A remote daemon's own events land in its `HostState`; the rest are shared, keyed by thread or path. */
+const reduceRemoteShell = (state: State, host: string, event: RuntimeEvent): State =>
+  Match.value(event).pipe(
+    Match.withReturnType<State>(),
+    Match.tag("settings.updated", ({ settings }) =>
+      updateHost(state, host, (current) => ({ ...current, settings })),
+    ),
+    Match.tag("providers.updated", ({ providers }) =>
+      updateHost(state, host, (current) => ({ ...current, providers })),
+    ),
+    Match.tag("sourceControl.updated", ({ statuses }) =>
+      updateHost(state, host, (current) => ({ ...current, sourceControl: statuses })),
+    ),
+    Match.tag("auth.flow", ({ flow }) =>
+      updateHost(state, host, (current) => ({
+        ...current,
+        authFlows: { ...current.authFlows, [flow.provider]: flow },
+      })),
+    ),
+    Match.tag("provider.limits", ({ provider, limits, error }) =>
+      updateHost(state, host, (current) => ({
+        ...current,
+        limits: { ...current.limits, [provider]: { limits, error, loading: false } },
+      })),
+    ),
+    Match.tag("project.added", (added) => {
+      const next = reduceShell(state, added);
+      return { ...next, projectHosts: { ...next.projectHosts, [added.project.id]: host } };
+    }),
+    Match.orElse(() => reduceShell(state, event)),
+  );
+
+function applyShellEvent(host: string | null, event: RuntimeEvent) {
   const before = state;
-  setState(reduceShell(state, event));
+  setState(host === null ? reduceShell(state, event) : reduceRemoteShell(state, host, event));
+  // A remote host's CLI can't open this Mac's browser, so its sign-in page opens here.
+  if (
+    host !== null &&
+    RuntimeEvent.guards["auth.flow"](event) &&
+    event.flow.url &&
+    before.hosts[host]?.authFlows[event.flow.provider]?.url !== event.flow.url
+  )
+    window.open(event.flow.url, "_blank");
   // The turn ended: the next held message goes out.
   if (
     RuntimeEvent.guards["thread.status"](event) &&
@@ -826,48 +1026,143 @@ function applyShellEvent(event: RuntimeEvent) {
 }
 
 /**
- * The daemon's per-launch secret, from the desktop shell. Null in dev, where the daemon
- * runs on its own and only checks origins, and outside the desktop shell.
- */
-/**
  * Waits between reconnect attempts, growing while the daemon stays away. Starts short:
  * at launch the sidecar is still booting. Reset once a connection gets its shell.
  */
 const RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000, 8000];
-let attempt = 0;
+/** Each attempt at a remote host runs ssh, so those back off further. */
+const REMOTE_RETRY_DELAYS_MS = [1000, 2000, 5000, 10000, 30000];
 
-const connect = async () => {
-  // Asked on every attempt: the desktop app respawns a daemon that dies, on a new port.
-  const daemon = (await window.desktop?.daemon()) ?? null;
+function retry(connection: Connection) {
+  const delays = connection.host === null ? RETRY_DELAYS_MS : REMOTE_RETRY_DELAYS_MS;
+  connection.retry = setTimeout(
+    () => {
+      connection.retry = null;
+      void connect(connection);
+    },
+    delays[Math.min(connection.attempt++, delays.length - 1)],
+  );
+}
+
+const connect = async (connection: Connection) => {
+  const { host } = connection;
+  // Asked on every attempt: a daemon that restarts (or updates, on a remote host) comes back on a new port.
+  const daemon =
+    host === null
+      ? ((await window.desktop?.daemon()) ?? null)
+      : ((await window.desktop?.hostDaemon(host)) ?? null);
+  if (connection.removed) return;
+  if (host !== null && !daemon) return retry(connection);
   const ws = new WebSocket(
     `ws://127.0.0.1:${daemon?.port ?? DEFAULT_DAEMON_PORT}`,
     daemon ? [`apcode.${daemon.token}`] : undefined,
   );
-  socket = ws;
+  connection.socket = ws;
   ws.onopen = () => {
     if (window.desktop) ws.send(JSON.stringify(ClientCommand.cases["browser.host"].make({})));
-    for (const command of queued.splice(0)) ws.send(JSON.stringify(command));
+    for (const command of connection.queued.splice(0)) ws.send(JSON.stringify(command));
   };
   ws.onmessage = (message) =>
-    onFrame(Schema.decodeUnknownSync(Schema.fromJsonString(ServerFrame))(message.data));
+    onFrame(connection, Schema.decodeUnknownSync(Schema.fromJsonString(ServerFrame))(message.data));
   ws.onclose = () => {
+    if (connection.socket !== ws) return;
+    connection.socket = null;
     // Keep everything on screen; transcripts fall back to cached until the next connect catches them up.
     const transcripts = Object.fromEntries(
       Object.entries(state.transcripts).map(([id, t]) => [
         id,
-        t.status === "cached" && !t.loadingOlder
+        threadHost(state, id) !== host || (t.status === "cached" && !t.loadingOlder)
           ? t
           : { ...t, status: "cached" as const, loadingOlder: false },
       ]),
     );
-    setState({ ...state, connected: false, transcripts });
-    setTimeout(
-      () => void connect(),
-      RETRY_DELAYS_MS[Math.min(attempt++, RETRY_DELAYS_MS.length - 1)],
+    setState(
+      host === null
+        ? { ...state, connected: false, transcripts }
+        : updateHost({ ...state, transcripts }, host, (current) => ({
+            ...current,
+            connected: false,
+          })),
     );
+    if (!connection.removed) retry(connection);
   };
 };
-void connect();
+
+function addConnection(host: string | null) {
+  const connection: Connection = {
+    host,
+    socket: null,
+    attempt: 0,
+    retry: null,
+    queued: [],
+    removed: false,
+  };
+  connections.set(host, connection);
+  void connect(connection);
+}
+
+/** Drops a removed host's connection and everything it showed. */
+function removeConnection(connection: Connection & { readonly host: string }) {
+  const { host } = connection;
+  connection.removed = true;
+  if (connection.retry) clearTimeout(connection.retry);
+  connection.socket?.close();
+  connections.delete(host);
+  const gone = new Set(
+    Object.values(state.threads)
+      .filter((info) => onHost(state, host, info.projectId))
+      .map((info) => info.id),
+  );
+  const keep = <A>(record: Readonly<Record<string, A>>) =>
+    Object.fromEntries(Object.entries(record).filter(([threadId]) => !gone.has(threadId)));
+  const { [host]: _removed, ...hosts } = state.hosts;
+  setState({
+    ...state,
+    hosts,
+    projects: state.projects.filter((project) => !onHost(state, host, project.id)),
+    projectHosts: Object.fromEntries(
+      Object.entries(state.projectHosts).filter(([, projectHost]) => projectHost !== host),
+    ),
+    order: state.order.filter((id) => !gone.has(id)),
+    threads: keep(state.threads),
+    transcripts: keep(state.transcripts),
+    terminals: keep(state.terminals),
+    activeTerminals: keep(state.activeTerminals),
+  });
+}
+
+/** Follows the desktop app's list of remote hosts: connects new ones, drops removed ones. */
+function syncHosts(list: ReadonlyArray<RemoteHost>) {
+  const aliases = new Set(list.map((remote) => remote.alias));
+  for (const connection of connections.values())
+    if (connection.host !== null && !aliases.has(connection.host))
+      removeConnection({ ...connection, host: connection.host });
+  setState({
+    ...state,
+    hosts: Object.fromEntries(
+      list.map(({ alias, status }) => [
+        alias,
+        { ...(state.hosts[alias] ?? newHost(status)), status },
+      ]),
+    ),
+  });
+  for (const { alias, status } of list) {
+    const connection = connections.get(alias);
+    if (!connection) addConnection(alias);
+    // Back (say, restarted on the new version): don't wait out the backoff.
+    else if (HostStatus.guards.connected(status) && connection.retry) {
+      clearTimeout(connection.retry);
+      connection.retry = null;
+      void connect(connection);
+    }
+  }
+}
+
+addConnection(null);
+if (window.desktop) {
+  window.desktop.onHosts(syncHosts);
+  void window.desktop.hosts().then(syncHosts);
+}
 
 /** Follows a thread's transcript while a view shows it. */
 const openThread = (threadId: string) => {
@@ -883,8 +1178,9 @@ const closeThread = (threadId: string) => {
   if (count > 0) return void wanted.set(threadId, count);
   wanted.delete(threadId);
   // The transcript stays in memory; reopening replays only what it missed.
-  if (socketOpen())
-    socket!.send(JSON.stringify(ClientCommand.cases["thread.unsubscribe"].make({ threadId })));
+  openSocket(threadHost(state, threadId))?.send(
+    JSON.stringify(ClientCommand.cases["thread.unsubscribe"].make({ threadId })),
+  );
 };
 
 /** A thread's transcript, followed live while the calling component is mounted. */
@@ -899,9 +1195,10 @@ export const useTranscript = (threadId: string): Transcript | null => {
 /** Fetches the turns before what's loaded. */
 export const loadOlder = (threadId: string) => {
   const transcript = state.transcripts[threadId];
-  if (!transcript?.page?.hasMore || transcript.loadingOlder || !socketOpen()) return;
+  const socket = openSocket(threadHost(state, threadId));
+  if (!transcript?.page?.hasMore || transcript.loadingOlder || !socket) return;
   setState(setTranscript(state, threadId, { ...transcript, loadingOlder: true }));
-  socket!.send(
+  socket.send(
     JSON.stringify(
       ClientCommand.cases["thread.loadOlder"].make({
         threadId,
@@ -912,15 +1209,101 @@ export const loadOlder = (threadId: string) => {
   );
 };
 
-/** Commands sent while the daemon is still starting (the UI is up from cache by then). */
-const queued: ClientCommand[] = [];
+/** Folders added on a remote host whose project hasn't arrived yet, so commands for them go there. */
+const pendingPaths = new Map<string, string>();
 
-export const send = (command: ClientCommand) => {
-  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(command));
-  else queued.push(command);
+/** The host a folder is on: the project or thread folder it's in, longest match first. */
+function pathHost(state: State, path: string): string | null {
+  const inside = (folder: string) => path === folder || path.startsWith(`${folder}/`);
+  const project = state.projects
+    .filter((candidate) => inside(candidate.path))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+  if (project) return state.projectHosts[project.id] ?? null;
+  const thread = Object.values(state.threads)
+    .filter((candidate) => inside(candidate.cwd))
+    .sort((a, b) => b.cwd.length - a.cwd.length)[0];
+  if (thread) return threadHost(state, thread.id);
+  return pendingPaths.get(path) ?? null;
+}
+
+/** The host a command is for: that of the thread, project or folder it names. */
+function commandHost(command: ClientCommand): string | null {
+  if ("threadId" in command) return threadHost(state, command.threadId);
+  if ("projectId" in command) return state.projectHosts[command.projectId] ?? null;
+  if ("path" in command) return pathHost(state, command.path);
+  return null;
+}
+
+/** Sends to the daemon the command is for, or to `host`'s; held while that one is down. */
+export const send = (command: ClientCommand, host = commandHost(command)) => {
+  const connection = connections.get(host);
+  if (!connection) return;
+  const socket = openSocket(host);
+  if (socket) socket.send(JSON.stringify(command));
+  else connection.queued.push(command);
 };
 
+export const useThreadHost = (threadId: string) => useStore((s) => threadHost(s, threadId));
+export const usePathHost = (path: string | null) =>
+  useStore((s) => (path === null ? null : pathHost(s, path)));
+export const useProjectHost = (projectId: string) =>
+  useStore((s) => s.projectHosts[projectId] ?? null);
+
+/** A host's harnesses; this Mac's for null. */
+export const useProviders = (host: string | null) =>
+  useStore((s) => (host === null ? s.providers : (s.hosts[host]?.providers ?? NO_PROVIDERS)));
+
+/** Registers a folder on `host` as a project. */
+export function addProjectOn(host: string | null, path: string) {
+  if (host !== null) pendingPaths.set(path, host);
+  send(ClientCommand.cases["project.add"].make({ path }), host);
+}
+
+/** The folders in `path` on `host`, `path` made absolute; null when the host doesn't answer. */
+export const listFolders = (host: string | null, path: string) =>
+  request<Extract<ServerFrame, { _tag: "folder.entries" }>>(
+    host,
+    ClientCommand.cases["folder.list"].make({ path, requestId: crypto.randomUUID() }),
+    10_000,
+  );
+
+/** Clones a repository into a new folder under `parent` on `host` and adds it as a project. */
+export async function cloneProject(
+  host: string | null,
+  url: string,
+  parent: string,
+  folder?: string,
+  name?: string,
+) {
+  const cloned = await request<Extract<ServerFrame, { _tag: "project.cloned" }>>(
+    host,
+    ClientCommand.cases["project.clone"].make({
+      url,
+      parent,
+      folder,
+      name,
+      requestId: crypto.randomUUID(),
+    }),
+    // Big repositories take a while; the daemon gives up at 10 minutes.
+    11 * 60_000,
+  );
+  if (cloned?.path && host !== null) pendingPaths.set(cloned.path, host);
+  return (
+    cloned ?? { path: null, error: "The host stopped answering. Check its connection, then retry." }
+  );
+}
+
+/** Remote hosts follow this Mac's settings, except their harness launch settings, which are per machine. */
+function syncSettings(host: string) {
+  const remote = state.hosts[host]?.settings;
+  if (!remote || state.source === "none") return;
+  const settings = { ...state.settings, providers: remote.providers };
+  if (JSON.stringify(settings) !== JSON.stringify(remote))
+    send(ClientCommand.cases["settings.update"].make({ settings }), host);
+}
+
 export const getSettings = () => state.settings;
+export const getHosts = () => state.hosts;
 
 /** Threads asked about once per window: one that has nothing to read keeps having nothing. */
 const usageRequested = new Set<string>();
@@ -932,22 +1315,24 @@ export const readUsage = (threadId: string) => {
   send(ClientCommand.cases["thread.readUsage"].make({ threadId }));
 };
 
-export const readLimits = (provider: ProviderKind) => {
-  const previous = state.limits[provider];
-  setState({
-    ...state,
-    limits: {
-      ...state.limits,
-      [provider]: { limits: previous?.limits ?? [], error: null, loading: true },
-    },
+export const readLimits = (provider: ProviderKind, host: string | null) => {
+  const loading = (limits: State["limits"]) => ({
+    ...limits,
+    [provider]: { limits: limits[provider]?.limits ?? [], error: null, loading: true },
   });
-  send(ClientCommand.cases["provider.readLimits"].make({ provider }));
+  setState(
+    host === null
+      ? { ...state, limits: loading(state.limits) }
+      : updateHost(state, host, (current) => ({ ...current, limits: loading(current.limits) })),
+  );
+  send(ClientCommand.cases["provider.readLimits"].make({ provider }), host);
 };
 
 /** Applies settings locally right away (theme etc. shouldn't wait on the daemon), then persists them. */
 export const updateSettings = (settings: Settings) => {
   setState({ ...state, settings });
-  send(ClientCommand.cases["settings.update"].make({ settings }));
+  send(ClientCommand.cases["settings.update"].make({ settings }), null);
+  for (const host of Object.keys(state.hosts)) syncSettings(host);
 };
 
 /** Changes some of one harness's Settings, keeping the rest. */
@@ -1047,20 +1432,20 @@ const sendNextFollowUp = (threadId: string) => {
 
 // --- search --------------------------------------------------------------------
 
-const searches = new Map<string, (hits: ReadonlyArray<SearchHit>) => void>();
-
 /** Full-text search over every thread's messages, newest first. */
-export const searchMessages = (query: string) =>
-  new Promise<ReadonlyArray<SearchHit>>((resolve) => {
-    if (!socketOpen()) return resolve([]);
-    const requestId = crypto.randomUUID();
-    searches.set(requestId, resolve);
-    send(ClientCommand.cases.search.make({ query, requestId }));
-    // An answer that never comes (the connection dropped) shouldn't hold a caller forever.
-    setTimeout(() => {
-      if (searches.delete(requestId)) resolve([]);
-    }, 5000);
-  });
+export const searchMessages = async (query: string): Promise<ReadonlyArray<SearchHit>> => {
+  const answers = await Promise.all(
+    [...connections.keys()].map((host) =>
+      request<Extract<ServerFrame, { _tag: "search.results" }>>(
+        host,
+        ClientCommand.cases.search.make({ query, requestId: crypto.randomUUID() }),
+        // An answer that never comes (the connection dropped) shouldn't hold a caller forever.
+        5000,
+      ),
+    ),
+  );
+  return answers.flatMap((answer) => answer?.hits ?? []);
+};
 
 // --- terminals -------------------------------------------------------------------
 
@@ -1090,7 +1475,7 @@ function openScreen(screen: TerminalScreen) {
 }
 
 export function sendIfConnected(command: ClientCommand) {
-  if (socketOpen()) socket!.send(JSON.stringify(command));
+  openSocket(commandHost(command))?.send(JSON.stringify(command));
 }
 
 export function attachTerminal(screen: TerminalScreen) {

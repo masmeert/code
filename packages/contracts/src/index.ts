@@ -54,6 +54,10 @@ export type Theme = typeof Theme.Type;
 
 export const BROWSER_PARTITION = "persist:apcode-browser";
 
+/** Each remote host browses through its own SSH tunnel, so its `localhost` is the host's. */
+export const browserPartition = (host: string | null) =>
+  host === null ? BROWSER_PARTITION : `${BROWSER_PARTITION}:${host}`;
+
 export const BrowserAction = Schema.Union([
   Schema.TaggedStruct("navigate", { url: Schema.String }),
   Schema.TaggedStruct("status", {}),
@@ -96,9 +100,43 @@ export const UpdateStatus = Schema.TaggedUnion({
 });
 export type UpdateStatus = typeof UpdateStatus.Type;
 
+/** Where the app is with a remote host, an SSH alias like one from ~/.ssh/config. */
+export const HostStatus = Schema.TaggedUnion({
+  /** `step` says what's happening, e.g. "Uploading APCode (40%)". */
+  connecting: { step: Schema.String },
+  connected: {},
+  /** The host runs an older APCode, which restarts on this version once its running turns end. */
+  updating: {},
+  failed: { message: Schema.String },
+});
+export type HostStatus = typeof HostStatus.Type;
+
+export interface RemoteHost {
+  readonly alias: string;
+  readonly status: HostStatus;
+}
+
 export interface DesktopBridge {
   /** Null in dev, where the daemon runs on its own at DEFAULT_DAEMON_PORT without a token. */
   readonly daemon: () => Promise<{ readonly port: number; readonly token: string } | null>;
+  /** Hosts added in Settings → Connections, each with its own daemon over SSH. */
+  readonly hosts: () => Promise<ReadonlyArray<RemoteHost>>;
+  readonly onHosts: (listener: (hosts: ReadonlyArray<RemoteHost>) => void) => () => void;
+  readonly addHost: (alias: string) => Promise<void>;
+  /** Also stops APCode on the host, and the agents it runs. */
+  readonly removeHost: (alias: string) => Promise<void>;
+  /** Connects if needed; null while the host can't be reached or is updating (see its status). */
+  readonly hostDaemon: (
+    alias: string,
+  ) => Promise<{ readonly port: number; readonly token: string } | null>;
+  /** Restarts an updating host on this version now, stopping its running turns. */
+  readonly restartHost: (alias: string) => Promise<void>;
+  /** Host aliases from ~/.ssh/config, to pick from. */
+  readonly sshAliases: () => Promise<ReadonlyArray<string>>;
+  /** Files as data, for a remote host that can't read this machine's paths. */
+  readonly readFiles: (
+    paths: ReadonlyArray<string>,
+  ) => Promise<ReadonlyArray<Extract<AttachmentInput, { _tag: "data" }>>>;
   readonly pickFolder: (title: string, defaultPath?: string) => Promise<string | null>;
   readonly pickFiles: (title: string) => Promise<ReadonlyArray<string>>;
   readonly setTheme: (theme: Theme) => Promise<void>;
@@ -286,8 +324,23 @@ export const Project = Schema.Struct({
   path: Schema.String,
   name: Schema.String,
   addedAt: Schema.Number,
+  /** The git origin's URL, which tells the same repo apart on each machine; null outside a repo or without one. Absent on projects added before it was read. */
+  remote: Schema.optional(Schema.NullOr(Schema.String)),
+  /** Where the project sits in its repo, like "apps/web"; "" at the top. Null outside a repo. */
+  folder: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export type Project = typeof Project.Type;
+
+/**
+ * The repo a git remote URL points to, as `host/owner/repo`, however it's written:
+ * `git@github.com:owner/repo.git`, `https://github.com/owner/repo`, `ssh://git@host:22/owner/repo`.
+ */
+export function repositoryOf(url: string) {
+  const match = url
+    .trim()
+    .match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?([^/:]+)(?::\d+)?[/:](.+?)(?:\.git)?\/*$/i);
+  return match ? `${match[1]!.toLowerCase()}/${match[2]!}` : url.trim();
+}
 
 /** How full a thread's context window was after its last response. */
 export const ContextUsage = Schema.Struct({
@@ -654,6 +707,18 @@ export const ClientCommand = Schema.Union([
     model: Schema.NullOr(Schema.String),
   }),
   Schema.TaggedStruct("project.add", { path: Schema.String }),
+  /** Answered with a `folder.entries` frame. `~` is the daemon's home. */
+  Schema.TaggedStruct("folder.list", { path: Schema.String, requestId: Schema.String }),
+  /** Clones into a new folder under `parent` and adds it as a project; answered with a `project.cloned` frame. */
+  Schema.TaggedStruct("project.clone", {
+    url: Schema.String,
+    parent: Schema.String,
+    /** The folder inside the repo to add as the project, like "apps/web"; the top when left out. */
+    folder: Schema.optional(Schema.String),
+    /** What to call the clone's folder; the repo's name when left out. */
+    name: Schema.optional(Schema.String),
+    requestId: Schema.String,
+  }),
   /** Starts a turn; while one is running, the message goes into it instead (steering). */
   Schema.TaggedStruct("thread.send", {
     threadId: Schema.String,
@@ -845,6 +910,18 @@ export const ServerFrame = Schema.Union([
   Schema.TaggedStruct("search.results", {
     requestId: Schema.String,
     hits: Schema.Array(SearchHit),
+  }),
+  /** Answers `folder.list`: `path` made absolute, and the folders in it. */
+  Schema.TaggedStruct("folder.entries", {
+    requestId: Schema.String,
+    path: Schema.String,
+    folders: Schema.Array(Schema.String),
+    error: Schema.NullOr(Schema.String),
+  }),
+  Schema.TaggedStruct("project.cloned", {
+    requestId: Schema.String,
+    path: Schema.NullOr(Schema.String),
+    error: Schema.NullOr(Schema.String),
   }),
   /** A live event; `id` is set on stored (transcript) events and advances the thread's cursor. */
   Schema.TaggedStruct("event", { id: Schema.NullOr(Schema.Number), event: RuntimeEvent }),

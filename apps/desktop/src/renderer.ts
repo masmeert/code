@@ -1,6 +1,5 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { DEFAULT_DAEMON_PORT } from "@apcode/contracts";
 import { app, net, protocol, session } from "electron";
 
 export const APP_URL = app.isPackaged ? "app://apcode/" : "http://localhost:1420/";
@@ -11,7 +10,8 @@ const CONTENT_SECURITY_POLICY = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' blob: data: http: https:",
   "frame-src http: https:",
-  `connect-src 'self' ${app.isPackaged ? "ws://127.0.0.1:*" : `ws://127.0.0.1:${DEFAULT_DAEMON_PORT} ws://localhost:1420`}`,
+  // Any port: remote hosts' daemons are reached through SSH tunnels on ports picked at connect.
+  `connect-src 'self' ws://127.0.0.1:*${app.isPackaged ? "" : " ws://localhost:1420"}`,
 ].join("; ");
 
 export function registerRendererScheme() {

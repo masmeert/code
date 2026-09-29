@@ -1,4 +1,9 @@
-import { PromptInput, PromptSelect, PromptSlider } from "@apcode/ui/agents/prompt-input";
+import {
+  PromptInput,
+  type PromptOption,
+  PromptSelect,
+  PromptSlider,
+} from "@apcode/ui/agents/prompt-input";
 import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
 import { cn } from "@apcode/ui/lib/utils";
 import {
@@ -46,7 +51,7 @@ import {
 import { restoreStash, setDraft, stashDraft, useDraft, useStashes } from "../lib/drafts.ts";
 import { describe, KEYBINDINGS, useKeybinding } from "../lib/keybindings.ts";
 import { defaultEffort, type modelChoices, recommendedBadge } from "../lib/models.ts";
-import { send, useStore } from "../lib/store.ts";
+import { send, usePathHost, useProviders, useStore } from "../lib/store.ts";
 import { ago, useNow } from "../lib/time.ts";
 import { UsageMeter } from "./UsageMeter.tsx";
 
@@ -80,6 +85,12 @@ export interface ComposerProps {
   history?: ReadonlyArray<string>;
   /** Drafts only: called instead of sending while no project is picked. */
   onNeedProject?: () => void;
+  /** Drafts only, with remote hosts: the machine the new thread runs on. */
+  machine?: {
+    readonly options: Array<PromptOption>;
+    readonly value: string;
+    readonly onChange: (value: string) => void;
+  };
   /** Drafts only: where the new thread will run. */
   workspace?: {
     readonly value: "local" | "worktree";
@@ -136,8 +147,13 @@ export const Composer = (props: ComposerProps) => {
   const { prefsKey, threadId } = props;
   const [prefs, setPrefs] = useTurnPrefs(prefsKey, props.provider);
   const draft = useDraft(prefsKey);
-  const files = useAttachments({ key: prefsKey, acceptDrops: !props.disabled });
-  const providers = useStore((s) => s.providers);
+  const host = usePathHost(props.cwd);
+  const files = useAttachments({
+    key: prefsKey,
+    acceptDrops: !props.disabled,
+    remote: host !== null,
+  });
+  const providers = useProviders(host);
   const stashes = useStashes();
   const [stashSignal, setStashSignal] = useState(0);
   const worktree = useStore((s) => (threadId ? s.threads[threadId]?.worktree : undefined));
@@ -411,6 +427,18 @@ export const Composer = (props: ComposerProps) => {
           footer={
             <>
               <span className="flex min-w-0 items-center gap-0.5">
+                {props.machine ? (
+                  <PromptSelect
+                    title="Run on"
+                    options={props.machine.options}
+                    value={props.machine.value}
+                    onChange={props.machine.onChange}
+                    shortcut={KEYBINDINGS["picker.machine"]}
+                    showOptionIcon
+                    width="w-72"
+                    variant="plain"
+                  />
+                ) : null}
                 {props.workspace ? (
                   <WorkspaceSelect {...props.workspace} disabled={props.disabled} />
                 ) : worktree === undefined ? null : (

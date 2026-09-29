@@ -381,8 +381,10 @@ const make = Effect.gen(function* () {
       Schema.Struct({ loginId: Schema.String, authUrl: Schema.String }),
     );
     flows.set("codex", { rpc, loginId: res.loginId });
-    // Codex listens on a local callback, so opening the page is all that's needed.
-    spawn("open", [res.authUrl], { stdio: "ignore", detached: true }).unref();
+    // Codex listens on a local callback, so opening the page is all that's needed. Elsewhere (a
+    // remote host) the app opens it, and the callback only lands when the browser runs there too.
+    if (process.platform === "darwin")
+      spawn("open", [res.authUrl], { stdio: "ignore", detached: true }).unref();
     flow("codex", "browser", res.authUrl);
   };
 

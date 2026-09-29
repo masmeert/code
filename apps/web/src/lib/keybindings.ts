@@ -16,6 +16,7 @@ export const KEYBINDINGS = {
   "picker.effort": "mod+shift+e",
   "picker.permission": "mod+shift+a",
   "picker.workspace": "mod+shift+x",
+  "picker.machine": "mod+shift+h",
   "picker.branch": "mod+shift+g",
   "terminal.toggle": "mod+j",
   "browser.toggle": "mod+shift+b",

@@ -220,6 +220,8 @@ export class SessionManager extends Context.Service<
     /** Messages matching `query`, newest first, in threads that still exist. */
     readonly search: (query: string) => ReadonlyArray<SearchHit>;
     readonly shutdown: Effect.Effect<void>;
+    /** Some thread's turn is going, the agent working or waiting on the user. */
+    readonly busy: () => boolean;
   }
 >()("apcode/SessionManager") {}
 
@@ -1201,6 +1203,8 @@ const make = Effect.gen(function* () {
       "thread.unsubscribe": () => Effect.void,
       "thread.loadOlder": () => Effect.void,
       search: () => Effect.void,
+      "folder.list": () => Effect.void,
+      "project.clone": () => Effect.void,
       "terminal.open": () => Effect.void,
       "terminal.detach": () => Effect.void,
       "terminal.acknowledge": () => Effect.void,
@@ -1302,6 +1306,7 @@ const make = Effect.gen(function* () {
       return { events, page: page ?? { before, hasMore: false } };
     },
     search: (query) => store.search(query, 50).filter((hit) => threads.has(hit.threadId)),
+    busy: () => [...threads.values()].some(isBusy),
     shutdown: Effect.suspend(() => {
       flushDeltas();
       terminals.closeAll();

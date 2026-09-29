@@ -173,8 +173,31 @@ export const fromText = (text: string): DraftAttachment => {
   };
 };
 
+/** Picked or dropped files; a remote host can't read this Mac's paths, so they go as data. */
+async function fromPaths(paths: ReadonlyArray<string>, remote: boolean) {
+  if (!remote || !window.desktop) return paths.map(fromPath);
+  return (await window.desktop.readFiles(paths)).map((input): DraftAttachment => ({
+    id: crypto.randomUUID(),
+    name: input.name,
+    image: input.mediaType.startsWith("image/"),
+    preview: input.mediaType.startsWith("image/")
+      ? `data:${input.mediaType};base64,${input.data}`
+      : undefined,
+    input,
+  }));
+}
+
 /** Files queued for the next message of composer `key`: picked, pasted, or dropped onto the window. */
-export const useAttachments = ({ key, acceptDrops }: { key: string; acceptDrops: boolean }) => {
+export const useAttachments = ({
+  key,
+  acceptDrops,
+  remote,
+}: {
+  key: string;
+  acceptDrops: boolean;
+  /** The composer's thread runs on a remote host. */
+  remote: boolean;
+}) => {
   const attachments = useDraft(key).attachments;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const setAttachments = (
@@ -204,7 +227,7 @@ export const useAttachments = ({ key, acceptDrops }: { key: string; acceptDrops:
       input.click();
       return;
     }
-    add((await window.desktop.pickFiles("Attach files")).map(fromPath));
+    add(await fromPaths(await window.desktop.pickFiles("Attach files"), remote));
   };
 
   const remove = (id: string) =>
@@ -221,7 +244,9 @@ export const useAttachments = ({ key, acceptDrops }: { key: string; acceptDrops:
     return current.map((a) => a.input);
   };
 
-  const addDropped = useEffectEvent((paths: ReadonlyArray<string>) => add(paths.map(fromPath)));
+  const addDropped = useEffectEvent(async (paths: ReadonlyArray<string>) =>
+    add(await fromPaths(paths, remote)),
+  );
   useEffect(() => {
     if (!acceptDrops) return;
     return window.desktop?.onFileDrop((paths) => addDropped(paths));

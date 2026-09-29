@@ -6,6 +6,8 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { stat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
+import { expandHome } from "../folders.ts";
+import { readRemoteUrl, readRepoFolder } from "../git.ts";
 import { openJsonFile } from "./jsonFile.ts";
 
 export class ProjectNotFound extends Schema.TaggedError<ProjectNotFound>()("ProjectNotFound", {
@@ -28,10 +30,23 @@ const make = Effect.gen(function* () {
   const file = yield* openJsonFile("projects.json", Schema.Array(Project), []);
   // Serializes read-modify-write so concurrent commands can't register the same folder twice.
   const lock = yield* Semaphore.make(1);
+  // Projects added before their repo was read get it once, so they group with their copies elsewhere.
+  const saved = yield* file.get;
+  if (saved.some((project) => project.remote === undefined || project.folder === undefined))
+    yield* file.set(
+      yield* Effect.forEach(saved, (project) =>
+        Effect.promise(async () => ({
+          ...project,
+          remote: project.remote === undefined ? await readRemoteUrl(project.path) : project.remote,
+          folder:
+            project.folder === undefined ? await readRepoFolder(project.path) : project.folder,
+        })),
+      ),
+    );
 
   const ensure = (rawPath: string) =>
     Effect.gen(function* () {
-      const path = resolve(rawPath);
+      const path = resolve(expandHome(rawPath));
       const projects = yield* file.get;
       const existing = projects.find((p) => p.path === path);
       if (existing) return { project: existing, created: false };
@@ -48,6 +63,8 @@ const make = Effect.gen(function* () {
         path,
         name: basename(path) || path,
         addedAt: Date.now(),
+        remote: yield* Effect.promise(() => readRemoteUrl(path)),
+        folder: yield* Effect.promise(() => readRepoFolder(path)),
       };
       yield* file.set([...projects, project]);
       return { project, created: true };

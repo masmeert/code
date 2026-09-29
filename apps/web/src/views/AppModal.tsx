@@ -28,6 +28,7 @@ import {
   ProviderKind,
   SourceControlKind,
   WritingStyle,
+  HostStatus,
   type ProviderStatus,
   Theme,
   UpdateStatus,
@@ -45,6 +46,8 @@ import {
   Palette,
   RefreshCw,
   Rows2,
+  Search,
+  Server,
   Settings2,
   Star,
   Sun,
@@ -60,7 +63,7 @@ import {
   PROVIDER_LABEL,
   visibleModels,
 } from "../lib/models.ts";
-import { send, updateHarness, updateSettings, useStore } from "../lib/store.ts";
+import { send, updateHarness, updateSettings, useProviders, useStore } from "../lib/store.ts";
 import { useUpdateStatus } from "../lib/updates.ts";
 
 export type ModalView = "settings";
@@ -182,6 +185,7 @@ const PAGES = [
   { page: "appearance", title: "Appearance", icon: Palette },
   { page: "harnesses", title: "Harnesses", icon: Bot },
   { page: "git", title: "Git", icon: GitCommitHorizontal },
+  { page: "connections", title: "Connections", icon: Server },
 ] as const;
 
 type SettingsPage = (typeof PAGES)[number]["page"];
@@ -189,6 +193,8 @@ type SettingsPage = (typeof PAGES)[number]["page"];
 function SettingsView() {
   const settings = useStore((s) => s.settings);
   const [page, setPage] = useState<SettingsPage>("general");
+  // Hosts are reached over SSH by the desktop app.
+  const pages = PAGES.filter((entry) => entry.page !== "connections" || window.desktop);
 
   // Sign-in state can change outside the app (e.g. `claude auth logout` in a terminal).
   useEffect(() => send(ClientCommand.cases["providers.refresh"].make({})), []);
@@ -201,11 +207,11 @@ function SettingsView() {
           if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
           e.preventDefault();
           const next =
-            PAGES[
-              (PAGES.findIndex((entry) => entry.page === page) +
+            pages[
+              (pages.findIndex((entry) => entry.page === page) +
                 (e.key === "ArrowDown" ? 1 : -1) +
-                PAGES.length) %
-                PAGES.length
+                pages.length) %
+                pages.length
             ]!.page;
           setPage(next);
           e.currentTarget.querySelector<HTMLElement>(`[data-page="${next}"]`)?.focus();
@@ -214,7 +220,7 @@ function SettingsView() {
       >
         <h2 className="px-2 pt-1 pb-3 text-sm font-medium">Settings</h2>
         <SharedLayoutBg inset={0} pillClassName="rounded-lg bg-muted/50" className="gap-0.5">
-          {PAGES.map(({ page: entry, title, icon: Icon }) => (
+          {pages.map(({ page: entry, title, icon: Icon }) => (
             <div key={entry}>
               <button
                 type="button"
@@ -263,6 +269,7 @@ function SettingsView() {
             )),
             Match.when("harnesses", () => <HarnessesPage />),
             Match.when("git", () => <GitPage />),
+            Match.when("connections", () => <ConnectionsPage />),
             Match.exhaustive,
           )}
         </div>
@@ -822,116 +829,352 @@ const CONFIG_DIR: Record<ProviderKind, { env: string; placeholder: string }> = {
   codex: { env: "CODEX_HOME", placeholder: "~/.codex" },
 };
 
-function HarnessesPage() {
-  const settings = useStore((s) => s.settings);
-  const providers = useStore((s) => s.providers);
-  const [kind, setKind] = useState<ProviderKind>("claude");
-  const status = providers.find((p) => p.kind === kind);
-  const harness = settings.providers[kind];
+function ConnectionsPage() {
+  const hosts = useStore((s) => s.hosts);
+  const [query, setQuery] = useState("");
+  const [aliases, setAliases] = useState<ReadonlyArray<string>>([]);
+  useEffect(() => void window.desktop?.sshAliases().then(setAliases), []);
+  const typed = query.trim();
+  const matches = (name: string) => name.toLowerCase().includes(typed.toLowerCase());
+  const added = Object.entries(hosts).filter(([name]) => matches(name));
+  // Configs can list dozens, so they show once there's a search, or while there's no host yet.
+  const suggestions =
+    typed || Object.keys(hosts).length === 0
+      ? aliases.filter((name) => !hosts[name] && matches(name))
+      : [];
+  // What's typed is a host of its own, like me@server, when it isn't the start of a listed one.
+  const addable = [
+    ...(typed && !hosts[typed] && suggestions.length === 0 && !/\s/.test(typed) ? [typed] : []),
+    ...suggestions,
+  ];
+  const add = (alias: string) => {
+    void window.desktop?.addHost(alias);
+    setQuery("");
+  };
 
   return (
     <>
-      <Tabs
-        value={kind}
-        onValueChange={(v) => Schema.is(ProviderKind)(v) && setKind(v)}
+      <Input
+        aria-label="Search or add an SSH host"
+        value={query}
+        onChange={setQuery}
+        placeholder="Search or add an SSH host, like devbox or me@server"
+        spellCheck={false}
+        autoComplete="off"
+        leftIcon={<Search />}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && addable.length === 1) add(addable[0]!);
+          if (e.key === "Escape" && query) {
+            e.stopPropagation();
+            setQuery("");
+          }
+        }}
         className="mb-5"
-      >
-        <TabsList>
-          {ProviderKind.literals.map((entry) => {
-            const Logo = PROVIDER_LOGO[entry];
-            return (
-              <TabsTrigger key={entry} value={entry}>
-                <span className="flex items-center gap-1.5">
-                  <Logo className="size-3.5" />
-                  {harnessLabel(settings, entry)}
-                </span>
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-      </Tabs>
-      {/* Keyed so drafts and confirmations don't carry over to the other harness. */}
-      <div key={kind}>
-        <Section title="Account">
-          <ProviderCard kind={kind} status={status} />
-        </Section>
-        <Section title="Display">
+        classNames={{
+          field: "h-9 rounded-lg bg-background",
+          leftIcon: "left-2.5",
+          input: "pl-9 text-[13px]",
+        }}
+      />
+      <Section title="Remote hosts">
+        {added.length ? (
           <SettingsGroup>
-            <SettingsRow label="Name">
-              <SettingsTextField
-                label="Display name"
-                value={harness.displayName ?? ""}
-                placeholder={PROVIDER_LABEL[kind]}
-                onCommit={(displayName) => updateHarness(kind, { displayName })}
-              />
-            </SettingsRow>
-            <SettingsRow label="Color">
-              <div role="radiogroup" aria-label="Color" className="flex gap-1">
-                {HarnessColor.literals.map((color) => {
-                  const selected = (harness.color ?? "brand") === color;
-                  return (
-                    <button
-                      key={color}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      aria-label={color}
-                      title={color}
-                      onClick={() => updateHarness(kind, { color })}
-                      className={cn(
-                        "grid size-7 place-items-center rounded-full border-2 border-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        selected && "border-foreground/70",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "size-4 rounded-full",
-                          harnessTint(settings, kind, color).swatch,
-                        )}
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-            </SettingsRow>
+            {added.map(([name, host]) => (
+              <HostRow key={name} alias={name} status={host.status} />
+            ))}
           </SettingsGroup>
-        </Section>
-        <Section title="Launch">
+        ) : (
+          <p className="px-1 text-xs text-muted-foreground">
+            {Object.keys(hosts).length
+              ? "No host matches."
+              : "None yet. A Linux host runs agents over SSH while this Mac sleeps."}
+          </p>
+        )}
+      </Section>
+      {addable.length ? (
+        <Section title="Add host">
           <SettingsGroup>
-            <SettingsRow label="Binary">
-              <SettingsTextField
-                label="Binary path"
-                mono
-                value={harness.binaryPath ?? ""}
-                placeholder={`/usr/local/bin/${kind}`}
-                onCommit={(binaryPath) => updateHarness(kind, { binaryPath })}
-              />
-            </SettingsRow>
-            <SettingsRow label="Config folder">
-              <SettingsTextField
-                label={CONFIG_DIR[kind].env}
-                mono
-                value={harness.configDir ?? ""}
-                placeholder={CONFIG_DIR[kind].placeholder}
-                onCommit={(configDir) => updateHarness(kind, { configDir })}
-              />
-            </SettingsRow>
-            <SettingsRow label="Launch arguments">
-              <SettingsTextField
-                label="Launch arguments"
-                mono
-                value={(harness.launchArgs ?? []).join(" ")}
-                placeholder={kind === "claude" ? "--flag value" : "-c key=value"}
-                onCommit={(args) =>
-                  updateHarness(kind, { launchArgs: args.split(/\s+/).filter(Boolean) })
+            {addable.map((alias) => (
+              <SettingsRow
+                key={alias}
+                label={
+                  <RowLabel
+                    title={alias}
+                    description={aliases.includes(alias) ? "In ~/.ssh/config" : "Typed address"}
+                  />
                 }
-              />
-            </SettingsRow>
-            <VariablesField provider={kind} />
+              >
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 rounded-lg"
+                  onClick={() => add(alias)}
+                >
+                  Add
+                </Button>
+              </SettingsRow>
+            ))}
           </SettingsGroup>
         </Section>
-        {status?.linked && status.models.length ? <ModelsSection status={status} /> : null}
+      ) : null}
+    </>
+  );
+}
+
+function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
+  const [confirm, setConfirm] = useState<"remove" | "restart" | null>(null);
+  const confirming = confirm !== null;
+  return (
+    <>
+      <SettingsRow
+        label={
+          <div className="min-w-0">
+            <p className="font-mono text-[13px]">{alias}</p>
+            <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <span
+                className={cn(
+                  "mt-1.5 size-1.5 shrink-0 rounded-full",
+                  Match.value(status).pipe(
+                    Match.tag("connected", () => "bg-emerald-500"),
+                    Match.tag("failed", () => "bg-destructive"),
+                    Match.orElse(() => "bg-warning"),
+                  ),
+                )}
+              />
+              <span
+                className={cn("min-w-0", HostStatus.guards.failed(status) && "text-destructive")}
+              >
+                {Match.value(status).pipe(
+                  Match.tag("connecting", ({ step }) => `${step}…`),
+                  Match.tag("connected", () => "Connected"),
+                  Match.tag(
+                    "updating",
+                    () => "Updating: the new version starts once its running turns end",
+                  ),
+                  Match.tag("failed", ({ message }) => message),
+                  Match.exhaustive,
+                )}
+              </span>
+            </div>
+          </div>
+        }
+      >
+        {confirming ? (
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 rounded-lg"
+              onClick={() => setConfirm(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
+              onClick={() => {
+                setConfirm(null);
+                void (confirm === "remove"
+                  ? window.desktop?.removeHost(alias)
+                  : window.desktop?.restartHost(alias));
+              }}
+            >
+              {confirm === "remove" ? "Remove" : "Restart now"}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            {HostStatus.guards.failed(status) ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-7 rounded-lg"
+                onClick={() => void window.desktop?.hostDaemon(alias)}
+              >
+                Retry
+              </Button>
+            ) : null}
+            {HostStatus.guards.updating(status) ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-7 rounded-lg"
+                onClick={() => setConfirm("restart")}
+              >
+                Restart now
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 rounded-lg"
+              onClick={() => setConfirm("remove")}
+            >
+              Remove
+            </Button>
+          </div>
+        )}
+      </SettingsRow>
+      {confirming ? (
+        <p className="px-3 py-2.5 text-xs text-muted-foreground">
+          {confirm === "remove"
+            ? `This stops APCode on ${alias}, and any agents working there. Its threads stay on ${alias} for when you add it again.`
+            : `This stops the turns running on ${alias} and restarts it on this version.`}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+const THIS_MAC = "\u0000this-mac";
+
+function HarnessesPage() {
+  const settings = useStore((s) => s.settings);
+  const hosts = useStore((s) => s.hosts);
+  const [kind, setKind] = useState<ProviderKind>("claude");
+  // The machine whose harnesses are on show: this Mac (null) or a remote host.
+  const [machine, setMachine] = useState<string | null>(null);
+  const providers = useProviders(machine);
+  const status = providers.find((p) => p.kind === kind);
+
+  // Sign-in state can change outside the app, on a host too.
+  useEffect(() => {
+    if (machine !== null) send(ClientCommand.cases["providers.refresh"].make({}), machine);
+  }, [machine]);
+
+  return (
+    <>
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <Tabs value={kind} onValueChange={(v) => Schema.is(ProviderKind)(v) && setKind(v)}>
+          <TabsList>
+            {ProviderKind.literals.map((entry) => {
+              const Logo = PROVIDER_LOGO[entry];
+              return (
+                <TabsTrigger key={entry} value={entry}>
+                  <span className="flex items-center gap-1.5">
+                    <Logo className="size-3.5" />
+                    {harnessLabel(settings, entry)}
+                  </span>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        </Tabs>
+        {Object.keys(hosts).length > 0 ? (
+          <SettingsSelect
+            value={machine ?? THIS_MAC}
+            onChange={(value) => setMachine(value === THIS_MAC ? null : value)}
+            options={[
+              { value: THIS_MAC, label: "This Mac", icon: <Monitor className="size-3.5" /> },
+              ...Object.keys(hosts).map((alias) => ({
+                value: alias,
+                label: alias,
+                icon: <Server className="size-3.5" />,
+              })),
+            ]}
+          />
+        ) : null}
       </div>
+      {/* Keyed so drafts and confirmations don't carry over to the other harness or machine. */}
+      <div key={`${kind}:${machine ?? THIS_MAC}`}>
+        <Section title="Account">
+          <ProviderCard kind={kind} status={status} host={machine} />
+        </Section>
+        {/* Name, color and models apply everywhere, and a host's launch settings are its own. */}
+        {machine === null ? <LocalHarnessSettings kind={kind} status={status} /> : null}
+      </div>
+    </>
+  );
+}
+
+function LocalHarnessSettings({
+  kind,
+  status,
+}: {
+  kind: ProviderKind;
+  status: ProviderStatus | undefined;
+}) {
+  const harness = useStore((s) => s.settings.providers[kind]);
+  const settings = useStore((s) => s.settings);
+  return (
+    <>
+      <Section title="Display">
+        <SettingsGroup>
+          <SettingsRow label="Name">
+            <SettingsTextField
+              label="Display name"
+              value={harness.displayName ?? ""}
+              placeholder={PROVIDER_LABEL[kind]}
+              onCommit={(displayName) => updateHarness(kind, { displayName })}
+            />
+          </SettingsRow>
+          <SettingsRow label="Color">
+            <div role="radiogroup" aria-label="Color" className="flex gap-1">
+              {HarnessColor.literals.map((color) => {
+                const selected = (harness.color ?? "brand") === color;
+                return (
+                  <button
+                    key={color}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    aria-label={color}
+                    title={color}
+                    onClick={() => updateHarness(kind, { color })}
+                    className={cn(
+                      "grid size-7 place-items-center rounded-full border-2 border-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      selected && "border-foreground/70",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "size-4 rounded-full",
+                        harnessTint(settings, kind, color).swatch,
+                      )}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </SettingsRow>
+        </SettingsGroup>
+      </Section>
+      <Section title="Launch">
+        <SettingsGroup>
+          <SettingsRow label="Binary">
+            <SettingsTextField
+              label="Binary path"
+              mono
+              value={harness.binaryPath ?? ""}
+              placeholder={`/usr/local/bin/${kind}`}
+              onCommit={(binaryPath) => updateHarness(kind, { binaryPath })}
+            />
+          </SettingsRow>
+          <SettingsRow label="Config folder">
+            <SettingsTextField
+              label={CONFIG_DIR[kind].env}
+              mono
+              value={harness.configDir ?? ""}
+              placeholder={CONFIG_DIR[kind].placeholder}
+              onCommit={(configDir) => updateHarness(kind, { configDir })}
+            />
+          </SettingsRow>
+          <SettingsRow label="Launch arguments">
+            <SettingsTextField
+              label="Launch arguments"
+              mono
+              value={(harness.launchArgs ?? []).join(" ")}
+              placeholder={kind === "claude" ? "--flag value" : "-c key=value"}
+              onCommit={(args) =>
+                updateHarness(kind, { launchArgs: args.split(/\s+/).filter(Boolean) })
+              }
+            />
+          </SettingsRow>
+          <VariablesField provider={kind} />
+        </SettingsGroup>
+      </Section>
+      {status?.linked && status.models.length ? <ModelsSection status={status} /> : null}
     </>
   );
 }
@@ -1149,12 +1392,17 @@ const shortVersion = (raw: string) => raw.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? 
 const ProviderCard = ({
   kind,
   status,
+  host = null,
 }: {
   kind: ProviderKind;
   status: ProviderStatus | undefined;
+  /** The remote host whose harness this is; this Mac's when left out. */
+  host?: string | null;
 }) => {
   const settings = useStore((s) => s.settings);
-  const flow = useStore((s) => s.authFlows[kind]);
+  const flow = useStore((s) =>
+    host === null ? s.authFlows[kind] : s.hosts[host]?.authFlows[kind],
+  );
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [code, setCode] = useState("");
   const inFlow =
@@ -1178,7 +1426,9 @@ const ProviderCard = ({
       size="sm"
       variant="ghost"
       className="h-7 rounded-lg"
-      onClick={() => send(ClientCommand.cases["provider.linkCancel"].make({ provider: kind }))}
+      onClick={() =>
+        send(ClientCommand.cases["provider.linkCancel"].make({ provider: kind }), host)
+      }
     >
       Cancel
     </Button>
@@ -1199,7 +1449,7 @@ const ProviderCard = ({
           className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
           onClick={() => {
             setConfirmUnlink(false);
-            send(ClientCommand.cases["provider.unlink"].make({ provider: kind }));
+            send(ClientCommand.cases["provider.unlink"].make({ provider: kind }), host);
           }}
         >
           Sign out
@@ -1215,11 +1465,11 @@ const ProviderCard = ({
         Unlink
       </Button>
     )
-  ) : (
+  ) : host !== null && kind === "codex" ? null : (
     <Button
       size="sm"
       className="h-7 rounded-lg"
-      onClick={() => send(ClientCommand.cases["provider.link"].make({ provider: kind }))}
+      onClick={() => send(ClientCommand.cases["provider.link"].make({ provider: kind }), host)}
     >
       Link
     </Button>
@@ -1278,7 +1528,16 @@ const ProviderCard = ({
 
       {confirmUnlink ? (
         <p className="px-3 py-2.5 text-xs text-muted-foreground">
-          This signs {harnessLabel(settings, kind)} out on this Mac, including in your terminal.
+          This signs {harnessLabel(settings, kind)} out on {host ?? "this Mac"}, including in your
+          terminal.
+        </p>
+      ) : null}
+
+      {host !== null && kind === "codex" && status?.installed && !status.linked && !checking ? (
+        // Codex's sign-in page calls back to a server on the host, which this Mac's browser can't reach.
+        <p className="px-3 py-2.5 text-xs text-muted-foreground">
+          To link it, run <code className="selectable font-mono">codex login --device-auth</code> in
+          a terminal on {host}, for example one opened from a thread there.
         </p>
       ) : null}
 
@@ -1299,6 +1558,7 @@ const ProviderCard = ({
                       if (e.key === "Enter" && code.trim())
                         send(
                           ClientCommand.cases["provider.linkCode"].make({ provider: kind, code }),
+                          host,
                         );
                     }}
                     placeholder="Paste code"
@@ -1309,7 +1569,10 @@ const ProviderCard = ({
                     className="h-7 rounded-lg"
                     disabled={!code.trim()}
                     onClick={() =>
-                      send(ClientCommand.cases["provider.linkCode"].make({ provider: kind, code }))
+                      send(
+                        ClientCommand.cases["provider.linkCode"].make({ provider: kind, code }),
+                        host,
+                      )
                     }
                   >
                     Submit

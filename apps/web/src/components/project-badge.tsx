@@ -1,4 +1,5 @@
 import type { Project } from "@apcode/contracts";
+import { projectKey } from "../lib/projects.ts";
 import { cn } from "@apcode/ui/lib/utils";
 
 const TINTS = [
@@ -23,22 +24,26 @@ const tint = (key: string) => {
   return TINTS[Math.abs(hash) % TINTS.length]!;
 };
 
-/** Two-letter project mark, tinted per project so they're told apart at a glance. */
+/** Two-letter project mark, tinted per project (the same on every machine) so they're told apart at a glance. */
 export const ProjectBadge = ({
   project,
   className,
 }: {
-  project: Pick<Project, "id" | "name">;
+  project: Pick<Project, "id" | "name" | "remote" | "folder">;
   className?: string;
 }) => (
   <span
     aria-hidden="true"
     className={cn(
       "grid size-4 shrink-0 place-items-center rounded-[4px] text-[8.5px] leading-none font-semibold tracking-tight",
-      tint(project.id),
+      tint(projectKey(project)),
       className,
     )}
   >
     {initials(project.name)}
   </span>
 );
+
+/** A project's name, and the remote host it's on when it isn't on this Mac. */
+export const projectLabel = (name: string, host: string | null | undefined) =>
+  host ? `${name} on ${host}` : name;

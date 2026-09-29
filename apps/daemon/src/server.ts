@@ -5,6 +5,11 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import type { ServerWebSocket } from "bun";
 import { timingSafeEqual } from "node:crypto";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { listFolders } from "./folders.ts";
+import { cloneRepository } from "./git.ts";
+import { setPort } from "./port.ts";
 import { SessionManager } from "./SessionManager.ts";
 import type { BrowserHost } from "./browsers.ts";
 import type { TerminalViewer } from "./terminals.ts";
@@ -117,6 +122,32 @@ export const serve = (port: number) =>
               );
               return Effect.void;
             },
+            "folder.list": ({ path, requestId }) =>
+              Effect.promise(async () =>
+                send(
+                  ws,
+                  ServerFrame.cases["folder.entries"].make({
+                    requestId,
+                    ...(await listFolders(path)),
+                  }),
+                ),
+              ),
+            "project.clone": ({ url, parent, folder, name, requestId }) =>
+              Effect.gen(function* () {
+                const { path: parentPath } = yield* Effect.promise(() => listFolders(parent));
+                const cloned = yield* Effect.promise(() => cloneRepository(url, parentPath, name));
+                const path = cloned.path && join(cloned.path, folder ?? "");
+                if (path)
+                  yield* manager.dispatch(ClientCommand.cases["project.add"].make({ path }));
+                send(
+                  ws,
+                  ServerFrame.cases["project.cloned"].make({
+                    requestId,
+                    path,
+                    error: cloned.error,
+                  }),
+                );
+              }),
             "thread.unsubscribe": (command) => {
               ws.data.threads.delete(command.threadId);
               return Effect.void;
@@ -225,5 +256,10 @@ export const serve = (port: number) =>
       (server) => Effect.promise(() => server.stop(true)),
     );
 
+    // Port 0 lets the OS pick, for remote hosts where another user's daemon may hold ours.
+    // SAFETY: a server bound to a TCP hostname always has a port.
+    setPort(server.port!);
+    const portFile = process.env.APCODE_PORT_FILE;
+    if (portFile) yield* Effect.promise(() => writeFile(portFile, String(server.port)));
     yield* Effect.logInfo(`APCode daemon listening on ws://127.0.0.1:${server.port}`);
   });

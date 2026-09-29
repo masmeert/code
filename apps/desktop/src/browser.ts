@@ -1,5 +1,12 @@
 import { BROWSER_PARTITION, DesktopBrowserEvent } from "@apcode/contracts";
-import { type BrowserWindow, clipboard, Menu, session, shell, type WebContents } from "electron";
+import {
+  type BrowserWindow,
+  clipboard,
+  Menu,
+  type Session,
+  shell,
+  type WebContents,
+} from "electron";
 import { recordConsole } from "./browserAutomation.ts";
 
 function isWebUrl(url: string) {
@@ -114,8 +121,7 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
   });
 }
 
-export function configureBrowserSession() {
-  const browserSession = session.fromPartition(BROWSER_PARTITION);
+export function configureBrowserSession(browserSession: Session) {
   const allowed = new Set(["clipboard-sanitized-write", "fullscreen"]);
   browserSession.setPermissionRequestHandler((_contents, permission, callback) =>
     callback(allowed.has(permission)),
@@ -125,7 +131,8 @@ export function configureBrowserSession() {
 
 export function hostBrowser(window: BrowserWindow) {
   window.webContents.on("will-attach-webview", (event, webPreferences, params) => {
-    if (params.partition !== BROWSER_PARTITION || !isWebUrl(params.src ?? "")) {
+    // Remote hosts' tabs have partitions of their own, named after this one.
+    if (!params.partition?.startsWith(BROWSER_PARTITION) || !isWebUrl(params.src ?? "")) {
       event.preventDefault();
       return;
     }

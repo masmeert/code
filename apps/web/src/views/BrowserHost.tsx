@@ -1,4 +1,4 @@
-import { BROWSER_PARTITION, DesktopBrowserEvent } from "@apcode/contracts";
+import { browserPartition, DesktopBrowserEvent } from "@apcode/contracts";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -18,6 +18,7 @@ import { useStore } from "../lib/store.ts";
 
 export function BrowserHost() {
   const threads = useStore((state) => state.threads);
+  const projectHosts = useStore((state) => state.projectHosts);
   const browsers = useBrowser((state) => state.threads);
   const alive = useBrowser((state) => state.alive);
   const surface = useBrowser((state) => state.surface);
@@ -49,6 +50,7 @@ export function BrowserHost() {
         <HostedTab
           key={tabId}
           threadId={threadId}
+          partition={browserPartition(projectHosts[threads[threadId].projectId] ?? null)}
           tab={tab}
           rect={shown === tabId && !activity[tabId]?.error ? (surface?.rect ?? null) : null}
           automating={(activity[tabId]?.automating ?? 0) > 0}
@@ -70,11 +72,14 @@ interface WebviewEvent extends Event {
 
 function HostedTab({
   threadId,
+  partition,
   tab,
   rect,
   automating,
 }: {
   threadId: string;
+  /** The thread's host's: its `localhost` is that host's. */
+  partition: string;
   tab: BrowserTab;
   rect: SurfaceRect | null;
   automating: boolean;
@@ -149,7 +154,7 @@ function HostedTab({
       key={generation}
       ref={webview}
       src={generation === 0 ? initialUrl : tab.url}
-      partition={BROWSER_PARTITION}
+      partition={partition}
       // SAFETY: Electron only checks that the attribute exists, and React drops a boolean one; its typings say boolean.
       allowpopups={"true" as never}
       aria-hidden={rect ? undefined : true}

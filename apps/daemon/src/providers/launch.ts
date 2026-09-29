@@ -1,7 +1,7 @@
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import type { ProviderKind, ProviderSettings } from "@apcode/contracts";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { expandHome } from "../folders.ts";
 import { resolveExecutable } from "./resolveExecutable.ts";
 
 /** How to run one harness CLI, from its Settings. */
@@ -15,10 +15,6 @@ const CLI: Record<ProviderKind, { name: string; pathEnv: string; configEnv: stri
   claude: { name: "claude", pathEnv: "APCODE_CLAUDE_PATH", configEnv: "CLAUDE_CONFIG_DIR" },
   codex: { name: "codex", pathEnv: "APCODE_CODEX_PATH", configEnv: "CODEX_HOME" },
 };
-
-function expandHome(path: string) {
-  return path.trim().replace(/^~(?=\/|$)/, homedir());
-}
 
 export function harnessLaunch(kind: ProviderKind, settings: ProviderSettings): HarnessLaunch {
   const cli = CLI[kind];

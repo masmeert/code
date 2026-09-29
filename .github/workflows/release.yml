@@ -61,6 +61,12 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # Remote hosts get the daemon from here: the app downloads the one for the host and uploads it over SSH
+      - run: |
+          pnpm --filter @apcode/daemon build:linux
+          gh release upload "$GITHUB_REF_NAME" apps/daemon/dist/apcode-daemon-linux-*.gz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # electron-builder uploads into the existing draft but never publishes it, and the updater only sees published releases
       - run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
         env:

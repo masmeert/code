@@ -4,7 +4,14 @@ import { ClientCommand, type ContextUsage, type ProviderKind } from "@apcode/con
 import { ChevronRight, LoaderCircle, Minimize2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { describe, useKeybinding } from "../lib/keybindings.ts";
-import { readLimits, readUsage, send, useStore } from "../lib/store.ts";
+import {
+  readLimits,
+  readUsage,
+  send,
+  useProviders,
+  useStore,
+  useThreadHost,
+} from "../lib/store.ts";
 import { useNow } from "../lib/time.ts";
 
 const tokens = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
@@ -51,6 +58,7 @@ export function UsageMeter({
 }) {
   const usage = useStore((s) => s.threads[threadId]?.usage);
   const reading = useStore((s) => s.readingUsage[threadId] ?? false);
+  const host = useThreadHost(threadId);
   const [open, setOpen] = useState(false);
   const missing = usage === undefined;
   useEffect(() => {
@@ -58,8 +66,8 @@ export function UsageMeter({
   }, [missing, threadId]);
   useKeybinding("usage.toggle", () => setOpen((wasOpen) => !wasOpen));
   useEffect(() => {
-    if (open) readLimits(provider);
-  }, [open, provider]);
+    if (open) readLimits(provider, host);
+  }, [open, provider, host]);
 
   const context = usage?.context ?? null;
   const percent = context ? percentOf(context.usedTokens, context.maxTokens) : 0;
@@ -105,7 +113,7 @@ export function UsageMeter({
           reading={reading}
           busy={busy}
         />
-        <LimitsSection provider={provider} />
+        <LimitsSection provider={provider} host={host} />
       </MorphPopoverContent>
     </MorphPopover>
   );
@@ -215,9 +223,11 @@ function ContextSection({
   );
 }
 
-function LimitsSection({ provider }: { provider: ProviderKind }) {
-  const limits = useStore((s) => s.limits[provider]);
-  const plan = useStore((s) => s.providers.find((status) => status.kind === provider)?.plan);
+function LimitsSection({ provider, host }: { provider: ProviderKind; host: string | null }) {
+  const limits = useStore((s) =>
+    host === null ? s.limits[provider] : s.hosts[host]?.limits[provider],
+  );
+  const plan = useProviders(host).find((status) => status.kind === provider)?.plan;
   const now = useNow(60_000);
   return (
     <div className="mt-3 border-t border-border pt-3 text-xs">
@@ -227,7 +237,7 @@ function LimitsSection({ provider }: { provider: ProviderKind }) {
         </span>
         <button
           type="button"
-          onClick={() => readLimits(provider)}
+          onClick={() => readLimits(provider, host)}
           disabled={limits?.loading}
           title="Refresh"
           aria-label="Refresh usage limits"

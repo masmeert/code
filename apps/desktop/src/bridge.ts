@@ -1,8 +1,11 @@
-import { BrowserAction, Theme } from "@apcode/contracts";
+import { AttachmentInput, BrowserAction, Theme } from "@apcode/contracts";
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification } from "electron";
 import * as Schema from "effect/Schema";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
+import { basename, extname } from "node:path";
 import { automateBrowser } from "./browserAutomation.ts";
+import { addHost, hostDaemon, listHosts, removeHost, restartHost, sshAliases } from "./hosts.ts";
 import { APP_URL } from "./renderer.ts";
 import { checkForUpdates, installUpdate, updateStatus } from "./updates.ts";
 
@@ -19,6 +22,15 @@ function handle<S extends Schema.ConstraintDecoder<unknown>, Result>(
   });
 }
 
+/** The daemon tells images apart by media type, the agents read the rest from disk by name. */
+const MEDIA_TYPES = new Map([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".gif", "image/gif"],
+  [".webp", "image/webp"],
+]);
+
 /** When each thread change was last announced; every open window reports the same change. */
 const announced = new Map<string, number>();
 /** Shown notifications, kept referenced so their click handler outlives garbage collection. */
@@ -26,6 +38,23 @@ const shown = new Set<Notification>();
 
 export function registerBridge(daemon: () => Promise<{ port: number; token: string }> | null) {
   handle("daemon", Schema.Undefined, () => daemon());
+  handle("hosts", Schema.Undefined, listHosts);
+  handle("add-host", Schema.String, (_window, alias) => addHost(alias));
+  handle("remove-host", Schema.String, (_window, alias) => removeHost(alias));
+  handle("host-daemon", Schema.String, (_window, alias) => hostDaemon(alias));
+  handle("restart-host", Schema.String, (_window, alias) => restartHost(alias));
+  handle("ssh-aliases", Schema.Undefined, sshAliases);
+  handle("read-files", Schema.Array(Schema.String), (_window, paths) =>
+    Promise.all(
+      paths.map(async (path) =>
+        AttachmentInput.cases.data.make({
+          name: basename(path),
+          mediaType: MEDIA_TYPES.get(extname(path).toLowerCase()) ?? "application/octet-stream",
+          data: (await readFile(path)).toString("base64"),
+        }),
+      ),
+    ),
+  );
   handle(
     "pick-folder",
     Schema.Struct({ title: Schema.String, defaultPath: Schema.optional(Schema.String) }),

@@ -1,4 +1,9 @@
-import type { DesktopBridge, DesktopBrowserEvent, UpdateStatus } from "@apcode/contracts";
+import type {
+  DesktopBridge,
+  DesktopBrowserEvent,
+  RemoteHost,
+  UpdateStatus,
+} from "@apcode/contracts";
 import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
 
 const dropListeners = new Set<(paths: ReadonlyArray<string>) => void>();
@@ -17,6 +22,20 @@ window.addEventListener("drop", (event) => {
 
 contextBridge.exposeInMainWorld("desktop", {
   daemon: () => ipcRenderer.invoke("daemon"),
+  hosts: () => ipcRenderer.invoke("hosts"),
+  onHosts: (listener) => {
+    function forward(_event: IpcRendererEvent, hosts: ReadonlyArray<RemoteHost>) {
+      listener(hosts);
+    }
+    ipcRenderer.on("hosts-changed", forward);
+    return () => ipcRenderer.removeListener("hosts-changed", forward);
+  },
+  addHost: (alias) => ipcRenderer.invoke("add-host", alias),
+  removeHost: (alias) => ipcRenderer.invoke("remove-host", alias),
+  hostDaemon: (alias) => ipcRenderer.invoke("host-daemon", alias),
+  restartHost: (alias) => ipcRenderer.invoke("restart-host", alias),
+  sshAliases: () => ipcRenderer.invoke("ssh-aliases"),
+  readFiles: (paths) => ipcRenderer.invoke("read-files", paths),
   pickFolder: (title, defaultPath) => ipcRenderer.invoke("pick-folder", { title, defaultPath }),
   pickFiles: (title) => ipcRenderer.invoke("pick-files", title),
   setTheme: (theme) => ipcRenderer.invoke("set-theme", theme),

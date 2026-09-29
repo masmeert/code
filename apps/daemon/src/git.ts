@@ -1,4 +1,5 @@
 import { execFile, type ExecFileException, type ExecFileOptions } from "node:child_process";
+import { repositoryOf } from "@apcode/contracts";
 import * as Predicate from "effect/Predicate";
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -636,4 +637,47 @@ export const removeWorktreeIfClean = async (path: string) => {
   const status = await git(path, ["status", "--porcelain"]);
   if (!status.ok || status.stdout) return false;
   return (await gitLong(path, ["worktree", "remove", path])).ok;
+};
+
+/** Where `cwd` sits in its repo, like "apps/web"; "" at the top, null outside a repo. */
+export const readRepoFolder = async (cwd: string) => {
+  const prefix = await git(cwd, ["rev-parse", "--show-prefix"]);
+  return prefix.ok ? prefix.stdout.replace(/\/$/, "") : null;
+};
+
+/** Clones `url` into folder `name` (the repo's own by default) under `parent`; resolves to its path or why it failed. */
+export const cloneRepository = async (url: string, parent: string, folderName?: string) => {
+  const name =
+    folderName?.trim() ||
+    url
+      .trim()
+      .replace(/\/+$/, "")
+      .split(/[/:]/)
+      .at(-1)
+      ?.replace(/\.git$/, "");
+  if (name && /[/\\]|^\.\.?$/.test(name))
+    return { path: null, error: `Can't name a folder ${name}` };
+  if (!name) return { path: null, error: "That doesn't look like a repository URL" };
+  await mkdir(parent, { recursive: true });
+  const path = join(parent, name);
+  // Cloned there before (say, from another thread's draft): that copy is the one to use.
+  const existing = await readRemoteUrl(path).catch(() => null);
+  if (existing && repositoryOf(existing) === repositoryOf(url)) return { path, error: null };
+  const result = await execGit(parent, ["clone", "--", url.trim(), path], {
+    timeout: 10 * 60 * 1000,
+    // A host that never reached this server trusts its key on first sight, like cloning in a
+    // terminal and answering yes; a changed key still fails. No prompt can be answered here.
+    env: {
+      ...NO_PROMPT,
+      GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+    },
+  });
+  if (!result.error) return { path, error: null };
+  if (/permission denied \(publickey|could not read username/i.test(result.stderr))
+    return {
+      path: null,
+      error:
+        "This machine can't sign in to that repository. Add an SSH key for it here (or sign in to its git host), then retry.",
+    };
+  return { path: null, error: firstLines(result.stderr.trim() || result.stdout.trim()) };
 };

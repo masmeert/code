@@ -13,7 +13,7 @@ import {
 } from "@apcode/ui/components/dropdown-menu";
 import { Button } from "@apcode/ui/motion/button";
 import { cn } from "@apcode/ui/lib/utils";
-import { ProjectBadge } from "@/components/project-badge";
+import { ProjectBadge, projectLabel } from "@/components/project-badge";
 import type { Project } from "@apcode/contracts";
 import * as Match from "effect/Match";
 import { SlidersHorizontal } from "lucide-react";
@@ -71,6 +71,7 @@ export function ThreadListMenu(props: {
 }) {
   const { view } = props;
   const settings = useStore((s) => s.settings);
+  const projectHosts = useStore((s) => s.projectHosts);
   const filtered =
     view.status !== "active" ||
     view.projects.length > 0 ||
@@ -129,7 +130,9 @@ export function ThreadListMenu(props: {
               onSelect={(event) => event.preventDefault()}
             >
               <ProjectBadge project={project} />
-              <span className="min-w-0 truncate">{project.name}</span>
+              <span className="min-w-0 truncate">
+                {projectLabel(project.name, projectHosts[project.id])}
+              </span>
             </DropdownMenuCheckboxItem>
           ))}
         </OptionMenu>

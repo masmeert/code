@@ -1,10 +1,12 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { type AddressInfo, createServer } from "node:net";
 import { join } from "node:path";
-import { app, BrowserWindow } from "electron";
+import { BROWSER_PARTITION } from "@apcode/contracts";
+import { app, BrowserWindow, session } from "electron";
 import { registerBridge } from "./bridge.ts";
 import { configureBrowserSession } from "./browser.ts";
+import { freePort } from "./freePort.ts";
+import { closeTunnels, loadHosts } from "./hosts.ts";
 import { APP_URL, registerRendererScheme, serveRenderer } from "./renderer.ts";
 import { watchForUpdates } from "./updates.ts";
 import { createWindow } from "./windows.ts";
@@ -13,18 +15,6 @@ const daemonToken = randomBytes(32).toString("hex");
 let daemon: ChildProcess | null = null;
 let daemonPort: Promise<number> | null = null;
 let quitting = false;
-
-function freePort() {
-  return new Promise<number>((resolve, reject) => {
-    const server = createServer()
-      .once("error", reject)
-      .listen(0, "127.0.0.1", () => {
-        // SAFETY: a TCP server listening on a host and port reports an AddressInfo, not a pipe path.
-        const { port } = server.address() as AddressInfo;
-        server.close(() => resolve(port));
-      });
-  });
-}
 
 // A fixed port let a daemon left over from an earlier launch (or a dev daemon) hold it,
 // so ours failed to bind and the app waited on a daemon that rejects its token.
@@ -53,13 +43,15 @@ app.on("window-all-closed", () => {
 app.on("will-quit", () => {
   quitting = true;
   daemon?.kill();
+  closeTunnels();
 });
 
 app
   .whenReady()
-  .then(() => {
+  .then(async () => {
+    await loadHosts();
     serveRenderer();
-    configureBrowserSession();
+    configureBrowserSession(session.fromPartition(BROWSER_PARTITION));
     createWindow(APP_URL);
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow(APP_URL);

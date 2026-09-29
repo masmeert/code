@@ -16,6 +16,7 @@ import { toggleTerminalPanel, useStore } from "./lib/store.ts";
 import { useShortcut } from "./lib/useShortcut.ts";
 import { useTheme } from "./lib/useTheme.ts";
 import { openWindow } from "./lib/windows.ts";
+import { AddProjectDialog } from "./views/AddProjectDialog.tsx";
 import { AppModal, type ModalView } from "./views/AppModal.tsx";
 import { BrowserHost } from "./views/BrowserHost.tsx";
 import { CommandPalette } from "./views/CommandPalette.tsx";
@@ -119,6 +120,7 @@ export const App = () => {
             )}
           </AnimatedSidebarInset>
           <AppModal view={modal} onView={setModal} />
+          <AddProjectDialog />
           <BrowserHost />
           <CommandPalette
             open={palette}

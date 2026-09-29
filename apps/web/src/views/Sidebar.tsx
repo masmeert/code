@@ -22,7 +22,7 @@ import { FOLD, SPRING_SWAP } from "@apcode/ui/lib/ease";
 import { NumberTicker } from "@apcode/ui/motion/number-ticker";
 import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
 import { Separator } from "@apcode/ui/components/separator";
-import { ProjectBadge } from "@/components/project-badge";
+import { ProjectBadge, projectLabel } from "@/components/project-badge";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import { cn } from "@apcode/ui/lib/utils";
 import { isMac } from "@apcode/ui/lib/keys";
@@ -45,8 +45,8 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useMemo, useState } from "react";
-import { canSettle, isSeen, send, setSettled, useStore } from "../lib/store.ts";
-import { addProject } from "../lib/projects.ts";
+import { canSettle, isSeen, send, setSettled, useProjectHost, useStore } from "../lib/store.ts";
+import { addProject, projectKey } from "../lib/projects.ts";
 import { useThreadListView } from "../lib/threadListView.ts";
 import { ago, useNow } from "../lib/time.ts";
 import { useUpdateStatus } from "../lib/updates.ts";
@@ -97,6 +97,10 @@ export const Sidebar = (props: {
   const { infos, active, settled, archived, projectGroups } = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const byId = new Map(projects.map((p) => [p.id, p]));
+    const keyOf = (projectId: string) => {
+      const project = byId.get(projectId);
+      return project ? projectKey(project) : projectId;
+    };
     const infos = Object.values(threads)
       .filter(
         (info) =>
@@ -125,8 +129,9 @@ export const Sidebar = (props: {
       active: current.filter((info) => !info.settled),
       settled: current.filter((info) => info.settled),
       archived: infos.filter((info) => info.archivedAt !== null),
-      projectGroups: [...new Set(infos.map((info) => info.projectId))].map((projectId) =>
-        infos.filter((info) => info.projectId === projectId),
+      // One group per repo, whichever machines its threads run on.
+      projectGroups: [...new Set(infos.map((info) => keyOf(info.projectId)))].map((key) =>
+        infos.filter((info) => keyOf(info.projectId) === key),
       ),
     };
   }, [projects, threads, query, view, now]);
@@ -310,17 +315,18 @@ export const Sidebar = (props: {
             <div className="flex flex-col gap-0.5">
               {projectGroups.map((group) => {
                 const project = projectOf(group[0]);
+                const key = projectKey(project);
                 return renderFolding(
-                  project.id,
+                  key,
                   project.name,
                   <ProjectBadge project={project} />,
                   group,
-                  !collapsedProjects.includes(project.id),
+                  !collapsedProjects.includes(key),
                   () =>
                     setCollapsedProjects((current) =>
-                      current.includes(project.id)
-                        ? current.filter((id) => id !== project.id)
-                        : [...current, project.id],
+                      current.includes(key)
+                        ? current.filter((id) => id !== key)
+                        : [...current, key],
                     ),
                 );
               })}
@@ -554,6 +560,7 @@ const ThreadCard = (props: {
   onSelect: () => void;
 }) => {
   const { info, project } = props;
+  const host = useProjectHost(project.id);
   const [menuOpen, setMenuOpenState] = useState(false);
   const { actions, resetConfirm } = useThreadActions(info, props.settled);
   const setMenuOpen = (open: boolean) => {
@@ -592,7 +599,9 @@ const ThreadCard = (props: {
             <StatusDot info={info} unread={props.unread} settled={props.settled} />
             <ProviderMark info={info} />
             <span className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="max-w-full shrink-0 truncate">{project.name}</span>
+              <span className="max-w-full shrink-0 truncate">
+                {projectLabel(project.name, host)}
+              </span>
               {info.branch ? (
                 <>
                   <span aria-hidden="true" className="h-3 w-px shrink-0 bg-border" />

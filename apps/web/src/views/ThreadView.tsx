@@ -32,8 +32,9 @@ import {
   type ToolCall,
   type ToolReveal,
 } from "@apcode/ui/agents/tool-group";
-import { ProjectBadge } from "@/components/project-badge";
-import { addProject } from "../lib/projects.ts";
+import { ProjectBadge, projectLabel } from "@/components/project-badge";
+import { addProject, projectKey } from "../lib/projects.ts";
+import { Button } from "@apcode/ui/motion/button/base";
 import { cn } from "@apcode/ui/lib/utils";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import {
@@ -42,6 +43,7 @@ import {
   isTurnActive,
   type Project,
   type ProviderKind,
+  repositoryOf,
 } from "@apcode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
 import {
@@ -54,9 +56,12 @@ import {
   FolderTree,
   Globe,
   ImageIcon,
+  LoaderCircle,
+  Monitor,
   PanelLeft,
   Pencil,
   Quote,
+  Server,
   Square,
   SquareTerminal,
   Undo2,
@@ -88,6 +93,7 @@ import {
   modelChoices,
 } from "../lib/models.ts";
 import {
+  cloneProject,
   createThread,
   type FollowUp,
   dismissForkError,
@@ -101,7 +107,11 @@ import {
   switchToThread,
   takeFollowUps,
   toggleTerminalPanel,
+  usePathHost,
+  useProjectHost,
+  useProviders,
   useStore,
+  useThreadHost,
   useTranscript,
   type TranscriptItem,
 } from "../lib/store.ts";
@@ -176,12 +186,13 @@ const Header = ({
   badge,
   actions,
 }: {
-  project?: Pick<Project, "id" | "name"> | undefined;
+  project?: Pick<Project, "id" | "name" | "remote" | "folder"> | undefined;
   title: string;
   badge?: ReactNode;
   actions?: ReactNode;
 }) => {
   const { open } = useAnimatedSidebar();
+  const host = useProjectHost(project?.id ?? "");
   return (
     // Same row geometry as the sidebar's title bar, so both line up with the traffic lights.
     <header
@@ -195,7 +206,9 @@ const Header = ({
       {project ? (
         <>
           <ProjectBadge project={project} className="translate-y-px" />
-          <span className="shrink-0 text-sm text-muted-foreground">{project.name}</span>
+          <span className="shrink-0 text-sm text-muted-foreground">
+            {projectLabel(project.name, host)}
+          </span>
           <span className="shrink-0 text-sm text-muted-foreground/50">/</span>
         </>
       ) : null}
@@ -212,7 +225,7 @@ const Header = ({
 
 const ADD_PROJECT = "\u0000add-project";
 
-/** Which project a draft starts in; also the way to add one. */
+/** Which project a draft starts in, one entry per repo whatever machines it's on; also the way to add one. */
 const ProjectSelect = ({
   cwd,
   onPick,
@@ -223,13 +236,33 @@ const ProjectSelect = ({
   openSignal: number;
 }) => {
   const projects = useStore((s) => s.projects);
+  const threads = useStore((s) => s.threads);
+  const projectHosts = useStore((s) => s.projectHosts);
+  const copies = new Map<string, Array<Project>>();
+  for (const project of projects)
+    copies.set(projectKey(project), [...(copies.get(projectKey(project)) ?? []), project]);
+  const current = projects.find((p) => p.path === cwd);
+  // The copy on the machine the project was last worked on, else this Mac's.
+  const lastUsed = (project: Project) =>
+    Math.max(
+      0,
+      ...Object.values(threads).flatMap((info) =>
+        info.projectId === project.id ? [info.updatedAt] : [],
+      ),
+    );
+  const preferred = (key: string) =>
+    [...(copies.get(key) ?? [])].sort(
+      (a, b) =>
+        lastUsed(b) - lastUsed(a) ||
+        Number(Boolean(projectHosts[a.id])) - Number(Boolean(projectHosts[b.id])),
+    )[0];
   const options = [
-    ...[...projects]
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((project) => ({
-        value: project.path,
-        label: project.name,
-        icon: <ProjectBadge project={project} />,
+    ...[...copies]
+      .sort(([, a], [, b]) => a[0]!.name.localeCompare(b[0]!.name))
+      .map(([key, [first]]) => ({
+        value: key,
+        label: first!.name,
+        icon: <ProjectBadge project={first!} />,
       })),
     { value: ADD_PROJECT, label: "Add project…", icon: <FolderPlus /> },
   ];
@@ -237,12 +270,12 @@ const ProjectSelect = ({
     <PromptSelect
       title="Project"
       options={options}
-      value={cwd ?? undefined}
+      value={current ? projectKey(current) : undefined}
       placeholder="a project"
       onChange={(value) =>
         value === ADD_PROJECT
           ? void addProject().then((path) => path && onPick(path))
-          : onPick(value)
+          : onPick(preferred(value)?.path ?? null)
       }
       side="bottom"
       width="w-64"
@@ -255,6 +288,70 @@ const ProjectSelect = ({
   );
 };
 
+const THIS_MAC = "\u0000this-mac";
+
+/** Clones a project onto a machine that doesn't have it yet, from its git origin. */
+const CloneCopy = ({
+  project,
+  machine,
+  onCloned,
+}: {
+  project: Project;
+  machine: string | null;
+  onCloned: (path: string) => void;
+}) => {
+  const addProjectFolder = useStore((s) => s.settings.addProjectFolder);
+  const [cloning, setCloning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const where = machine ?? "this Mac";
+  // This Mac's clone folder is a Mac path unless it's under ~, which means the host's home there.
+  const parent =
+    machine === null
+      ? (addProjectFolder ?? "~")
+      : addProjectFolder?.startsWith("~")
+        ? addProjectFolder
+        : "~/code";
+  if (!project.remote)
+    return (
+      <span>
+        {project.name} isn't a git repo with a remote, so it can't be cloned to {where}. Add its
+        folder there with Add project.
+      </span>
+    );
+  return (
+    <span className="flex flex-col items-center gap-3">
+      <span>
+        {project.name} isn't on {where} yet.
+      </span>
+      <Button
+        className="rounded-lg [-webkit-app-region:no-drag]"
+        disabled={cloning}
+        onClick={async () => {
+          setCloning(true);
+          setError(null);
+          const cloned = await cloneProject(
+            machine,
+            project.remote!,
+            parent,
+            project.folder ?? undefined,
+            // The same folder name as here, so both copies read the same; a subfolder's repo keeps its own.
+            project.folder ? undefined : project.name,
+          );
+          setCloning(false);
+          if (cloned.path) onCloned(cloned.path);
+          else setError(cloned.error);
+        }}
+      >
+        {cloning ? <LoaderCircle className="size-4 animate-spin" /> : null}
+        {cloning
+          ? "Cloning…"
+          : `Clone into ${[parent.replace(/\/$/, ""), project.folder ? repositoryOf(project.remote).split("/").at(-1) : project.name, project.folder].filter(Boolean).join("/")}`}
+      </Button>
+      {error ? <span className="max-w-md text-xs text-destructive">{error}</span> : null}
+    </span>
+  );
+};
+
 /** A new chat that only exists in this window until its first message creates the thread. */
 export const DraftView = ({
   path,
@@ -263,9 +360,24 @@ export const DraftView = ({
   path: string | null;
   onPickProject: (path: string | null) => void;
 }) => {
-  const providers = useStore((s) => s.providers);
+  const pathHost = usePathHost(path);
   const settings = useStore((s) => s.settings);
-  const project = useStore((s) => s.projects.find((p) => p.path === path));
+  const projects = useStore((s) => s.projects);
+  const projectHosts = useStore((s) => s.projectHosts);
+  const hosts = useStore((s) => s.hosts);
+  const project = projects.find((p) => p.path === path);
+  // A machine picked that has no copy of the draft's project yet; it resets with the project.
+  const [missing, setMissing] = useState<{ path: string; machine: string | null } | null>(null);
+  const missingOn = missing && missing.path === path ? missing : null;
+  const host = missingOn ? missingOn.machine : pathHost;
+  const providers = useProviders(host);
+  const copyOn = (machine: string | null) =>
+    project &&
+    projects.find(
+      (candidate) =>
+        projectKey(candidate) === projectKey(project) &&
+        (projectHosts[candidate.id] ?? null) === machine,
+    );
   const choices = modelChoices(providers, settings);
   const saved = settings.newThreadModel;
   const lastModel = defaultModel(providers, settings, settings.lastProvider);
@@ -291,15 +403,20 @@ export const DraftView = ({
   return (
     <>
       <Header
-        project={
-          path
-            ? { id: project?.id ?? path, name: project?.name ?? path.split("/").at(-1) ?? path }
-            : undefined
-        }
+        project={path ? (project ?? { id: path, name: path.split("/").at(-1) ?? path }) : undefined}
         title="New thread"
       />
       <div className="flex flex-1 items-center justify-center px-6 text-center text-muted-foreground [-webkit-app-region:drag]">
-        {choices.length ? (
+        {missingOn && project ? (
+          <CloneCopy
+            project={project}
+            machine={missingOn.machine}
+            onCloned={(clonedPath) => {
+              setMissing(null);
+              onPickProject(clonedPath);
+            }}
+          />
+        ) : choices.length ? (
           <span>
             {path ? "What should we work on in " : "Start a thread in "}
             <ProjectSelect cwd={path} onPick={onPickProject} openSignal={projectSignal} />
@@ -307,6 +424,8 @@ export const DraftView = ({
           </span>
         ) : providers.some((p) => p.checking) ? (
           "Checking Claude and Codex…"
+        ) : host ? (
+          `Link Claude or Codex on ${host} in Settings → Harnesses to start.`
         ) : (
           "Link Claude or Codex in Settings to start."
         )}
@@ -315,9 +434,30 @@ export const DraftView = ({
         // Stable across the project pick, so effort/permission choices carry over.
         prefsKey="draft:new"
         provider={selected ? decodeChoice(selected).provider : settings.lastProvider}
-        cwd={path}
+        cwd={missingOn ? null : path}
         onNeedProject={() => setProjectSignal((n) => n + 1)}
-        disabled={!selected}
+        disabled={!selected || Boolean(missingOn)}
+        machine={
+          project && Object.keys(hosts).length
+            ? {
+                value: host ?? THIS_MAC,
+                options: [null, ...Object.keys(hosts)].map((machine) => ({
+                  value: machine ?? THIS_MAC,
+                  label: machine ?? "This Mac",
+                  description: copyOn(machine)?.path ?? "Not cloned here yet",
+                  icon: machine ? <Server /> : <Monitor />,
+                })),
+                onChange: (value) => {
+                  const machine = value === THIS_MAC ? null : value;
+                  const copy = copyOn(machine);
+                  if (copy) {
+                    setMissing(null);
+                    onPickProject(copy.path);
+                  } else if (path) setMissing({ path, machine });
+                },
+              }
+            : undefined
+        }
         models={choices}
         model={selected}
         onModelChange={(value) => {
@@ -338,9 +478,11 @@ export const DraftView = ({
               : "No harness linked"
             : !path
               ? "Pick a project above to start…"
-              : extraModels.length
-                ? `Ask ${extraModels.length + 1} models, each in its own worktree…`
-                : `Ask ${harnessLabel(settings, decodeChoice(selected).provider)}…`
+              : missingOn
+                ? `Clone ${project?.name ?? "the project"} to ${missingOn.machine ?? "this Mac"} to start…`
+                : extraModels.length
+                  ? `Ask ${extraModels.length + 1} models, each in its own worktree…`
+                  : `Ask ${harnessLabel(settings, decodeChoice(selected).provider)}…`
         }
         onSubmit={(text, options, how) => {
           if (!selected || !path) return;
@@ -529,7 +671,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   // Loaded on open: from the local cache first, then caught up by the daemon.
   const transcript = useTranscript(threadId);
   const items = transcript?.items ?? NO_ITEMS;
-  const providers = useStore((s) => s.providers);
+  const providers = useProviders(useThreadHost(threadId));
   const settings = useStore((s) => s.settings);
   const { status, provider } = info;
   // The harness is fixed per thread; only its model can change.

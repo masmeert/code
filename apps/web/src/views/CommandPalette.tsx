@@ -1,4 +1,4 @@
-import { ProjectBadge } from "@/components/project-badge";
+import { ProjectBadge, projectLabel } from "@/components/project-badge";
 import { searchCommands } from "@apcode/ui/lib/command-search";
 import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
 import { cn } from "@apcode/ui/lib/utils";
@@ -83,6 +83,7 @@ export const CommandPalette = ({ open, ...props }: PaletteProps & { readonly ope
 const Palette = (props: PaletteProps) => {
   const threads = useStore((s) => s.threads);
   const projects = useStore((s) => s.projects);
+  const projectHosts = useStore((s) => s.projectHosts);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState(NO_HITS);
   const uid = useId();
@@ -121,8 +122,12 @@ const Palette = (props: PaletteProps) => {
     [threads],
   );
   const projectEntries = useMemo(
-    () => projects.map((project) => ({ label: project.name, project })),
-    [projects],
+    () =>
+      projects.map((project) => ({
+        label: projectLabel(project.name, projectHosts[project.id]),
+        project,
+      })),
+    [projects, projectHosts],
   );
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
@@ -143,11 +148,11 @@ const Palette = (props: PaletteProps) => {
                 section: needle ? "Threads" : "Recent threads",
                 icon: project ? <ProjectBadge project={project} /> : <MessageSquare />,
                 label: thread.title,
-                detail: `${project?.name ?? thread.cwd.split("/").at(-1)}${thread.archivedAt ? ", archived" : ""}`,
+                detail: `${project ? projectLabel(project.name, projectHosts[project.id]) : thread.cwd.split("/").at(-1)}${thread.archivedAt ? ", archived" : ""}`,
                 run: choose(latest, (p) => p.onOpenThread(thread.id)),
               };
             }),
-    [actionsOnly, needle, threadEntries, projectById],
+    [actionsOnly, needle, threadEntries, projectById, projectHosts],
   );
   const actionRows = useMemo(
     (): ReadonlyArray<Row> =>
@@ -169,11 +174,11 @@ const Palette = (props: PaletteProps) => {
             id: `project:${project.id}`,
             section: "New thread in",
             icon: <ProjectBadge project={project} />,
-            label: project.name,
+            label: projectLabel(project.name, projectHosts[project.id]),
             detail: project.path,
             run: choose(latest, (p) => p.onNewThreadIn(project.path)),
           })),
-    [actionsOnly, needle, projectEntries],
+    [actionsOnly, needle, projectEntries, projectHosts],
   );
   // Hits from an older query stay up until the new ones land, but not once there's no search at all.
   const shownHits = messageQuery ? hits : NO_HITS;
