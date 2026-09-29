@@ -103,8 +103,9 @@ function RemoteFolders({
   onFolder: (path: string | null) => void;
 }) {
   const connected = useStore((s) => s.hosts[host]?.connected ?? false);
-  const [path, setPath] = useState("~");
-  const [typed, setTyped] = useState("~");
+  const projectsFolder = useStore((s) => s.settings.hostProjectFolders?.[host] || "~");
+  const [path, setPath] = useState(projectsFolder);
+  const [typed, setTyped] = useState(projectsFolder);
   const [listing, setListing] = useState<{
     readonly path: string;
     readonly folders: ReadonlyArray<string>;

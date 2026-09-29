@@ -301,6 +301,9 @@ const CloneCopy = ({
   onCloned: (path: string) => void;
 }) => {
   const addProjectFolder = useStore((s) => s.settings.addProjectFolder);
+  const hostProjectFolder = useStore((s) =>
+    machine === null ? undefined : s.settings.hostProjectFolders?.[machine],
+  );
   const [cloning, setCloning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const where = machine ?? "this Mac";
@@ -308,9 +311,7 @@ const CloneCopy = ({
   const parent =
     machine === null
       ? (addProjectFolder ?? "~")
-      : addProjectFolder?.startsWith("~")
-        ? addProjectFolder
-        : "~/code";
+      : hostProjectFolder || (addProjectFolder?.startsWith("~") ? addProjectFolder : "~/code");
   if (!project.remote)
     return (
       <span>

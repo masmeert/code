@@ -842,7 +842,13 @@ const onShell = (connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
       void loadCachedTranscript(threadId).then(() => wanted.has(threadId) && subscribe(threadId));
   }
   for (const screen of ownScreens) openScreen(screen);
-  if (host !== null) syncSettings(host);
+  if (host !== null) {
+    syncSettings(host);
+    scanProjects(host);
+  } else
+    // Hosts that connected first had no projects folder to scan yet.
+    for (const [alias, remote] of Object.entries(state.hosts))
+      if (remote.connected) scanProjects(alias);
 };
 
 /** Answers to requests carrying a `requestId`, by that id. */
@@ -1257,6 +1263,17 @@ export const useProviders = (host: string | null) =>
 export function addProjectOn(host: string | null, path: string) {
   if (host !== null) pendingPaths.set(path, host);
   send(ClientCommand.cases["project.add"].make({ path }), host);
+}
+
+/** Adds the git repos in `host`'s projects folder, or its home, as projects there. */
+export function scanProjects(host: string) {
+  if (state.source === "none") return;
+  send(
+    ClientCommand.cases["project.scan"].make({
+      path: state.settings.hostProjectFolders?.[host] || "~",
+    }),
+    host,
+  );
 }
 
 /** The folders in `path` on `host`, `path` made absolute; null when the host doesn't answer. */

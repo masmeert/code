@@ -29,6 +29,7 @@ import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, extname, join, relative } from "node:path";
 import {
@@ -58,6 +59,7 @@ import {
   repoRoot,
   restoreCheckpoint,
 } from "./git.ts";
+import { listFolders } from "./folders.ts";
 import { ClaudeAdapter } from "./providers/ClaudeAdapter.ts";
 import {
   detectSourceControl,
@@ -1154,6 +1156,24 @@ const make = Effect.gen(function* () {
             created ? publish(RuntimeEvent.cases["project.added"].make({ project })) : undefined,
           ),
         ),
+      "project.scan": (command) =>
+        Effect.gen(function* () {
+          const { path, folders } = yield* Effect.promise(() => listFolders(command.path));
+          yield* Effect.forEach(
+            folders
+              .map((name) => join(path, name))
+              .filter((folder) => existsSync(join(folder, ".git"))),
+            (folder) =>
+              projectsStore.ensure(folder).pipe(
+                Effect.map(({ project, created }) =>
+                  created
+                    ? publish(RuntimeEvent.cases["project.added"].make({ project }))
+                    : undefined,
+                ),
+                Effect.ignore,
+              ),
+          );
+        }),
       "providers.refresh": () => registry.refresh,
       "provider.link": (command) => registry.link(command.provider),
       "provider.linkCode": (command) => registry.submitCode(command.provider, command.code),

@@ -259,6 +259,8 @@ export const Settings = Schema.Struct({
   worktreeFromOrigin: Schema.optional(Schema.Boolean),
   /** Folder the Add Project picker opens in; absent opens the home folder. */
   addProjectFolder: Schema.optional(Schema.String),
+  /** Per remote host alias: the folder whose git repos are added as projects on connect, and new clones go into. */
+  hostProjectFolders: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   confirmArchive: Schema.optional(Schema.Boolean),
   confirmDelete: Schema.optional(Schema.Boolean),
   /** Writes commit messages left empty and pull request text, as `provider:model`; null/absent uses the last harness's default model. */
@@ -707,6 +709,8 @@ export const ClientCommand = Schema.Union([
     model: Schema.NullOr(Schema.String),
   }),
   Schema.TaggedStruct("project.add", { path: Schema.String }),
+  /** Adds every git repo directly inside `path` as a project. */
+  Schema.TaggedStruct("project.scan", { path: Schema.String }),
   /** Answered with a `folder.entries` frame. `~` is the daemon's home. */
   Schema.TaggedStruct("folder.list", { path: Schema.String, requestId: Schema.String }),
   /** Clones into a new folder under `parent` and adds it as a project; answered with a `project.cloned` frame. */

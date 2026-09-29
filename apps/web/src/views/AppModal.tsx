@@ -63,7 +63,14 @@ import {
   PROVIDER_LABEL,
   visibleModels,
 } from "../lib/models.ts";
-import { send, updateHarness, updateSettings, useProviders, useStore } from "../lib/store.ts";
+import {
+  scanProjects,
+  send,
+  updateHarness,
+  updateSettings,
+  useProviders,
+  useStore,
+} from "../lib/store.ts";
 import { useUpdateStatus } from "../lib/updates.ts";
 
 export type ModalView = "settings";
@@ -923,6 +930,7 @@ function ConnectionsPage() {
 
 function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
   const [confirm, setConfirm] = useState<"remove" | "restart" | null>(null);
+  const settings = useStore((s) => s.settings);
   const confirming = confirm !== null;
   return (
     <>
@@ -1023,6 +1031,28 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
             : `This stops the turns running on ${alias} and restarts it on this version.`}
         </p>
       ) : null}
+      <SettingsRow
+        label={
+          <RowLabel
+            title="Projects folder"
+            description={`Git repos in it are added as projects on ${alias}, and clones go there`}
+          />
+        }
+      >
+        <SettingsTextField
+          label={`Projects folder on ${alias}`}
+          mono
+          value={settings.hostProjectFolders?.[alias] ?? ""}
+          placeholder="~"
+          onCommit={(folder) => {
+            updateSettings({
+              ...settings,
+              hostProjectFolders: { ...settings.hostProjectFolders, [alias]: folder },
+            });
+            scanProjects(alias);
+          }}
+        />
+      </SettingsRow>
     </>
   );
 }
