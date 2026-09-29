@@ -967,7 +967,12 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             }
             actions={
               <>
-                <GitMenu cwd={info.cwd} refreshKey={diffKey} />
+                <GitMenu
+                  cwd={info.cwd}
+                  refreshKey={diffKey}
+                  threadId={threadId}
+                  worktree={info.worktree}
+                />
                 <span className="flex items-center gap-0.5">
                   {info.peerReviewOf === undefined ? (
                     <button

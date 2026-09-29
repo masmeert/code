@@ -50,6 +50,7 @@ import {
   listBranches,
   pinPeerReviewRange,
   listFiles,
+  mergeIntoBase,
   pushBranch,
   readBranch,
   readCheckpointDiff,
@@ -582,7 +583,7 @@ const make = Effect.gen(function* () {
       const { cwd, worktree } = entry.info;
       void (async () => {
         await deleteThreadCheckpoints(cwd, threadId);
-        // A worktree with work left in it stays for the user to deal with; its branch always stays.
+        // A worktree with work left in it stays for the user to deal with; its branch stays until merged.
         // A fork shares its thread's worktree, so the last one out removes it.
         if (worktree && ![...threads.values()].some((other) => other.info.cwd === cwd)) {
           const root = await repoRoot(cwd);
@@ -1303,6 +1304,14 @@ const make = Effect.gen(function* () {
                   );
             forgetPullRequest(path);
             yield* publishStatus(path, "merge", error);
+          }),
+        ),
+      "git.mergeIntoBase": ({ path }) =>
+        withRepoLock(
+          path,
+          Effect.gen(function* () {
+            const error = yield* Effect.promise(() => mergeIntoBase(path));
+            yield* publishStatus(path, "merge-into-base", error);
           }),
         ),
       "sourceControl.refresh": () =>
