@@ -214,6 +214,20 @@ export interface RepoStatus {
   readonly behind: number;
   readonly hasRemote: boolean;
   readonly detached: boolean;
+  /** In a linked worktree, the local branch this one merges into; null elsewhere. */
+  readonly base: BaseBranch | null;
+}
+
+export interface BaseBranch {
+  readonly branch: string;
+  /** Commits on this branch that the base doesn't have. */
+  readonly ahead: number;
+  /** All of this branch's work is in the base already, squash and rebase merges included. */
+  readonly merged: boolean;
+  /** Files a merge into the base would conflict in. */
+  readonly conflicts: ReadonlyArray<string>;
+  /** The checkout that has the base out, whose files a merge updates; null when none does. */
+  readonly checkout: string | null;
 }
 
 /** Working-tree and upstream state of `cwd`, null outside a repo. */
@@ -258,6 +272,7 @@ export const readStatus = async (cwd: string): Promise<RepoStatus | null> => {
       ? Number((await git(cwd, ["rev-list", "--count", `${base}..HEAD`])).stdout) || 0
       : 0;
   return {
+    base: branch && oid ? await readBase(cwd, branch, oid) : null,
     changes,
     branch,
     defaultBranch,
@@ -331,14 +346,143 @@ export const autoPull = async (cwd: string) => {
 const cap = (text: string, limit: number) =>
   text.length > limit ? `${text.slice(0, limit)}\n[truncated]` : text;
 
+/** The branch set as `branch`'s merge base (gh's `branch.<name>.gh-merge-base`), else the default branch. */
+async function readMergeBase(cwd: string, branch: string) {
+  const configured = await git(cwd, ["config", `branch.${branch}.gh-merge-base`]);
+  return configured.ok && configured.stdout ? configured.stdout : await readDefaultBranch(cwd);
+}
+
+/** The checkout that has `branch` out, among the repo's main one and its worktrees. */
+async function findCheckout(cwd: string, branch: string) {
+  const list = await git(cwd, ["worktree", "list", "--porcelain"]);
+  for (const entry of list.stdout.split("\n\n")) {
+    const lines = entry.split("\n");
+    if (lines.includes(`branch refs/heads/${branch}`))
+      return lines[0]?.replace(/^worktree /, "") ?? null;
+  }
+  return null;
+}
+
+/**
+ * What merging HEAD into `into` would give, worked out without touching any checkout;
+ * null when git can't tell (unrelated histories, say).
+ */
+async function previewMerge(cwd: string, into: string) {
+  const [result, current] = await Promise.all([
+    gitRaw(cwd, ["merge-tree", "--write-tree", "--name-only", "--no-messages", into, "HEAD"]),
+    git(cwd, ["rev-parse", `${into}^{tree}`]),
+  ]);
+  // Exit 1 means conflicts, listed after the tree.
+  if (result.code !== 0 && result.code !== 1) return null;
+  const [tree = "", ...conflicts] = result.stdout.split("\n").filter(Boolean);
+  return { tree, conflicts, changesNothing: result.code === 0 && tree === current.stdout };
+}
+
+async function readBase(cwd: string, branch: string, head: string): Promise<BaseBranch | null> {
+  const dirs = await git(cwd, [
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-dir",
+    "--git-common-dir",
+  ]);
+  const [gitDir, commonDir] = dirs.stdout.split("\n");
+  if (!dirs.ok || gitDir === commonDir) return null;
+  const name = await readMergeBase(cwd, branch);
+  if (!name || name === branch || !(await refExists(cwd, `refs/heads/${name}`))) return null;
+  const [count, checkout] = await Promise.all([
+    git(cwd, ["rev-list", "--count", `refs/heads/${name}..HEAD`]),
+    findCheckout(cwd, name),
+  ]);
+  const ahead = Number(count.stdout) || 0;
+  if (ahead === 0) {
+    // The base has every commit: merged, unless the branch never moved from where it was created (its oldest reflog entry).
+    const reflog = await git(cwd, ["reflog", "show", "--format=%H", `refs/heads/${branch}`]);
+    const start = reflog.stdout.split("\n").at(-1);
+    return { branch: name, ahead, merged: !!start && start !== head, conflicts: [], checkout };
+  }
+  const local = await previewMerge(cwd, `refs/heads/${name}`);
+  // A pull request merged on the host may not be in the local base yet.
+  const tracking = await baseRef(cwd, name);
+  const merged =
+    !!local?.changesNothing ||
+    (!!tracking && tracking !== name && !!(await previewMerge(cwd, tracking))?.changesNothing);
+  return {
+    branch: name,
+    ahead,
+    merged,
+    conflicts: merged ? [] : (local?.conflicts ?? []),
+    checkout,
+  };
+}
+
+/**
+ * Merges the branch checked out in `cwd` into its base: in the checkout that has the base
+ * out, or by moving the base alone when none does. It checks first that the merge is clean,
+ * so no checkout is ever left mid-merge. Resolves to an error message on failure.
+ */
+export async function mergeIntoBase(cwd: string) {
+  const status = await readStatus(cwd);
+  const base = status?.base;
+  if (!status?.branch || !base) return "This branch has no local base branch to merge into";
+  if (status.changes > 0)
+    return `Commit or discard the ${status.changes} ${status.changes === 1 ? "change" : "changes"} in this worktree first`;
+  if (base.merged) return `Already merged into ${base.branch}`;
+  if (base.ahead === 0) return `No commits to merge into ${base.branch} yet`;
+  if (base.conflicts.length > 0)
+    return `Merging into ${base.branch} would conflict in ${base.conflicts.join(", ")}. Merge ${base.branch} into this branch and resolve them first.`;
+  if (base.checkout) {
+    const dirty = await git(base.checkout, ["status", "--porcelain", "--untracked-files=no"]);
+    if (!dirty.ok) return firstLines(dirty.stderr);
+    if (dirty.stdout)
+      return `${base.branch} has uncommitted changes in ${base.checkout}. Commit or stash them there, then merge again.`;
+    const merge = await gitLong(base.checkout, ["merge", "--no-edit", status.branch]);
+    if (merge.ok) return null;
+    // Only reachable if the base moved since the check above.
+    await git(base.checkout, ["merge", "--abort"]);
+    return firstLines(merge.stderr);
+  }
+  const ref = `refs/heads/${base.branch}`;
+  const [old, head] = await Promise.all([
+    git(cwd, ["rev-parse", ref]),
+    git(cwd, ["rev-parse", "HEAD"]),
+  ]);
+  if (!old.ok || !head.ok) return firstLines(old.stderr || head.stderr);
+  let target = head.stdout;
+  if (!(await git(cwd, ["merge-base", "--is-ancestor", old.stdout, head.stdout])).ok) {
+    const preview = await previewMerge(cwd, old.stdout);
+    if (!preview || preview.conflicts.length > 0)
+      return `${base.branch} changed and no longer merges cleanly. Check it and merge again.`;
+    const commit = await git(cwd, [
+      "commit-tree",
+      preview.tree,
+      "-p",
+      old.stdout,
+      "-p",
+      head.stdout,
+      "-m",
+      `Merge branch '${status.branch}'`,
+    ]);
+    if (!commit.ok) return firstLines(commit.stderr);
+    target = commit.stdout;
+  }
+  // Given the old value, update-ref fails rather than overwrite a base that moved meanwhile.
+  const update = await git(cwd, [
+    "update-ref",
+    "-m",
+    `merge ${status.branch}`,
+    ref,
+    target,
+    old.stdout,
+  ]);
+  return update.ok ? null : firstLines(update.stderr);
+}
+
 /**
  * What a pull request from HEAD into `base` would contain, for writing its text. `base`
  * is the branch the user set as merge base (gh's `branch.<name>.gh-merge-base`), else the default branch.
  */
 export const readPullRequestRange = async (cwd: string, branch: string) => {
-  const configured = await git(cwd, ["config", `branch.${branch}.gh-merge-base`]);
-  const base =
-    configured.ok && configured.stdout ? configured.stdout : await readDefaultBranch(cwd);
+  const base = await readMergeBase(cwd, branch);
   if (!base) return null;
   const ref = (await baseRef(cwd, base)) ?? base;
   const [log, stat, patch] = await Promise.all([
@@ -629,14 +773,26 @@ export const addWorktree = async (
     path,
     fetched ? `origin/${current}` : "HEAD",
   ]);
-  return result.ok ? null : firstLines(result.stderr);
+  if (!result.ok) return firstLines(result.stderr);
+  // What the branch merges into, locally and in pull requests.
+  const source = await git(cwd, ["symbolic-ref", "--short", "--quiet", "HEAD"]);
+  if (source.ok && source.stdout)
+    await git(path, ["config", `branch.${branch}.gh-merge-base`, source.stdout]);
+  return null;
 };
 
-/** Removes a thread's worktree if nothing in it is uncommitted; its branch stays. True when removed. */
+/** Removes a thread's worktree if nothing in it is uncommitted, and its branch once that's merged. True when removed. */
 export const removeWorktreeIfClean = async (path: string) => {
-  const status = await git(path, ["status", "--porcelain"]);
-  if (!status.ok || status.stdout) return false;
-  return (await gitLong(path, ["worktree", "remove", path])).ok;
+  const [status, commonDir] = await Promise.all([
+    readStatus(path),
+    git(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"]),
+  ]);
+  if (!status || status.changes > 0) return false;
+  if (!(await gitLong(path, ["worktree", "remove", path])).ok) return false;
+  // Forced because a squash-merged branch looks unmerged to git.
+  if (status.base?.merged && status.branch && commonDir.ok)
+    await git(commonDir.stdout, ["branch", "-D", status.branch]);
+  return true;
 };
 
 /** Where `cwd` sits in its repo, like "apps/web"; "" at the top, null outside a repo. */

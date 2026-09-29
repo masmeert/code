@@ -463,6 +463,7 @@ export const GitAction = Schema.Literals([
   "push",
   "pull-request",
   "merge",
+  "merge-into-base",
 ]);
 export type GitAction = typeof GitAction.Type;
 
@@ -493,6 +494,20 @@ export const PullRequest = Schema.Struct({
 });
 export type PullRequest = typeof PullRequest.Type;
 
+/** In a linked worktree, the local branch its branch merges into. */
+export const BaseBranch = Schema.Struct({
+  branch: Schema.String,
+  /** Commits on the worktree's branch that the base doesn't have. */
+  ahead: Schema.Number,
+  /** All of the branch's work is in the base already, squash and rebase merges included. */
+  merged: Schema.Boolean,
+  /** Files a merge into the base would conflict in. */
+  conflicts: Schema.Array(Schema.String),
+  /** The checkout that has the base out, whose files a merge updates; null when none does. */
+  checkout: Schema.NullOr(Schema.String),
+});
+export type BaseBranch = typeof BaseBranch.Type;
+
 export const RepoStatus = Schema.Struct({
   /** Changed files, untracked included. */
   changes: Schema.Number,
@@ -511,6 +526,8 @@ export const RepoStatus = Schema.Struct({
   behind: Schema.Number,
   hasRemote: Schema.Boolean,
   detached: Schema.Boolean,
+  /** Null outside a linked worktree. */
+  base: Schema.NullOr(BaseBranch),
 });
 export type RepoStatus = typeof RepoStatus.Type;
 
@@ -719,6 +736,8 @@ const GitCommand = Schema.Union([
   Schema.TaggedStruct("git.createPullRequest", { path: Schema.String }),
   /** Merges the branch's open pull request on its host; answered with a `git.status` event. */
   Schema.TaggedStruct("git.mergePullRequest", { path: Schema.String, method: MergeMethod }),
+  /** Merges a worktree's branch into its base branch locally; answered with a `git.status` event. */
+  Schema.TaggedStruct("git.mergeIntoBase", { path: Schema.String }),
   /** Answered with a `sourceControl.updated` event. */
   Schema.TaggedStruct("sourceControl.refresh", {}),
 ]);

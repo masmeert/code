@@ -14,11 +14,12 @@ import {
   GitMerge,
   GitPullRequestArrow,
   LoaderCircle,
+  Trash2,
 } from "lucide-react";
 import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
 import { send, useStore } from "../lib/store.ts";
 
-type Panel = "menu" | "commit" | "merge" | null;
+type Panel = "menu" | "commit" | "merge" | "merge-into-base" | null;
 
 const PENDING_LABEL: Record<GitAction, string> = {
   commit: "Committing…",
@@ -26,6 +27,7 @@ const PENDING_LABEL: Record<GitAction, string> = {
   push: "Pushing…",
   "pull-request": "Writing PR…",
   merge: "Merging…",
+  "merge-into-base": "Merging…",
 };
 
 const MERGE_LABEL: Record<MergeMethod, string> = {
@@ -76,17 +78,31 @@ const MenuItem = ({
 /**
  * Commit / push for the thread's folder: the main button commits every change (or pushes
  * when there's nothing to commit), the chevron opens the rest. `refreshKey` changes whenever
- * the thread may have touched files, which re-reads the repo state.
+ * the thread may have touched files, which re-reads the repo state. A `worktree` thread can
+ * also merge its branch into the one it was made from, then be deleted along with it.
  */
-export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }) => {
+export const GitMenu = ({
+  cwd,
+  refreshKey,
+  threadId,
+  worktree,
+}: {
+  cwd: string;
+  refreshKey: string;
+  threadId: string;
+  worktree: boolean;
+}) => {
   const repo = useStore((s) => s.repos[cwd]);
   const defaultMergeMethod = useStore((s) => s.settings.mergeMethod);
+  const confirmDelete = useStore((s) => s.settings.confirmDelete !== false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
   const [mergeMethod, setMergeMethod] = useState<MergeMethod>("merge");
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState<GitAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const mergeButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -103,7 +119,8 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
     setError(repo.error);
     if (!repo.error) {
       if (repo.action === "commit" || repo.action === "commit-push") setMessage("");
-      setPanel(null);
+      // Back to the menu, where deleting the merged thread is offered.
+      setPanel(repo.action === "merge-into-base" ? "menu" : null);
     } else if (repo.status?.changes === 0) {
       // The commit landed even though the push after it failed.
       setMessage("");
@@ -113,6 +130,8 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
 
   useEffect(() => {
     if (panel === "commit") requestAnimationFrame(() => textarea.current?.focus());
+    if (panel === "merge-into-base") requestAnimationFrame(() => mergeButton.current?.focus());
+    setConfirmingDelete(false);
     if (panel === "merge") setMergeMethod(defaultMergeMethod ?? readLastMergeMethod());
     if (panel) send(ClientCommand.cases["git.status"].make({ path: cwd }));
   }, [panel, cwd, defaultMergeMethod]);
@@ -138,6 +157,14 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
     // A squash or rebase merge leaves the branch's commits off the default branch; only new work needs another.
     (pr?.state !== "merged" || status.ahead > 0) &&
     !pending;
+  const base = worktree ? status.base : null;
+  const canMergeIntoBase =
+    !!base &&
+    !base.merged &&
+    base.ahead > 0 &&
+    base.conflicts.length === 0 &&
+    status.changes === 0 &&
+    !pending;
   const run = (action: GitAction) => {
     setError(null);
     setPending(action);
@@ -151,7 +178,9 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
         // Only the default for next time is lost.
       }
       send(ClientCommand.cases["git.mergePullRequest"].make({ path: cwd, method: mergeMethod }));
-    } else
+    } else if (action === "merge-into-base")
+      send(ClientCommand.cases["git.mergeIntoBase"].make({ path: cwd }));
+    else
       send(
         ClientCommand.cases["git.commit"].make({
           path: cwd,
@@ -165,6 +194,8 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
   const primaryPushes = status.changes === 0 && canPush && !primaryOpensPr;
   // Nothing left to do locally: the main button shows the pull request.
   const primaryViewsPr = status.changes === 0 && !canPush && !primaryOpensPr && prOpen;
+  // Without a pull request to go through, a worktree's next step is merging it locally.
+  const primaryMerges = canMergeIntoBase && !primaryOpensPr && !primaryPushes && !primaryViewsPr;
   const primary = () =>
     primaryOpensPr
       ? run("pull-request")
@@ -172,7 +203,9 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
         ? run("push")
         : primaryViewsPr
           ? window.open(pr!.url, "_blank", "noreferrer")
-          : setPanel(panel === "commit" ? null : "commit");
+          : primaryMerges
+            ? setPanel(panel === "merge-into-base" ? null : "merge-into-base")
+            : setPanel(panel === "commit" ? null : "commit");
   const primaryLabel = primaryOpensPr
     ? canPush || !status.upstream
       ? `Push & create ${prName}`
@@ -181,7 +214,9 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
       ? "Push"
       : primaryViewsPr
         ? `View ${prName}`
-        : "Commit";
+        : primaryMerges
+          ? `Merge into ${base!.branch}`
+          : "Commit";
   // An empty message is written by the commit model first, which takes a moment.
   const pendingLabel =
     (pending === "commit" || pending === "commit-push") && !message.trim()
@@ -200,18 +235,21 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
           type="button"
           onClick={primary}
           disabled={
-            !!pending || (!canCommit && !primaryPushes && !primaryOpensPr && !primaryViewsPr)
+            !!pending ||
+            (!canCommit && !primaryPushes && !primaryOpensPr && !primaryViewsPr && !primaryMerges)
           }
           title={
             primaryOpensPr
               ? `Open a ${prName} for ${status.branch} into ${status.defaultBranch}`
               : primaryViewsPr
                 ? `Open #${pr!.number} on ${status.sourceControl === "gitlab" ? "GitLab" : "GitHub"}`
-                : primaryPushes
-                  ? "Push commits"
-                  : status.changes
-                    ? `Commit ${status.changes} changed ${status.changes === 1 ? "file" : "files"}`
-                    : "Nothing to commit"
+                : primaryMerges
+                  ? `Merge ${status.branch} into ${base!.branch}`
+                  : primaryPushes
+                    ? "Push commits"
+                    : status.changes
+                      ? `Commit ${status.changes} changed ${status.changes === 1 ? "file" : "files"}`
+                      : "Nothing to commit"
           }
           className="flex items-center gap-1.5 pr-2.5 pl-2 text-xs font-medium transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-50"
         >
@@ -221,6 +259,8 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
             <GitPullRequestArrow className="size-4" />
           ) : primaryViewsPr ? (
             <ExternalLink className="size-4" />
+          ) : primaryMerges ? (
+            <GitMerge className="size-4" />
           ) : primaryPushes ? (
             <ArrowUp className="size-4" />
           ) : (
@@ -251,9 +291,49 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
         align="end"
         sideOffset={6}
         radius={12}
-        className={panel === "commit" || panel === "merge" ? "w-80 p-2" : "w-56 p-1.5"}
+        className={
+          panel === "commit" || panel === "merge" || panel === "merge-into-base"
+            ? "w-80 p-2"
+            : "w-56 p-1.5"
+        }
       >
-        {panel === "merge" && pr ? (
+        {panel === "merge-into-base" && base ? (
+          <form
+            className="flex flex-col gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (canMergeIntoBase) run("merge-into-base");
+            }}
+          >
+            <p className="px-0.5 text-sm text-foreground">
+              Merge {status.branch} into {base.branch}?
+            </p>
+            <p className="px-0.5 text-xs text-muted-foreground">
+              {base.ahead} {base.ahead === 1 ? "commit" : "commits"}.{" "}
+              {base.checkout
+                ? `Updates the files in ${base.checkout}.`
+                : `${base.branch} isn't checked out anywhere, so only the branch moves.`}
+            </p>
+            {errorNote}
+            <div className="flex justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPanel(null)}
+                className="h-7 rounded-lg border border-border px-2.5 text-xs font-medium text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Cancel
+              </button>
+              <button
+                ref={mergeButton}
+                type="submit"
+                disabled={!canMergeIntoBase}
+                className="h-7 rounded-lg bg-foreground px-2.5 text-xs font-medium text-background transition-opacity outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                {pending === "merge-into-base" ? pendingLabel : "Merge"}
+              </button>
+            </div>
+          </form>
+        ) : panel === "merge" && pr ? (
           <form
             className="flex flex-col gap-2"
             onSubmit={(e) => {
@@ -366,6 +446,39 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
               <ArrowUp />
               Push
             </MenuItem>
+            {base ? (
+              base.merged ? (
+                <MenuItem
+                  onClick={() =>
+                    confirmDelete && !confirmingDelete
+                      ? setConfirmingDelete(true)
+                      : send(ClientCommand.cases["thread.close"].make({ threadId }))
+                  }
+                  disabled={status.changes > 0 || !!pending}
+                  hint={status.changes > 0 ? "uncommitted" : undefined}
+                >
+                  <Trash2 />
+                  {confirmingDelete ? "Click again to delete" : "Delete thread & worktree"}
+                </MenuItem>
+              ) : (
+                <MenuItem
+                  onClick={() => setPanel("merge-into-base")}
+                  disabled={!canMergeIntoBase}
+                  hint={
+                    base.conflicts.length > 0
+                      ? "conflicts"
+                      : status.changes > 0 && base.ahead > 0
+                        ? "commit first"
+                        : base.ahead > 0
+                          ? `${base.ahead} ${base.ahead === 1 ? "commit" : "commits"}`
+                          : "no commits"
+                  }
+                >
+                  <GitMerge />
+                  Merge into {base.branch}…
+                </MenuItem>
+              )
+            ) : null}
             {status.sourceControl ? (
               prOpen && pr ? (
                 <>
@@ -408,6 +521,15 @@ export const GitMenu = ({ cwd, refreshKey }: { cwd: string; refreshKey: string }
               >
                 {prName} #{pr.number} {pr.state}
               </a>
+            ) : null}
+            {base?.merged ? (
+              <p className="px-2 pt-1 text-xs text-muted-foreground">Merged into {base.branch}</p>
+            ) : null}
+            {base && base.conflicts.length > 0 ? (
+              <p className="px-2 pt-1 text-xs text-muted-foreground">
+                Conflicts with {base.branch} in {base.conflicts.join(", ")}. Merge {base.branch}{" "}
+                into this branch and resolve them first.
+              </p>
             ) : null}
             {!status.hasRemote ? (
               <p className="px-2 pt-1 text-xs text-muted-foreground">No remote configured</p>
