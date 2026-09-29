@@ -83,7 +83,7 @@ function AddProject() {
         <RemoteFolders key={host} host={host} onFolder={setFolder} />
       )}
       <CloneRepository
-        key={host ?? THIS_MAC}
+        key={`clone:${host ?? THIS_MAC}`}
         host={host}
         parent={host === null ? (addProjectFolder ?? "~") : folder}
       />
