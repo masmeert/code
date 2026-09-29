@@ -509,10 +509,7 @@ export function RootFullAccessDialog({
 }) {
   return (
     <AlertDialog open onOpenChange={(open) => open || onClose()}>
-      <AlertDialogContent
-        overlayClassName="bg-black/20 [backdrop-filter:none] [-webkit-backdrop-filter:none]"
-        className="gap-4 bg-popover p-4 data-[size=default]:sm:max-w-sm"
-      >
+      <AlertDialogContent className="gap-4 bg-popover p-4 data-[size=default]:sm:max-w-sm">
         <div className="flex items-center gap-3">
           <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-warning/10 text-warning">
             <LockOpen className="size-4" />

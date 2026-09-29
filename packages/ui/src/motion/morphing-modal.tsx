@@ -58,7 +58,7 @@ export function MorphingModal({
               onClick={onClose}
               // Electron hit-tests `app-region: drag` regardless of stacking, so a drag
               // region under the modal would swallow its clicks and scrolling.
-              className="pointer-events-auto fixed inset-0 z-[80] bg-background/5 [backdrop-filter:blur(14px)_saturate(140%)] [-webkit-app-region:no-drag] [-webkit-backdrop-filter:blur(14px)_saturate(140%)]"
+              className="pointer-events-auto fixed inset-0 z-[80] bg-black/30 [backdrop-filter:blur(24px)_saturate(140%)] [-webkit-app-region:no-drag] [-webkit-backdrop-filter:blur(24px)_saturate(140%)]"
             />
           )}
         </PresenceGate>

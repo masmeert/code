@@ -1220,8 +1220,6 @@ function ForkDialog({
       }}
     >
       <AlertDialogContent
-        // Dimmed like the command palette: the blur is too much for a one-line question.
-        overlayClassName="bg-black/20 [backdrop-filter:none] [-webkit-backdrop-filter:none]"
         className="gap-4 bg-popover p-4 data-[size=default]:sm:max-w-xs"
         aria-describedby={undefined}
         onOpenAutoFocus={(event) => {

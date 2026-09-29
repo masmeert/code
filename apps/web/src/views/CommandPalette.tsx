@@ -247,7 +247,7 @@ const Palette = (props: PaletteProps) => {
         aria-label="Close command palette"
         tabIndex={-1}
         onClick={props.onClose}
-        className="fixed inset-0 z-[100] bg-black/20"
+        className="fixed inset-0 z-[100] bg-black/30 [backdrop-filter:blur(24px)_saturate(140%)] [-webkit-backdrop-filter:blur(24px)_saturate(140%)]"
       />
       <div className="pointer-events-none fixed inset-x-4 top-[14vh] bottom-4 z-[100] flex items-start justify-center">
         <div
