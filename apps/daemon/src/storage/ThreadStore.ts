@@ -191,12 +191,15 @@ const make = Effect.acquireRelease(
       // Threads from before the daemon tracked this count as looked at.
       db.run("UPDATE threads SET seen_rev = updated_at");
     }
-    if (columns.has("settle_override")) {
-      // Shelving was called settling.
-      db.run("ALTER TABLE threads RENAME COLUMN settle_override TO shelve_override");
-      db.run("UPDATE threads SET shelve_override = 'shelved' WHERE shelve_override = 'settled'");
-    } else if (!columns.has("shelve_override"))
+    if (!columns.has("shelve_override"))
       db.run("ALTER TABLE threads ADD COLUMN shelve_override TEXT");
+    if (columns.has("settle_override")) {
+      // Shelving was called settling. Both columns can exist, so a newer shelve value wins.
+      db.run(
+        "UPDATE threads SET shelve_override = CASE settle_override WHEN 'settled' THEN 'shelved' ELSE settle_override END WHERE shelve_override IS NULL",
+      );
+      db.run("ALTER TABLE threads DROP COLUMN settle_override");
+    }
     // Full-text index of what was said, for search. Filled as messages are stored; built from the log once.
     const hasSearch =
       db.query("SELECT name FROM sqlite_master WHERE name = 'messages_fts'").get() !== null;

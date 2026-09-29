@@ -6,7 +6,7 @@ Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unrel
 
 ### Changed
 
-- Settle is now Shelve: the thread menu, row button and swipe shelve or unshelve a thread, shelved threads sit under Shelved, and Settings has "Shelve idle threads". Arrows show which way a thread goes: down onto the shelf, up back into your lists. Your idle-thread setting and shelved threads carry over.
+- Settle is now Shelve: the thread menu, row button and swipe shelve or unshelve a thread, shelved threads sit under Shelved, and Settings has "Shelve idle threads". Your idle-thread setting and shelved threads carry over.
 
 ## 0.0.13 - 2026-09-29
 

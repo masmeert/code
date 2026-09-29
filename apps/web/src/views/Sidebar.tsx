@@ -28,7 +28,6 @@ import { cn } from "@apcode/ui/lib/utils";
 import { formatBinding, isMac } from "@apcode/ui/lib/keys";
 import {
   ClientCommand,
-  HostStatus,
   isAwaitingUser,
   type Project,
   type ThreadActivity,
@@ -120,8 +119,6 @@ export const Sidebar = (props: {
   const now = useNow();
   const reduce = useReducedMotion();
   const updateStatus = useUpdateStatus();
-  const hosts = useStore((s) => s.hosts);
-  const localConnected = useStore((s) => s.connected);
   const { toasts, showToast, dismissToast } = useAnimatedToastStack();
 
   // Grouped by state: whatever still needs you on top, then shelved threads, then archived ones.
@@ -435,7 +432,7 @@ export const Sidebar = (props: {
       <div className="relative min-h-0 flex-1">
         <motion.div
           layoutScroll
-          className="flex h-full [scrollbar-width:none] flex-col overflow-y-auto overscroll-contain px-2 pb-8 [&::-webkit-scrollbar]:hidden"
+          className="flex h-full [scrollbar-width:none] flex-col overflow-y-auto overscroll-contain px-2 pb-2 [&::-webkit-scrollbar]:hidden"
         >
           {infos.length === 0 ? (
             <p className="px-3 pt-2 text-xs text-muted-foreground">
@@ -506,36 +503,11 @@ export const Sidebar = (props: {
         </motion.div>
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-sidebar to-transparent"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-sidebar to-transparent"
         />
       </div>
 
       <div className="flex shrink-0 flex-col gap-1 px-3 pt-1 pb-3">
-        {Object.keys(hosts).length > 0 ? (
-          <button
-            type="button"
-            onClick={() => props.onModal("settings")}
-            aria-label="Machines, open settings"
-            className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
-          >
-            {[
-              { name: "This Mac", tone: localConnected ? "bg-emerald-500" : "bg-destructive" },
-              ...Object.entries(hosts).map(([alias, host]) => ({
-                name: alias,
-                tone: host.connected
-                  ? "bg-emerald-500"
-                  : HostStatus.guards.failed(host.status)
-                    ? "bg-destructive"
-                    : "bg-warning",
-              })),
-            ].map((machine) => (
-              <span key={machine.name} className="flex min-w-0 items-center gap-1.5">
-                <span className={cn("size-1.5 shrink-0 rounded-full", machine.tone)} />
-                <span className="truncate">{machine.name}</span>
-              </span>
-            ))}
-          </button>
-        ) : null}
         {updateStatus &&
         UpdateStatus.isAnyOf(["available", "downloading", "ready"])(updateStatus) ? (
           <Button
