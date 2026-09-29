@@ -2,6 +2,16 @@
 
 Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unreleased` to `X.Y.Z - YYYY-MM-DD`; the release workflow publishes that section as the GitHub release notes and fails if it is missing.
 
+## 0.0.13 - 2026-09-29
+
+### Changed
+
+- A host's projects scan looks up to three folders deep, never inside a repo, so the home folder default finds repos in ~/code and ~/code/group without setting a Projects folder.
+
+### Fixed
+
+- A new thread offering to clone its project onto a host switches to the host's copy as soon as a scan finds it.
+
 ## 0.0.12 - 2026-09-29
 
 ### Fixed
