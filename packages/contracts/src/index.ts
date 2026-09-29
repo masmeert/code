@@ -334,14 +334,15 @@ export const Project = Schema.Struct({
 export type Project = typeof Project.Type;
 
 /**
- * The repo a git remote URL points to, as `host/owner/repo`, however it's written:
+ * The repo a git remote URL points to, as `owner/repo`, however it's written:
  * `git@github.com:owner/repo.git`, `https://github.com/owner/repo`, `ssh://git@host:22/owner/repo`.
+ * The host is left out: one server is often reached by different names, like a LAN and a public one.
  */
 export function repositoryOf(url: string) {
   const match = url
     .trim()
-    .match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?([^/:]+)(?::\d+)?[/:](.+?)(?:\.git)?\/*$/i);
-  return match ? `${match[1]!.toLowerCase()}/${match[2]!}` : url.trim();
+    .match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?[^/:]+(?::\d+)?[/:](.+?)(?:\.git)?\/*$/i);
+  return match ? match[1]! : url.trim();
 }
 
 /** How full a thread's context window was after its last response. */
