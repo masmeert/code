@@ -6,6 +6,7 @@ import type {
   ProviderKind,
   ProviderSettings,
   RuntimeEvent,
+  Skill,
   SlashCommand,
   ThreadUsage,
   UserAnswers,
@@ -50,6 +51,18 @@ export interface TurnInput {
   /** Null leaves the harness's current effort. */
   readonly effort: Effort | null;
   readonly permission: PermissionLevel;
+  /** Skills the text mentions as `$name`, in the order they appear. */
+  readonly skills: ReadonlyArray<ProviderSkill>;
+}
+
+/** A skill as the harness reports it; `path` is its SKILL.md, for harnesses that say. */
+export interface ProviderSkill extends Skill {
+  readonly path: string | null;
+}
+
+export interface ListSkillsInput {
+  readonly cwd: string;
+  readonly harness: ProviderSettings;
 }
 
 /** A live conversation with one agent process. */
@@ -117,6 +130,10 @@ export interface ProviderAdapter {
   readonly fork: (input: ForkInput) => Effect.Effect<string | null, ProviderError>;
   /** The conversation's usage as of its last turn, read with no session running and no turn started. */
   readonly readUsage: (input: ReadUsageInput) => Effect.Effect<ThreadUsage, ProviderError>;
+  /** The skills the harness loads in `cwd`, read with no session running. */
+  readonly listSkills: (
+    input: ListSkillsInput,
+  ) => Effect.Effect<ReadonlyArray<ProviderSkill>, ProviderError>;
 }
 
 /** One-line human summary of a tool input, for the transcript. */

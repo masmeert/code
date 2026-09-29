@@ -524,6 +524,9 @@ const start = ({
           .filter((a) => a.isImage)
           .map((a) => ({ type: "localImage", path: a.path })),
         ...(text ? [{ type: "text", text, text_elements: [] }] : []),
+        ...turn.skills.flatMap(({ name, path }) =>
+          path === null ? [] : [{ type: "skill", name, path }],
+        ),
       ];
     };
 
@@ -700,4 +703,46 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
     catch: (e) => fail(`Couldn't read usage: ${e instanceof Error ? e.message : String(e)}`),
   });
 
-export const CodexAdapter: ProviderAdapter = { kind: "codex", start, rewind, fork, readUsage };
+const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
+  Effect.tryPromise({
+    try: async () => {
+      const rpc = await connectCodex(cwd, {}, harnessLaunch("codex", harness));
+      try {
+        const { data } = await rpc.request(
+          "skills/list",
+          { cwds: [cwd] },
+          Schema.Struct({
+            data: Schema.Array(
+              Schema.Struct({
+                skills: Schema.Array(
+                  Schema.Struct({
+                    name: Schema.String,
+                    description: Schema.String,
+                    path: Schema.String,
+                    enabled: Schema.Boolean,
+                  }),
+                ),
+              }),
+            ),
+          }),
+        );
+        return data.flatMap((entry) =>
+          entry.skills.flatMap(({ name, description, path, enabled }) =>
+            enabled ? [{ name, description, path }] : [],
+          ),
+        );
+      } finally {
+        rpc.close();
+      }
+    },
+    catch: (e) => fail(e instanceof Error ? e.message : String(e)),
+  });
+
+export const CodexAdapter: ProviderAdapter = {
+  kind: "codex",
+  start,
+  rewind,
+  fork,
+  readUsage,
+  listSkills,
+};

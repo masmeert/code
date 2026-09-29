@@ -85,6 +85,7 @@ import { isPersisted, type ShelveOverride, ThreadStore } from "./storage/ThreadS
 import { type Browsers, createBrowsers } from "./browsers.ts";
 import { createMcp, type Mcp } from "./mcp.ts";
 import { createTerminals, type Terminals } from "./terminals.ts";
+import { createSkillCatalog } from "./skills.ts";
 
 const ADAPTERS: Record<ProviderKind, ProviderAdapter> = {
   claude: ClaudeAdapter,
@@ -470,6 +471,21 @@ const make = Effect.gen(function* () {
   });
   const browsers = createBrowsers();
   const mcp = createMcp((threadId, action) => browsers.request(threadId, action));
+  const skills = createSkillCatalog({
+    read: (provider, cwd) =>
+      Effect.flatMap(settingsStore.get, (settings) =>
+        ADAPTERS[provider].listSkills({ cwd, harness: settings.providers[provider] }),
+      ),
+    onListed: (provider, path, listing) =>
+      publish(
+        RuntimeEvent.cases["skills.listed"].make({
+          provider,
+          path,
+          skills: listing.skills.map(({ name, description }) => ({ name, description })),
+          error: listing.error,
+        }),
+      ),
+  });
 
   const getEntry = (threadId: string) =>
     Effect.suspend(() => {
@@ -594,6 +610,9 @@ const make = Effect.gen(function* () {
         attachments,
         effort: options.effort,
         permission: options.permission,
+        skills: yield* Effect.promise(() =>
+          skills.mentionedIn(entry.info.provider, entry.info.cwd, text),
+        ),
       };
       const message = RuntimeEvent.cases["user.message"].make(
         attachments.length
@@ -782,7 +801,16 @@ const make = Effect.gen(function* () {
       const commands = entry.session
         ? yield* entry.session.commands.pipe(Effect.orElseSucceed(() => []))
         : [];
-      publish(RuntimeEvent.cases["thread.commands"].make({ threadId, commands: [...commands] }));
+      // Claude reports its skills as commands too; they're offered under `$` instead.
+      const skillNames = yield* Effect.promise(() =>
+        skills.names(entry.info.provider, entry.info.cwd),
+      );
+      publish(
+        RuntimeEvent.cases["thread.commands"].make({
+          threadId,
+          commands: commands.filter((command) => !skillNames.has(command.name)),
+        }),
+      );
     });
 
   /** Stops agent processes nobody has used in a while; they resume from their token on the next message. */
@@ -1093,6 +1121,7 @@ const make = Effect.gen(function* () {
       "thread.fork": fork,
       "thread.compact": (command) => compact(command.threadId),
       "thread.listCommands": (command) => listCommands(command.threadId),
+      "skills.list": (command) => Effect.sync(() => skills.request(command.provider, command.path)),
       "thread.readUsage": (command) => Effect.promise(() => readUsage(command.threadId)),
       "checkpoint.diff": (command) =>
         Effect.gen(function* () {

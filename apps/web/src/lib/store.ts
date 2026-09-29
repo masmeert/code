@@ -20,6 +20,7 @@ import {
   RuntimeEvent,
   type SearchHit,
   ServerFrame,
+  type Skill,
   type SlashCommand,
   type StoredEvent,
   type ThreadInfo,
@@ -149,6 +150,8 @@ export interface State {
   readonly repos: Readonly<Record<string, RepoState>>;
   /** Slash commands per thread, fetched when the command menu opens. */
   readonly commands: Readonly<Record<string, ReadonlyArray<SlashCommand>>>;
+  /** Skills per harness and folder (see `skillsKey`), fetched when a `$` mention starts. */
+  readonly skills: Readonly<Record<string, SkillList>>;
   /** One turn's changes, keyed `<threadId>:<messageId>`, fetched by the changes panel. */
   readonly turnDiffs: Readonly<Record<string, RepoDiff>>;
   /** Messages written while the agent worked, held here until its turn ends. Per window. */
@@ -212,6 +215,17 @@ export interface BranchList {
   readonly error: string | null;
 }
 
+export interface SkillList {
+  readonly skills: ReadonlyArray<Skill>;
+  /** Why the harness couldn't be asked; `skills` then holds what it said last time. */
+  readonly error: string | null;
+}
+
+/** Where `skills` keeps a harness's skills for a folder. */
+export function skillsKey(provider: ProviderKind, path: string) {
+  return `${provider}:${path}`;
+}
+
 const initial: State = {
   connected: false,
   source: "none",
@@ -233,6 +247,7 @@ const initial: State = {
   diffs: {},
   repos: {},
   commands: {},
+  skills: {},
   turnDiffs: {},
   followUps: {},
   terminals: {},
@@ -475,10 +490,16 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
       ...state,
       diffs: { ...state.diffs, [path]: { patch, truncated, error } },
     })),
-    Match.tag("thread.commands", ({ threadId, commands }) => ({
-      ...state,
-      commands: { ...state.commands, [threadId]: commands },
-    })),
+    Match.tags({
+      "thread.commands": ({ threadId, commands }) => ({
+        ...state,
+        commands: { ...state.commands, [threadId]: commands },
+      }),
+      "skills.listed": ({ provider, path, skills, error }) => ({
+        ...state,
+        skills: { ...state.skills, [skillsKey(provider, path)]: { skills, error } },
+      }),
+    }),
     Match.tag("checkpoint.diff", ({ threadId, messageId, patch, truncated, error }) => ({
       ...state,
       turnDiffs: { ...state.turnDiffs, [`${threadId}:${messageId}`]: { patch, truncated, error } },

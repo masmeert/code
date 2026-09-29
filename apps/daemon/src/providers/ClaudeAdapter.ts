@@ -37,10 +37,12 @@ import {
   type ForkInput,
   type ProviderAdapter,
   type ProviderSession,
+  type ProviderSkill,
   type StartSessionInput,
   type TurnInput,
 } from "./ProviderAdapter.ts";
 import { claudeExtraArgs, harnessLaunch, promptlessQuery } from "./launch.ts";
+import { skillMentions } from "../skills.ts";
 
 /** Minimal push-based async iterable used as the SDK's streaming prompt input. */
 const makeInbox = <A>() => {
@@ -125,14 +127,34 @@ const IMAGE_TYPES = new Map<string, "image/png" | "image/jpeg" | "image/gif" | "
 /** Tool inputs come from the model as JSON; anything else gets an empty summary. */
 const decodeToolInput = Schema.decodeUnknownOption(Schema.Json);
 
+/**
+ * Claude Code runs a skill only when the message's last text block starts with `/name`, taking
+ * the rest of that block as its arguments; it runs one per message. So the last `$name` starts
+ * that block, and earlier ones become `/name` in the text before it, which the model reads as
+ * asking it to start them itself.
+ */
+function skillBlocks(text: string, skills: ReadonlyArray<ProviderSkill>): Array<string> {
+  const mentions = skillMentions(text, skills);
+  const last = mentions.at(-1);
+  if (!last) return text ? [text] : [];
+  const leading = mentions
+    .slice(0, -1)
+    .reduce(
+      (result, mention) => `${result.slice(0, mention.start)}/${result.slice(mention.start + 1)}`,
+      text.slice(0, last.start),
+    )
+    .trimEnd();
+  return [...(leading ? [leading] : []), `/${text.slice(last.start + 1)}`.trimEnd()];
+}
+
 /** Images inline as base64 blocks, then the text (with other files listed as paths). */
 const toContent = async (turn: TurnInput): Promise<SDKUserMessage["message"]["content"]> => {
-  const text = textWithFiles(turn);
+  const texts = skillBlocks(textWithFiles(turn), turn.skills);
   const images = turn.attachments.flatMap((a) => {
     const mediaType = IMAGE_TYPES.get(extname(a.path).toLowerCase());
     return a.isImage && mediaType ? [{ path: a.path, mediaType }] : [];
   });
-  if (!images.length) return text;
+  if (!images.length && texts.length <= 1) return texts[0] ?? "";
   const blocks = await Promise.all(
     images.map(async (image) => ({
       type: "image" as const,
@@ -143,7 +165,7 @@ const toContent = async (turn: TurnInput): Promise<SDKUserMessage["message"]["co
       },
     })),
   );
-  return [...blocks, ...(text ? [{ type: "text" as const, text }] : [])];
+  return [...blocks, ...texts.map((text) => ({ type: "text" as const, text }))];
 };
 
 function contextUsage(usage: SDKControlGetContextUsageResponse) {
@@ -694,4 +716,33 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
     catch: (e) => fail(`Couldn't read usage: ${e instanceof Error ? e.message : String(e)}`),
   });
 
-export const ClaudeAdapter: ProviderAdapter = { kind: "claude", start, rewind, fork, readUsage };
+/** Bundled, plugin, user and project skills alike, as the session in `cwd` would load them. */
+const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
+  Effect.tryPromise({
+    try: async () => {
+      const q = promptlessQuery(harnessLaunch("claude", harness), {
+        cwd,
+        settingSources: ["user", "project", "local"],
+      });
+      try {
+        const { skills } = await q.reloadSkills();
+        return skills.map((skill) => ({
+          name: skill.name,
+          description: skill.description,
+          path: null,
+        }));
+      } finally {
+        q.close();
+      }
+    },
+    catch: (e) => fail(e instanceof Error ? e.message : String(e)),
+  });
+
+export const ClaudeAdapter: ProviderAdapter = {
+  kind: "claude",
+  start,
+  rewind,
+  fork,
+  readUsage,
+  listSkills,
+};

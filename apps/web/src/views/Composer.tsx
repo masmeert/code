@@ -62,7 +62,7 @@ import {
 import { restoreStash, setDraft, stashDraft, useDraft, useStashes } from "../lib/drafts.ts";
 import { describe, KEYBINDINGS, useKeybinding } from "../lib/keybindings.ts";
 import { defaultEffort, type modelChoices, recommendedBadge } from "../lib/models.ts";
-import { send, usePathHost, useProviders, useStore } from "../lib/store.ts";
+import { send, skillsKey, usePathHost, useProviders, useStore } from "../lib/store.ts";
 import { ago, useNow } from "../lib/time.ts";
 import { UsageMeter } from "./UsageMeter.tsx";
 
@@ -240,17 +240,47 @@ export const Composer = (props: ComposerProps) => {
       send(ClientCommand.cases["git.listFiles"].make({ path: props.cwd }));
   }, [mentionTyped, props.cwd]);
 
-  const pickFile = (path: string) => {
-    const start = caret - mention![1]!.length - 1;
+  /** Swaps the word at the caret, `typedLength` characters of which are before it, for `token`. */
+  function replaceTyped(typedLength: number, token: string) {
+    const start = caret - typedLength;
     const end = caret + /^\S*/.exec(draft.text.slice(caret))![0].length;
-    // Quoted so a path with spaces still reads as one mention.
-    const token = /\s/.test(path) ? `@"${path}" ` : `@${path} `;
     const rest = draft.text.slice(end).replace(/^ +/, "");
     const nextCaret = start + token.length;
     setText(draft.text.slice(0, start) + token + rest);
     setCaret(nextCaret);
     requestAnimationFrame(() => input.current?.setSelectionRange(nextCaret, nextCaret));
-  };
+  }
+
+  function pickFile(path: string) {
+    // Quoted so a path with spaces still reads as one mention.
+    replaceTyped(mention![1]!.length + 1, /\s/.test(path) ? `@"${path}" ` : `@${path} `);
+  }
+
+  // --- $ skills: "$" at the start or after whitespace offers the skills the harness loads here.
+  // A letter must follow, so prices like "$20" never open the menu.
+  const skillMention = props.cwd
+    ? /(?:^|\s)\$((?:[A-Za-z][\w:-]*)?)$/.exec(draft.text.slice(0, caret))
+    : null;
+  const skillQuery =
+    skillMention && dismissed !== draft.text ? skillMention[1]!.toLowerCase() : null;
+  const skillList = useStore((s) =>
+    props.cwd ? s.skills[skillsKey(props.provider, props.cwd)] : undefined,
+  );
+  const skillMatches =
+    skillList && skillQuery !== null
+      ? skillList.skills
+          .filter((skill) => skill.name.toLowerCase().includes(skillQuery))
+          .sort(
+            (a, b) =>
+              Number(!a.name.toLowerCase().startsWith(skillQuery)) -
+              Number(!b.name.toLowerCase().startsWith(skillQuery)),
+          )
+      : [];
+  const skillTyped = skillMention !== null;
+  useEffect(() => {
+    if (skillTyped && props.cwd)
+      send(ClientCommand.cases["skills.list"].make({ provider: props.provider, path: props.cwd }));
+  }, [skillTyped, props.cwd, props.provider]);
 
   const menu =
     slashItems.length > 0
@@ -265,25 +295,43 @@ export const Composer = (props: ComposerProps) => {
           pick: (index: number) => pickSlash(slashItems[index]!),
           empty: null,
         }
-      : mentionQuery !== null
+      : // Once a name is typed, no match means it's likely prose ("$HOME"), so the menu steps aside.
+        skillQuery !== null && (skillMatches.length || !skillList || !skillQuery)
         ? {
-            label: "Files",
-            items: fileMatches.map((path) => ({
-              id: path,
-              name: path.slice(path.lastIndexOf("/") + 1),
-              description: path.slice(0, path.lastIndexOf("/") + 1),
+            label: "Skills",
+            items: skillMatches.map((skill) => ({
+              id: skill.name,
+              name: `$${skill.name}`,
+              description: skill.description,
             })),
-            pick: (index: number) => pickFile(fileMatches[index]!),
-            empty: repoFiles ? "No matching files" : "Loading files…",
+            pick: (index: number) =>
+              replaceTyped(skillMention![1]!.length + 1, `$${skillMatches[index]!.name} `),
+            empty: !skillList
+              ? "Loading skills…"
+              : (skillList.error ??
+                `No skills here yet. Add one as ${props.provider === "claude" ? ".claude" : ".agents"}/skills/<name>/SKILL.md in the project.`),
           }
-        : null;
+        : mentionQuery !== null
+          ? {
+              label: "Files",
+              items: fileMatches.map((path) => ({
+                id: path,
+                name: path.slice(path.lastIndexOf("/") + 1),
+                description: path.slice(0, path.lastIndexOf("/") + 1),
+              })),
+              pick: (index: number) => pickFile(fileMatches[index]!),
+              empty: repoFiles ? "No matching files" : "Loading files…",
+            }
+          : null;
   const reduceMotion = useReducedMotion();
   const {
     activeIndex: menuIndex,
     pointed,
     moveTo,
     moveActive,
-  } = useRowCursor(menu?.items ?? [], slashQuery ?? mentionQuery ?? "", { loop: true });
+  } = useRowCursor(menu?.items ?? [], slashQuery ?? skillQuery ?? mentionQuery ?? "", {
+    loop: true,
+  });
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     input.current = event.currentTarget;

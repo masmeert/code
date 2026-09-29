@@ -437,6 +437,13 @@ export const SlashCommand = Schema.Struct({
 });
 export type SlashCommand = typeof SlashCommand.Type;
 
+/** A skill the harness loads in a folder; `$name` in a message runs it. */
+export const Skill = Schema.Struct({
+  name: Schema.String,
+  description: Schema.String,
+});
+export type Skill = typeof Skill.Type;
+
 /** One message matching a search. */
 export const SearchHit = Schema.Struct({
   threadId: Schema.String,
@@ -640,6 +647,13 @@ export const RuntimeEvent = Schema.Union([
     threadId: Schema.String,
     commands: Schema.Array(SlashCommand),
   }),
+  /** Skills `provider` loads in the folder at `path`; answers `skills.list`, again when a refresh finds changes. */
+  Schema.TaggedStruct("skills.listed", {
+    provider: ProviderKind,
+    path: Schema.String,
+    skills: Schema.Array(Skill),
+    error: Schema.NullOr(Schema.String),
+  }),
   /** The changes of one turn (see `turn.checkpoint`); answers `checkpoint.diff`. */
   Schema.TaggedStruct("checkpoint.diff", {
     threadId: Schema.String,
@@ -783,6 +797,8 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("thread.compact", { threadId: Schema.String }),
   /** Answered with a `thread.commands` event. */
   Schema.TaggedStruct("thread.listCommands", { threadId: Schema.String }),
+  /** Answered with a `skills.listed` event. */
+  Schema.TaggedStruct("skills.list", { provider: ProviderKind, path: Schema.String }),
   /** Reads the usage of a thread that ran before usage was recorded; answered with a `thread.usage` event. */
   Schema.TaggedStruct("thread.readUsage", { threadId: Schema.String }),
   /** Answered with a `checkpoint.diff` event. */
