@@ -409,6 +409,7 @@ export const ThreadInfo = Schema.Struct({
   provider: ProviderKind,
   /** Null uses the harness's default model. */
   model: Schema.NullOr(Schema.String),
+  /** Where the agent works: the thread's folder, or a worktree the agent switched into. */
   cwd: Schema.String,
   title: Schema.String,
   status: ThreadStatus,
@@ -419,7 +420,7 @@ export const ThreadInfo = Schema.Struct({
   branch: Schema.NullOr(Schema.String),
   /** When the thread was archived (hidden from the main list); null when it isn't. */
   archivedAt: Schema.NullOr(Schema.Number),
-  /** `cwd` is a git worktree made for this thread (removed with it when it has no changes). */
+  /** `cwd` is a git worktree: one made for the thread, or one the agent switched into. */
   worktree: Schema.Boolean,
   /** Absent until the thread's first turn ends. */
   usage: Schema.optional(ThreadUsage),
@@ -591,12 +592,14 @@ export const RuntimeEvent = Schema.Union([
     threadId: Schema.String,
     usage: Schema.NullOr(ThreadUsage),
   }),
-  /** Title, activity time or branch changed. */
+  /** Title, activity time, branch or folder changed. */
   Schema.TaggedStruct("thread.meta", {
     threadId: Schema.String,
     title: Schema.String,
     updatedAt: Schema.Number,
     branch: Schema.NullOr(Schema.String),
+    cwd: Schema.String,
+    worktree: Schema.Boolean,
   }),
   /** The user closed the thread; it is deleted (distinct from its agent process ending). */
   Schema.TaggedStruct("thread.removed", { threadId: Schema.String }),

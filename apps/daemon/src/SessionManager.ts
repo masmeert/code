@@ -33,7 +33,7 @@ import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
 import {
   addWorktree,
@@ -86,7 +86,12 @@ import { ProviderRegistry } from "./providers/ProviderRegistry.ts";
 import { DATA_DIR } from "./storage/jsonFile.ts";
 import { ProjectsStore } from "./storage/ProjectsStore.ts";
 import { SettingsStore } from "./storage/SettingsStore.ts";
-import { isPersisted, type ShelveOverride, ThreadStore } from "./storage/ThreadStore.ts";
+import {
+  isPersisted,
+  type ShelveOverride,
+  type ThreadHome,
+  ThreadStore,
+} from "./storage/ThreadStore.ts";
 import { type Browsers, createBrowsers } from "./browsers.ts";
 import { createMcp, type Mcp } from "./mcp.ts";
 import { createTerminals, type Terminals } from "./terminals.ts";
@@ -149,6 +154,7 @@ function isShelved(
 
 interface ThreadEntry {
   info: ThreadInfo;
+  readonly home: ThreadHome;
   /** Null until the first message after creation or restart; agent processes start lazily. */
   session: ProviderSession | null;
   resumeToken: string | null;
@@ -302,9 +308,10 @@ const make = Effect.gen(function* () {
   let latestSettings = yield* settingsStore.get;
 
   // --- restore -------------------------------------------------------------
-  for (const { info, resumeToken, shelveOverride } of yield* store.load) {
+  for (const { info, home, resumeToken, shelveOverride } of yield* store.load) {
     threads.set(info.id, {
       info: { ...info, shelved: isShelved(info, shelveOverride, Date.now(), latestSettings) },
+      home,
       session: null,
       resumeToken,
       shelveOverride,
@@ -338,12 +345,37 @@ const make = Effect.gen(function* () {
 
   /** Re-reads the branch (a turn may have switched it) and announces the thread's current meta. */
   const refreshMeta = (entry: ThreadEntry) => {
-    void readBranch(entry.info.cwd).then((branch) => {
-      if (threads.get(entry.info.id) !== entry) return;
+    const { cwd } = entry.info;
+    void readBranch(cwd).then((branch) => {
+      if (threads.get(entry.info.id) !== entry || entry.info.cwd !== cwd) return;
       entry.info = { ...entry.info, branch };
-      const { id: threadId, title, updatedAt } = entry.info;
-      publish(RuntimeEvent.cases["thread.meta"].make({ threadId, title, updatedAt, branch }));
+      const { id: threadId, title, updatedAt, worktree } = entry.info;
+      publish(
+        RuntimeEvent.cases["thread.meta"].make({
+          threadId,
+          title,
+          updatedAt,
+          branch,
+          cwd,
+          worktree,
+        }),
+      );
     });
+  };
+
+  /** The agent switched into a worktree or back out of one: the thread's folder follows it. */
+  const followAgent = async (entry: ThreadEntry, reported: string) => {
+    // The agent may report the home folder with its symlinks resolved.
+    const [real, home] = await Promise.all([realpath(reported), realpath(entry.home.path)]).catch(
+      () => [reported, entry.home.path],
+    );
+    const cwd = real === home ? entry.home.path : reported;
+    if (cwd === entry.info.cwd || threads.get(entry.info.id) !== entry) return;
+    // The turn's start snapshot is of the folder it left, so there's nothing to compare its end with.
+    entry.currentTurn = null;
+    entry.info = { ...entry.info, cwd, worktree: entry.home.worktree || cwd !== entry.home.path };
+    store.setAgentCwd(entry.info.id, cwd === entry.home.path ? null : cwd);
+    refreshMeta(entry);
   };
 
   /** Marks activity on a thread: new message or finished turn. */
@@ -519,7 +551,7 @@ const make = Effect.gen(function* () {
         return Effect.flatMap(settingsStore.get, (settings) =>
           ADAPTERS[entry.info.provider].start({
             threadId,
-            cwd: entry.info.cwd,
+            cwd: entry.home.path,
             harness: settings.providers[entry.info.provider],
             model:
               entry.info.model ?? settings.providers[entry.info.provider].defaultModel ?? undefined,
@@ -530,6 +562,7 @@ const make = Effect.gen(function* () {
               entry.resumeToken = token;
               store.setResumeToken(threadId, token);
             },
+            onCwd: (cwd) => void followAgent(entry, cwd),
             emit: (event) => {
               // The agent process ending isn't the thread ending: drop the session so the next message resumes it.
               if (RuntimeEvent.guards["thread.status"](event) && event.status === "closed") {
@@ -580,13 +613,16 @@ const make = Effect.gen(function* () {
       mcp.revoke(threadId);
       if (entry.session) yield* entry.session.close;
       store.deleteThread(threadId);
-      const { cwd, worktree } = entry.info;
+      const { home } = entry;
       void (async () => {
-        await deleteThreadCheckpoints(cwd, threadId);
+        await deleteThreadCheckpoints(entry.info.cwd, threadId);
         // A worktree with work left in it stays for the user to deal with; its branch stays until merged.
         // A fork shares its thread's worktree, so the last one out removes it.
-        if (worktree && ![...threads.values()].some((other) => other.info.cwd === cwd)) {
-          const root = await repoRoot(cwd);
+        if (
+          home.worktree &&
+          ![...threads.values()].some((other) => other.home.path === home.path)
+        ) {
+          const root = await repoRoot(home.path);
           if (root) await removeWorktreeIfClean(root);
         }
       })();
@@ -699,7 +735,7 @@ const make = Effect.gen(function* () {
       }
       if (entry.resumeToken) {
         const token = yield* ADAPTERS[provider].rewind({
-          cwd,
+          cwd: entry.home.path,
           harness: (yield* settingsStore.get).providers[provider],
           resumeToken: entry.resumeToken,
           messageId: command.messageId,
@@ -738,7 +774,7 @@ const make = Effect.gen(function* () {
       if (!cut) return yield* Effect.fail(fail("That message is gone"));
       const resumeToken = source.resumeToken
         ? yield* ADAPTERS[provider].fork({
-            cwd,
+            cwd: source.home.path,
             harness: (yield* settingsStore.get).providers[provider],
             resumeToken: source.resumeToken,
             messageId: cut.from[0]?.messageId ?? null,
@@ -767,6 +803,7 @@ const make = Effect.gen(function* () {
       };
       threads.set(info.id, {
         info,
+        home: source.home,
         session: null,
         resumeToken,
         shelveOverride: null,
@@ -774,7 +811,7 @@ const make = Effect.gen(function* () {
         currentTurn: null,
         lock: yield* Semaphore.make(1),
       });
-      store.insertThread(info);
+      store.insertThread(info, source.home);
       store.copyEvents(source.info.id, info.id, cut.seq);
       store.appendEvent(
         info.id,
@@ -858,8 +895,11 @@ const make = Effect.gen(function* () {
         shelved: false,
         peerReviewOf: source.info.id,
       };
+      // The reviewer starts where the work is; a worktree the agent switched into isn't the reviewer's to remove.
+      const home = cwd === source.home.path ? source.home : { path: cwd, worktree: false };
       const entry: ThreadEntry = {
         info,
+        home,
         session: null,
         resumeToken: null,
         shelveOverride: null,
@@ -868,7 +908,7 @@ const make = Effect.gen(function* () {
         lock: yield* Semaphore.make(1),
       };
       threads.set(id, entry);
-      store.insertThread(info);
+      store.insertThread(info, home);
       publish(
         RuntimeEvent.cases["thread.created"].make({ thread: info, requestId: command.requestId }),
       );
@@ -1007,7 +1047,7 @@ const make = Effect.gen(function* () {
   const readUsage = coalesced(async (threadId) => {
     const entry = threads.get(threadId);
     if (!entry) return;
-    const { provider, cwd, model } = entry.info;
+    const { provider, model } = entry.info;
     const { resumeToken } = entry;
     // A live session reports its usage when its turn ends.
     const usage =
@@ -1016,7 +1056,7 @@ const make = Effect.gen(function* () {
         ? await Effect.runPromise(
             Effect.flatMap(settingsStore.get, (settings) =>
               ADAPTERS[provider].readUsage({
-                cwd,
+                cwd: entry.home.path,
                 harness: settings.providers[provider],
                 resumeToken,
                 model: model ?? settings.providers[provider].defaultModel ?? undefined,
@@ -1182,8 +1222,10 @@ const make = Effect.gen(function* () {
         seenRev: 0,
         shelved: false,
       };
+      const home = { path: cwd, worktree: command.workspace === "worktree" };
       const entry: ThreadEntry = {
         info,
+        home,
         session: null,
         resumeToken: null,
         shelveOverride: null,
@@ -1192,7 +1234,7 @@ const make = Effect.gen(function* () {
         lock: yield* Semaphore.make(1),
       };
       threads.set(info.id, entry);
-      store.insertThread(info);
+      store.insertThread(info, home);
       publish(
         RuntimeEvent.cases["thread.created"].make({ thread: info, requestId: command.requestId }),
       );

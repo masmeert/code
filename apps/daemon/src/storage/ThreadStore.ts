@@ -21,8 +21,16 @@ import { DATA_DIR } from "./jsonFile.ts";
 /** A Shelve/Unshelve from the thread menu, kept until the thread's next turn starts. */
 export type ShelveOverride = "shelved" | "active" | null;
 
+/** The folder a thread's agent starts in. Claude moves back into a worktree it switched to on resume, so resumes launch here too. */
+export interface ThreadHome {
+  readonly path: string;
+  /** A worktree made for the thread, removed with it when it has no changes. */
+  readonly worktree: boolean;
+}
+
 export interface StoredThread {
   readonly info: ThreadInfo;
+  readonly home: ThreadHome;
   readonly resumeToken: string | null;
   readonly shelveOverride: ShelveOverride;
 }
@@ -68,7 +76,9 @@ export class ThreadStore extends Context.Service<
       turnLimit: number,
       before?: number,
     ) => { readonly events: ReadonlyArray<StoredEvent>; readonly page: PageInfo | null };
-    readonly insertThread: (info: ThreadInfo) => void;
+    readonly insertThread: (info: ThreadInfo, home: ThreadHome) => void;
+    /** Null puts the agent back in its home folder. */
+    readonly setAgentCwd: (threadId: string, cwd: string | null) => void;
     /** Null starts the provider conversation over on the next message. */
     readonly setResumeToken: (threadId: string, token: string | null) => void;
     /** Where user message `messageId` is in the thread, and the ids of the user messages from it on. */
@@ -189,6 +199,7 @@ const make = Effect.acquireRelease(
     }
     if (!columns.has("worktree"))
       db.run("ALTER TABLE threads ADD COLUMN worktree INTEGER NOT NULL DEFAULT 0");
+    if (!columns.has("agent_cwd")) db.run("ALTER TABLE threads ADD COLUMN agent_cwd TEXT");
     if (!columns.has("usage")) db.run("ALTER TABLE threads ADD COLUMN usage TEXT");
     if (!columns.has("seen_rev")) {
       db.run("ALTER TABLE threads ADD COLUMN seen_rev INTEGER NOT NULL DEFAULT 0");
@@ -224,8 +235,9 @@ const make = Effect.acquireRelease(
 ).pipe(
   Effect.map((db) => {
     const insertThread = db.prepare(
-      "INSERT INTO threads (id, project_id, provider, model, cwd, title, created_at, updated_at, worktree, peer_review_of) VALUES ($id, $projectId, $provider, $model, $cwd, $title, $createdAt, $updatedAt, $worktree, $peerReviewOf)",
+      "INSERT INTO threads (id, project_id, provider, model, cwd, agent_cwd, title, created_at, updated_at, worktree, peer_review_of) VALUES ($id, $projectId, $provider, $model, $cwd, $agentCwd, $title, $createdAt, $updatedAt, $worktree, $peerReviewOf)",
     );
+    const setAgentCwd = db.prepare("UPDATE threads SET agent_cwd = $cwd WHERE id = $id");
     const setMeta = db.prepare(
       "UPDATE threads SET title = $title, updated_at = $updatedAt WHERE id = $id",
     );
@@ -336,6 +348,7 @@ const make = Effect.acquireRelease(
               provider: ProviderKind;
               model: string | null;
               cwd: string;
+              agent_cwd: string | null;
               title: string;
               created_at: number;
               updated_at: number;
@@ -356,19 +369,20 @@ const make = Effect.acquireRelease(
               projectId: row.project_id,
               provider: row.provider,
               model: row.model,
-              cwd: row.cwd,
+              cwd: row.agent_cwd ?? row.cwd,
               title: row.title,
               status: "idle" as const,
               createdAt: row.created_at,
               updatedAt: row.updated_at,
               branch: null,
               archivedAt: row.archived_at,
-              worktree: row.worktree === 1,
+              worktree: row.worktree === 1 || row.agent_cwd !== null,
               usage: row.usage === null ? undefined : Option.getOrUndefined(decodeUsage(row.usage)),
               seenRev: row.seen_rev,
               shelved: false,
               ...(row.peer_review_of !== null && { peerReviewOf: row.peer_review_of }),
             },
+            home: { path: row.cwd, worktree: row.worktree === 1 },
             resumeToken: row.resume_token,
             shelveOverride: row.shelve_override,
           })),
@@ -416,19 +430,23 @@ const make = Effect.acquireRelease(
         const hasMore = start !== null && selectOlder.get({ threadId, before: from }) !== null;
         return { events, page: { before: events[0]!.id, hasMore } };
       },
-      insertThread: (info) => {
+      insertThread: (info, home) => {
         insertThread.run({
           id: info.id,
           projectId: info.projectId,
           provider: info.provider,
           model: info.model,
-          cwd: info.cwd,
+          cwd: home.path,
+          agentCwd: info.cwd === home.path ? null : info.cwd,
           title: info.title,
           createdAt: info.createdAt,
           updatedAt: info.updatedAt,
-          worktree: info.worktree ? 1 : 0,
+          worktree: home.worktree ? 1 : 0,
           peerReviewOf: info.peerReviewOf ?? null,
         });
+      },
+      setAgentCwd: (id, cwd) => {
+        setAgentCwd.run({ id, cwd });
       },
       setResumeToken: (id, token) => {
         setResumeToken.run({ id, token });

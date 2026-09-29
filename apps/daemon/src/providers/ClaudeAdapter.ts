@@ -190,6 +190,7 @@ const start = ({
   effort: initialEffort,
   permission: initialPermission,
   onResumeToken,
+  onCwd,
   emit,
   mcpServer,
 }: StartSessionInput) =>
@@ -275,6 +276,21 @@ const start = ({
           },
         },
         allowedTools: ["mcp__browser__snapshot", "mcp__browser__console"],
+        hooks: {
+          PostToolUse: [
+            {
+              matcher: "EnterWorktree|ExitWorktree",
+              hooks: [
+                async (input) => {
+                  // A subagent's worktree is its own; the session stays where it was.
+                  if (input.hook_event_name === "PostToolUse" && input.agent_id === undefined)
+                    onCwd(input.cwd);
+                  return {};
+                },
+              ],
+            },
+          ],
+        },
       };
       if (model) options.model = model;
       if (resumeToken) options.resume = resumeToken;
@@ -396,7 +412,9 @@ const start = ({
             return;
           }
           case "system": {
-            if (msg.subtype === "session_state_changed") {
+            // A resumed session goes back into the worktree it was in, or not, after a rewind to before it.
+            if (msg.subtype === "init") onCwd(msg.cwd);
+            else if (msg.subtype === "session_state_changed") {
               reportsSessionState = true;
               if (msg.state !== "requires_action")
                 emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: msg.state }));

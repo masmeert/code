@@ -635,8 +635,15 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
       ...state,
       limits: { ...state.limits, [provider]: { limits, error, loading: false } },
     })),
-    Match.tag("thread.meta", ({ threadId, title, updatedAt, branch }) =>
-      updateThreadInfo(state, threadId, (info) => ({ ...info, title, updatedAt, branch })),
+    Match.tag("thread.meta", ({ threadId, title, updatedAt, branch, cwd, worktree }) =>
+      updateThreadInfo(state, threadId, (info) => ({
+        ...info,
+        title,
+        updatedAt,
+        branch,
+        cwd,
+        worktree,
+      })),
     ),
     Match.orElse(() => state),
   );

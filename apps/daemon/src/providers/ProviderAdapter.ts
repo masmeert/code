@@ -36,6 +36,8 @@ export interface StartSessionInput {
   readonly permission: PermissionLevel;
   /** Called whenever the provider-side conversation id becomes known (persist it to resume later). */
   readonly onResumeToken: (token: string) => void;
+  /** Called with the folder the agent works in when it starts and whenever it moves (Claude switching worktrees). */
+  readonly onCwd: (cwd: string) => void;
   /** Adapters push normalized events for `threadId` here. */
   readonly emit: (event: RuntimeEvent) => void;
   readonly mcpServer: McpServerAccess;
