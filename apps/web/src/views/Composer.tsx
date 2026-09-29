@@ -7,6 +7,15 @@ import {
 import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
 import { cn } from "@apcode/ui/lib/utils";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogTitle,
+} from "@apcode/ui/components/alert-dialog";
+import {
   ClientCommand,
   Effort,
   PermissionLevel,
@@ -37,6 +46,7 @@ import {
 } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
+  allowFullAccessAsRoot,
   EFFORT_LABEL,
   EFFORTS,
   fromText,
@@ -46,6 +56,7 @@ import {
   PERMISSIONS,
   toTurnOptions,
   useAttachments,
+  useNeedsRootConsent,
   useTurnPrefs,
 } from "../lib/composer.ts";
 import { restoreStash, setDraft, stashDraft, useDraft, useStashes } from "../lib/drafts.ts";
@@ -145,9 +156,11 @@ const byteLength = (text: string) => new TextEncoder().encode(text).length;
 
 export const Composer = (props: ComposerProps) => {
   const { prefsKey, threadId } = props;
-  const [prefs, setPrefs] = useTurnPrefs(prefsKey, props.provider);
   const draft = useDraft(prefsKey);
   const host = usePathHost(props.cwd);
+  const [prefs, setPrefs] = useTurnPrefs(prefsKey, props.provider, host);
+  const needsRootConsent = useNeedsRootConsent(host);
+  const [confirmingRoot, setConfirmingRoot] = useState(false);
   const files = useAttachments({
     key: prefsKey,
     acceptDrops: !props.disabled,
@@ -387,9 +400,11 @@ export const Composer = (props: ComposerProps) => {
               title="Permissions"
               options={PERMISSIONS[props.provider].map(permissionOption)}
               value={prefs.permission}
-              onChange={(value) =>
-                Schema.is(PermissionLevel)(value) && setPrefs({ permission: value })
-              }
+              onChange={(value) => {
+                if (!Schema.is(PermissionLevel)(value)) return;
+                if (value === "full-access" && needsRootConsent) setConfirmingRoot(true);
+                else setPrefs({ permission: value });
+              }}
               disabled={props.disabled}
               shortcut={KEYBINDINGS["picker.permission"]}
               showOptionIcon
@@ -471,9 +486,64 @@ export const Composer = (props: ComposerProps) => {
           autoFocus
         />
       </div>
+      {confirmingRoot && host ? (
+        <RootFullAccessDialog
+          host={host}
+          onAllow={() => setPrefs({ permission: "full-access" })}
+          onClose={() => setConfirmingRoot(false)}
+        />
+      ) : null}
     </div>
   );
 };
+
+/** The one-time OK for Full access on a host whose daemon runs as root. */
+export function RootFullAccessDialog({
+  host,
+  onAllow,
+  onClose,
+}: {
+  host: string;
+  onAllow: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <AlertDialog open onOpenChange={(open) => open || onClose()}>
+      <AlertDialogContent
+        overlayClassName="bg-black/20 [backdrop-filter:none] [-webkit-backdrop-filter:none]"
+        className="gap-4 bg-popover p-4 data-[size=default]:sm:max-w-sm"
+      >
+        <div className="flex items-center gap-3">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-warning/10 text-warning">
+            <LockOpen className="size-4" />
+          </span>
+          <AlertDialogTitle className="text-sm">Allow Full access on {host}?</AlertDialogTitle>
+        </div>
+        <AlertDialogDescription className="text-xs">
+          APCode signs in to {host} as root, so agents with Full access can run anything on that
+          machine without asking. To limit what they can reach, connect as a normal user instead.
+        </AlertDialogDescription>
+        <AlertDialogFooter className="flex-row justify-end">
+          <AlertDialogCancel size="sm">
+            Cancel
+            <kbd aria-hidden className="font-sans text-[10px] text-muted-foreground">
+              esc
+            </kbd>
+          </AlertDialogCancel>
+          <AlertDialogAction
+            size="sm"
+            onClick={() => {
+              allowFullAccessAsRoot(host);
+              onAllow();
+            }}
+          >
+            Allow on this host
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 function SuggestionMenu({
   label,

@@ -238,6 +238,9 @@ const start = ({
         agentProgressSummaries: true,
         canUseTool,
         env: {
+          // Claude Code exits at startup when skip-permissions is allowed as root, which is how
+          // many SSH hosts sign in; IS_SANDBOX is its opt-out.
+          ...(process.getuid?.() === 0 && { IS_SANDBOX: "1" }),
           ...launch.env,
           APCODE_MCP_TOKEN: mcpServer.token,
           CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",

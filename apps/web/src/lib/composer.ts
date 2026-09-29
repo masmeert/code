@@ -59,27 +59,34 @@ export interface TurnPrefs {
 const perThread = new Map<string, Partial<TurnPrefs>>();
 const prefsListeners = new Set<() => void>();
 
+function onPrefsChange(listener: () => void) {
+  prefsListeners.add(listener);
+  return () => prefsListeners.delete(listener);
+}
+
 function setTurnPrefs(key: string, patch: Partial<TurnPrefs>) {
   perThread.set(key, { ...perThread.get(key), ...patch });
   for (const listener of prefsListeners) listener();
 }
 
-/** Drops what the harness doesn't take (e.g. "max" effort or plan mode after switching a draft to Codex). */
-const fit = (prefs: TurnPrefs, provider: ProviderKind): TurnPrefs => ({
+/**
+ * Drops what the harness doesn't take (e.g. "max" effort or plan mode after switching a draft to
+ * Codex), and Full access on a root host that isn't allowed yet.
+ */
+const fit = (prefs: TurnPrefs, provider: ProviderKind, needsRootConsent: boolean): TurnPrefs => ({
   effort: prefs.effort && EFFORTS[provider].includes(prefs.effort) ? prefs.effort : null,
-  permission: PERMISSIONS[provider].includes(prefs.permission) ? prefs.permission : "ask",
+  permission:
+    PERMISSIONS[provider].includes(prefs.permission) &&
+    !(needsRootConsent && prefs.permission === "full-access")
+      ? prefs.permission
+      : "ask",
 });
 
 /** Effort and permission level for the composer identified by `key` (a thread id, or a draft's path). */
-export const useTurnPrefs = (key: string, provider: ProviderKind) => {
-  const stored = useSyncExternalStore(
-    (listener) => {
-      prefsListeners.add(listener);
-      return () => prefsListeners.delete(listener);
-    },
-    () => perThread.get(key),
-  );
+export const useTurnPrefs = (key: string, provider: ProviderKind, host: string | null) => {
+  const stored = useSyncExternalStore(onPrefsChange, () => perThread.get(key));
   const settings = useStore((s) => s.settings);
+  const needsRootConsent = useNeedsRootConsent(host);
   const first = firstTurnOptions(key);
   const prefs = fit(
     {
@@ -89,9 +96,35 @@ export const useTurnPrefs = (key: string, provider: ProviderKind) => {
       ...stored,
     },
     provider,
+    needsRootConsent,
   );
   return [prefs, (patch: Partial<TurnPrefs>) => setTurnPrefs(key, { ...prefs, ...patch })] as const;
 };
+
+// --- root hosts ------------------------------------------------------------
+// A daemon running as root lets Full access change anything on its machine, so each such host
+// needs a one-time OK first.
+
+const rootConsentKey = (host: string) => `apcode.fullAccessAsRoot.${host}`;
+
+/** Whether Full access on `host` still waits for that OK. */
+export function useNeedsRootConsent(host: string | null) {
+  const root = useStore((s) => host !== null && s.hosts[host]?.root === true);
+  const allowed = useSyncExternalStore(
+    onPrefsChange,
+    () => host !== null && localStorage.getItem(rootConsentKey(host)) === "1",
+  );
+  return root && !allowed;
+}
+
+export function allowFullAccessAsRoot(host: string) {
+  localStorage.setItem(rootConsentKey(host), "1");
+  for (const listener of prefsListeners) listener();
+}
+
+export function forgetFullAccessAsRoot(host: string) {
+  localStorage.removeItem(rootConsentKey(host));
+}
 
 /** Labels for approving a plan into each level it can be built with. */
 export const BUILD_WITH_LABEL = {

@@ -53,7 +53,12 @@ import {
   Sun,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { EFFORT_LABEL, EFFORTS, PERMISSION_LABEL } from "../lib/composer.ts";
+import {
+  EFFORT_LABEL,
+  EFFORTS,
+  forgetFullAccessAsRoot,
+  PERMISSION_LABEL,
+} from "../lib/composer.ts";
 import {
   decodeChoice,
   defaultModel,
@@ -991,9 +996,10 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
               className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
               onClick={() => {
                 setConfirm(null);
-                void (confirm === "remove"
-                  ? window.desktop?.removeHost(alias)
-                  : window.desktop?.restartHost(alias));
+                if (confirm === "remove") {
+                  forgetFullAccessAsRoot(alias);
+                  void window.desktop?.removeHost(alias);
+                } else void window.desktop?.restartHost(alias);
               }}
             >
               {confirm === "remove" ? "Remove" : "Restart now"}

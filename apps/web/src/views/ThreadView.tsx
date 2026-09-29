@@ -84,7 +84,7 @@ import {
   useState,
 } from "react";
 import { toggleBrowser, useBrowser } from "../lib/browser.ts";
-import { approvePlan, BUILD_WITH_LABEL, fromSent } from "../lib/composer.ts";
+import { approvePlan, BUILD_WITH_LABEL, fromSent, useNeedsRootConsent } from "../lib/composer.ts";
 import { appendToDraft, focusComposer, getDraft, setDraft } from "../lib/drafts.ts";
 import { describe, useKeybinding } from "../lib/keybindings.ts";
 import { useNow } from "../lib/time.ts";
@@ -120,7 +120,7 @@ import {
 } from "../lib/store.ts";
 import { readWidth } from "@apcode/ui/hooks/use-resizable";
 import { BrowserPanel } from "./BrowserPanel.tsx";
-import { Composer } from "./Composer.tsx";
+import { Composer, RootFullAccessDialog } from "./Composer.tsx";
 import { GitMenu } from "./GitMenu.tsx";
 import { hasTrafficLights } from "./Sidebar.tsx";
 
@@ -1533,6 +1533,9 @@ const AgentBlockContent = ({
 }: AgentBlockProps) => {
   const forking = useStore((s) => s.forking?.messageId === item.id && s.forking.error === null);
   const [confirmingFork, setConfirmingFork] = useState(false);
+  const host = useThreadHost(threadId);
+  const needsRootConsent = useNeedsRootConsent(host);
+  const [confirmingRoot, setConfirmingRoot] = useState(false);
   switch (item.kind) {
     case "user":
       return null;
@@ -1571,33 +1574,47 @@ const AgentBlockContent = ({
         // Interrupted before an answer: the turn ended, so there's nothing left to approve.
         if (item.resolved && !item.decision) return null;
         return (
-          <ToolApproval
-            title="Approve this plan?"
-            description={item.decision === "deny" ? "Rejected — say what to change" : undefined}
-            status={
-              item.decision === "deny"
-                ? "denied"
-                : item.decision
-                  ? item.resolved
-                    ? "approved"
-                    : "approving"
-                  : "pending"
-            }
-            defaultOpen
-            approveLabel={BUILD_WITH_LABEL["auto-edit"]}
-            approveOptions={(["ask", "auto-edit", "auto", "full-access"] as const).map((level) => ({
-              id: level,
-              label: BUILD_WITH_LABEL[level],
-              onSelect: () => approvePlan(threadId, item.id, level),
-            }))}
-            denyLabel="Reject"
-            onApprove={() => approvePlan(threadId, item.id, "auto-edit")}
-            onDeny={() => respondApproval(threadId, item.id, "deny")}
-          >
-            <div className="max-h-96 overflow-y-auto">
-              <Markdown className="selectable leading-relaxed">{item.detail}</Markdown>
-            </div>
-          </ToolApproval>
+          <>
+            <ToolApproval
+              title="Approve this plan?"
+              description={item.decision === "deny" ? "Rejected — say what to change" : undefined}
+              status={
+                item.decision === "deny"
+                  ? "denied"
+                  : item.decision
+                    ? item.resolved
+                      ? "approved"
+                      : "approving"
+                    : "pending"
+              }
+              defaultOpen
+              approveLabel={BUILD_WITH_LABEL["auto-edit"]}
+              approveOptions={(["ask", "auto-edit", "auto", "full-access"] as const).map(
+                (level) => ({
+                  id: level,
+                  label: BUILD_WITH_LABEL[level],
+                  onSelect: () =>
+                    level === "full-access" && needsRootConsent
+                      ? setConfirmingRoot(true)
+                      : approvePlan(threadId, item.id, level),
+                }),
+              )}
+              denyLabel="Reject"
+              onApprove={() => approvePlan(threadId, item.id, "auto-edit")}
+              onDeny={() => respondApproval(threadId, item.id, "deny")}
+            >
+              <div className="max-h-96 overflow-y-auto">
+                <Markdown className="selectable leading-relaxed">{item.detail}</Markdown>
+              </div>
+            </ToolApproval>
+            {confirmingRoot && host ? (
+              <RootFullAccessDialog
+                host={host}
+                onAllow={() => approvePlan(threadId, item.id, "full-access")}
+                onClose={() => setConfirmingRoot(false)}
+              />
+            ) : null}
+          </>
         );
       }
       if (item.questions) {

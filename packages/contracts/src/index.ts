@@ -919,6 +919,8 @@ export const ServerFrame = Schema.Union([
     providers: Schema.Array(ProviderStatus),
     threads: Schema.Array(ThreadInfo),
     terminals: Schema.Array(TerminalInfo),
+    /** The daemon runs as root, so Full access lets agents change anything on its machine. */
+    root: Schema.Boolean,
   }),
   /** A transcript from scratch: the latest turns, plus the text of any message still streaming. */
   Schema.TaggedStruct("thread.snapshot", {

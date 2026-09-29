@@ -85,6 +85,7 @@ export const serve = (port: number) =>
               providers,
               threads,
               terminals,
+              root: process.getuid?.() === 0,
             }),
           );
           yield* Stream.runForEach(live, ({ seq, id, event }) =>

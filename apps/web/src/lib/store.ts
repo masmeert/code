@@ -170,6 +170,7 @@ export interface HostState {
   readonly status: HostStatus;
   readonly connected: boolean;
   readonly dataId: string | null;
+  readonly root: boolean;
   readonly settings: Settings | null;
   readonly providers: ReadonlyArray<ProviderStatus>;
   readonly sourceControl: ReadonlyArray<SourceControlStatus> | null;
@@ -760,6 +761,7 @@ const newHost = (status: HostStatus): HostState => ({
   status,
   connected: false,
   dataId: null,
+  root: false,
   settings: null,
   providers: NO_PROVIDERS,
   sourceControl: null,
@@ -841,6 +843,7 @@ const onShell = (connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
           ...current,
           connected: true,
           dataId: frame.dataId,
+          root: frame.root,
           settings: frame.settings,
           providers: frame.providers,
         })),
