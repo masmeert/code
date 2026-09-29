@@ -2,6 +2,24 @@
 
 Release notes for the APCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.0.17](https://github.com/masmeert/code/compare/v0.0.16...v0.0.17) (2026-09-29)
+
+
+### Added
+
+* ask the other agent to peer review a thread's work ([b3bf34c](https://github.com/masmeert/code/commit/b3bf34c60bd0f122f0934e3999cd67594024e083))
+* comment on lines in the diff and send the comments with your next message ([e27e874](https://github.com/masmeert/code/commit/e27e874f804988adc19a49b10be64d013fafdbde))
+* dress dark mode in Vesper, with a peach accent in light ([1daf51f](https://github.com/masmeert/code/commit/1daf51fd13315f93aedddfb268fdbac1a9fe3f20))
+* merge a worktree thread's branch into its base from the git menu ([9f92b73](https://github.com/masmeert/code/commit/9f92b739d33deb850fa14cc722f8a3e0ffd088d3))
+* run shell commands from agent replies ([1f98ad9](https://github.com/masmeert/code/commit/1f98ad98e1daa1b6ee651273fa0d0dd3d41278b7))
+* run skills with $name from the composer ([e160eaa](https://github.com/masmeert/code/commit/e160eaa803e8fd954a530285f1db059cbf9936ef))
+
+
+### Fixed
+
+* follow the agent into a worktree it switches to mid-thread ([9960006](https://github.com/masmeert/code/commit/9960006996c0db6b44e73f634054bdc1bca0352e))
+* only restore files in a worktree no other thread shares ([2383ab2](https://github.com/masmeert/code/commit/2383ab265bc225b19875f2cfb84d5b8fc2f8bf66))
+
 ## [0.0.16](https://github.com/masmeert/code/compare/v0.0.15...v0.0.16) (2026-09-29)
 
 
