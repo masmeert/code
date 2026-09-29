@@ -63,6 +63,13 @@ export type TranscriptItem =
       readonly fromThreadId: string;
       readonly fromTitle: string;
     }
+  /** Where a peer review starts: the thread whose work it reviews. */
+  | {
+      readonly kind: "peerReview";
+      readonly id: string;
+      readonly ofThreadId: string;
+      readonly ofTitle: string;
+    }
   | {
       readonly kind: "tool";
       readonly id: string;
@@ -132,6 +139,15 @@ export interface State {
   readonly forking: {
     readonly threadId: string;
     readonly messageId: string;
+    readonly error: string | null;
+  } | null;
+  /**
+   * The thread this window's peer review dialog is open on; `pending` once asked, until the
+   * review thread appears, and `error` says why it didn't.
+   */
+  readonly peerReview: {
+    readonly threadId: string;
+    readonly pending: boolean;
     readonly error: string | null;
   } | null;
   /** A thread for this window to switch to: one it created or forked, or a link followed. */
@@ -238,6 +254,7 @@ const initial: State = {
   limits: {},
   readingUsage: {},
   forking: null,
+  peerReview: null,
   switchTo: null,
   order: [],
   threads: {},
@@ -342,6 +359,14 @@ const reduceItems = (
         id: `forked:${fromThreadId}`,
         fromThreadId,
         fromTitle,
+      })),
+    ),
+    Match.tag("thread.peerReview", ({ ofThreadId, ofTitle }) =>
+      upsert(items, `peerReview:${ofThreadId}`, () => ({
+        kind: "peerReview",
+        id: `peerReview:${ofThreadId}`,
+        ofThreadId,
+        ofTitle,
       })),
     ),
     Match.tag("thread.rewound", (rewound) => {
@@ -519,6 +544,7 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
       const next = {
         ...state,
         forking: request ? null : state.forking,
+        peerReview: request ? null : state.peerReview,
         switchTo: request?.open ? { threadId: thread.id } : state.switchTo,
         order: [thread.id, ...state.order.filter((id) => id !== thread.id)],
         threads: { ...state.threads, [thread.id]: thread },
@@ -993,6 +1019,15 @@ const onFrame = (connection: Connection, frame: ServerFrame) =>
         event.threadId === state.forking.threadId
       )
         setState({ ...state, forking: { ...state.forking, error: event.message } });
+      if (
+        RuntimeEvent.guards.error(event) &&
+        state.peerReview?.pending &&
+        event.threadId === state.peerReview.threadId
+      )
+        setState({
+          ...state,
+          peerReview: { ...state.peerReview, pending: false, error: event.message },
+        });
       if (RuntimeEvent.guards["tool.started"](event) && event.parentToolId)
         subagentCalls.add(event.toolId);
       // A finished tool call is where the agent picks up steering, so the next held message
@@ -1425,6 +1460,26 @@ export const forkThread = (threadId: string, messageId: string) => {
   ownRequests.set(requestId, { open: true });
   setState({ ...state, forking: { threadId, messageId, error: null } });
   send(ClientCommand.cases["thread.fork"].make({ threadId, messageId, requestId }));
+};
+
+/** Opens the peer review dialog on a thread; the thread's view shows it. */
+export const openPeerReview = (threadId: string) => {
+  if (state.peerReview?.pending) return;
+  setState({ ...state, peerReview: { threadId, pending: false, error: null } });
+};
+
+/** Asks the other harness to review the thread; the dialog stays up until the review opens. */
+export const startPeerReview = (threadId: string) => {
+  if (state.peerReview?.pending) return;
+  const requestId = crypto.randomUUID();
+  ownRequests.set(requestId, { open: true });
+  setState({ ...state, peerReview: { threadId, pending: true, error: null } });
+  send(ClientCommand.cases["thread.peerReview"].make({ threadId, requestId }));
+};
+
+/** Stays up while the review starts, like forking: it opens in a moment and replaces the view. */
+export const closePeerReview = () => {
+  if (state.peerReview && !state.peerReview.pending) setState({ ...state, peerReview: null });
 };
 
 /** Forgets a fork that failed, once its error has been seen. */

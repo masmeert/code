@@ -1,8 +1,10 @@
 import { ChatApp } from "@apcode/ui/agents/chat-app";
 import { AnimatedSidebarInset } from "@apcode/ui/motion/animated-sidebar";
+import { peerOf } from "@apcode/contracts";
 import {
   AppWindow,
   Globe,
+  ScanEye,
   Settings as SettingsIcon,
   SquarePen,
   SquareTerminal,
@@ -12,7 +14,8 @@ import { useEffect, useState } from "react";
 import { toggleBrowser } from "./lib/browser.ts";
 import { describe, useKeybinding } from "./lib/keybindings.ts";
 import "./lib/notifications.ts";
-import { toggleTerminalPanel, useStore } from "./lib/store.ts";
+import { harnessLabel } from "./lib/models.ts";
+import { openPeerReview, toggleTerminalPanel, useStore } from "./lib/store.ts";
 import { useShortcut } from "./lib/useShortcut.ts";
 import { useTheme } from "./lib/useTheme.ts";
 import { openWindow } from "./lib/windows.ts";
@@ -53,6 +56,7 @@ export const App = () => {
     return () => clearTimeout(timer);
   }, []);
   const theme = useStore((s) => s.settings.theme);
+  const settings = useStore((s) => s.settings);
   const switchTo = useStore((s) => s.switchTo);
   const [chosen, setView] = useState<View | null>(initialView);
   const [modal, setModal] = useState<ModalView | null>(null);
@@ -143,6 +147,19 @@ export const App = () => {
                       hint: describe("terminal.toggle"),
                       icon: <SquareTerminal />,
                       run: () => toggleTerminalPanel(view.id),
+                    },
+                  ]
+                : []),
+              ...(view.kind === "thread" &&
+              threads[view.id] &&
+              threads[view.id]!.peerReviewOf === undefined
+                ? [
+                    {
+                      id: "thread.peerReview",
+                      label: `Ask ${harnessLabel(settings, peerOf(threads[view.id]!.provider))} to review this thread`,
+                      hint: describe("thread.peerReview"),
+                      icon: <ScanEye />,
+                      run: () => openPeerReview(view.id),
                     },
                   ]
                 : []),

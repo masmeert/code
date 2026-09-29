@@ -4,6 +4,7 @@ import {
   DEFAULT_AUTO_SHELVE_DAYS,
   isAwaitingUser,
   isTurnActive,
+  peerOf,
   ProviderKind,
   RuntimeEvent,
   ServerFrame,
@@ -46,6 +47,7 @@ import {
   deleteThreadCheckpoints,
   hasCheckpoint,
   listBranches,
+  pinPeerReviewRange,
   listFiles,
   pushBranch,
   readBranch,
@@ -61,6 +63,7 @@ import {
   restoreCheckpoint,
 } from "./git.ts";
 import { expandHome, listFolders } from "./folders.ts";
+import { harnessName, peerReviewPrompt } from "./peerReview.ts";
 import { ClaudeAdapter } from "./providers/ClaudeAdapter.ts";
 import {
   detectSourceControl,
@@ -781,6 +784,92 @@ const make = Effect.gen(function* () {
       );
     });
 
+  /**
+   * Starts a thread on the other harness that reviews this one's work: same folder, a prompt
+   * quoting the conversation and pinning what changed, and Ask first, so it edits nothing unasked.
+   */
+  const peerReview = (command: Extract<ClientCommand, { _tag: "thread.peerReview" }>) =>
+    Effect.gen(function* () {
+      const source = yield* getEntry(command.threadId);
+      const { cwd, provider } = source.info;
+      if (isBusy(source))
+        return yield* Effect.fail(fail("Wait for the agent to finish before asking for a review"));
+      const settings = yield* settingsStore.get;
+      const reviewer = peerOf(provider);
+      const reviewerName = harnessName(settings, reviewer);
+      const status = (yield* registry.list).find((harness) => harness.kind === reviewer);
+      if (status?.checking)
+        return yield* Effect.fail(
+          fail(`Still checking whether ${reviewerName} is set up. Try again in a moment.`),
+        );
+      if (!status?.installed)
+        return yield* Effect.fail(
+          fail(`${reviewerName} isn't installed on this machine. Install its CLI, then try again.`),
+        );
+      if (!status.linked)
+        return yield* Effect.fail(
+          fail(
+            `${reviewerName} isn't signed in. Sign in under Settings → Harnesses, then try again.`,
+          ),
+        );
+      const messages = store.readMessages(source.info.id);
+      const userMessageIds = messages.flatMap((message) =>
+        RuntimeEvent.guards["user.message"](message) ? [message.messageId] : [],
+      );
+      if (!userMessageIds.length)
+        return yield* Effect.fail(
+          fail("There's nothing to review yet: this thread has no messages"),
+        );
+      const id = crypto.randomUUID();
+      const range = yield* Effect.promise(() =>
+        pinPeerReviewRange(cwd, source.info.id, userMessageIds, id),
+      );
+      const now = Date.now();
+      const info: ThreadInfo = {
+        id,
+        projectId: source.info.projectId,
+        provider: reviewer,
+        model: null,
+        cwd,
+        title: titleFrom(`Review of ${source.info.title}`, source.info.title),
+        status: "idle",
+        createdAt: now,
+        updatedAt: now,
+        branch: source.info.branch,
+        archivedAt: null,
+        worktree: source.info.worktree,
+        seenRev: 0,
+        shelved: false,
+        peerReviewOf: source.info.id,
+      };
+      const entry: ThreadEntry = {
+        info,
+        session: null,
+        resumeToken: null,
+        shelveOverride: null,
+        activeAt: now,
+        currentTurn: null,
+        lock: yield* Semaphore.make(1),
+      };
+      threads.set(id, entry);
+      store.insertThread(info);
+      publish(
+        RuntimeEvent.cases["thread.created"].make({ thread: info, requestId: command.requestId }),
+      );
+      publish(
+        RuntimeEvent.cases["thread.peerReview"].make({
+          threadId: id,
+          ofThreadId: source.info.id,
+          ofTitle: source.info.title,
+        }),
+      );
+      yield* send(
+        entry,
+        peerReviewPrompt({ author: harnessName(settings, provider), messages, range }),
+        { effort: null, permission: "ask", attachments: [] },
+      );
+    });
+
   const compact = (threadId: string) =>
     Effect.gen(function* () {
       const entry = yield* getEntry(threadId);
@@ -1119,6 +1208,7 @@ const make = Effect.gen(function* () {
         ),
       "thread.rewind": rewind,
       "thread.fork": fork,
+      "thread.peerReview": peerReview,
       "thread.compact": (command) => compact(command.threadId),
       "thread.listCommands": (command) => listCommands(command.threadId),
       "skills.list": (command) => Effect.sync(() => skills.request(command.provider, command.path)),

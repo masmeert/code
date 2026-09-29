@@ -21,6 +21,8 @@ export const KEYBINDINGS = {
   "terminal.toggle": "mod+j",
   "browser.toggle": "mod+shift+b",
   "usage.toggle": "mod+shift+u",
+  // Not mod+shift+r: Electron's default menu takes it for Force Reload.
+  "thread.peerReview": "mod+shift+p",
 } as const;
 
 export type KeybindingId = keyof typeof KEYBINDINGS;

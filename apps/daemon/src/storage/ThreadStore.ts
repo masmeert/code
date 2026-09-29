@@ -46,6 +46,10 @@ export class ThreadStore extends Context.Service<
     /** Approvals requested but never resolved, as `[requestId, threadId]`. */
     readonly unresolvedApprovals: () => ReadonlyArray<readonly [string, string]>;
     readonly firstUserMessage: (threadId: string) => string | null;
+    /** The thread's messages, user and assistant, oldest first; tool calls and the rest left out. */
+    readonly readMessages: (
+      threadId: string,
+    ) => ReadonlyArray<Extract<RuntimeEvent, { _tag: "user.message" | "assistant.completed" }>>;
     /** Newest stored event id of a thread; 0 if none. */
     readonly cursor: (threadId: string) => number;
     /** How many events come after id `after`, and their encoded size, without reading them. */
@@ -193,6 +197,8 @@ const make = Effect.acquireRelease(
     }
     if (!columns.has("shelve_override"))
       db.run("ALTER TABLE threads ADD COLUMN shelve_override TEXT");
+    if (!columns.has("peer_review_of"))
+      db.run("ALTER TABLE threads ADD COLUMN peer_review_of TEXT");
     if (columns.has("settle_override")) {
       // Shelving was called settling. Both columns can exist, so a newer shelve value wins.
       db.run(
@@ -218,7 +224,7 @@ const make = Effect.acquireRelease(
 ).pipe(
   Effect.map((db) => {
     const insertThread = db.prepare(
-      "INSERT INTO threads (id, project_id, provider, model, cwd, title, created_at, updated_at, worktree) VALUES ($id, $projectId, $provider, $model, $cwd, $title, $createdAt, $updatedAt, $worktree)",
+      "INSERT INTO threads (id, project_id, provider, model, cwd, title, created_at, updated_at, worktree, peer_review_of) VALUES ($id, $projectId, $provider, $model, $cwd, $title, $createdAt, $updatedAt, $worktree, $peerReviewOf)",
     );
     const setMeta = db.prepare(
       "UPDATE threads SET title = $title, updated_at = $updatedAt WHERE id = $id",
@@ -239,6 +245,9 @@ const make = Effect.acquireRelease(
     );
     const selectUserMessages = db.prepare<{ seq: number; json: string }, { threadId: string }>(
       "SELECT seq, json FROM events WHERE thread_id = $threadId AND kind = 'user.message' ORDER BY seq",
+    );
+    const selectMessages = db.prepare<{ seq: number; json: string }, { threadId: string }>(
+      "SELECT seq, json FROM events WHERE thread_id = $threadId AND kind IN ('user.message', 'assistant.completed') ORDER BY seq",
     );
     const selectMessageSeq = db.prepare<{ seq: number }, { threadId: string; messageId: string }>(
       "SELECT seq FROM events WHERE thread_id = $threadId AND json_extract(json, '$.messageId') = $messageId ORDER BY seq LIMIT 1",
@@ -336,6 +345,7 @@ const make = Effect.acquireRelease(
               usage: string | null;
               seen_rev: number;
               shelve_override: ShelveOverride;
+              peer_review_of: string | null;
             },
             []
           >("SELECT * FROM threads ORDER BY created_at")
@@ -357,6 +367,7 @@ const make = Effect.acquireRelease(
               usage: row.usage === null ? undefined : Option.getOrUndefined(decodeUsage(row.usage)),
               seenRev: row.seen_rev,
               shelved: false,
+              ...(row.peer_review_of !== null && { peerReviewOf: row.peer_review_of }),
             },
             resumeToken: row.resume_token,
             shelveOverride: row.shelve_override,
@@ -387,6 +398,10 @@ const make = Effect.acquireRelease(
           )?.text ?? null
         );
       },
+      readMessages: (threadId) =>
+        toStored(selectMessages.all({ threadId })).flatMap(({ event }) =>
+          RuntimeEvent.isAnyOf(["user.message", "assistant.completed"])(event) ? [event] : [],
+        ),
       cursor: (threadId) => selectCursor.get({ threadId })?.seq ?? 0,
       measureAfter: (threadId, after) => {
         const row = selectMeasure.get({ threadId, after });
@@ -412,6 +427,7 @@ const make = Effect.acquireRelease(
           createdAt: info.createdAt,
           updatedAt: info.updatedAt,
           worktree: info.worktree ? 1 : 0,
+          peerReviewOf: info.peerReviewOf ?? null,
         });
       },
       setResumeToken: (id, token) => {

@@ -20,6 +20,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
+  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogTitle,
 } from "@apcode/ui/components/alert-dialog";
@@ -42,6 +43,7 @@ import {
   type Attachment,
   ClientCommand,
   isTurnActive,
+  peerOf,
   type Project,
   type ProviderKind,
   repositoryOf,
@@ -63,6 +65,8 @@ import {
   PanelLeft,
   Pencil,
   Quote,
+  Reply,
+  ScanEye,
   Server,
   Square,
   SquareTerminal,
@@ -97,16 +101,19 @@ import {
 } from "../lib/models.ts";
 import {
   cloneProject,
+  closePeerReview,
   createThread,
   type FollowUp,
   dismissForkError,
   forkThread,
   loadOlder,
   markSeen,
+  openPeerReview,
   queueFollowUp,
   respondApproval,
   send,
   sendFollowUpNow,
+  startPeerReview,
   switchToThread,
   takeFollowUps,
   toggleTerminalPanel,
@@ -138,10 +145,13 @@ type UserItem = Extract<TranscriptItem, { kind: "user" }>;
 
 type ForkedItem = Extract<TranscriptItem, { kind: "forked" }>;
 
+type PeerReviewItem = Extract<TranscriptItem, { kind: "peerReview" }>;
+
 type Turn =
   | { readonly from: "user"; readonly id: string; readonly item: UserItem }
   | { readonly from: "assistant"; readonly id: string; readonly items: Array<TranscriptItem> }
-  | { readonly from: "fork"; readonly id: string; readonly item: ForkedItem };
+  | { readonly from: "fork"; readonly id: string; readonly item: ForkedItem }
+  | { readonly from: "peerReview"; readonly id: string; readonly item: PeerReviewItem };
 
 const toTurns = (items: ReadonlyArray<TranscriptItem>): Array<Turn> => {
   const turns: Array<Turn> = [];
@@ -152,6 +162,10 @@ const toTurns = (items: ReadonlyArray<TranscriptItem>): Array<Turn> => {
     }
     if (item.kind === "forked") {
       turns.push({ from: "fork", id: item.id, item });
+      continue;
+    }
+    if (item.kind === "peerReview") {
+      turns.push({ from: "peerReview", id: item.id, item });
       continue;
     }
     const last = turns.at(-1);
@@ -832,6 +846,26 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   });
   const browserOpen = useBrowser((state) => state.threads[threadId]?.open ?? false);
   useKeybinding(window.desktop ? "browser.toggle" : undefined, () => toggleBrowser(threadId));
+  const peerReviewOpen = useStore((s) => s.peerReview?.threadId === threadId);
+  const reviewedThread = useStore((s) =>
+    info.peerReviewOf === undefined ? undefined : s.threads[info.peerReviewOf],
+  );
+  // A peer review goes back once its latest turn is over, as its latest reply.
+  const review =
+    reviewedThread && !busy
+      ? items.findLast(
+          (item): item is Extract<TranscriptItem, { kind: "assistant" }> =>
+            item.kind === "assistant" && item.text.trim() !== "",
+        )?.text
+      : undefined;
+  // In a peer review, the same shortcut sends it back to the thread it reviews.
+  useKeybinding(
+    info.peerReviewOf === undefined || review !== undefined ? "thread.peerReview" : undefined,
+    () =>
+      reviewedThread && review !== undefined
+        ? handBackPeerReview(reviewedThread.id, harnessLabel(settings, provider), review)
+        : openPeerReview(threadId),
+  );
 
   // Looking at a thread marks whatever it did since you last saw it as seen.
   const { updatedAt } = info;
@@ -866,6 +900,18 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
               <>
                 <GitMenu cwd={info.cwd} refreshKey={diffKey} />
                 <span className="flex items-center gap-0.5">
+                  {info.peerReviewOf === undefined ? (
+                    <button
+                      type="button"
+                      title={`Ask ${harnessLabel(settings, peerOf(provider))} to review this thread's work (${describe("thread.peerReview")})`}
+                      aria-label={`Ask ${harnessLabel(settings, peerOf(provider))} to review`}
+                      aria-haspopup="dialog"
+                      onClick={() => openPeerReview(threadId)}
+                      className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${peerReviewOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+                    >
+                      <ScanEye className="size-4" />
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     title={`${activeTerminal ? "Hide" : "Show"} terminal (${describe("terminal.toggle")})`}
@@ -954,6 +1000,15 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             busy={busy}
             header={
               <>
+                <PromptInputTray open={review !== undefined} detached>
+                  {reviewedThread && review !== undefined ? (
+                    <PeerReviewHandBack
+                      reviewedThreadId={reviewedThread.id}
+                      reviewer={provider}
+                      review={review}
+                    />
+                  ) : null}
+                </PromptInputTray>
                 <PromptInputTray open={runningAgents.length > 0} detached>
                   <RunningAgents
                     threadId={threadId}
@@ -1029,6 +1084,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
         ) : null}
         {browserOpen && window.desktop ? <BrowserPanel threadId={threadId} /> : null}
       </div>
+      {peerReviewOpen ? <PeerReviewDialog threadId={threadId} /> : null}
       {activeTerminal ? (
         <Suspense fallback={null}>
           <TerminalPanel threadId={threadId} activeTerminal={activeTerminal} />
@@ -1079,6 +1135,7 @@ export const TurnList = ({
     >
       {turns.map((turn, index) => {
         if (turn.from === "fork") return <ForkedFrom key={turn.id} item={turn.item} />;
+        if (turn.from === "peerReview") return <PeerReviewOf key={turn.id} item={turn.item} />;
         return turn.from === "user" ? (
           <UserTurn
             key={turn.id}
@@ -1121,6 +1178,77 @@ function ForkedFrom({ item }: { item: ForkedItem }) {
         <span className="max-w-[60%] truncate">Forked from {item.fromTitle} (deleted)</span>
       )}
       <span className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
+/** Where a peer review starts, with the way to the thread it reviews. */
+function PeerReviewOf({ item }: { item: PeerReviewItem }) {
+  const reviewed = useStore((s) => s.threads[item.ofThreadId]);
+  return (
+    <div className="flex items-center gap-3 py-2 text-xs text-muted-foreground">
+      <span className="h-px flex-1 bg-border" />
+      <ScanEye className="size-3.5 shrink-0" />
+      {reviewed ? (
+        <button
+          type="button"
+          onClick={() => switchToThread(item.ofThreadId)}
+          className="max-w-[60%] truncate rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Reviewing {reviewed.title}
+        </button>
+      ) : (
+        <span className="max-w-[60%] truncate">Reviewing {item.ofTitle} (deleted)</span>
+      )}
+      <span className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
+/** Puts a peer review in the reviewed thread's composer and opens that thread, to edit and send. */
+function handBackPeerReview(reviewedThreadId: string, reviewerName: string, review: string) {
+  appendToDraft(
+    reviewedThreadId,
+    `${reviewerName} reviewed your work in this thread. Its findings:\n\n${review.trim()}\n\nCheck each finding against the code before acting on it. Fix the ones that hold up, and tell me which you disagree with and why.`,
+  );
+  switchToThread(reviewedThreadId);
+}
+
+/** Above a finished peer review's composer: takes the review back to the thread it's about. */
+function PeerReviewHandBack({
+  reviewedThreadId,
+  reviewer,
+  review,
+}: {
+  reviewedThreadId: string;
+  reviewer: ProviderKind;
+  review: string;
+}) {
+  const reviewed = useStore((s) => s.threads[reviewedThreadId]);
+  const settings = useStore((s) => s.settings);
+  if (!reviewed) return null;
+  const authorName = harnessLabel(settings, reviewed.provider);
+  return (
+    <div
+      className="flex h-8 items-center gap-2 pl-1.5"
+      title={`Opens ${reviewed.title} with this review in its message box, to edit and send`}
+    >
+      <Reply className="size-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/80">
+        Review done. Send it back to {authorName} to act on?
+      </span>
+      <button
+        type="button"
+        onClick={() =>
+          handBackPeerReview(reviewedThreadId, harnessLabel(settings, reviewer), review)
+        }
+        className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        Send to {authorName}
+        <kbd aria-hidden className="font-sans text-[10px]">
+          {describe("thread.peerReview")}
+        </kbd>
+      </button>
     </div>
   );
 }
@@ -1256,6 +1384,93 @@ function ForkDialog({
             }}
           >
             {pending ? "Forking…" : fork?.error ? "Try again" : "Fork"}
+            {pending ? null : (
+              <kbd aria-hidden className="font-sans text-[10px] text-primary-foreground/60">
+                ↵
+              </kbd>
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/** Asks before starting a peer review, says why one can't start, and stays up until it opens. */
+function PeerReviewDialog({ threadId }: { threadId: string }) {
+  const info = useStore((s) => s.threads[threadId])!;
+  const peerReview = useStore((s) => s.peerReview);
+  const settings = useStore((s) => s.settings);
+  const providers = useProviders(useThreadHost(threadId));
+  const reviewer = peerOf(info.provider);
+  const reviewerName = harnessLabel(settings, reviewer);
+  const authorName = harnessLabel(settings, info.provider);
+  const status = providers.find((harness) => harness.kind === reviewer);
+  const pending = peerReview?.pending === true;
+  const blocker = isTurnActive(info.status)
+    ? `${authorName} is still working. Wait for it to finish, or stop it, then ask for a review.`
+    : status?.checking
+      ? `Checking whether ${reviewerName} is set up…`
+      : !status?.installed
+        ? `${reviewerName} isn't installed on this machine. Install its CLI, then try again.`
+        : !status.linked
+          ? `${reviewerName} isn't signed in. Sign in under Settings → Harnesses, then try again.`
+          : null;
+  const ReviewerLogo = PROVIDER_LOGO[reviewer];
+  const startButton = useRef<HTMLButtonElement>(null);
+  return (
+    <AlertDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) closePeerReview();
+      }}
+    >
+      <AlertDialogContent
+        className="gap-4 bg-popover p-4 data-[size=default]:sm:max-w-sm"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          startButton.current?.focus();
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(
+              "grid size-8 shrink-0 place-items-center rounded-lg",
+              harnessTint(settings, reviewer).avatar,
+            )}
+          >
+            <ReviewerLogo className="size-4" />
+          </span>
+          <AlertDialogTitle className="text-sm">Ask {reviewerName} to review?</AlertDialogTitle>
+        </div>
+        <AlertDialogDescription className="text-xs">
+          {reviewerName} starts a new thread in this folder and checks what {authorName} changed
+          against what you asked. It runs with Ask first and is told not to edit anything. When it's
+          done, you can send its findings back here.
+        </AlertDialogDescription>
+        {blocker || peerReview?.error ? (
+          <p role="alert" className="text-xs text-destructive">
+            {blocker ?? peerReview?.error}
+          </p>
+        ) : null}
+        <AlertDialogFooter className="flex-row justify-end">
+          <AlertDialogCancel size="sm" disabled={pending}>
+            Cancel
+            <kbd aria-hidden className="font-sans text-[10px] text-muted-foreground">
+              esc
+            </kbd>
+          </AlertDialogCancel>
+          <AlertDialogAction
+            ref={startButton}
+            size="sm"
+            disabled={pending || blocker !== null}
+            onClick={(event) => {
+              // Stays open until the review opens, which replaces this view.
+              event.preventDefault();
+              startPeerReview(threadId);
+            }}
+          >
+            {pending ? "Starting…" : peerReview?.error ? "Try again" : "Start review"}
             {pending ? null : (
               <kbd aria-hidden className="font-sans text-[10px] text-primary-foreground/60">
                 ↵
