@@ -35,7 +35,6 @@ import {
 } from "@apcode/contracts";
 import * as Match from "effect/Match";
 import { categoryOf, livePhrase } from "@apcode/ui/agents/tool-group";
-import { AnimatedToastStack, useAnimatedToastStack } from "@apcode/ui/motion/animated-toast-stack";
 import { TextShimmer } from "@apcode/ui/motion/text-shimmer";
 import {
   Archive,
@@ -119,7 +118,6 @@ export const Sidebar = (props: {
   const now = useNow();
   const reduce = useReducedMotion();
   const updateStatus = useUpdateStatus();
-  const { toasts, showToast, dismissToast } = useAnimatedToastStack();
 
   // Grouped by state: whatever still needs you on top, then shelved threads, then archived ones.
   const [showArchived, setShowArchived] = useState(false);
@@ -239,21 +237,6 @@ export const Sidebar = (props: {
     };
   }, []);
 
-  function shelve(info: ThreadInfo, next: boolean) {
-    setShelved(info.id, next);
-    showToast({
-      title: next ? "Shelved" : "Unshelved",
-      description: info.title,
-      action: {
-        label: "Undo",
-        onClick: (toast) => {
-          setShelved(info.id, !next);
-          dismissToast(toast.id);
-        },
-      },
-    });
-  }
-
   // One hover pill glides between rows; rows glide too, so one leaving closes its gap smoothly.
   // Each row carries the hairline above it, centred in the gap and hidden next to a filled
   // (hovered or current) row.
@@ -279,7 +262,7 @@ export const Sidebar = (props: {
             now={now}
             digit={showDigits && jumpIds.includes(info.id) ? jumpIds.indexOf(info.id) + 1 : null}
             onSelect={() => props.onSelect(info.id)}
-            onShelve={(next) => shelve(info, next)}
+            onShelve={(next) => setShelved(info.id, next)}
           />
         </motion.div>
       ))}
@@ -531,12 +514,6 @@ export const Sidebar = (props: {
         </Button>
       </div>
       <AnimatedSidebarRail />
-      <AnimatedToastStack
-        toasts={toasts}
-        onDismiss={dismissToast}
-        position="bottom-left"
-        placement="fixed"
-      />
     </AnimatedSidebar>
   );
 };
