@@ -2,6 +2,12 @@
 
 Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unreleased` to `X.Y.Z - YYYY-MM-DD`; the release workflow publishes that section as the GitHub release notes and fails if it is missing.
 
+## 0.0.12 - 2026-09-29
+
+### Fixed
+
+- Copies of a repo whose remotes name its server differently, like a LAN and a public address for one GitLab, are one project across machines instead of showing as not cloned. Project badge colors may change once.
+
 ## 0.0.11 - 2026-09-29
 
 ### Added
