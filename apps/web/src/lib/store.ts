@@ -74,7 +74,8 @@ export type TranscriptItem =
       /** What that subagent is doing now, in its own words; updated every half minute or so. */
       readonly progress?: string;
       readonly tokens?: number;
-      readonly durationMs?: number;
+      /** When that subagent started, back-dated from the run time its progress reports. */
+      readonly startedAt?: number;
     }
   | {
       readonly kind: "approval";
@@ -368,7 +369,10 @@ const reduceItems = (
               ...item,
               progress: progress.summary ?? item.progress,
               tokens: progress.tokens ?? item.tokens,
-              durationMs: progress.durationMs ?? item.durationMs,
+              startedAt:
+                progress.durationMs === undefined
+                  ? item.startedAt
+                  : Date.now() - progress.durationMs,
             }
           : item,
       ),

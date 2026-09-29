@@ -85,6 +85,7 @@ import { toggleBrowser, useBrowser } from "../lib/browser.ts";
 import { approvePlan, BUILD_WITH_LABEL, fromSent } from "../lib/composer.ts";
 import { appendToDraft, focusComposer, getDraft, setDraft } from "../lib/drafts.ts";
 import { describe, useKeybinding } from "../lib/keybindings.ts";
+import { useNow } from "../lib/time.ts";
 import {
   decodeChoice,
   defaultModel,
@@ -1192,6 +1193,7 @@ function RunningAgents({
   const [open, setOpen] = useState(false);
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
+  const now = useNow(1000);
   const listId = useId();
   // Beyond two, the rows fold into one summary so the tray stays short.
   const grouped = agents.length > 2;
@@ -1258,9 +1260,9 @@ function RunningAgents({
                     <span className="shrink-0 text-muted-foreground/70 tabular-nums">
                       {new Intl.NumberFormat("en", { notation: "compact" }).format(agent.tokens)}{" "}
                       tokens
-                      {agent.durationMs === undefined
+                      {agent.startedAt === undefined
                         ? null
-                        : ` in ${agent.durationMs >= 60_000 ? `${Math.floor(agent.durationMs / 60_000)}m ` : ""}${Math.floor(agent.durationMs / 1000) % 60}s`}
+                        : ` in ${now - agent.startedAt >= 60_000 ? `${Math.floor((now - agent.startedAt) / 60_000)}m ` : ""}${Math.floor((now - agent.startedAt) / 1000) % 60}s`}
                     </span>
                   )}
                   <IconAction

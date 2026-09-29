@@ -68,10 +68,8 @@ const phrase = (category: Category, calls: ReadonlyArray<ToolCall>): string => {
   }
 };
 
-/** Present-tense label for the call that is currently running; for a subagent, what it's doing now. */
+/** Present-tense label for the call that is currently running; a subagent's progress lives in its own row. */
 export const livePhrase = (call: ToolCall): string => {
-  const child = call.children?.findLast((child) => child.output === null);
-  if (child) return `${call.summary || "Subagent"}: ${livePhrase(child)}`;
   switch (categoryOf(call.name)) {
     case "run":
       return "Running a command…";
@@ -84,7 +82,7 @@ export const livePhrase = (call: ToolCall): string => {
     case "web":
       return "Searching the web…";
     case "agent":
-      return "Running a subagent…";
+      return "Started a subagent";
     case "todo":
       return "Updating the todo list…";
     case "browser":
