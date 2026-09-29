@@ -253,9 +253,9 @@ export const Settings = Schema.Struct({
   newThreadPermission: Schema.optional(PermissionLevel),
   /** Where new threads start: the project folder, or a git worktree of their own. */
   workspace: Schema.optional(Schema.Literals(["local", "worktree"])),
-  /** Settles threads with no activity for `autoSettleDays`, read or not. Absent counts as on. */
-  autoSettle: Schema.optional(Schema.Boolean),
-  autoSettleDays: Schema.optional(Schema.Number),
+  /** Shelves threads with no activity for `autoShelveDays`, read or not. Absent counts as on. */
+  autoShelve: Schema.optional(Schema.Boolean),
+  autoShelveDays: Schema.optional(Schema.Number),
   diffLayout: Schema.optional(Schema.Literals(["unified", "split"])),
   /** New worktrees branch from origin's copy of the current branch (fetched first) instead of the local one. */
   worktreeFromOrigin: Schema.optional(Schema.Boolean),
@@ -280,7 +280,7 @@ export const Settings = Schema.Struct({
   notifications: Schema.optional(Schema.Boolean),
 });
 export type Settings = typeof Settings.Type;
-export const DEFAULT_AUTO_SETTLE_DAYS = 7;
+export const DEFAULT_AUTO_SHELVE_DAYS = 7;
 export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   lastProvider: "claude",
@@ -420,8 +420,8 @@ export const ThreadInfo = Schema.Struct({
   usage: Schema.optional(ThreadUsage),
   /** `updatedAt` as of the last time you looked at the thread; lower means unread. */
   seenRev: Schema.Number,
-  /** Idle long enough, or settled by hand; the daemon decides, so every window agrees. */
-  settled: Schema.Boolean,
+  /** Idle long enough, or shelved by hand; the daemon decides, so every window agrees. */
+  shelved: Schema.Boolean,
   /** Live only, never stored: lets the thread list show progress without subscribing to transcripts. */
   activity: Schema.optional(ThreadActivity),
   /** Live only, never stored: lets the thread list answer approvals without opening the thread. */
@@ -531,7 +531,7 @@ export const RuntimeEvent = Schema.Union([
     archivedAt: Schema.NullOr(Schema.Number),
   }),
   Schema.TaggedStruct("thread.status", { threadId: Schema.String, status: ThreadStatus }),
-  Schema.TaggedStruct("thread.settled", { threadId: Schema.String, settled: Schema.Boolean }),
+  Schema.TaggedStruct("thread.shelved", { threadId: Schema.String, shelved: Schema.Boolean }),
   Schema.TaggedStruct("thread.seen", { threadId: Schema.String, seenRev: Schema.Number }),
   Schema.TaggedStruct("thread.activity", {
     threadId: Schema.String,
@@ -798,8 +798,8 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("thread.archive", { threadId: Schema.String, archived: Schema.Boolean }),
   /** You looked at the thread as of its `updatedAt` `rev`. */
   Schema.TaggedStruct("thread.seen", { threadId: Schema.String, rev: Schema.Number }),
-  /** Settle/Unsettle from the thread menu; holds until the thread's next turn starts. */
-  Schema.TaggedStruct("thread.settle", { threadId: Schema.String, settled: Schema.Boolean }),
+  /** Shelve/Unshelve from the thread menu; holds until the thread's next turn starts. */
+  Schema.TaggedStruct("thread.shelve", { threadId: Schema.String, shelved: Schema.Boolean }),
   /** Questions are answered with "allow" and `answers`, and skipped with "deny". */
   Schema.TaggedStruct("approval.respond", {
     threadId: Schema.String,

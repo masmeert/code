@@ -552,8 +552,8 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, model })),
       "thread.archived": ({ threadId, archivedAt }) =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, archivedAt })),
-      "thread.settled": ({ threadId, settled }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, settled })),
+      "thread.shelved": ({ threadId, shelved }) =>
+        updateThreadInfo(state, threadId, (info) => ({ ...info, shelved })),
       "thread.seen": ({ threadId, seenRev }) =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, seenRev })),
       "thread.activity": ({ threadId, activity }) =>
@@ -1560,15 +1560,15 @@ export const markSeen = (threadId: string) => {
     send(ClientCommand.cases["thread.seen"].make({ threadId, rev: info.updatedAt }));
 };
 
-/** Settle/Unsettle from the thread menu; holds until the thread's next turn starts. */
-export const setSettled = (threadId: string, settled: boolean) =>
-  send(ClientCommand.cases["thread.settle"].make({ threadId, settled }));
+/** Shelve/Unshelve from the thread menu; holds until the thread's next turn starts. */
+export const setShelved = (threadId: string, shelved: boolean) =>
+  send(ClientCommand.cases["thread.shelve"].make({ threadId, shelved }));
 
 /** Nothing new (an error included) since you last opened the thread. */
 export const isSeen = (info: ThreadInfo) => info.seenRev >= info.updatedAt;
 
-/** Working threads, or ones waiting on you, can't be settled by hand. */
-export const canSettle = (info: ThreadInfo) => !isTurnActive(info.status);
+/** Working threads, or ones waiting on you, can't be shelved by hand. */
+export const canShelve = (info: ThreadInfo) => !isTurnActive(info.status);
 
 export const respondApproval = (
   threadId: string,

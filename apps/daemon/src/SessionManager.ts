@@ -1,7 +1,7 @@
 import {
   AttachmentInput,
   ClientCommand,
-  DEFAULT_AUTO_SETTLE_DAYS,
+  DEFAULT_AUTO_SHELVE_DAYS,
   isAwaitingUser,
   isTurnActive,
   ProviderKind,
@@ -81,7 +81,7 @@ import { ProviderRegistry } from "./providers/ProviderRegistry.ts";
 import { DATA_DIR } from "./storage/jsonFile.ts";
 import { ProjectsStore } from "./storage/ProjectsStore.ts";
 import { SettingsStore } from "./storage/SettingsStore.ts";
-import { isPersisted, type SettleOverride, ThreadStore } from "./storage/ThreadStore.ts";
+import { isPersisted, type ShelveOverride, ThreadStore } from "./storage/ThreadStore.ts";
 import { type Browsers, createBrowsers } from "./browsers.ts";
 import { createMcp, type Mcp } from "./mcp.ts";
 import { createTerminals, type Terminals } from "./terminals.ts";
@@ -124,20 +124,20 @@ const REAP_INTERVAL_MS = 5 * 60 * 1000;
 type AssistantDelta = Extract<RuntimeEvent, { _tag: "assistant.delta" }>;
 
 /**
- * Settled threads aren't working or waiting on you, and were either settled by hand or idle
- * for `autoSettleDays`, read or not (as in t3code). A turn starting clears the hand-set override.
+ * Shelved threads aren't working or waiting on you, and were either shelved by hand or idle
+ * for `autoShelveDays`, read or not (as in t3code). A turn starting clears the hand-set override.
  */
-function isSettled(
+function isShelved(
   info: ThreadInfo,
-  settleOverride: SettleOverride,
+  shelveOverride: ShelveOverride,
   now: number,
   settings: Settings,
 ) {
   if (isTurnActive(info.status)) return false;
-  if (settleOverride !== null) return settleOverride === "settled";
+  if (shelveOverride !== null) return shelveOverride === "shelved";
   return (
-    settings.autoSettle !== false &&
-    now - info.updatedAt >= (settings.autoSettleDays ?? DEFAULT_AUTO_SETTLE_DAYS) * 86_400_000
+    settings.autoShelve !== false &&
+    now - info.updatedAt >= (settings.autoShelveDays ?? DEFAULT_AUTO_SHELVE_DAYS) * 86_400_000
   );
 }
 
@@ -146,7 +146,7 @@ interface ThreadEntry {
   /** Null until the first message after creation or restart; agent processes start lazily. */
   session: ProviderSession | null;
   resumeToken: string | null;
-  settleOverride: SettleOverride;
+  shelveOverride: ShelveOverride;
   /** Last time the thread's agent did or was asked anything; the reaper stops long-idle sessions. */
   activeAt: number;
   /** The user message that started the turn in progress; its snapshots bracket the turn. */
@@ -284,12 +284,12 @@ const make = Effect.gen(function* () {
   let latestSettings = yield* settingsStore.get;
 
   // --- restore -------------------------------------------------------------
-  for (const { info, resumeToken, settleOverride } of yield* store.load) {
+  for (const { info, resumeToken, shelveOverride } of yield* store.load) {
     threads.set(info.id, {
-      info: { ...info, settled: isSettled(info, settleOverride, Date.now(), latestSettings) },
+      info: { ...info, shelved: isShelved(info, shelveOverride, Date.now(), latestSettings) },
       session: null,
       resumeToken,
-      settleOverride,
+      shelveOverride,
       activeAt: Date.now(),
       currentTurn: null,
       lock: yield* Semaphore.make(1),
@@ -374,8 +374,8 @@ const make = Effect.gen(function* () {
     if (RuntimeEvent.guards["thread.status"](event)) {
       const entry = threads.get(event.threadId);
       if (entry) entry.info = { ...entry.info, status: event.status };
-      if (entry && isTurnActive(event.status) && entry.settleOverride !== null)
-        setSettleOverride(entry, null);
+      if (entry && isTurnActive(event.status) && entry.shelveOverride !== null)
+        setShelveOverride(entry, null);
     }
     if (RuntimeEvent.guards["thread.usage"](event) && event.usage) {
       const entry = threads.get(event.threadId);
@@ -396,11 +396,11 @@ const make = Effect.gen(function* () {
     if (RuntimeEvent.isAnyOf(["user.message", "turn.completed"])(event)) touch(event.threadId);
     if (RuntimeEvent.guards["settings.updated"](event)) {
       latestSettings = event.settings;
-      for (const entry of threads.values()) resettle(entry);
+      for (const entry of threads.values()) refreshShelved(entry);
     }
     if ("threadId" in event && event.threadId) {
       const entry = threads.get(event.threadId);
-      if (entry) resettle(entry);
+      if (entry) refreshShelved(entry);
     }
   };
 
@@ -443,22 +443,22 @@ const make = Effect.gen(function* () {
       );
   };
 
-  /** Announces the thread's settled state when it changed. */
-  const resettle = (entry: ThreadEntry) => {
-    const settled = isSettled(entry.info, entry.settleOverride, Date.now(), latestSettings);
-    if (settled === entry.info.settled) return;
-    entry.info = { ...entry.info, settled };
-    publish(RuntimeEvent.cases["thread.settled"].make({ threadId: entry.info.id, settled }));
+  /** Announces the thread's shelved state when it changed. */
+  const refreshShelved = (entry: ThreadEntry) => {
+    const shelved = isShelved(entry.info, entry.shelveOverride, Date.now(), latestSettings);
+    if (shelved === entry.info.shelved) return;
+    entry.info = { ...entry.info, shelved };
+    publish(RuntimeEvent.cases["thread.shelved"].make({ threadId: entry.info.id, shelved }));
   };
-  // Idle threads settle with time alone; the threshold is in days, so a check a minute is plenty.
-  const settler = setInterval(() => {
-    for (const entry of threads.values()) resettle(entry);
+  // Idle threads shelve with time alone; the threshold is in days, so a check a minute is plenty.
+  const shelver = setInterval(() => {
+    for (const entry of threads.values()) refreshShelved(entry);
   }, 60_000);
-  yield* Effect.addFinalizer(() => Effect.sync(() => clearInterval(settler)));
+  yield* Effect.addFinalizer(() => Effect.sync(() => clearInterval(shelver)));
 
-  const setSettleOverride = (entry: ThreadEntry, override: SettleOverride) => {
-    entry.settleOverride = override;
-    store.setSettleOverride(entry.info.id, override);
+  const setShelveOverride = (entry: ThreadEntry, override: ShelveOverride) => {
+    entry.shelveOverride = override;
+    store.setShelveOverride(entry.info.id, override);
   };
 
   for (const entry of threads.values()) refreshMeta(entry);
@@ -725,13 +725,13 @@ const make = Effect.gen(function* () {
         archivedAt: null,
         worktree: source.info.worktree,
         seenRev: 0,
-        settled: false,
+        shelved: false,
       };
       threads.set(info.id, {
         info,
         session: null,
         resumeToken,
-        settleOverride: null,
+        shelveOverride: null,
         activeAt: now,
         currentTurn: null,
         lock: yield* Semaphore.make(1),
@@ -1047,13 +1047,13 @@ const make = Effect.gen(function* () {
         archivedAt: null,
         worktree: command.workspace === "worktree",
         seenRev: 0,
-        settled: false,
+        shelved: false,
       };
       const entry: ThreadEntry = {
         info,
         session: null,
         resumeToken: null,
-        settleOverride: null,
+        shelveOverride: null,
         activeAt: now,
         currentTurn: null,
         lock: yield* Semaphore.make(1),
@@ -1248,10 +1248,10 @@ const make = Effect.gen(function* () {
           store.setSeenRev(threadId, rev);
           publish(RuntimeEvent.cases["thread.seen"].make({ threadId, seenRev: rev }));
         }),
-      "thread.settle": ({ threadId, settled }) =>
+      "thread.shelve": ({ threadId, shelved }) =>
         Effect.map(getEntry(threadId), (entry) => {
-          setSettleOverride(entry, settled ? "settled" : "active");
-          resettle(entry);
+          setShelveOverride(entry, shelved ? "shelved" : "active");
+          refreshShelved(entry);
         }),
       "project.remove": (command) =>
         Effect.gen(function* () {

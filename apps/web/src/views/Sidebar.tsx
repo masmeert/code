@@ -43,9 +43,8 @@ import {
   Archive,
   ArchiveRestore,
   ArrowDownToLine,
+  ArrowUpToLine,
   ChevronRight,
-  CircleCheck,
-  CircleDot,
   FolderPlus,
   type LucideIcon,
   MoreHorizontal,
@@ -65,11 +64,11 @@ import {
 } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
-  canSettle,
+  canShelve,
   isSeen,
   respondApproval,
   send,
-  setSettled,
+  setShelved,
   useProjectHost,
   useStore,
 } from "../lib/store.ts";
@@ -125,13 +124,13 @@ export const Sidebar = (props: {
   const localConnected = useStore((s) => s.connected);
   const { toasts, showToast, dismissToast } = useAnimatedToastStack();
 
-  // Grouped by state: whatever still needs you on top, then settled threads, then archived ones.
+  // Grouped by state: whatever still needs you on top, then shelved threads, then archived ones.
   const [showArchived, setShowArchived] = useState(false);
-  const [showSettled, setShowSettled] = usePersistedFlag("apcode.sidebar.settledOpen", true);
+  const [showShelved, setShowShelved] = usePersistedFlag("apcode.sidebar.shelvedOpen", true);
   const [collapsedProjects, setCollapsedProjects] = useState<ReadonlyArray<string>>([]);
   // Sections render a page of rows at a time: recent history is the common lookup, the deep tail shouldn't dominate the list.
   const [shownCounts, setShownCounts] = useState<Readonly<Record<string, number>>>({});
-  const { infos, needsYou, active, settled, archived, projectGroups } = useMemo(() => {
+  const { infos, needsYou, active, shelved, archived, projectGroups } = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const byId = new Map(projects.map((p) => [p.id, p]));
     const keyOf = (projectId: string) => {
@@ -163,9 +162,9 @@ export const Sidebar = (props: {
     const current = infos.filter((info) => info.archivedAt === null);
     return {
       infos,
-      needsYou: current.filter((info) => !info.settled && waitsOnYou(info)),
-      active: current.filter((info) => !info.settled && !waitsOnYou(info)),
-      settled: current.filter((info) => info.settled),
+      needsYou: current.filter((info) => !info.shelved && waitsOnYou(info)),
+      active: current.filter((info) => !info.shelved && !waitsOnYou(info)),
+      shelved: current.filter((info) => info.shelved),
       archived: infos.filter((info) => info.archivedAt !== null),
       // One group per repo, whichever machines its threads run on.
       projectGroups: [...new Set(infos.map((info) => keyOf(info.projectId)))].map((key) =>
@@ -199,7 +198,7 @@ export const Sidebar = (props: {
           : [
               ...needsYou,
               ...active,
-              ...(showSettled || query ? shownOf("settled", settled) : []),
+              ...(showShelved || query ? shownOf("shelved", shelved) : []),
               ...(showArchived || query ? shownOf("archived", archived) : []),
             ]
   )
@@ -243,15 +242,15 @@ export const Sidebar = (props: {
     };
   }, []);
 
-  function settle(info: ThreadInfo, next: boolean) {
-    setSettled(info.id, next);
+  function shelve(info: ThreadInfo, next: boolean) {
+    setShelved(info.id, next);
     showToast({
-      title: next ? "Settled" : "Unsettled",
+      title: next ? "Shelved" : "Unshelved",
       description: info.title,
       action: {
         label: "Undo",
         onClick: (toast) => {
-          setSettled(info.id, !next);
+          setShelved(info.id, !next);
           dismissToast(toast.id);
         },
       },
@@ -279,11 +278,11 @@ export const Sidebar = (props: {
             project={projectOf(info)}
             active={info.id === props.activeId}
             unread={info.archivedAt === null && !isSeen(info)}
-            settled={info.archivedAt !== null || info.settled}
+            shelved={info.archivedAt !== null || info.shelved}
             now={now}
             digit={showDigits && jumpIds.includes(info.id) ? jumpIds.indexOf(info.id) + 1 : null}
             onSelect={() => props.onSelect(info.id)}
-            onSettle={(next) => settle(info, next)}
+            onShelve={(next) => shelve(info, next)}
           />
         </motion.div>
       ))}
@@ -479,7 +478,7 @@ export const Sidebar = (props: {
                 needsYou,
               )}
               {renderList("Active", active)}
-              {settled.length + archived.length > 0 ? (
+              {shelved.length + archived.length > 0 ? (
                 <motion.div
                   // Pinned to the bottom while folded, like t3code's shelf; unfolding rises into the free space.
                   layout="position"
@@ -489,8 +488,13 @@ export const Sidebar = (props: {
                     needsYou.length + active.length > 0 && "border-t border-border/60 pt-2",
                   )}
                 >
-                  {renderFolding("settled", "Settled", <CircleCheck />, settled, showSettled, () =>
-                    setShowSettled(!showSettled),
+                  {renderFolding(
+                    "shelved",
+                    "Shelved",
+                    <ArrowDownToLine />,
+                    shelved,
+                    showShelved,
+                    () => setShowShelved(!showShelved),
                   )}
                   {renderFolding("archived", "Archived", <Archive />, archived, showArchived, () =>
                     setShowArchived((open) => !open),
@@ -578,11 +582,11 @@ export const Sidebar = (props: {
 const StatusDot = ({
   info,
   unread,
-  settled,
+  shelved,
 }: {
   info: ThreadInfo;
   unread: boolean;
-  settled: boolean;
+  shelved: boolean;
 }) => {
   const [label, tone] =
     info.status === "awaiting-approval"
@@ -595,8 +599,8 @@ const StatusDot = ({
             ? ["Working", "bg-foreground animate-pulse"]
             : unread
               ? ["New activity", "bg-foreground"]
-              : settled
-                ? ["Settled", "bg-muted-foreground/25"]
+              : shelved
+                ? ["Shelved", "bg-muted-foreground/25"]
                 : ["Idle", "bg-muted-foreground/60"];
   return (
     <span role="img" aria-label={label} className={cn("size-2 shrink-0 rounded-full", tone)} />
@@ -657,8 +661,8 @@ interface CardAction {
 /** One action list, shared by the ⋯ menu and the right-click menu. */
 const useThreadActions = (
   info: ThreadInfo,
-  settled: boolean,
-  onSettle: (settled: boolean) => void,
+  shelved: boolean,
+  onShelve: (shelved: boolean) => void,
 ) => {
   const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null);
   const confirmArchive = useStore((s) => s.settings.confirmArchive === true);
@@ -682,11 +686,11 @@ const useThreadActions = (
         ]
       : [
           {
-            key: "settle",
-            label: settled ? "Unsettle" : "Settle",
-            icon: settled ? CircleDot : CircleCheck,
-            onSelect: () => onSettle(!settled),
-            disabled: !canSettle(info),
+            key: "shelve",
+            label: shelved ? "Unshelve" : "Shelve",
+            icon: shelved ? ArrowUpToLine : ArrowDownToLine,
+            onSelect: () => onShelve(!shelved),
+            disabled: !canShelve(info),
           },
           confirmArchive && confirming !== "archive"
             ? {
@@ -695,7 +699,7 @@ const useThreadActions = (
                 icon: Archive,
                 keepOpen: true,
                 onSelect: () => setConfirming("archive"),
-                disabled: !canSettle(info),
+                disabled: !canShelve(info),
               }
             : {
                 key: "archive",
@@ -708,7 +712,7 @@ const useThreadActions = (
                       archived: true,
                     }),
                   ),
-                disabled: !canSettle(info),
+                disabled: !canShelve(info),
               },
         ]),
     confirmDelete && confirming !== "delete"
@@ -756,26 +760,26 @@ const ThreadCard = (props: {
   project: Project;
   active: boolean;
   unread: boolean;
-  settled: boolean;
+  shelved: boolean;
   now: number;
   /** The ⌘-number that opens it, shown while ⌘ is held; null otherwise. */
   digit: number | null;
   onSelect: () => void;
-  onSettle: (settled: boolean) => void;
+  onShelve: (shelved: boolean) => void;
 }) => {
   const { info, project } = props;
   const host = useProjectHost(project.id);
   const reduce = useReducedMotion();
   const [menuOpen, setMenuOpenState] = useState(false);
   const [responding, setResponding] = useState(false);
-  const { actions, resetConfirm } = useThreadActions(info, props.settled, props.onSettle);
+  const { actions, resetConfirm } = useThreadActions(info, props.shelved, props.onShelve);
   const setMenuOpen = (open: boolean) => {
     setMenuOpenState(open);
     if (!open) resetConfirm();
   };
-  const urgent = !props.settled && waitsOnYou(info);
+  const urgent = !props.shelved && waitsOnYou(info);
   const request = info.request;
-  // Two-finger swipe left settles (or unsettles): the row follows the fingers, and past the
+  // Two-finger swipe left shelves (or unshelves): the row follows the fingers, and past the
   // threshold letting go commits; short of it, it springs back.
   const swipeX = useMotionValue(0);
   const swipeEnd = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -795,22 +799,22 @@ const ThreadCard = (props: {
         )}
       >
         {info.archivedAt === null ? (
-          <Tooltip content={props.settled ? "Unsettle" : "Settle"} side="bottom">
+          <Tooltip content={props.shelved ? "Unshelve" : "Shelve"} side="bottom">
             <button
               type="button"
               tabIndex={-1}
-              disabled={!canSettle(info)}
-              aria-label={props.settled ? "Unsettle" : "Settle"}
+              disabled={!canShelve(info)}
+              aria-label={props.shelved ? "Unshelve" : "Shelve"}
               onClick={(e) => {
                 e.stopPropagation();
-                props.onSettle(!props.settled);
+                props.onShelve(!props.shelved);
               }}
               className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
             >
-              {props.settled ? (
-                <CircleDot className="size-3.5" />
+              {props.shelved ? (
+                <ArrowUpToLine className="size-3.5" />
               ) : (
-                <CircleCheck className="size-3.5" />
+                <ArrowDownToLine className="size-3.5" />
               )}
             </button>
           </Tooltip>
@@ -854,7 +858,11 @@ const ThreadCard = (props: {
             style={{ opacity: swipeReveal }}
             className="pointer-events-none absolute inset-y-0 right-3 grid place-items-center text-muted-foreground"
           >
-            {props.settled ? <CircleDot className="size-4" /> : <CircleCheck className="size-4" />}
+            {props.shelved ? (
+              <ArrowUpToLine className="size-4" />
+            ) : (
+              <ArrowDownToLine className="size-4" />
+            )}
           </motion.span>
           <motion.div
             role="button"
@@ -868,22 +876,22 @@ const ThreadCard = (props: {
               props.onSelect();
             }}
             onWheel={(e) => {
-              if (info.archivedAt !== null || !canSettle(info)) return;
+              if (info.archivedAt !== null || !canShelve(info)) return;
               if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
               swipeX.set(Math.max(-96, Math.min(0, swipeX.get() - e.deltaX)));
               clearTimeout(swipeEnd.current);
               swipeEnd.current = setTimeout(() => {
-                if (swipeX.get() <= -64) props.onSettle(!props.settled);
+                if (swipeX.get() <= -64) props.onShelve(!props.shelved);
                 animate(swipeX, 0, reduce ? { duration: 0 } : SPRING_SWAP);
               }, 120);
             }}
             className={cn(
               "group/card cursor-default rounded-xl px-3 transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring",
-              props.settled ? "py-1.5" : "py-2.5",
+              props.shelved ? "py-1.5" : "py-2.5",
               props.active && "bg-muted",
             )}
           >
-            {props.settled ? (
+            {props.shelved ? (
               <div className="flex h-5 min-w-0 items-center gap-2 text-muted-foreground">
                 <p
                   className={cn(
@@ -906,7 +914,7 @@ const ThreadCard = (props: {
                   {info.title}
                 </p>
                 <div className="mt-1 flex h-5 items-center gap-2 text-xs text-muted-foreground">
-                  <StatusDot info={info} unread={props.unread} settled={props.settled} />
+                  <StatusDot info={info} unread={props.unread} shelved={props.shelved} />
                   <ProviderMark info={info} />
                   {info.status === "running" ? (
                     <TextShimmer

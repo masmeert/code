@@ -20,7 +20,7 @@ import { SOURCE_CONTROL_LABEL, SOURCE_CONTROL_LOGO } from "@/components/source-c
 import { cn } from "@apcode/ui/lib/utils";
 import {
   ClientCommand,
-  DEFAULT_AUTO_SETTLE_DAYS,
+  DEFAULT_AUTO_SHELVE_DAYS,
   Effort,
   HarnessColor,
   MergeMethod,
@@ -179,7 +179,7 @@ function RowLabel({ title, description }: { title: string; description: string }
   );
 }
 
-const AUTO_SETTLE_DAYS = [1, 3, 7, 14, 30];
+const AUTO_SHELVE_DAYS = [1, 3, 7, 14, 30];
 
 const THEMES: Array<{ value: Theme; label: string; icon: typeof Sun }> = [
   { value: "system", label: "System", icon: Monitor },
@@ -391,27 +391,27 @@ function GeneralPage() {
           <SettingsRow
             label={
               <RowLabel
-                title="Settle idle threads"
+                title="Shelve idle threads"
                 description="Read or not; new activity brings them back"
               />
             }
           >
             <SettingsSelect
               value={
-                settings.autoSettle === false
+                settings.autoShelve === false
                   ? "never"
-                  : String(settings.autoSettleDays ?? DEFAULT_AUTO_SETTLE_DAYS)
+                  : String(settings.autoShelveDays ?? DEFAULT_AUTO_SHELVE_DAYS)
               }
               onChange={(value) =>
                 updateSettings(
                   value === "never"
-                    ? { ...settings, autoSettle: false }
-                    : { ...settings, autoSettle: true, autoSettleDays: Number(value) },
+                    ? { ...settings, autoShelve: false }
+                    : { ...settings, autoShelve: true, autoShelveDays: Number(value) },
                 )
               }
               options={[
                 { value: "never", label: "Never" },
-                ...AUTO_SETTLE_DAYS.map((days) => ({
+                ...AUTO_SHELVE_DAYS.map((days) => ({
                   value: String(days),
                   label: days === 1 ? "After 1 day" : `After ${days} days`,
                 })),

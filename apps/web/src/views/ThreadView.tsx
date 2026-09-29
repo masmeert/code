@@ -738,7 +738,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   const browserOpen = useBrowser((state) => state.threads[threadId]?.open ?? false);
   useKeybinding(window.desktop ? "browser.toggle" : undefined, () => toggleBrowser(threadId));
 
-  // Looking at a thread settles whatever it did since you last saw it.
+  // Looking at a thread marks whatever it did since you last saw it as seen.
   const { updatedAt } = info;
   useEffect(() => {
     const mark = () => document.hasFocus() && markSeen(threadId);
