@@ -2,6 +2,17 @@
 
 Release notes for the APCode desktop app. Before tagging `vX.Y.Z`, rename `Unreleased` to `X.Y.Z - YYYY-MM-DD`; the release workflow publishes that section as the GitHub release notes and fails if it is missing.
 
+## 0.0.10 - 2026-09-29
+
+### Added
+
+- Remote hosts: add a Linux machine from your ~/.ssh/config in Settings → Connections, and APCode installs itself there and connects over SSH with your keys. Its agents keep working while this Mac sleeps or goes offline, and its threads sit in the sidebar with yours.
+- A new thread picks the machine it runs on, next to Local checkout (⌘⇧H). When the project isn't on that machine yet, one click clones it there.
+- The same repo on several machines is one project in the sidebar and the project menu.
+- Add project can browse a host's folders, or clone a repository on this Mac or a host.
+- Settings → Harnesses shows the Claude and Codex accounts of each host, to link or unlink them there.
+- On a host's threads, the browser panel opens the host's localhost, the terminal is a shell on the host, and attached files are sent over.
+
 ## 0.0.9 - 2026-09-28
 
 ### Changed
