@@ -65,13 +65,10 @@ export function Tabs({
   return (
     <MotionConfig transition={reduce ? { duration: 0 } : SPRING_LAYOUT}>
       <TabsCtx.Provider value={contextValue}>
-        {/* layoutRoot: the indicator's layoutId measures in page coordinates, so
-            inside fixed/scrolled containers it would replay scroll offsets as
-            movement. The pill only ever travels within the list, so scoping
-            projection to the Tabs wrapper is always correct. */}
-        <motion.div layoutRoot className={className}>
-          {children}
-        </motion.div>
+        {/* Not a layoutRoot: that cut the pill off from a resizing parent's layout
+            animation (a modal whose content changes with the tab), so it arced
+            against the list instead of sliding along it. */}
+        <div className={className}>{children}</div>
       </TabsCtx.Provider>
     </MotionConfig>
   );
