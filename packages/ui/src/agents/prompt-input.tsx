@@ -563,8 +563,6 @@ function PickerTrigger({
         "flex max-w-56 min-w-0 items-center gap-1.5 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
         variant === "pill" && "h-8 rounded-full border border-border bg-background px-3 text-xs",
         variant === "plain" && "h-6 rounded-lg px-2 text-[11px]",
-        variant === "inline" &&
-          "-mx-1 inline-flex rounded-md px-1 align-baseline text-foreground underline decoration-muted-foreground/50 decoration-dotted underline-offset-4",
         open && "bg-muted text-foreground",
         className,
       )}
@@ -573,7 +571,7 @@ function PickerTrigger({
         <span className="grid size-3.5 shrink-0 place-items-center [&_svg]:size-3.5">{icon}</span>
       ) : null}
       <span className="truncate">{children}</span>
-      {variant === "inline" ? null : <ChevronDown className="size-3 shrink-0 opacity-60" />}
+      <ChevronDown className="size-3 shrink-0 opacity-60" />
     </button>
   );
 }
@@ -792,7 +790,7 @@ export function PromptSlider({
   );
 }
 
-type PickerVariant = "pill" | "plain" | "inline";
+type PickerVariant = "pill" | "plain";
 
 export interface PromptSelectProps {
   options: PromptOption[];
@@ -827,7 +825,7 @@ export interface PromptSelectProps {
   multi?: string[];
   /** While open, ⌘1–⌘9 pick the first nine options, each row showing its shortcut. */
   numbered?: boolean;
-  /** `plain` for a quiet trigger outside the toolbar, like the strip under the card; `inline` to sit in a sentence. */
+  /** `plain` for a quiet trigger outside the toolbar, like the strip under the card. */
   variant?: PickerVariant;
   /** Shift-click on an option; without it, shift-click picks like a click. */
   onToggle?: (value: string) => void;
@@ -889,7 +887,11 @@ export function PromptSelect({
   const trimmed = query.trim();
   const needle = trimmed.toLowerCase();
   const visible = needle
-    ? options.filter((option) => option.value.toLowerCase().includes(needle))
+    ? options.filter((option) =>
+        [option.value, option.label, option.description].some(
+          (text) => typeof text === "string" && text.toLowerCase().includes(needle),
+        ),
+      )
     : options;
   const canCreate =
     Boolean(onCreate && trimmed) && !options.some((option) => option.value === trimmed);

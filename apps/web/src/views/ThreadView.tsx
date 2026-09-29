@@ -11,6 +11,7 @@ import {
 import { Markdown } from "@apcode/ui/agents/markdown";
 import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
 import { PromptInputTray, PromptSelect } from "@apcode/ui/agents/prompt-input";
+import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
 import { Fold } from "@apcode/ui/motion/fold";
 import { StreamingResponse } from "@apcode/ui/agents/streaming-response";
 import { ApprovalCard } from "@apcode/ui/agents/approval-card";
@@ -47,6 +48,7 @@ import {
 } from "@apcode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
 import {
+  Check,
   ChevronRight,
   CornerDownRight,
   FileDiff,
@@ -227,23 +229,27 @@ const Header = ({
 const ADD_PROJECT = "\u0000add-project";
 
 /** Which project a draft starts in, one entry per repo whatever machines it's on; also the way to add one. */
-const ProjectSelect = ({
+const ProjectList = ({
   cwd,
   onPick,
-  openSignal,
+  focusSignal,
 }: {
   cwd: string | null;
   onPick: (path: string | null) => void;
-  openSignal: number;
+  focusSignal: number;
 }) => {
   const projects = useStore((s) => s.projects);
   const threads = useStore((s) => s.threads);
   const projectHosts = useStore((s) => s.projectHosts);
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
   const copies = new Map<string, Array<Project>>();
   for (const project of projects)
     copies.set(projectKey(project), [...(copies.get(projectKey(project)) ?? []), project]);
   const current = projects.find((p) => p.path === cwd);
-  // The copy on the machine the project was last worked on, else this Mac's.
+  const currentKey = current && projectKey(current);
   const lastUsed = (project: Project) =>
     Math.max(
       0,
@@ -251,41 +257,138 @@ const ProjectSelect = ({
         info.projectId === project.id ? [info.updatedAt] : [],
       ),
     );
+  // The copy on the machine the project was last worked on, else this Mac's.
   const preferred = (key: string) =>
     [...(copies.get(key) ?? [])].sort(
       (a, b) =>
         lastUsed(b) - lastUsed(a) ||
         Number(Boolean(projectHosts[a.id])) - Number(Boolean(projectHosts[b.id])),
-    )[0];
-  const options = [
+    )[0]!;
+  const onAnotherMachine = projects.some((project) => projectHosts[project.id]);
+  const needle = query.trim().toLowerCase();
+  const rows = [
     ...[...copies]
-      .sort(([, a], [, b]) => a[0]!.name.localeCompare(b[0]!.name))
-      .map(([key, [first]]) => ({
-        value: key,
-        label: first!.name,
-        icon: <ProjectBadge project={first!} />,
-      })),
-    { value: ADD_PROJECT, label: "Add project…", icon: <FolderPlus /> },
+      .map(([key, projectCopies]) => ({
+        key,
+        projectCopies,
+        lastUsedAt: Math.max(...projectCopies.map(lastUsed)),
+      }))
+      .sort(
+        (a, b) =>
+          b.lastUsedAt - a.lastUsedAt ||
+          a.projectCopies[0]!.name.localeCompare(b.projectCopies[0]!.name),
+      )
+      .map(({ key, projectCopies }) => {
+        const shown = preferred(key);
+        const path = shown.path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
+        return {
+          id: key,
+          project: shown,
+          where: onAnotherMachine
+            ? `${path} · ${projectCopies.map((copy) => projectHosts[copy.id] ?? "This Mac").join(", ")}`
+            : path,
+        };
+      })
+      .filter(
+        (row) =>
+          row.project.name.toLowerCase().includes(needle) ||
+          row.where.toLowerCase().includes(needle),
+      ),
+    { id: ADD_PROJECT, project: null, where: "" },
   ];
+  const { activeIndex, moveActive } = useRowCursor(rows, needle);
+
+  useEffect(() => {
+    if (focusSignal) searchRef.current?.focus({ preventScroll: true });
+  }, [focusSignal]);
+
+  useEffect(() => {
+    if (searching)
+      document.getElementById(`${listId}-${activeIndex}`)?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, listId, searching]);
+
+  function pick(row: (typeof rows)[number]) {
+    setQuery("");
+    if (row.project) {
+      onPick(row.project.path);
+      focusComposer();
+    } else
+      void addProject().then((path) => {
+        if (!path) return;
+        onPick(path);
+        focusComposer();
+      });
+  }
+
   return (
-    <PromptSelect
-      title="Project"
-      options={options}
-      value={current ? projectKey(current) : undefined}
-      placeholder="a project"
-      onChange={(value) =>
-        value === ADD_PROJECT
-          ? void addProject().then((path) => path && onPick(path))
-          : onPick(preferred(value)?.path ?? null)
-      }
-      side="bottom"
-      width="w-64"
-      openSignal={openSignal}
-      numbered
-      variant="inline"
-      // The heading is a window drag region, which would swallow the click.
-      className="[-webkit-app-region:no-drag]"
-    />
+    <div className="flex w-full max-w-sm flex-col gap-1 text-left [-webkit-app-region:no-drag]">
+      <input
+        ref={searchRef}
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onFocus={() => setSearching(true)}
+        onBlur={() => setSearching(false)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            moveActive(event.key === "ArrowDown" ? 1 : -1);
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            pick(rows[activeIndex]!);
+          } else if (event.key === "Escape") {
+            if (query) setQuery("");
+            else if (cwd) focusComposer();
+          }
+        }}
+        role="combobox"
+        aria-expanded
+        aria-controls={listId}
+        aria-activedescendant={searching ? `${listId}-${activeIndex}` : undefined}
+        placeholder="Search projects…"
+        className="mb-1 h-8 w-full rounded-lg bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
+      />
+      <div
+        id={listId}
+        role="listbox"
+        aria-label="Project"
+        className="scrollbar-hide flex max-h-[45vh] flex-col gap-0.5 overflow-y-auto overscroll-contain"
+      >
+        {rows.map((row, index) => (
+          <button
+            key={row.id}
+            id={`${listId}-${index}`}
+            type="button"
+            role="option"
+            aria-selected={row.id === currentKey}
+            tabIndex={-1}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => pick(row)}
+            className={cn(
+              "flex h-8 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground",
+              searching && index === activeIndex && "bg-muted text-foreground",
+              row.id === currentKey && "text-foreground",
+            )}
+          >
+            {row.project ? (
+              <>
+                <ProjectBadge project={row.project} />
+                <span className="shrink-0">{row.project.name}</span>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground/70">
+                  {row.where}
+                </span>
+                {row.id === currentKey ? <Check className="size-3.5 shrink-0" /> : null}
+              </>
+            ) : (
+              <>
+                <FolderPlus className="size-4 shrink-0" />
+                Add project…
+              </>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 };
 
@@ -404,10 +507,6 @@ export const DraftView = ({
   const extraModels = extras.filter((c) => c !== selected && choices.some((o) => o.value === c));
   const [workspace, setWorkspace] = useState(settings.workspace ?? "local");
   const [projectSignal, setProjectSignal] = useState(0);
-  const needsProject = !path && Boolean(selected);
-  useEffect(() => {
-    if (needsProject) setProjectSignal((n) => n + 1);
-  }, [needsProject]);
 
   return (
     <>
@@ -426,11 +525,7 @@ export const DraftView = ({
             }}
           />
         ) : choices.length ? (
-          <span>
-            {path ? "What should we work on in " : "Start a thread in "}
-            <ProjectSelect cwd={path} onPick={onPickProject} openSignal={projectSignal} />
-            {path ? "?" : null}
-          </span>
+          <ProjectList cwd={path} onPick={onPickProject} focusSignal={projectSignal} />
         ) : providers.some((p) => p.checking) ? (
           "Checking Claude and Codex…"
         ) : host ? (
