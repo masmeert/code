@@ -94,6 +94,7 @@ export const UpdateStatus = Schema.TaggedUnion({
   idle: {},
   checking: {},
   "up-to-date": {},
+  available: { version: Schema.String },
   downloading: { version: Schema.String, percent: Schema.Number },
   ready: { version: Schema.String },
   failed: { message: Schema.String },
@@ -150,6 +151,7 @@ export interface DesktopBridge {
   readonly updateStatus: () => Promise<UpdateStatus>;
   readonly onUpdateStatus: (listener: (status: UpdateStatus) => void) => () => void;
   readonly checkForUpdates: () => Promise<void>;
+  readonly downloadUpdate: () => Promise<void>;
   readonly installUpdate: () => Promise<void>;
   /** A system notification about a thread, shown only while no APCode window is focused. */
   readonly notify: (notification: {

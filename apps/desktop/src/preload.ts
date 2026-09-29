@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld("desktop", {
     return () => ipcRenderer.removeListener("update-status-changed", forward);
   },
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
+  downloadUpdate: () => ipcRenderer.invoke("download-update"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
   notify: (notification) => ipcRenderer.invoke("notify", notification),
   setBadgeCount: (count) => ipcRenderer.invoke("set-badge-count", count),

@@ -24,17 +24,24 @@ export function checkForUpdates() {
   autoUpdater.checkForUpdates().catch(() => {});
 }
 
+export function downloadUpdate() {
+  if (!UpdateStatus.guards.available(status)) return;
+  setStatus(UpdateStatus.cases.downloading.make({ version: status.version, percent: 0 }));
+  autoUpdater.downloadUpdate().catch(() => {});
+}
+
 export function installUpdate() {
   autoUpdater.quitAndInstall();
 }
 
 export function watchForUpdates() {
+  autoUpdater.autoDownload = false;
   autoUpdater.on("checking-for-update", () => setStatus(UpdateStatus.cases.checking.make({})));
   autoUpdater.on("update-not-available", () =>
     setStatus(UpdateStatus.cases["up-to-date"].make({})),
   );
   autoUpdater.on("update-available", ({ version }) =>
-    setStatus(UpdateStatus.cases.downloading.make({ version, percent: 0 })),
+    setStatus(UpdateStatus.cases.available.make({ version })),
   );
   autoUpdater.on("download-progress", ({ percent }) => {
     if (UpdateStatus.guards.downloading(status)) setStatus({ ...status, percent });

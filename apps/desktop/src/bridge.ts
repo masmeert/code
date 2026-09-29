@@ -7,7 +7,7 @@ import { basename, extname } from "node:path";
 import { automateBrowser } from "./browserAutomation.ts";
 import { addHost, hostDaemon, listHosts, removeHost, restartHost, sshAliases } from "./hosts.ts";
 import { APP_URL } from "./renderer.ts";
-import { checkForUpdates, installUpdate, updateStatus } from "./updates.ts";
+import { checkForUpdates, downloadUpdate, installUpdate, updateStatus } from "./updates.ts";
 
 function handle<S extends Schema.ConstraintDecoder<unknown>, Result>(
   channel: string,
@@ -91,6 +91,7 @@ export function registerBridge(daemon: () => Promise<{ port: number; token: stri
   handle("app-version", Schema.Undefined, () => app.getVersion());
   handle("update-status", Schema.Undefined, updateStatus);
   handle("check-for-updates", Schema.Undefined, checkForUpdates);
+  handle("download-update", Schema.Undefined, downloadUpdate);
   handle("install-update", Schema.Undefined, installUpdate);
   handle(
     "notify",

@@ -35,6 +35,7 @@ import {
   type ThreadInfo,
   UpdateStatus,
 } from "@apcode/contracts";
+import * as Match from "effect/Match";
 import { categoryOf, livePhrase } from "@apcode/ui/agents/tool-group";
 import { AnimatedToastStack, useAnimatedToastStack } from "@apcode/ui/motion/animated-toast-stack";
 import { TextShimmer } from "@apcode/ui/motion/text-shimmer";
@@ -531,14 +532,25 @@ export const Sidebar = (props: {
             ))}
           </button>
         ) : null}
-        {updateStatus && UpdateStatus.guards.ready(updateStatus) ? (
+        {updateStatus &&
+        UpdateStatus.isAnyOf(["available", "downloading", "ready"])(updateStatus) ? (
           <Button
             variant="ghost"
-            onClick={() => window.desktop?.installUpdate()}
-            className="h-8 w-full justify-start gap-2 rounded-lg bg-primary/10 px-2 text-sm font-normal text-primary hover:bg-primary/15 hover:text-primary"
+            disabled={UpdateStatus.guards.downloading(updateStatus)}
+            onClick={() =>
+              UpdateStatus.guards.ready(updateStatus)
+                ? window.desktop?.installUpdate()
+                : window.desktop?.downloadUpdate()
+            }
+            className="h-8 w-full justify-start gap-2 rounded-lg bg-primary/10 px-2 text-sm font-normal text-primary hover:bg-primary/15 hover:text-primary disabled:opacity-100"
           >
             <ArrowDownToLine className="size-4" />
-            Restart to update
+            {Match.value(updateStatus).pipe(
+              Match.tag("available", () => "Download update"),
+              Match.tag("downloading", ({ percent }) => `Downloading ${Math.round(percent)}%`),
+              Match.tag("ready", () => "Restart to update"),
+              Match.exhaustive,
+            )}
             <span className="ml-auto text-xs tabular-nums opacity-70">v{updateStatus.version}</span>
           </Button>
         ) : null}

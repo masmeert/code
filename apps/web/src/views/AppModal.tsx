@@ -553,6 +553,7 @@ function UpdatesSection() {
     window.desktop?.appVersion().then(setVersion, () => {});
   }, []);
   const ready = UpdateStatus.guards.ready(status);
+  const available = UpdateStatus.guards.available(status);
 
   return (
     <Section title="About">
@@ -572,7 +573,9 @@ function UpdatesSection() {
                 <p className="text-xs text-muted-foreground">
                   {ready
                     ? `Version ${status.version} is downloaded and installs when APCode restarts.`
-                    : "Current version of the application."}
+                    : available
+                      ? `Version ${status.version} is available.`
+                      : "Current version of the application."}
                 </p>
               )}
             </>
@@ -580,17 +583,22 @@ function UpdatesSection() {
         >
           <Button
             size="sm"
-            variant={ready ? "primary" : "secondary"}
+            variant={ready || available ? "primary" : "secondary"}
             disabled={UpdateStatus.isAnyOf(["checking", "downloading"])(status)}
             className="h-7 rounded-lg tabular-nums disabled:opacity-100"
             onClick={() =>
-              ready ? window.desktop?.installUpdate() : window.desktop?.checkForUpdates()
+              ready
+                ? window.desktop?.installUpdate()
+                : available
+                  ? window.desktop?.downloadUpdate()
+                  : window.desktop?.checkForUpdates()
             }
           >
             {Match.value(status).pipe(
               Match.tag("idle", () => "Check for updates"),
               Match.tag("checking", () => "Checking…"),
               Match.tag("up-to-date", () => "Up to date"),
+              Match.tag("available", () => "Download update"),
               Match.tag("downloading", ({ percent }) => `Downloading ${Math.round(percent)}%`),
               Match.tag("ready", () => "Restart to update"),
               Match.tag("failed", () => "Try again"),
