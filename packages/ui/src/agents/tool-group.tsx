@@ -178,10 +178,7 @@ export function ToolCallRow({
         className="group flex h-7 w-full min-w-0 items-center gap-2 rounded-md text-left outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:cursor-default"
       >
         <span
-          className={cn(
-            "shrink-0",
-            call.isError ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground",
-          )}
+          className={cn("shrink-0", call.isError ? "text-destructive" : "text-muted-foreground")}
         >
           {category === "other"
             ? call.name
@@ -261,9 +258,7 @@ export function ToolGroup({
         ) : (
           <span className="truncate">{summarize(calls)}</span>
         )}
-        {failed > 0 ? (
-          <span className="shrink-0 text-rose-600 dark:text-rose-400">{failed} failed</span>
-        ) : null}
+        {failed > 0 ? <span className="shrink-0 text-destructive">{failed} failed</span> : null}
         <Chevron open={open} />
       </button>
       <AgentDisclosure id={contentId} open={open}>

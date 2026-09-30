@@ -706,7 +706,7 @@ function GitPage() {
                     className={cn(
                       "rounded-md px-1.5 py-px text-[10px] font-medium",
                       status.authenticated
-                        ? "bg-emerald-500/15 text-emerald-500"
+                        ? "bg-success/15 text-success"
                         : status.installed
                           ? "bg-warning/15 text-warning"
                           : "bg-muted text-muted-foreground",
@@ -956,7 +956,7 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
                 className={cn(
                   "mt-1.5 size-1.5 shrink-0 rounded-full",
                   Match.value(status).pipe(
-                    Match.tag("connected", () => "bg-emerald-500"),
+                    Match.tag("connected", () => "bg-success"),
                     Match.tag("failed", () => "bg-destructive"),
                     Match.orElse(() => "bg-warning"),
                   ),
@@ -1374,7 +1374,7 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
                     })
                   }
                 >
-                  <Star className={cn("size-3.5", favorite && "fill-amber-500 text-amber-500")} />
+                  <Star className={cn("size-3.5", favorite && "fill-brand text-brand")} />
                 </IconButton>
                 <div
                   className={cn(
@@ -1554,7 +1554,7 @@ const ProviderCard = ({
                     className={cn(
                       "size-1.5 shrink-0 rounded-full",
                       status?.linked
-                        ? "bg-emerald-500"
+                        ? "bg-success"
                         : status?.installed
                           ? "bg-warning"
                           : "bg-muted-foreground/40",

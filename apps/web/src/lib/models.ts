@@ -34,7 +34,7 @@ export const visibleModels = (models: ReadonlyArray<ModelOption>, harness: Provi
 export const recommendedBadge = () =>
   createElement(Star, {
     "aria-label": "Recommended",
-    className: "size-3 fill-current text-amber-500",
+    className: "size-3 fill-current text-brand",
   });
 
 /** Composer picker values are `<harness>:<model>`. */

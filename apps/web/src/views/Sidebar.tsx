@@ -536,7 +536,7 @@ const StatusDot = ({
         : info.status === "error"
           ? ["Error", "bg-destructive"]
           : info.status === "running"
-            ? ["Working", "bg-foreground animate-pulse"]
+            ? ["Working", "bg-success animate-pulse"]
             : unread
               ? ["New activity", "bg-brand"]
               : shelved

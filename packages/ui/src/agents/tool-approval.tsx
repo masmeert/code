@@ -74,15 +74,15 @@ function getStatusCopy(status: ToolApprovalStatus) {
 
 function getStatusBadgeClass(status: ToolApprovalStatus) {
   if (status === "pending") {
-    return "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400";
+    return "border-warning/30 bg-warning/10 text-warning";
   }
   if (status === "approving" || status === "running") {
-    return "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400";
+    return "animate-pulse border-success/30 bg-success/10 text-success";
   }
   if (status === "approved" || status === "complete") {
-    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+    return "border-success/30 bg-success/10 text-success";
   }
-  return "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400";
+  return "border-destructive/30 bg-destructive/10 text-destructive";
 }
 
 export function ToolApprovalCode({ code, language = "bash", className }: ToolApprovalCodeProps) {

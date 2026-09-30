@@ -51,9 +51,7 @@ function ChangeCount({ value, type }: { value: number; type: "added" | "removed"
     <span
       className={cn(
         "font-mono text-xs tabular-nums",
-        type === "added"
-          ? "text-emerald-600 dark:text-emerald-400"
-          : "text-rose-600 dark:text-rose-400",
+        type === "added" ? "text-success" : "text-destructive",
       )}
     >
       {type === "added" ? "+" : "−"}
@@ -191,8 +189,8 @@ export function FileDiff({
                       key={line.id}
                       className={cn(
                         "grid grid-cols-[2.25rem_2.25rem_1rem_minmax(0,1fr)]",
-                        type === "added" && "bg-emerald-500/[0.07]",
-                        type === "removed" && "bg-rose-500/[0.07]",
+                        type === "added" && "bg-success/[0.07]",
+                        type === "removed" && "bg-destructive/[0.07]",
                       )}
                     >
                       <span className="pr-2 text-right text-muted-foreground/40 tabular-nums select-none">
@@ -204,8 +202,8 @@ export function FileDiff({
                       <span
                         className={cn(
                           "text-center text-muted-foreground/45 select-none",
-                          type === "added" && "text-emerald-600 dark:text-emerald-400",
-                          type === "removed" && "text-rose-600 dark:text-rose-400",
+                          type === "added" && "text-success",
+                          type === "removed" && "text-destructive",
                         )}
                       >
                         {type === "added" ? "+" : type === "removed" ? "−" : ""}

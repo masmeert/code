@@ -39,6 +39,9 @@
  * Dark is Vesper (github.com/raunofreiberg/vesper): neutral greys, white type, and peach as the one
  * colour for anything you press or should look at. Vesper has no light theme, so light keeps the
  * neutral greys and near-black keys, with a deeper peach that still reads on white.
+ * Each hue carries one meaning everywhere: peach is press, focus and "needs you"; mint (success) is
+ * added, done, connected and running; red is deleted, failed and denied. Mint that moves (pulse,
+ * spinner, shimmer) is running; mint that sits still is done. Vesper has no blue, so neither do we.
  * Surfaces step bone → chalk → fog → ash; separation comes from those steps, not from shadow.
  * Lines have three ranks: border bounds an object, rule divides inside a plane, spine divides planes.
  */
@@ -63,6 +66,7 @@
   --ring: oklch(66% 0.13 58 / 0.5);
   --destructive: oklch(62% 0.22 25);
   --warning: oklch(70% 0.14 70);
+  --success: oklch(55% 0.1 175);
 
   /* Data series lead with brand, then step through the greys, darkest first. */
   --chart-1: var(--brand);
@@ -83,6 +87,7 @@
   --accent-foreground: var(--foreground);
   --input: var(--border-strong);
   --destructive-foreground: oklch(99% 0 0);
+  --success-foreground: oklch(99% 0 0);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
@@ -114,6 +119,8 @@
   --ring: rgb(255 199 153 / 0.5);
   --destructive: #ff8080;
   --warning: #ffc799;
+  --success: #99ffe4;
+  --success-foreground: #101010;
 
   --chart-1: #ffc799;
   --chart-2: #99ffe4;
@@ -159,6 +166,8 @@
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
