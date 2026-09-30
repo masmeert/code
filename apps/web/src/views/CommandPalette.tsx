@@ -57,7 +57,7 @@ const Snippet = ({ text }: { text: string }) => (
       const [match, rest] = part.split("");
       return (
         <Fragment key={index}>
-          <mark className="rounded-sm bg-primary/15 text-foreground">{match}</mark>
+          <mark className="rounded-sm bg-brand/15 text-foreground">{match}</mark>
           {rest}
         </Fragment>
       );

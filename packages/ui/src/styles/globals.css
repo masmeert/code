@@ -37,8 +37,10 @@
 
 /*
  * Dark is Vesper (github.com/raunofreiberg/vesper): neutral greys, white type, and peach as the one
- * colour for anything you press or should look at. Vesper has no light theme, so light keeps the
- * neutral greys and near-black keys, with a deeper peach that still reads on white.
+ * colour for anything you press or should look at. Vesper has no light theme, so light is our own:
+ * the same neutral greys and peach keys, with copper, teal and red standing in for peach, mint and
+ * red wherever they're drawn as text or lines, since Vesper's pastels vanish on white. Hence two
+ * tokens for peach: primary is the key's fill, brand is peach anywhere else.
  * Each hue carries one meaning everywhere: peach is press, focus and "needs you"; mint (success) is
  * added, done, connected and running; red is deleted, failed and denied. Mint that moves (pulse,
  * spinner, shimmer) is running; mint that sits still is done. Vesper has no blue, so neither do we.
@@ -55,17 +57,17 @@
   --muted: oklch(93% 0 0);
   --sunken: oklch(89% 0 0);
   --muted-foreground: oklch(50% 0 0);
-  --primary: oklch(15% 0 0);
-  --primary-foreground: oklch(99% 0 0);
+  --primary: #ffc799;
+  --primary-foreground: #101010;
   --border: oklch(15% 0 0 / 0.06);
   --border-strong: oklch(15% 0 0 / 0.1);
   --rule: oklch(15% 0 0 / 0.1);
   --spine: oklch(15% 0 0 / 0.3);
-  --brand: oklch(66% 0.13 58);
-  --selection: oklch(66% 0.13 58 / 0.25);
-  --ring: oklch(66% 0.13 58 / 0.5);
-  --destructive: oklch(62% 0.22 25);
-  --warning: oklch(70% 0.14 70);
+  --brand: oklch(58% 0.13 50);
+  --selection: oklch(58% 0.13 50 / 0.2);
+  --ring: oklch(58% 0.13 50 / 0.5);
+  --destructive: oklch(58% 0.19 25);
+  --warning: oklch(58% 0.13 50);
   --success: oklch(55% 0.1 175);
 
   /* Data series lead with brand, then step through the greys, darkest first. */

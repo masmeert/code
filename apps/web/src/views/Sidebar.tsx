@@ -492,7 +492,7 @@ export const Sidebar = (props: {
                 ? window.desktop?.installUpdate()
                 : window.desktop?.downloadUpdate()
             }
-            className="h-8 w-full justify-start gap-2 rounded-lg bg-primary/10 px-2 text-sm font-normal text-primary hover:bg-primary/15 hover:text-primary disabled:opacity-100"
+            className="h-8 w-full justify-start gap-2 rounded-lg bg-brand/10 px-2 text-sm font-normal text-brand hover:bg-brand/15 hover:text-brand disabled:opacity-100"
           >
             <ArrowDownToLine className="size-4" />
             {Match.value(updateStatus).pipe(

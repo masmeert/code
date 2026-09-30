@@ -26,11 +26,11 @@ export interface AnimatedBadgeProps extends Omit<HTMLMotionProps<"span">, "child
 
 const STATUS_CLASS: Record<AnimatedBadgeStatus, string> = {
   neutral: "border-border bg-card text-muted-foreground",
-  info: "border-primary/30 bg-muted text-primary",
+  info: "border-brand/30 bg-muted text-brand",
   success: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
   warning: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   danger: "border-destructive/30 bg-destructive/10 text-destructive",
-  loading: "border-primary/30 bg-muted text-primary",
+  loading: "border-brand/30 bg-muted text-brand",
 };
 
 const SIZE_CLASS: Record<AnimatedBadgeSize, string> = {
