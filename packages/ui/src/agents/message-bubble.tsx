@@ -127,7 +127,7 @@ export function MessageBubble({
 
 function bubbleContentClass(variant: MessageBubbleVariant, interactive: boolean) {
   return cn(
-    "relative z-0 max-w-[82%] min-w-9 rounded-2xl px-3.5 py-2.5 text-sm leading-6 text-foreground",
+    "relative z-0 max-w-[82%] min-w-9 rounded-2xl px-3.5 py-2.5 text-sm leading-6 wrap-anywhere text-foreground",
     "[&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-background/60 [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.9em] [&_a]:font-medium [&_a]:underline [&_a]:underline-offset-4 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p+p]:mt-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5",
     variant === "solid" && "text-background",
     variant === "ghost" && "w-full max-w-none rounded-none px-0 py-0",
