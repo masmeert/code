@@ -38,7 +38,7 @@ export function MultiSelectTrigger({ children, className }: MultiSelectTriggerPr
       }}
       className={cn(
         "relative z-20 flex min-h-11 w-full min-w-52 cursor-text items-center gap-2 rounded-xl border border-border bg-transparent px-2.5 py-1.5 text-sm text-foreground transition-[border-color] hover:border-border-strong",
-        "focus-within:border-primary/40",
+        "focus-within:border-brand/40",
         context.disabled && "pointer-events-none opacity-50",
         className,
       )}

@@ -108,7 +108,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         className={cn(
           "relative h-11 overflow-hidden rounded-xl border transition-colors duration-200",
           "border-border",
-          focused && !hasError && "border-primary/40",
+          focused && !hasError && "border-brand/40",
           hasError && "border-destructive ring-2 ring-destructive/25",
           disabled && "opacity-60",
           classNames?.field,

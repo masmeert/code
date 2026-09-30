@@ -7,6 +7,7 @@ import {
   type Highlighter,
 } from "shiki";
 import { cn } from "@apcode/ui/lib/utils";
+import { vesperLight } from "@apcode/ui/lib/vesper-light";
 
 /** Any Shiki language id or alias; unknown ones render as plain text. */
 export type AgentCodeLanguage =
@@ -39,9 +40,8 @@ export interface AgentCodeLineProps {
   className?: string;
 }
 
-const LIGHT_THEME = "github-light-high-contrast";
 const DARK_THEME = "vesper";
-const THEMES = { light: LIGHT_THEME, dark: DARK_THEME } as const;
+const THEMES = { light: vesperLight, dark: DARK_THEME } as const;
 /** Past this, a block renders plain: tokenizing it would stall the main thread. */
 const MAX_HIGHLIGHT_CHARS = 200_000;
 
@@ -51,7 +51,7 @@ let highlighter: Highlighter | null = null;
 
 function getAgentCodeHighlighter() {
   highlighterPromise ??= createHighlighter({
-    themes: [LIGHT_THEME, DARK_THEME],
+    themes: [vesperLight, DARK_THEME],
     langs: ["bash", "diff", "json", "tsx", "typescript"],
   }).then((h) => (highlighter = h));
   return highlighterPromise;

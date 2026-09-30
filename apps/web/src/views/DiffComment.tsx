@@ -20,9 +20,9 @@ export function DiffComment({
     <div
       // The diff starts a line selection on pointerdown; the comment isn't part of the code.
       onPointerDown={(event) => event.stopPropagation()}
-      className="group/comment flex items-start gap-2.5 border-l-2 border-primary/60 bg-primary/5 py-2 pr-2 pl-3 font-sans text-foreground"
+      className="group/comment flex items-start gap-2.5 border-l-2 border-brand/60 bg-brand/5 py-2 pr-2 pl-3 font-sans text-foreground"
     >
-      <MessageSquare className="mt-0.5 size-3.5 shrink-0 text-primary/70" />
+      <MessageSquare className="mt-0.5 size-3.5 shrink-0 text-brand/70" />
       <button
         type="button"
         title="Edit comment"
@@ -66,7 +66,7 @@ export function DiffCommentForm({
   return (
     <div
       onPointerDown={(event) => event.stopPropagation()}
-      className="border-l-2 border-primary/60 bg-primary/5 px-3 py-2 font-sans text-foreground"
+      className="border-l-2 border-brand/60 bg-brand/5 px-3 py-2 font-sans text-foreground"
     >
       <Textarea
         ref={input}

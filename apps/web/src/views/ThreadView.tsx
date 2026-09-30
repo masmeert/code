@@ -1290,7 +1290,7 @@ function CommandRunResult({ run }: { run: CommandRun }) {
     <div className="overflow-hidden rounded-xl border border-border">
       <div className="flex h-9 items-center gap-2 border-b border-border px-3 text-xs">
         {run.exitCode === 0 ? (
-          <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <Check className="size-3.5 shrink-0 text-success" />
         ) : (
           <X className="size-3.5 shrink-0 text-destructive" />
         )}
@@ -1685,7 +1685,7 @@ function RunningAgents({
           className="flex h-8 w-full items-center gap-2 rounded-md pl-1.5 text-left transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           <span className="grid size-3.5 shrink-0 place-items-center">
-            <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+            <span className="size-1.5 animate-pulse rounded-full bg-success" />
           </span>
           <span className="flex-1 text-[13px] text-foreground/80">
             {agents.length} subagents running
@@ -1707,7 +1707,7 @@ function RunningAgents({
               <li key={agent.id}>
                 <div className="flex h-8 items-center gap-2 pl-1.5">
                   <span className="grid size-3.5 shrink-0 place-items-center">
-                    <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+                    <span className="size-1.5 animate-pulse rounded-full bg-success" />
                   </span>
                   <button
                     type="button"
@@ -1815,13 +1815,9 @@ const CheckpointChip = ({ item }: { item: Extract<TranscriptItem, { kind: "check
         {item.files} {item.files === 1 ? "file" : "files"} changed
       </span>
       <span className="font-mono tabular-nums">
-        {item.additions ? (
-          <span className="text-emerald-600 dark:text-emerald-400">+{item.additions}</span>
-        ) : null}
+        {item.additions ? <span className="text-success">+{item.additions}</span> : null}
         {item.additions && item.deletions ? " " : null}
-        {item.deletions ? (
-          <span className="text-rose-600 dark:text-rose-400">−{item.deletions}</span>
-        ) : null}
+        {item.deletions ? <span className="text-destructive">−{item.deletions}</span> : null}
       </span>
     </button>
   );

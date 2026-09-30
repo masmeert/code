@@ -492,7 +492,7 @@ export const Sidebar = (props: {
                 ? window.desktop?.installUpdate()
                 : window.desktop?.downloadUpdate()
             }
-            className="h-8 w-full justify-start gap-2 rounded-lg bg-primary/10 px-2 text-sm font-normal text-primary hover:bg-primary/15 hover:text-primary disabled:opacity-100"
+            className="h-8 w-full justify-start gap-2 rounded-lg bg-brand/10 px-2 text-sm font-normal text-brand hover:bg-brand/15 hover:text-brand disabled:opacity-100"
           >
             <ArrowDownToLine className="size-4" />
             {Match.value(updateStatus).pipe(
@@ -536,12 +536,12 @@ const StatusDot = ({
         : info.status === "error"
           ? ["Error", "bg-destructive"]
           : info.status === "running"
-            ? ["Working", "bg-foreground animate-pulse"]
+            ? ["Working", "bg-success animate-pulse"]
             : unread
               ? ["New activity", "bg-brand"]
               : shelved
                 ? ["Shelved", "bg-muted-foreground/25"]
-                : ["Idle", "bg-muted-foreground/60"];
+                : ["Idle", "bg-brand"];
   return (
     <span role="img" aria-label={label} className={cn("size-2 shrink-0 rounded-full", tone)} />
   );

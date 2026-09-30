@@ -110,7 +110,7 @@ export function SlideActionButton({
       ref={trackRef}
       className={cn(
         "relative h-16 w-72 overflow-hidden rounded-[22px] bg-muted p-1",
-        "ring-1 ring-primary/10",
+        "ring-1 ring-brand/10",
         // The track only carries the label — the slide starts on the thumb,
         // which suppresses selection for the whole gesture on its own.
         TOUCH_GESTURE_CONTENT_CLASS,
@@ -163,7 +163,7 @@ export function SlideActionButton({
         className={cn(
           "sheen relative z-10 grid size-14 cursor-grab touch-none place-items-center rounded-[18px] bg-primary text-primary-foreground",
           TOUCH_GESTURE_CLASS,
-          "outline-none focus-visible:ring-4 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background active:cursor-grabbing",
+          "outline-none focus-visible:ring-4 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background active:cursor-grabbing",
           completed && "cursor-default bg-background text-foreground",
           thumbClassName,
         )}

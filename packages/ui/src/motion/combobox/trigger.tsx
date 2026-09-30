@@ -29,7 +29,7 @@ export function ComboboxTrigger({ children, className }: ComboboxTriggerProps) {
       }}
       className={cn(
         "relative z-20 flex h-10 w-full min-w-52 cursor-text items-center justify-between gap-3 rounded-xl border border-border bg-transparent px-3 text-sm text-foreground transition-[border-color] hover:border-border-strong",
-        "focus-within:border-primary/40",
+        "focus-within:border-brand/40",
         context.disabled && "pointer-events-none opacity-50",
         className,
       )}

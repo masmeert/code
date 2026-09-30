@@ -360,12 +360,8 @@ export const DiffPanel = ({
             <span className="text-muted-foreground">
               {files.length} {files.length === 1 ? "file" : "files"}
             </span>
-            {additions ? (
-              <span className="text-emerald-600 dark:text-emerald-400">+{additions}</span>
-            ) : null}
-            {deletions ? (
-              <span className="text-rose-600 dark:text-rose-400">−{deletions}</span>
-            ) : null}
+            {additions ? <span className="text-success">+{additions}</span> : null}
+            {deletions ? <span className="text-destructive">−{deletions}</span> : null}
           </span>
         ) : null}
         <span className="ml-auto flex items-center gap-0.5">

@@ -123,7 +123,7 @@ export function RadioGroupItem({
           "relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors duration-200 outline-none",
           "focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           "disabled:cursor-not-allowed disabled:opacity-60",
-          selected ? "border-primary" : "border-muted-foreground/50 hover:border-muted-foreground",
+          selected ? "border-brand" : "border-muted-foreground/50 hover:border-muted-foreground",
         )}
       >
         {selected ? (

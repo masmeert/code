@@ -222,7 +222,7 @@ function AddressBar({
         </IconButton>
       )}
       {activity?.automating ? (
-        <span className="ml-1 shrink-0 rounded-md bg-primary/15 px-1.5 py-0.5 text-[11px] font-medium text-primary">
+        <span className="ml-1 shrink-0 rounded-md bg-brand/15 px-1.5 py-0.5 text-[11px] font-medium text-brand">
           Agent
         </span>
       ) : null}

@@ -106,14 +106,7 @@ export function CodeBlock({
         </span>
         <span className="ml-auto" />
         {showStatus ? (
-          <span
-            className={cn(
-              "inline-flex shrink-0 items-center gap-1 text-[10px] font-medium",
-              streaming
-                ? "text-blue-600 dark:text-blue-400"
-                : "text-emerald-600 dark:text-emerald-400",
-            )}
-          >
+          <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-medium text-success">
             {streaming ? (
               <LoaderCircle className={cn("size-3", !reduce && "animate-spin")} />
             ) : (
@@ -156,7 +149,7 @@ export function CodeBlock({
                   className={cn(
                     "grid min-h-5",
                     showLineNumbers ? "grid-cols-[2.75rem_minmax(0,1fr)]" : "grid-cols-1",
-                    highlighted.has(lineNumber) && "bg-blue-500/[0.07]",
+                    highlighted.has(lineNumber) && "bg-brand/10",
                   )}
                 >
                   {showLineNumbers ? (
