@@ -541,7 +541,7 @@ const StatusDot = ({
               ? ["New activity", "bg-brand"]
               : shelved
                 ? ["Shelved", "bg-muted-foreground/25"]
-                : ["Idle", "bg-muted-foreground/60"];
+                : ["Idle", "bg-brand/60"];
   return (
     <span role="img" aria-label={label} className={cn("size-2 shrink-0 rounded-full", tone)} />
   );

@@ -60,7 +60,9 @@ const components: Components = {
     );
   },
   code: ({ className, children }) => (
-    <code className={cn("rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]", className)}>
+    <code
+      className={cn("rounded bg-muted px-1 py-0.5 font-mono text-[0.9em] text-brand", className)}
+    >
       {children}
     </code>
   ),
@@ -69,7 +71,7 @@ const components: Components = {
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="font-medium underline underline-offset-4"
+      className="font-medium text-brand underline decoration-brand/40 underline-offset-4 transition-colors hover:decoration-brand"
     >
       {children}
     </a>
