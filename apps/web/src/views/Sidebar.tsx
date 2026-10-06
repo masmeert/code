@@ -45,6 +45,7 @@ import {
   type LucideIcon,
   MoreHorizontal,
   PanelLeft,
+  Pencil,
   Search,
   Settings,
   SquarePen,
@@ -603,12 +604,14 @@ const useThreadActions = (
   info: ThreadInfo,
   shelved: boolean,
   onShelve: (shelved: boolean) => void,
+  onRename: () => void,
 ) => {
   const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null);
   const confirmArchive = useStore((s) => s.settings.confirmArchive === true);
   const confirmDelete = useStore((s) => s.settings.confirmDelete !== false);
   const archived = info.archivedAt !== null;
   const actions: Array<CardAction> = [
+    { key: "rename", label: "Rename", icon: Pencil, onSelect: onRename },
     ...(archived
       ? [
           {
@@ -712,7 +715,10 @@ const ThreadCard = (props: {
   const reduce = useReducedMotion();
   const [menuOpen, setMenuOpenState] = useState(false);
   const [responding, setResponding] = useState(false);
-  const { actions, resetConfirm } = useThreadActions(info, props.shelved, props.onShelve);
+  const [renaming, setRenaming] = useState(false);
+  const { actions, resetConfirm } = useThreadActions(info, props.shelved, props.onShelve, () =>
+    setRenaming(true),
+  );
   const setMenuOpen = (open: boolean) => {
     setMenuOpenState(open);
     if (!open) resetConfirm();
@@ -726,6 +732,32 @@ const ThreadCard = (props: {
   const swipeReveal = useTransform(swipeX, [-64, -16], [1, 0]);
   useEffect(() => () => clearTimeout(swipeEnd.current), []);
   useEffect(() => setResponding(false), [request?.requestId]);
+
+  const title = renaming ? (
+    <input
+      autoFocus
+      aria-label="Thread title"
+      defaultValue={info.title}
+      onFocus={(e) => e.currentTarget.select()}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          e.currentTarget.value = info.title;
+        }
+        if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+      }}
+      onBlur={(e) => {
+        setRenaming(false);
+        const next = e.currentTarget.value.trim();
+        if (next && next !== info.title)
+          send(ClientCommand.cases["thread.rename"].make({ threadId: info.id, title: next }));
+      }}
+      className="w-full bg-transparent outline-none"
+    />
+  ) : (
+    info.title
+  );
 
   const trailing = (
     <>
@@ -803,6 +835,7 @@ const ThreadCard = (props: {
             style={{ x: swipeX }}
             onClick={props.onSelect}
             onKeyDown={(e) => {
+              if (e.target === e.currentTarget && e.key === "F2") setRenaming(true);
               if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
               e.preventDefault();
               props.onSelect();
@@ -826,24 +859,26 @@ const ThreadCard = (props: {
             {props.shelved ? (
               <div className="flex h-5 min-w-0 items-center gap-2 text-muted-foreground">
                 <p
+                  onDoubleClick={() => setRenaming(true)}
                   className={cn(
                     "min-w-0 flex-1 truncate text-sm",
                     props.active ? "text-foreground" : "text-foreground/60",
                   )}
                 >
-                  {info.title}
+                  {title}
                 </p>
                 {trailing}
               </div>
             ) : (
               <div className="min-w-0">
                 <p
+                  onDoubleClick={() => setRenaming(true)}
                   className={cn(
                     "truncate text-sm text-foreground",
                     props.unread || urgent ? "font-semibold" : "font-medium",
                   )}
                 >
-                  {info.title}
+                  {title}
                 </p>
                 <div className="mt-1 flex h-5 items-center gap-2 text-xs text-muted-foreground">
                   <StatusDot info={info} unread={props.unread} shelved={props.shelved} />

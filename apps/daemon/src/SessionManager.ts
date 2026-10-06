@@ -76,7 +76,7 @@ import {
   readPullRequest,
   readPullRequestTemplate,
 } from "./sourceControl.ts";
-import { generateCommitMessage, generatePullRequest } from "./writer.ts";
+import { generateCommitMessage, generatePullRequest, generateThreadTitle } from "./writer.ts";
 import { CodexAdapter } from "./providers/CodexAdapter.ts";
 import {
   ProviderError,
@@ -363,6 +363,12 @@ const make = Effect.gen(function* () {
       );
     });
   };
+
+  function retitle(entry: ThreadEntry, title: string) {
+    entry.info = { ...entry.info, title };
+    store.setMeta(entry.info.id, { title, updatedAt: entry.info.updatedAt });
+    refreshMeta(entry);
+  }
 
   /** The agent switched into a worktree or back out of one: the thread's folder follows it. */
   const followAgent = async (entry: ThreadEntry, reported: string) => {
@@ -1065,7 +1071,7 @@ const make = Effect.gen(function* () {
     readDiff(path).then((diff) => publish(RuntimeEvent.cases["git.diff"].make({ path, ...diff }))),
   );
 
-  /** Who writes source control text at `path`: the commit model in settings, else the last harness's default. */
+  /** Who writes thread titles and source control text at `path`: the commit model in settings, else the last harness's default. */
   const writerFor = (path: string, settings: Settings, recent: ReadonlyArray<string>) => {
     const split = settings.commitModel?.indexOf(":") ?? -1;
     const commitProvider = settings.commitModel?.slice(0, split);
@@ -1240,6 +1246,16 @@ const make = Effect.gen(function* () {
         const next = yield* settingsStore.update({ ...settings, lastProvider: command.provider });
         publish(RuntimeEvent.cases["settings.updated"].make({ settings: next }));
       }
+      // The first line names the thread until the writer model's summary lands, unless it's renamed first.
+      void generateThreadTitle({
+        ...writerFor(cwd, yield* settingsStore.get, []),
+        text: command.text,
+      })
+        .then((summary) => {
+          if (threads.get(id) === entry && entry.info.title === title)
+            retitle(entry, titleFrom(summary, title));
+        })
+        .catch(() => {});
       yield* send(entry, command.text, command.options);
     });
 
@@ -1428,6 +1444,10 @@ const make = Effect.gen(function* () {
           store.setSeenRev(threadId, rev);
           publish(RuntimeEvent.cases["thread.seen"].make({ threadId, seenRev: rev }));
         }),
+      "thread.rename": ({ threadId, title }) =>
+        Effect.map(getEntry(threadId), (entry) =>
+          retitle(entry, titleFrom(title, entry.info.title)),
+        ),
       "thread.shelve": ({ threadId, shelved }) =>
         Effect.map(getEntry(threadId), (entry) => {
           setShelveOverride(entry, shelved ? "shelved" : "active");

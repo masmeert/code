@@ -1,5 +1,5 @@
 /**
- * Writes source control text with a one-shot model call: commit messages for commits made
+ * Writes text with a one-shot model call: thread titles, commit messages for commits made
  * without one, and pull request titles and bodies. Runs on the harness the user picked in settings.
  */
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
@@ -189,6 +189,18 @@ export const generateCommitMessage = async (input: WriterInput & { readonly patc
   if (!message) throw new Error("The model returned an empty message");
   return message;
 };
+
+/** Resolves to a short title summarizing a thread's first message, or rejects with why it couldn't be written. */
+export const generateThreadTitle = async (input: WriterInput & { readonly text: string }) =>
+  (
+    await write(
+      input,
+      `You name chat threads with a coding agent. Reply with a title of at most 6 words summarizing what the user asks for: no preamble, no quotes, no trailing period.\n\nThe user's first message:\n${input.text.slice(0, 4_000)}`,
+    )
+  )
+    .split("\n")[0]!
+    .replace(/^["'`]+|["'`.]+$/g, "")
+    .trim();
 
 const PullRequestText = Schema.Struct({ title: Schema.String, body: Schema.String });
 

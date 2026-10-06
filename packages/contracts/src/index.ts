@@ -270,7 +270,7 @@ export const Settings = Schema.Struct({
   hostProjectFolders: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   confirmArchive: Schema.optional(Schema.Boolean),
   confirmDelete: Schema.optional(Schema.Boolean),
-  /** Writes commit messages left empty and pull request text, as `provider:model`; null/absent uses the last harness's default model. */
+  /** Names new threads and writes commit messages left empty and pull request text, as `provider:model`; null/absent uses the last harness's default model. */
   commitModel: Schema.optional(Schema.NullOr(Schema.String)),
   /** Fast-forwards a checkout on its default branch when it has no changes or commits of its own. */
   autoPull: Schema.optional(Schema.Boolean),
@@ -879,6 +879,8 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("thread.archive", { threadId: Schema.String, archived: Schema.Boolean }),
   /** You looked at the thread as of its `updatedAt` `rev`. */
   Schema.TaggedStruct("thread.seen", { threadId: Schema.String, rev: Schema.Number }),
+  /** Answered with a `thread.meta` event; a blank title is ignored. */
+  Schema.TaggedStruct("thread.rename", { threadId: Schema.String, title: Schema.String }),
   /** Shelve/Unshelve from the thread menu; holds until the thread's next turn starts. */
   Schema.TaggedStruct("thread.shelve", { threadId: Schema.String, shelved: Schema.Boolean }),
   /** Questions are answered with "allow" and `answers`, and skipped with "deny". */
