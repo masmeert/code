@@ -2,6 +2,24 @@
 
 Release notes for the APCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.0](https://github.com/masmeert/code/compare/v0.0.18...v0.1.0) (2026-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove peer review
+
+### Added
+
+* add Cursor as a harness over the Agent Client Protocol ([858c89d](https://github.com/masmeert/code/commit/858c89d0e6481011e78d38e99710e7a726867816))
+* ask read-only side questions about a reply with BTW or /btw ([a1eaacf](https://github.com/masmeert/code/commit/a1eaacf9ad9cc382673e44bfaa10fe9227793501))
+* collapse composer pickers to icons in narrow panes ([c529133](https://github.com/masmeert/code/commit/c5291338da2cafaa63aba1d359c63f4930b649be))
+* one model menu with effort, fast mode and a harness rail ([c5f26c6](https://github.com/masmeert/code/commit/c5f26c6d6d5028d9adb9ad2a4459774ed7ea07b6))
+* pause on usage limits, and resume or hand off from a notice ([ab8a8e2](https://github.com/masmeert/code/commit/ab8a8e2e4f108710a0a7a6216bd7fc9d7dd89db6))
+* recover from dead agents, queue in the daemon, let agents run threads, switch harness ([aa38a5a](https://github.com/masmeert/code/commit/aa38a5a1abf52d2e14a67820096922157edef769))
+* remove peer review ([eb2f207](https://github.com/masmeert/code/commit/eb2f207026d4be5b93dbf5ff05f9d04c3ee15dc1))
+* show agents' thinking, and Cursor's skills under $ ([4344c6d](https://github.com/masmeert/code/commit/4344c6d7e73da2e2bd2e344bbba98af51e002ebe))
+
 ## [0.0.18](https://github.com/masmeert/code/compare/v0.0.17...v0.0.18) (2026-10-07)
 
 
