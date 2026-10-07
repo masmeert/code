@@ -2,6 +2,23 @@
 
 Release notes for the APCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.0.18](https://github.com/masmeert/code/compare/v0.0.17...v0.0.18) (2026-10-07)
+
+
+### Added
+
+* borrow Vesper's orange for "needs you" ([c967574](https://github.com/masmeert/code/commit/c967574c1ab38bd2c4e18095770a6b30601704d1))
+* give light mode its own Vesper, with peach keys and copper accents ([1c9e20f](https://github.com/masmeert/code/commit/1c9e20f098e4926757b79a13a989bf5a40d570a9))
+* give status colours one meaning each, with mint for success ([a5b4c81](https://github.com/masmeert/code/commit/a5b4c81a946ccbd2952bbb33adcd254053b6e8a6))
+* mark links, inline code and finished threads with brand ([2337df3](https://github.com/masmeert/code/commit/2337df3fb6b723797742ed3bd8b44e5e624463b0))
+* name threads with the writer model and let you rename them ([e9f7389](https://github.com/masmeert/code/commit/e9f7389165f970996462a1555b423781b66da262))
+* tighten the peer review dialog ([534ed5b](https://github.com/masmeert/code/commit/534ed5b941bc959c468a43a63e1b1a9d96096be5))
+
+
+### Fixed
+
+* wrap long unbroken text inside message bubbles ([d8ccf3b](https://github.com/masmeert/code/commit/d8ccf3bacb0495c9b970a2c85d03e4e3d569822c))
+
 ## [0.0.17](https://github.com/masmeert/code/compare/v0.0.16...v0.0.17) (2026-09-29)
 
 
