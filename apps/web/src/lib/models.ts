@@ -1,13 +1,13 @@
-import type { PromptModel } from "@apcode/ui/agents/prompt-input";
+import type { PromptOption } from "@apcode/ui/agents/prompt-input";
 import { PROVIDER_LOGO } from "@/components/provider-logo";
 import { Star } from "lucide-react";
 import { createElement } from "react";
-import type {
-  ModelOption,
+import {
+  type ModelOption,
   ProviderKind,
-  ProviderSettings,
-  ProviderStatus,
-  Settings,
+  type ProviderSettings,
+  type ProviderStatus,
+  type Settings,
 } from "@apcode/contracts";
 
 export const PROVIDER_LABEL: Record<ProviderKind, string> = {
@@ -45,37 +45,30 @@ export const decodeChoice = (value: string) => {
   return { provider: value.slice(0, index) as ProviderKind, model: value.slice(index + 1) };
 };
 
-/** Picker options for the linked harnesses (optionally just one): every favorite in one list, then each harness's other models, folded. */
+/** Picker options for the linked harnesses (optionally just one), each under its harness. */
 export const modelChoices = (
   providers: ReadonlyArray<ProviderStatus>,
   settings: Settings,
   only?: ProviderKind,
-): Array<PromptModel> => {
-  const favorites: Array<PromptModel> = [];
-  const rest: Array<PromptModel> = [];
-  for (const p of providers) {
-    if (!p.linked || (only && p.kind !== only)) continue;
-    const harness = settings.providers[p.kind];
-    for (const m of visibleModels(p.models, harness)) {
-      const logo = createElement(PROVIDER_LOGO[p.kind]);
-      const option = {
-        value: encodeChoice(p.kind, m.id),
-        label: m.label,
-      };
-      // Favorites keep their harness logo on the row, so the trigger still shows whose model it is.
-      if (harness.favoriteModels?.includes(m.id))
-        favorites.push({ ...option, icon: logo, group: "Favorites" });
-      else
-        rest.push({
-          ...option,
+): Array<PromptOption> =>
+  providers.flatMap((p) =>
+    !p.linked || (only && p.kind !== only)
+      ? []
+      : visibleModels(p.models, settings.providers[p.kind]).map((m) => ({
+          value: encodeChoice(p.kind, m.id),
+          label: m.label,
           group: harnessLabel(settings, p.kind),
-          groupIcon: logo,
-          foldable: true,
-        });
-    }
-  }
-  return [...favorites, ...rest];
-};
+          groupIcon: createElement(PROVIDER_LOGO[p.kind]),
+        })),
+  );
+
+/** The models the user starred, as picker values. */
+export const favoriteChoices = (settings: Settings) =>
+  ProviderKind.literals.flatMap((provider) =>
+    (settings.providers[provider].favoriteModels ?? []).map((model) =>
+      encodeChoice(provider, model),
+    ),
+  );
 
 /** The model a harness uses when none is picked: the Settings default if still listed, else the recommended one, else its first. */
 export const defaultModel = (
@@ -92,13 +85,12 @@ export const defaultModel = (
   return (models.find((m) => m.recommended) ?? models[0])?.id ?? saved ?? null;
 };
 
-/** Effort the harness applies to the picked `<harness>:<model>` when none is chosen. */
-export const defaultEffort = (
+/** The picked `<harness>:<model>` as its harness lists it. */
+export const catalogModel = (
   providers: ReadonlyArray<ProviderStatus>,
   choice: string | undefined,
 ) => {
   if (!choice) return undefined;
   const { provider, model } = decodeChoice(choice);
-  return providers.find((p) => p.kind === provider)?.models.find((m) => m.id === model)
-    ?.defaultEffort;
+  return providers.find((p) => p.kind === provider)?.models.find((m) => m.id === model);
 };

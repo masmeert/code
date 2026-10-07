@@ -17,6 +17,7 @@ import {
   CodexNotification,
   CodexServerRequest,
   CompletedItem,
+  CODEX_FAST_TIER,
   connectCodex,
   StartedItem,
   ThreadResponse,
@@ -65,8 +66,9 @@ const codexSandboxPolicy = (level: PermissionLevel, cwd: string) =>
         excludeSlashTmp: false,
       };
 
-/** Codex has no "max"; its top level is xhigh. */
-const toCodexEffort = (effort: Effort) => (effort === "max" ? "xhigh" : effort);
+/** Ultracode and ultrathink are Claude's; Codex keeps its default effort for them. */
+const toCodexEffort = (effort: Effort) =>
+  effort === "ultracode" || effort === "ultrathink" ? null : effort;
 
 const ModelPrice = Schema.Struct({
   input_cost_per_token: Schema.Number,
@@ -517,10 +519,11 @@ const start = ({
 
     // Null leaves a setting to the config (and, for turns, to the last override).
     const { approvalPolicy, sandbox } = PERMISSION[permission];
+    const startEffort = effort && toCodexEffort(effort);
     const threadParams = {
       cwd,
       model: currentModel,
-      config: effort ? { model_reasoning_effort: toCodexEffort(effort) } : null,
+      config: startEffort ? { model_reasoning_effort: startEffort } : null,
       approvalPolicy,
       sandbox,
     };
@@ -566,6 +569,8 @@ const start = ({
               input: input(turn),
               model: currentModel,
               effort: effortOverride,
+              serviceTierForTurn:
+                turn.fast === undefined ? null : turn.fast ? CODEX_FAST_TIER : "default",
               approvalPolicy: permissionChanged ? PERMISSION[permission].approvalPolicy : null,
               sandboxPolicy: permissionChanged ? codexSandboxPolicy(permission, cwd) : null,
             },

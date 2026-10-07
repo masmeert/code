@@ -1,8 +1,8 @@
 import {
   PromptInput,
+  PromptModelMenu,
   type PromptOption,
   PromptSelect,
-  PromptSlider,
 } from "@apcode/ui/agents/prompt-input";
 import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
 import { cn } from "@apcode/ui/lib/utils";
@@ -61,8 +61,21 @@ import {
 } from "../lib/composer.ts";
 import { restoreStash, setDraft, stashDraft, useDraft, useStashes } from "../lib/drafts.ts";
 import { describe, KEYBINDINGS, useKeybinding } from "../lib/keybindings.ts";
-import { defaultEffort, type modelChoices, recommendedBadge } from "../lib/models.ts";
-import { send, skillsKey, usePathHost, useProviders, useStore } from "../lib/store.ts";
+import {
+  catalogModel,
+  decodeChoice,
+  favoriteChoices,
+  type modelChoices,
+  recommendedBadge,
+} from "../lib/models.ts";
+import {
+  send,
+  skillsKey,
+  updateHarness,
+  usePathHost,
+  useProviders,
+  useStore,
+} from "../lib/store.ts";
 import { ago, useNow } from "../lib/time.ts";
 import { UsageMeter } from "./UsageMeter.tsx";
 
@@ -169,12 +182,18 @@ export const Composer = (props: ComposerProps) => {
     remote: host !== null,
   });
   const providers = useProviders(host);
+  const settings = useStore((s) => s.settings);
   const stashes = useStashes();
   const [stashSignal, setStashSignal] = useState(0);
   const worktree = useStore((s) => (threadId ? s.threads[threadId]?.worktree : undefined));
+  const catalog = catalogModel(providers, props.model);
   // No pick means the model's own default, which the menu stars; picking the starred level keeps following it.
-  const fallbackEffort = defaultEffort(providers, props.model);
-  const effortOptions = EFFORTS[props.provider].map((effort) => ({
+  const fallbackEffort = catalog?.defaultEffort;
+  const efforts = catalog?.efforts ?? EFFORTS[props.provider];
+  // A pick this model can't take (kept from another model) falls back to its default.
+  const effort = prefs.effort && efforts.includes(prefs.effort) ? prefs.effort : null;
+  const fast = prefs.fast && catalog?.fast === true;
+  const effortOptions = efforts.map((effort) => ({
     value: effort,
     label: EFFORT_LABEL[effort],
     badge: effort === fallbackEffort ? recommendedBadge() : undefined,
@@ -391,7 +410,7 @@ export const Composer = (props: ComposerProps) => {
       return;
     }
     recall.current = null;
-    const options = toTurnOptions(prefs, files.take());
+    const options = toTurnOptions({ ...prefs, effort, fast }, files.take());
     setDraft(prefsKey, { text: "", attachments: [] });
     props.onSubmit(text, options, how);
   };
@@ -423,27 +442,43 @@ export const Composer = (props: ComposerProps) => {
           onFocus={trackCaret}
           loading={props.busy ?? false}
           disabled={props.disabled ?? false}
-          models={props.models}
-          model={props.model}
-          onModelChange={props.onModelChange}
-          {...(props.extraModels ? { extraModels: props.extraModels } : {})}
-          {...(props.onToggleModel ? { onToggleModel: props.onToggleModel } : {})}
-          modelShortcut={KEYBINDINGS["picker.model"]}
           controls={[
-            <PromptSlider
-              key="effort"
-              title="Effort"
-              minLabel="Faster"
-              maxLabel="Smarter"
-              options={effortOptions}
-              value={prefs.effort ?? fallbackEffort}
-              onChange={(value) =>
+            <PromptModelMenu
+              key="model"
+              // The model can't change mid-turn; effort and fast mode apply from the next message.
+              models={
+                props.busy
+                  ? props.models.map((option) => ({ ...option, disabled: true }))
+                  : props.models
+              }
+              model={props.model}
+              onModelChange={props.onModelChange}
+              {...(props.extraModels ? { extraModels: props.extraModels } : {})}
+              {...(props.onToggleModel ? { onToggleModel: props.onToggleModel } : {})}
+              favorites={favoriteChoices(settings)}
+              onToggleFavorite={(value) => {
+                const { provider, model } = decodeChoice(value);
+                const starred = settings.providers[provider].favoriteModels ?? [];
+                updateHarness(provider, {
+                  favoriteModels: starred.includes(model)
+                    ? starred.filter((id) => id !== model)
+                    : [...starred, model],
+                });
+              }}
+              efforts={effortOptions}
+              effort={effort ?? fallbackEffort}
+              onEffortChange={(value) =>
                 Schema.is(Effort)(value) &&
                 setPrefs({ effort: value === fallbackEffort ? null : value })
               }
-              placeholder="Default effort"
-              disabled={props.disabled}
-              shortcut={KEYBINDINGS["picker.effort"]}
+              fast={
+                catalog?.fast
+                  ? { on: fast, onChange: (on: boolean) => setPrefs({ fast: on }) }
+                  : undefined
+              }
+              disabled={props.disabled ?? false}
+              modelShortcut={KEYBINDINGS["picker.model"]}
+              effortShortcut={KEYBINDINGS["picker.effort"]}
             />,
             <PromptSelect
               key="permission"
@@ -473,7 +508,7 @@ export const Composer = (props: ComposerProps) => {
             files.add([fromText(text)]);
             return true;
           }}
-          onSubmit={(text, _model, how) => submit(text, how ?? { alternate: false })}
+          onSubmit={submit}
           onStop={props.onStop}
           minRows={2}
           maxRows={10}

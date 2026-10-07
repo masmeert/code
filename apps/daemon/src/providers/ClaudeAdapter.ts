@@ -113,8 +113,25 @@ const PERMISSION_MODE = {
   "full-access": "bypassPermissions",
 } as const satisfies Record<PermissionLevel, PermissionMode>;
 
-/** Claude has no "minimal"; everything else maps one to one. */
-const toEffortLevel = (effort: Effort): EffortLevel => (effort === "minimal" ? "low" : effort);
+/** Claude has no "minimal" or "ultra", so they take the nearest level; its two modes aren't levels. */
+const toEffortLevel = (effort: Effort): EffortLevel | null =>
+  effort === "minimal"
+    ? "low"
+    : effort === "ultra"
+      ? "max"
+      : effort === "ultracode" || effort === "ultrathink"
+        ? null
+        : effort;
+
+/** Ultrathink keeps the model's default effort (a null level resets to it) and works through the keyword. */
+const effortSettings = (effort: Effort): Parameters<Query["applyFlagSettings"]>[0] =>
+  effort === "ultracode"
+    ? { ultracode: true }
+    : { ultracode: null, effortLevel: toEffortLevel(effort) };
+
+/** Claude Code looks for the "ultrathink" keyword in the message itself. */
+const withUltrathink = (turn: TurnInput): TurnInput =>
+  turn.effort === "ultrathink" ? { ...turn, text: `${turn.text}\n\nultrathink` } : turn;
 
 const IMAGE_TYPES = new Map<string, "image/png" | "image/jpeg" | "image/gif" | "image/webp">([
   [".png", "image/png"],
@@ -309,7 +326,8 @@ const start = ({
       };
       if (model) options.model = model;
       if (resumeToken) options.resume = resumeToken;
-      if (initialEffort) options.effort = toEffortLevel(initialEffort);
+      const initialLevel = initialEffort && toEffortLevel(initialEffort);
+      if (initialLevel) options.effort = initialLevel;
       const q: Query = query({ prompt: inbox.iterable, options });
 
       // Message ids that streamed partial deltas, so we don't re-emit their full text.
@@ -329,7 +347,10 @@ const start = ({
       let reportsSessionState = false;
       let sessionId = resumeToken;
       let permission = initialPermission;
-      let effort = initialEffort;
+      // Ultracode and ultrathink can't be start options; the first turn applies them.
+      let effort = initialLevel ? initialEffort : null;
+      // Unknown until a turn sets it, so the user's own Claude Code setting can't linger unseen.
+      let fast: boolean | undefined;
 
       /** "summary" estimates the breakdown locally; "full" would make a token-count request per category. */
       async function reportUsage(costUsd: number) {
@@ -514,10 +535,14 @@ const start = ({
                 permission = turn.permission;
               }
               if (turn.effort && turn.effort !== effort) {
-                await q.applyFlagSettings({ effortLevel: toEffortLevel(turn.effort) });
+                await q.applyFlagSettings(effortSettings(turn.effort));
                 effort = turn.effort;
               }
-              const content = await toContent(turn);
+              if (turn.fast !== undefined && turn.fast !== fast) {
+                await q.applyFlagSettings({ fastMode: turn.fast });
+                fast = turn.fast;
+              }
+              const content = await toContent(withUltrathink(turn));
               inbox.push({
                 type: "user",
                 message: { role: "user", content },
@@ -531,7 +556,7 @@ const start = ({
         steer: (turn) =>
           Effect.tryPromise({
             try: async () => {
-              const content = await toContent(turn);
+              const content = await toContent(withUltrathink(turn));
               inbox.push({
                 type: "user",
                 message: { role: "user", content },

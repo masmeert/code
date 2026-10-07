@@ -203,6 +203,9 @@ export const CodexServerRequest = Schema.Union([
 ]).pipe(Schema.toTaggedUnion("method"));
 export type CodexServerRequest = typeof CodexServerRequest.Type;
 
+/** The service tier Codex labels "Fast". */
+export const CODEX_FAST_TIER = "priority";
+
 /** What `thread/start`, `thread/resume` and `thread/fork` answer with. */
 export const ThreadResponse = Schema.Struct({
   thread: Schema.Struct({ id: Schema.String }),

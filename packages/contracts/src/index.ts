@@ -177,8 +177,22 @@ export interface DesktopBridge {
   readonly onOpenThread: (listener: (threadId: string) => void) => () => void;
 }
 
-/** Reasoning effort. Each harness takes a subset: Claude low…max, Codex minimal…xhigh. */
-export const Effort = Schema.Literals(["minimal", "low", "medium", "high", "xhigh", "max"]);
+/**
+ * Reasoning effort; each model takes a subset. Ultracode and ultrathink are Claude modes picked
+ * alongside the levels: Claude Code's xhigh with workflow orchestration, and the model's default
+ * effort with the "ultrathink" keyword on every message.
+ */
+export const Effort = Schema.Literals([
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+  "ultracode",
+  "ultrathink",
+]);
 export type Effort = typeof Effort.Type;
 
 /** How much the agent may do without asking. */
@@ -208,6 +222,8 @@ export type Attachment = typeof Attachment.Type;
 export const TurnOptions = Schema.Struct({
   /** Null uses the harness's default effort. */
   effort: Schema.NullOr(Effort),
+  /** Faster output at a higher price, on models that offer it; absent leaves it as it was. */
+  fast: Schema.optional(Schema.Boolean),
   permission: PermissionLevel,
   attachments: Schema.Array(AttachmentInput),
 });
@@ -306,6 +322,10 @@ export const ModelOption = Schema.Struct({
   recommended: Schema.optional(Schema.Boolean),
   /** Effort the harness uses for this model when none is picked; absent if it takes none or didn't say. */
   defaultEffort: Schema.optional(Effort),
+  /** Efforts it takes, lowest first; absent if the harness didn't say. */
+  efforts: Schema.optional(Schema.Array(Effort)),
+  /** Offers fast mode. */
+  fast: Schema.optional(Schema.Boolean),
 });
 export type ModelOption = typeof ModelOption.Type;
 
@@ -416,6 +436,7 @@ export const QueuedMessage = Schema.Struct({
   text: Schema.String,
   attachments: Schema.Array(Attachment),
   effort: Schema.NullOr(Effort),
+  fast: Schema.optional(Schema.Boolean),
   permission: PermissionLevel,
 });
 export type QueuedMessage = typeof QueuedMessage.Type;

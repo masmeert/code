@@ -20,7 +20,7 @@ import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
-import { CodexNotification, connectCodex, type CodexRpc } from "./codexRpc.ts";
+import { CODEX_FAST_TIER, CodexNotification, connectCodex, type CodexRpc } from "./codexRpc.ts";
 import { harnessLaunch, promptlessQuery, type HarnessLaunch } from "./launch.ts";
 
 const exec = promisify(execFile);
@@ -81,11 +81,19 @@ const probeClaude = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
           )
           .then((settings) => settings?.applied?.effort)
           .catch(() => undefined);
+        const levels = m.supportedEffortLevels ?? [];
         models.push({
           id: m.value,
           label: m.displayName,
           recommended: m === starred || undefined,
           defaultEffort: effort,
+          efforts: [
+            ...levels,
+            // Ultracode runs at xhigh, so only models with it can take it.
+            ...(levels.includes("xhigh") ? (["ultracode"] as const) : []),
+            ...(m.supportsAdaptiveThinking ? (["ultrathink"] as const) : []),
+          ],
+          fast: m.supportsFastMode || undefined,
         });
       }
     } finally {
@@ -135,6 +143,10 @@ const probeCodex = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
                   hidden: Schema.Boolean,
                   isDefault: Schema.Boolean,
                   defaultReasoningEffort: Schema.String,
+                  supportedReasoningEfforts: Schema.Array(
+                    Schema.Struct({ reasoningEffort: Schema.String }),
+                  ),
+                  serviceTiers: Schema.Array(Schema.Struct({ id: Schema.String })),
                 }),
               ),
             }),
@@ -148,6 +160,10 @@ const probeCodex = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
             defaultEffort: Schema.is(Effort)(m.defaultReasoningEffort)
               ? m.defaultReasoningEffort
               : undefined,
+            efforts: m.supportedReasoningEfforts
+              .map((level) => level.reasoningEffort)
+              .filter(Schema.is(Effort)),
+            fast: m.serviceTiers.some((tier) => tier.id === CODEX_FAST_TIER) || undefined,
           }))
       : [];
     return {

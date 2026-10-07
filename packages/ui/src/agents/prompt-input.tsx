@@ -2,13 +2,17 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  ChevronRight,
   CirclePlus,
   FileText,
   ImageIcon,
   Paperclip,
   Plus,
+  Search,
   Square,
+  Star,
   X,
+  Zap,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
@@ -33,8 +37,8 @@ import {
   MorphPopoverMenu,
   MorphPopoverTrigger,
 } from "@apcode/ui/motion/popover-morph";
-import { RangeSlider } from "@apcode/ui/motion/range-slider";
-import { EASE_OUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
+import { Switch } from "@apcode/ui/motion/switch";
+import { SPRING_SWAP } from "@apcode/ui/lib/ease";
 import { formatBinding, matches } from "@apcode/ui/lib/keys";
 import { cn } from "@apcode/ui/lib/utils";
 
@@ -50,11 +54,7 @@ export interface PromptOption {
   /** Consecutive options sharing a group render under one section header. */
   group?: string;
   groupIcon?: ReactNode;
-  /** The group starts folded each time the menu opens; its header toggles it, and filtering shows matches anyway. */
-  foldable?: boolean;
 }
-
-export type PromptModel = PromptOption;
 
 export interface PromptAction {
   value: string;
@@ -80,20 +80,10 @@ export interface PromptInputProps extends Omit<
   value?: string;
   defaultValue?: string;
   onValueChange?: (value: string) => void;
-  models?: PromptModel[];
-  model?: string;
-  defaultModel?: string;
-  onModelChange?: (model: string) => void;
-  /** Models picked alongside `model` by shift-clicking; the message goes to each. */
-  extraModels?: string[];
-  /** Shift-click in the model menu; without it, shift-click picks like a click. */
-  onToggleModel?: (model: string) => void;
-  /** Opens the model menu from the keyboard, as a binding like `mod+shift+m`. */
-  modelShortcut?: string;
   actions?: PromptAction[];
   onAction?: (action: string) => void;
   /** `alternate` is set when sent with ⌘/Ctrl+Enter, for the opposite of the usual follow-up behavior. */
-  onSubmit?: (value: string, model?: string, how?: { alternate: boolean }) => void | Promise<void>;
+  onSubmit?: (value: string, how: { alternate: boolean }) => void | Promise<void>;
   /** Blocks sending only; typing and the pickers stay usable. */
   submitDisabled?: boolean;
   /** Something to send besides the text and attachments (e.g. review comments), so an empty prompt can go. */
@@ -105,7 +95,7 @@ export interface PromptInputProps extends Omit<
   leadingAction?: ReactNode;
   /** Toolbar items just before attach and send. */
   trailingAction?: ReactNode;
-  /** Extra pickers after the model menu. */
+  /** Pickers at the start of the toolbar. */
   controls?: ReactNode[];
   attachments?: PromptAttachment[];
   /** Shows the paperclip button. */
@@ -129,10 +119,6 @@ export function PromptInput({
   value,
   defaultValue = "",
   onValueChange,
-  models = [],
-  model,
-  defaultModel,
-  onModelChange,
   actions = [],
   onAction,
   onSubmit,
@@ -150,9 +136,6 @@ export function PromptInput({
   onRemoveAttachment,
   onPasteFiles,
   onPasteText,
-  extraModels,
-  onToggleModel,
-  modelShortcut,
   header,
   footer,
   className,
@@ -166,10 +149,8 @@ export function PromptInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const measurementRef = useRef<HTMLDivElement>(null);
   const [internalValue, setInternalValue] = useState(defaultValue);
-  const [internalModel, setInternalModel] = useState(defaultModel ?? models[0]?.value);
   const [actionsOpen, setActionsOpen] = useState(false);
   const currentValue = value ?? internalValue;
-  const currentModelValue = model ?? internalModel;
   const hasContent = Boolean(currentValue.trim()) || attachments.length > 0 || pendingContent;
   // While the agent works, a message can still go (queued or steering); the button stops it only when there's nothing to send.
   const canSubmit = hasContent && !disabled && !submitDisabled;
@@ -207,16 +188,11 @@ export function PromptInput({
     onValueChange?.(next);
   };
 
-  const setModel = (next: string) => {
-    if (model === undefined) setInternalModel(next);
-    onModelChange?.(next);
-  };
-
   const submit = (event?: FormEvent, alternate = false) => {
     event?.preventDefault();
     if (!canSubmit) return;
 
-    onSubmit?.(currentValue.trim(), currentModelValue, { alternate });
+    onSubmit?.(currentValue.trim(), { alternate });
     if (value === undefined) setInternalValue("");
     textareaRef.current?.focus({ preventScroll: true });
   };
@@ -249,24 +225,6 @@ export function PromptInput({
     const text = event.clipboardData.getData("text/plain");
     if (text && onPasteText?.(text, plain)) event.preventDefault();
   };
-
-  const pickers = [
-    models.length ? (
-      <PromptSelect
-        key="model"
-        options={models}
-        value={currentModelValue}
-        onChange={setModel}
-        {...(extraModels ? { multi: extraModels } : {})}
-        {...(onToggleModel ? { onToggle: onToggleModel } : {})}
-        shortcut={modelShortcut}
-        disabled={disabled || loading}
-        placeholder="Choose model"
-        showOptionIcon
-      />
-    ) : null,
-    ...controls,
-  ].filter(Boolean);
 
   return (
     <div className={cn("w-full", className)}>
@@ -384,7 +342,7 @@ export function PromptInput({
             </MorphPopover>
           ) : null}
           {leadingAction}
-          <div className="flex min-w-0 items-center gap-1.5">{pickers}</div>
+          <div className="flex min-w-0 items-center gap-1.5">{controls}</div>
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {trailingAction}
@@ -546,6 +504,8 @@ function PickerTrigger({
   disabled,
   icon,
   variant = "pill",
+  // In a narrow composer an icon reads better than a label truncated to a letter or two.
+  compact = Boolean(icon) && variant === "pill",
   className,
   children,
   ...rest
@@ -554,11 +514,11 @@ function PickerTrigger({
   disabled: boolean;
   icon?: ReactNode;
   variant?: PickerVariant;
+  /** Shrinks to the icon in a narrow composer. */
+  compact?: boolean;
   className?: string;
   children: ReactNode;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & { ref?: Ref<HTMLButtonElement> }) {
-  // In a narrow composer an icon reads better than a label truncated to a letter or two.
-  const collapsible = Boolean(icon) && variant === "pill";
   return (
     <button
       title={typeof children === "string" ? children : undefined}
@@ -569,7 +529,7 @@ function PickerTrigger({
         "flex max-w-56 min-w-0 items-center gap-1.5 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
         variant === "pill" && "h-8 rounded-full border border-border bg-background px-3 text-xs",
         variant === "plain" && "h-6 rounded-lg px-2 text-[11px]",
-        collapsible && "@max-md:w-8 @max-md:shrink-0 @max-md:justify-center @max-md:px-0",
+        compact && "@max-md:w-8 @max-md:shrink-0 @max-md:justify-center @max-md:px-0",
         open && "bg-muted text-foreground",
         className,
       )}
@@ -577,223 +537,9 @@ function PickerTrigger({
       {icon ? (
         <span className="grid size-3.5 shrink-0 place-items-center [&_svg]:size-3.5">{icon}</span>
       ) : null}
-      <span className={cn("truncate", collapsible && "@max-md:sr-only")}>{children}</span>
-      <ChevronDown className={cn("size-3 shrink-0 opacity-60", collapsible && "@max-md:hidden")} />
+      <span className={cn("truncate", compact && "@max-md:sr-only")}>{children}</span>
+      <ChevronDown className={cn("size-3 shrink-0 opacity-60", compact && "@max-md:hidden")} />
     </button>
-  );
-}
-
-/**
- * Label that turns like a dial when `value` changes: rolls up for a higher value,
- * down for a lower one. Styled after ActionSwapRollText, but quicker.
- */
-const DIAL_SPRING = { type: "spring", stiffness: 1000, damping: 48, mass: 0.5 } as const;
-
-function DialText({
-  value,
-  className,
-  children,
-}: {
-  value: number;
-  className?: string;
-  children: ReactNode;
-}) {
-  const reduce = useReducedMotion();
-  const previous = useRef(value);
-  const direction = value >= previous.current ? 1 : -1;
-  useEffect(() => {
-    previous.current = value;
-  }, [value]);
-  // Tighter than SPRING_SWAP: the label has to keep up with a thumb being dragged.
-  const variants = {
-    enter: (dir: number) => ({
-      opacity: 0,
-      transform: `translateY(${dir * 55}%) rotateX(${dir * -50}deg)`,
-    }),
-    center: { opacity: 1, transform: "translateY(0%) rotateX(0deg)", transition: DIAL_SPRING },
-    exit: (dir: number) => ({
-      opacity: 0,
-      transform: `translateY(${dir * -55}%) rotateX(${dir * 50}deg)`,
-      transition: { duration: 0.08, ease: EASE_OUT },
-    }),
-  };
-  return (
-    <span
-      className={cn(
-        "relative inline-grid overflow-hidden whitespace-nowrap [perspective:200px]",
-        className,
-      )}
-    >
-      <AnimatePresence initial={false} mode="popLayout" custom={direction}>
-        <motion.span
-          key={value}
-          custom={direction}
-          variants={reduce ? undefined : variants}
-          initial="enter"
-          animate="center"
-          exit="exit"
-          className="inline-block origin-center"
-        >
-          {children}
-        </motion.span>
-      </AnimatePresence>
-    </span>
-  );
-}
-
-export interface PromptSliderProps {
-  /** Ordered stops, lowest first. */
-  options: PromptOption[];
-  value: string | undefined;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-  placeholder?: ReactNode;
-  /** Shown before the current label at the top of the menu. */
-  title?: ReactNode;
-  /** Captions under the title at either end of the scale. */
-  minLabel?: ReactNode;
-  maxLabel?: ReactNode;
-  side?: "top" | "bottom";
-  align?: "start" | "end";
-  width?: string;
-  /** Opens the menu from the keyboard, as a binding like `mod+shift+e`. */
-  shortcut?: string;
-  className?: string;
-}
-
-/** Picker over an ordered scale (e.g. effort): a menu holding a stepped slider instead of a list. */
-export function PromptSlider({
-  options,
-  value,
-  onChange,
-  disabled = false,
-  placeholder = "Choose",
-  title,
-  minLabel,
-  maxLabel,
-  side = "top",
-  align = "start",
-  width = "w-72",
-  shortcut,
-  className,
-}: PromptSliderProps) {
-  const [open, setOpenState] = useState(false);
-  const [instant, setInstant] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const index = options.findIndex((option) => option.value === value);
-  const current = options[index];
-
-  // The thumb moves a local draft; `onChange` only fires once the user settles
-  // (pointer released, a pause after arrow keys, or the menu closing).
-  const [draft, setDraftState] = useState<number | null>(null);
-  const draftRef = useRef<number | null>(null);
-  const settleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const setDraft = (next: number | null) => {
-    draftRef.current = next;
-    setDraftState(next);
-  };
-  const settle = () => {
-    clearTimeout(settleTimer.current);
-    const next = draftRef.current;
-    if (next === null) return;
-    setDraft(null);
-    const option = options[next];
-    if (option && option.value !== value) onChange(option.value);
-  };
-  const settleSoon = () => {
-    clearTimeout(settleTimer.current);
-    settleTimer.current = setTimeout(settle, 400);
-  };
-  useEffect(() => () => clearTimeout(settleTimer.current), []);
-  const shown = options[draft ?? index];
-
-  const setOpen = (next: boolean) => {
-    if (!next) settle();
-    setOpenState(next);
-    setInstant(false);
-  };
-  usePickerOpener(
-    () => {
-      setOpen(true);
-      setInstant(true);
-    },
-    { shortcut, disabled },
-  );
-
-  // Focus the handle once the panel has morphed in, so arrow keys step right away.
-  useEffect(() => {
-    if (!open) return;
-    const frame = requestAnimationFrame(() =>
-      contentRef.current
-        ?.querySelector<HTMLElement>('[role="slider"]')
-        ?.focus({ preventScroll: true }),
-    );
-    return () => cancelAnimationFrame(frame);
-  }, [open]);
-
-  return (
-    <MorphPopover open={open} onOpenChange={setOpen} className="min-w-0">
-      <MorphPopoverTrigger>
-        <PickerTrigger open={open} disabled={disabled} className={className}>
-          {current?.label ?? placeholder}
-        </PickerTrigger>
-      </MorphPopoverTrigger>
-      <MorphPopoverContent
-        side={side}
-        align={align}
-        sideOffset={6}
-        radius={12}
-        instant={instant}
-        className={cn(width, "p-3")}
-      >
-        <div
-          ref={contentRef}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter") return;
-            event.preventDefault();
-            setOpen(false);
-          }}
-          onKeyUp={(event) => {
-            if (draftRef.current !== null && event.key !== "Enter") settleSoon();
-          }}
-          onPointerUp={settle}
-          onPointerCancel={settle}
-        >
-          <div className="flex items-center gap-1.5 text-[13px]">
-            {title ? <span className="text-muted-foreground">{title}</span> : null}
-            <DialText value={draft ?? index} className="text-foreground">
-              {shown?.label ?? placeholder}
-            </DialText>
-            {shown?.badge ? (
-              <span className="grid shrink-0 place-items-center [&_svg]:size-3">{shown.badge}</span>
-            ) : null}
-          </div>
-          {minLabel || maxLabel ? (
-            <div className="mt-3 mb-1.5 flex justify-between text-[11px] text-muted-foreground">
-              <span>{minLabel}</span>
-              <span>{maxLabel}</span>
-            </div>
-          ) : (
-            <div className="h-3" />
-          )}
-          <RangeSlider
-            min={0}
-            max={Math.max(0, options.length - 1)}
-            step={1}
-            value={Math.max(0, draft ?? index)}
-            onValueChange={(next) => {
-              if (next !== (draftRef.current ?? index)) setDraft(next);
-            }}
-            disabled={disabled || options.length < 2}
-            aria-label={typeof title === "string" ? title : "Level"}
-            formatValueText={(next) => {
-              const label = options[next]?.label;
-              return typeof label === "string" ? label : String(next);
-            }}
-          />
-        </div>
-      </MorphPopoverContent>
-    </MorphPopover>
   );
 }
 
@@ -851,10 +597,10 @@ export function PromptSelect({
   title,
   empty,
   note,
-  searchThreshold = 10,
-  searchPlaceholder = "Filter…",
+  searchThreshold,
+  searchPlaceholder,
   onCreate,
-  createLabel = (query) => `Create "${query}"`,
+  createLabel,
   side = "top",
   align = "start",
   width = "w-56",
@@ -869,16 +615,9 @@ export function PromptSelect({
 }: PromptSelectProps) {
   const [open, setOpenState] = useState(false);
   const [instant, setInstant] = useState(false);
-  const [query, setQuery] = useState("");
-  const [unfolded, setUnfolded] = useState<ReadonlyArray<string>>([]);
-  const searchRef = useRef<HTMLInputElement>(null);
   const setOpen = (next: boolean) => {
     setOpenState(next);
     setInstant(false);
-    if (!next) {
-      setQuery("");
-      setUnfolded([]);
-    }
     onOpenChange?.(next);
   };
   usePickerOpener(
@@ -890,50 +629,6 @@ export function PromptSelect({
   );
   const current = options.find((option) => option.value === value);
   const triggerIcon = icon ?? (showOptionIcon ? (current?.groupIcon ?? current?.icon) : undefined);
-  const searchable = Boolean(onCreate) || options.length >= searchThreshold;
-  const trimmed = query.trim();
-  const needle = trimmed.toLowerCase();
-  const visible = needle
-    ? options.filter((option) =>
-        [option.value, option.label, option.description].some(
-          (text) => typeof text === "string" && text.toLowerCase().includes(needle),
-        ),
-      )
-    : options;
-  const canCreate =
-    Boolean(onCreate && trimmed) && !options.some((option) => option.value === trimmed);
-  const numberedValues = numbered
-    ? visible
-        .filter((option) => !option.disabled)
-        .slice(0, 9)
-        .map((option) => option.value)
-    : [];
-
-  // Resubscribes every render, so the handler always sees the current filter and onChange.
-  useEffect(() => {
-    if (!open || !numberedValues.length) return;
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      const picked = numberedValues[Number(event.key) - 1];
-      if (!picked || !matches(event, `mod+${event.key}`)) return;
-      event.preventDefault();
-      onChange(picked);
-      setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
-
-  const create = () => {
-    onCreate?.(trimmed);
-    setOpen(false);
-  };
-
-  // The panel mounts in a portal and morphs in, so `autoFocus` fires too early.
-  useEffect(() => {
-    if (!open || !searchable) return;
-    const frame = requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }));
-    return () => cancelAnimationFrame(frame);
-  }, [open, searchable]);
 
   return (
     <MorphPopover open={open} onOpenChange={setOpen} className="min-w-0">
@@ -956,164 +651,639 @@ export function PromptSelect({
         instant={instant}
         className={cn(width, "p-1")}
       >
-        {title ? (
-          <div className="px-2 pt-1 pb-1.5 text-[11px] text-muted-foreground">{title}</div>
+        <OptionList
+          options={options}
+          value={value}
+          onChange={onChange}
+          onClose={() => setOpen(false)}
+          title={title}
+          empty={empty}
+          note={note}
+          searchThreshold={searchThreshold}
+          searchPlaceholder={searchPlaceholder}
+          onCreate={onCreate}
+          createLabel={createLabel}
+          multi={multi}
+          onToggle={onToggle}
+          numbered={numbered}
+        />
+      </MorphPopoverContent>
+    </MorphPopover>
+  );
+}
+
+/** A picker's options, as listed in its menu or flyout. Mounted only while that's open. */
+function OptionList({
+  options,
+  value,
+  onChange,
+  onClose,
+  title,
+  empty,
+  note,
+  searchThreshold = 10,
+  searchPlaceholder = "Filter…",
+  onCreate,
+  createLabel = (query) => `Create "${query}"`,
+  multi = [],
+  onToggle,
+  numbered = false,
+  focusSelected = false,
+  favorites,
+  onToggleFavorite,
+}: Pick<
+  PromptSelectProps,
+  | "options"
+  | "value"
+  | "onChange"
+  | "title"
+  | "empty"
+  | "note"
+  | "searchThreshold"
+  | "searchPlaceholder"
+  | "onCreate"
+  | "createLabel"
+  | "multi"
+  | "onToggle"
+  | "numbered"
+> & {
+  onClose: () => void;
+  /** Focuses the current option on open (when there's no filter field to focus), for arrow keys. */
+  focusSelected?: boolean;
+  /** Starred values; with `onToggleFavorite`, each row gets a star. */
+  favorites?: string[];
+  onToggleFavorite?: (value: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const searchable = Boolean(onCreate) || options.length >= searchThreshold;
+  const trimmed = query.trim();
+  const needle = trimmed.toLowerCase();
+  const visible = needle
+    ? options.filter((option) =>
+        [option.value, option.label, option.description].some(
+          (text) => typeof text === "string" && text.toLowerCase().includes(needle),
+        ),
+      )
+    : options;
+  const canCreate =
+    Boolean(onCreate && trimmed) && !options.some((option) => option.value === trimmed);
+  const numberedValues = numbered
+    ? visible
+        .filter((option) => !option.disabled)
+        .slice(0, 9)
+        .map((option) => option.value)
+    : [];
+
+  const pick = (picked: string) => {
+    onChange(picked);
+    onClose();
+  };
+
+  // Resubscribes every render, so the handler always sees the current filter and onChange.
+  useEffect(() => {
+    if (!numberedValues.length) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      const picked = numberedValues[Number(event.key) - 1];
+      if (!picked || !matches(event, `mod+${event.key}`)) return;
+      event.preventDefault();
+      pick(picked);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  const create = () => {
+    onCreate?.(trimmed);
+    onClose();
+  };
+
+  // The panel mounts in a portal and morphs in, so `autoFocus` fires too early.
+  useEffect(() => {
+    if (!searchable && !focusSelected) return;
+    const frame = requestAnimationFrame(() =>
+      (
+        searchRef.current ??
+        listRef.current?.querySelector<HTMLElement>(
+          '[aria-selected="true"], [role="option"]:not(:disabled)',
+        )
+      )?.focus({ preventScroll: true }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [searchable, focusSelected]);
+
+  return (
+    <>
+      {title ? (
+        <div className="px-2 pt-1 pb-1.5 text-[11px] text-muted-foreground">{title}</div>
+      ) : null}
+      {searchable ? (
+        <input
+          ref={searchRef}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            // An exact match wins; otherwise create, else take the first match.
+            const exact = visible.find((option) => option.value === trimmed && !option.disabled);
+            const first = visible.find((option) => !option.disabled);
+            if (exact) pick(exact.value);
+            else if (canCreate) create();
+            else if (first) pick(first.value);
+          }}
+          placeholder={searchPlaceholder}
+          className="mb-1 h-7 w-full rounded-md bg-muted px-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
+        />
+      ) : null}
+      <div
+        ref={listRef}
+        role="listbox"
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+          event.preventDefault();
+          const rows = [
+            ...event.currentTarget.querySelectorAll<HTMLElement>('[role="option"]:not(:disabled)'),
+          ];
+          const at = rows.findIndex((row) => row === document.activeElement);
+          const step = event.key === "ArrowDown" ? 1 : -1;
+          rows[(at + step + rows.length) % rows.length]?.focus();
+        }}
+        className="scrollbar-hide flex max-h-80 flex-col gap-0.5 overflow-y-auto overscroll-contain"
+      >
+        {visible.length === 0 && !canCreate ? (
+          <div className="px-2 py-1.5 text-[13px] text-muted-foreground">
+            {needle ? "No matches" : (empty ?? "Nothing here")}
+          </div>
         ) : null}
-        {searchable ? (
+        {canCreate ? (
+          <button
+            type="button"
+            onClick={create}
+            className="flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-[13px] text-foreground transition-colors outline-none hover:bg-muted focus-visible:bg-muted"
+          >
+            <CirclePlus className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate">{createLabel(trimmed)}</span>
+          </button>
+        ) : null}
+        {canCreate && visible.length ? (
+          <div aria-hidden="true" className="mx-2 my-0.5 h-px shrink-0 bg-border" />
+        ) : null}
+        {visible.map((option, index) => {
+          const selected = option.value === value || multi.includes(option.value);
+          const header = option.group && option.group !== visible[index - 1]?.group;
+          const favorite = favorites?.includes(option.value) ?? false;
+          return (
+            <div key={option.value} className="group/row relative">
+              {header && index > 0 ? (
+                <div aria-hidden="true" className="mx-2 my-1 h-px bg-border" />
+              ) : null}
+              {header ? (
+                <div className="flex items-center gap-1.5 px-2 pt-1 pb-1 text-[11px] text-muted-foreground">
+                  {option.groupIcon ? (
+                    <span className="grid size-3 place-items-center [&_svg]:size-3">
+                      {option.groupIcon}
+                    </span>
+                  ) : null}
+                  {option.group}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                role="option"
+                aria-selected={selected}
+                disabled={option.disabled}
+                onClick={(event) => {
+                  // Shift-click adds or removes the option and keeps the menu open.
+                  if (event.shiftKey && onToggle) {
+                    onToggle(option.value);
+                    return;
+                  }
+                  pick(option.value);
+                }}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors outline-none hover:bg-muted focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-50",
+                  option.description ? "py-1.5" : "h-7",
+                  selected ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {option.icon ? (
+                  <span
+                    className={cn(
+                      "grid size-4 shrink-0 place-items-center [&_svg]:size-3.5",
+                      option.description && "self-start",
+                    )}
+                    style={option.description ? { marginTop: 2 } : undefined}
+                  >
+                    {option.icon}
+                  </span>
+                ) : null}
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate">{option.label}</span>
+                    {option.badge ? (
+                      <span className="grid shrink-0 place-items-center [&_svg]:size-3">
+                        {option.badge}
+                      </span>
+                    ) : null}
+                  </span>
+                  {option.description ? (
+                    <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">
+                      {option.description}
+                    </span>
+                  ) : null}
+                </span>
+                {numberedValues.includes(option.value) ? (
+                  <span className="shrink-0 text-[11px] text-muted-foreground/70 tabular-nums">
+                    {formatBinding(`mod+${numberedValues.indexOf(option.value) + 1}`)}
+                  </span>
+                ) : null}
+                {onToggleFavorite ? (
+                  <>
+                    {/* Room for the star, which sits over the row as its own button. */}
+                    <span aria-hidden="true" className="w-5 shrink-0" />
+                    <Check className={cn("size-3.5 shrink-0", !selected && "invisible")} />
+                  </>
+                ) : selected ? (
+                  <Check className="size-3.5 shrink-0" />
+                ) : null}
+              </button>
+              {onToggleFavorite ? (
+                // A sibling of the row, not inside it: a button can't hold another.
+                <button
+                  type="button"
+                  aria-label="Favorite"
+                  aria-pressed={favorite}
+                  onClick={() => onToggleFavorite(option.value)}
+                  className={cn(
+                    "absolute right-8 bottom-1.5 grid size-4 place-items-center rounded-sm text-muted-foreground transition-opacity outline-none hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring",
+                    favorite
+                      ? "text-brand hover:text-brand"
+                      : "opacity-0 group-hover/row:opacity-100",
+                  )}
+                >
+                  <Star className={cn("size-3.5", favorite && "fill-current")} />
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {note ? (
+        <div className="mt-1 border-t border-border px-2 pt-1.5 pb-1 text-[11px] leading-4 text-muted-foreground">
+          {note}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+export interface PromptModelMenuProps {
+  models: PromptOption[];
+  model: string | undefined;
+  onModelChange: (model: string) => void;
+  /** Models picked alongside `model` by shift-clicking; the message goes to each. */
+  extraModels?: string[];
+  /** Shift-click in the model list; without it, shift-click picks like a click. */
+  onToggleModel?: (model: string) => void;
+  /** Starred models, listed under the rail's Favorites. */
+  favorites: string[];
+  onToggleFavorite: (model: string) => void;
+  /** Lowest first; the row is left out when the model takes none. */
+  efforts: PromptOption[];
+  effort: string | undefined;
+  onEffortChange: (effort: string) => void;
+  /** Left out when the model has no fast mode. */
+  fast?: { readonly on: boolean; readonly onChange: (on: boolean) => void } | undefined;
+  disabled?: boolean;
+  /** Open the menu with that list out, as bindings like `mod+shift+m`. */
+  modelShortcut?: string;
+  effortShortcut?: string;
+}
+
+type Flyout = "effort" | "model";
+
+/** Model, effort and fast mode behind one trigger; the effort and model lists fly out beside the menu. */
+export function PromptModelMenu({
+  models,
+  model,
+  onModelChange,
+  extraModels = [],
+  onToggleModel,
+  favorites,
+  onToggleFavorite,
+  efforts,
+  effort,
+  onEffortChange,
+  fast,
+  disabled = false,
+  modelShortcut,
+  effortShortcut,
+}: PromptModelMenuProps) {
+  const [open, setOpenState] = useState(false);
+  const [instant, setInstant] = useState(false);
+  const [flyout, setFlyout] = useState<Flyout | null>(null);
+  const setOpen = (next: boolean) => {
+    setOpenState(next);
+    setInstant(false);
+    if (!next) setFlyout(null);
+  };
+  const openWith = (list: Flyout) => {
+    setOpenState(true);
+    setInstant(true);
+    setFlyout(list);
+  };
+  usePickerOpener(() => openWith("model"), { shortcut: modelShortcut, disabled });
+  usePickerOpener(() => openWith("effort"), { shortcut: effortShortcut, disabled });
+  const current = models.find((option) => option.value === model);
+  const currentEffort = efforts.find((option) => option.value === effort);
+  const modelIcon = current?.groupIcon ?? current?.icon;
+  const modelLabel = extraModels.length
+    ? `${extraModels.length + 1} models`
+    : (current?.label ?? "Choose model");
+  const flyoutProps = (list: Flyout) => ({
+    open: flyout === list,
+    onOpenChange: (next: boolean) =>
+      setFlyout((shown) => (next ? list : shown === list ? null : shown)),
+  });
+
+  return (
+    <MorphPopover open={open} onOpenChange={setOpen} className="min-w-0">
+      <MorphPopoverTrigger>
+        <PickerTrigger
+          open={open}
+          disabled={disabled}
+          icon={modelIcon}
+          compact={false}
+          title={[modelLabel, currentEffort?.label, fast?.on && "Fast"]
+            .filter((part) => typeof part === "string")
+            .join(" · ")}
+        >
+          {modelLabel}
+          {currentEffort ? (
+            <span className="ml-1.5 text-muted-foreground/70">{currentEffort.label}</span>
+          ) : null}
+          {fast?.on ? (
+            <Zap aria-label="Fast" className="ml-1 inline size-3 fill-current align-[-1px]" />
+          ) : null}
+        </PickerTrigger>
+      </MorphPopoverTrigger>
+      <MorphPopoverContent
+        side="top"
+        align="start"
+        sideOffset={6}
+        radius={12}
+        instant={instant}
+        className="w-56 p-1"
+      >
+        <MorphPopoverMenu>
+          {fast ? (
+            <div
+              onPointerEnter={() => setFlyout(null)}
+              className="flex h-8 items-center gap-2 rounded-md px-2 text-[13px] text-foreground"
+            >
+              <span className="flex-1">Fast</span>
+              <Switch
+                size="sm"
+                checked={fast.on}
+                onCheckedChange={fast.onChange}
+                ariaLabel="Fast"
+              />
+            </div>
+          ) : null}
+          {efforts.length ? (
+            <FlyoutRow
+              label="Effort"
+              value={currentEffort?.label ?? "Default"}
+              {...flyoutProps("effort")}
+            >
+              <OptionList
+                options={efforts}
+                value={effort}
+                onChange={onEffortChange}
+                onClose={() => setOpen(false)}
+                focusSelected
+              />
+            </FlyoutRow>
+          ) : null}
+          <FlyoutRow
+            label="Model"
+            value={
+              <>
+                {modelIcon ? (
+                  <span className="grid size-3.5 shrink-0 place-items-center [&_svg]:size-3.5">
+                    {modelIcon}
+                  </span>
+                ) : null}
+                <span className="truncate">{modelLabel}</span>
+              </>
+            }
+            className="p-0"
+            {...flyoutProps("model")}
+          >
+            <ModelList
+              models={models}
+              value={model}
+              onChange={onModelChange}
+              onClose={() => setOpen(false)}
+              multi={extraModels}
+              onToggle={onToggleModel}
+              favorites={favorites}
+              onToggleFavorite={onToggleFavorite}
+            />
+          </FlyoutRow>
+        </MorphPopoverMenu>
+      </MorphPopoverContent>
+    </MorphPopover>
+  );
+}
+
+/** A menu row whose list flies out beside the menu, on hover or click (or → from the keyboard). */
+function FlyoutRow({
+  label,
+  value,
+  open,
+  onOpenChange,
+  className = "w-56 p-1",
+  children,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** The flyout panel's. */
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <MorphPopover open={open} onOpenChange={onOpenChange} className="flex w-full">
+      <button
+        type="button"
+        role="menuitem"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => onOpenChange(true)}
+        onPointerEnter={() => onOpenChange(true)}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowRight") return;
+          event.preventDefault();
+          onOpenChange(true);
+        }}
+        className={cn(
+          "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-foreground transition-colors outline-none hover:bg-muted focus-visible:bg-muted",
+          open && "bg-muted",
+        )}
+      >
+        <span className="shrink-0">{label}</span>
+        <span className="ml-auto flex min-w-0 items-center gap-1.5 text-muted-foreground">
+          {value}
+        </span>
+        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+      </button>
+      <MorphPopoverContent side="right" sideOffset={8} radius={12} className={className}>
+        {children}
+      </MorphPopoverContent>
+    </MorphPopover>
+  );
+}
+
+/**
+ * Models beside a rail of Favorites and one tab per group (harness); typing searches every group.
+ * Mounted only while the flyout is open.
+ */
+function ModelList({
+  models,
+  value,
+  onChange,
+  onClose,
+  multi,
+  onToggle,
+  favorites,
+  onToggleFavorite,
+}: Pick<PromptSelectProps, "value" | "onChange" | "multi" | "onToggle"> & {
+  models: PromptOption[];
+  onClose: () => void;
+  favorites: string[];
+  onToggleFavorite: (value: string) => void;
+}) {
+  const groups = [
+    ...new Map(
+      models.flatMap((option) => (option.group ? [[option.group, option.groupIcon] as const] : [])),
+    ),
+  ];
+  const current = models.find((option) => option.value === value);
+  // Null is the Favorites tab. Opens where the current model is.
+  const [tab, setTab] = useState<string | null>(() =>
+    current && favorites.includes(current.value)
+      ? null
+      : (current?.group ?? groups[0]?.[0] ?? null),
+  );
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const needle = query.trim().toLowerCase();
+  const groupOf = (option: PromptOption) => groups.findIndex(([group]) => group === option.group);
+  // A tab is one group, so its rows go without the group header; Favorites rows show whose they are.
+  const shown = needle
+    ? models
+        .filter((option) =>
+          [option.value, option.label].some(
+            (text) => typeof text === "string" && text.toLowerCase().includes(needle),
+          ),
+        )
+        .toSorted((a, b) => groupOf(a) - groupOf(b))
+    : models.flatMap(({ group, ...option }) =>
+        tab === null
+          ? favorites.includes(option.value)
+            ? [{ ...option, icon: option.groupIcon }]
+            : []
+          : group === tab
+            ? [option]
+            : [],
+      );
+
+  // The panel mounts in a portal and morphs in, so `autoFocus` fires too early.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  return (
+    <div className="flex">
+      <div
+        role="tablist"
+        aria-orientation="vertical"
+        className="flex flex-col gap-1 border-r border-border p-1"
+      >
+        {[
+          { key: null, label: "Favorites", icon: <Star /> },
+          ...groups.map(([group, icon]) => ({ key: group, label: group, icon })),
+        ].map((entry) => (
+          <button
+            key={entry.label}
+            type="button"
+            role="tab"
+            aria-selected={!needle && tab === entry.key}
+            aria-label={entry.label}
+            title={entry.label}
+            onClick={() => {
+              setTab(entry.key);
+              setQuery("");
+            }}
+            className={cn(
+              "grid size-8 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted [&_svg]:size-4",
+              !needle && tab === entry.key && "bg-muted text-foreground",
+            )}
+          >
+            {entry.icon}
+          </button>
+        ))}
+      </div>
+      <div className="w-60 p-1">
+        <label className="mb-1 flex h-8 items-center gap-2 border-b border-border px-2 text-muted-foreground">
+          <Search className="size-3.5 shrink-0" />
           <input
             ref={searchRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                listRef.current
+                  ?.querySelector<HTMLElement>('[role="option"]:not(:disabled)')
+                  ?.focus();
+              }
               if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
               event.preventDefault();
-              // An exact match wins; otherwise create, else take the first match.
-              const exact = visible.find((option) => option.value === trimmed && !option.disabled);
-              const first = visible.find((option) => !option.disabled);
-              if (exact) {
-                onChange(exact.value);
-                setOpen(false);
-              } else if (canCreate) create();
-              else if (first) {
-                onChange(first.value);
-                setOpen(false);
-              }
+              const first = shown.find((option) => !option.disabled);
+              if (!first) return;
+              onChange(first.value);
+              onClose();
             }}
-            placeholder={searchPlaceholder}
-            className="mb-1 h-7 w-full rounded-md bg-muted px-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
+            placeholder="Search models"
+            aria-label="Search models"
+            className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
           />
-        ) : null}
-        <div
-          role="listbox"
-          className="scrollbar-hide flex max-h-80 flex-col gap-0.5 overflow-y-auto overscroll-contain"
-        >
-          {visible.length === 0 && !canCreate ? (
-            <div className="px-2 py-1.5 text-[13px] text-muted-foreground">
-              {needle ? "No matches" : (empty ?? "Nothing here")}
-            </div>
-          ) : null}
-          {canCreate ? (
-            <button
-              type="button"
-              onClick={create}
-              className="flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-[13px] text-foreground transition-colors outline-none hover:bg-muted focus-visible:bg-muted"
-            >
-              <CirclePlus className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">{createLabel(trimmed)}</span>
-            </button>
-          ) : null}
-          {canCreate && visible.length ? (
-            <div aria-hidden="true" className="mx-2 my-0.5 h-px shrink-0 bg-border" />
-          ) : null}
-          {visible.map((option, index) => {
-            const selected = option.value === value || multi.includes(option.value);
-            const header = option.group && option.group !== visible[index - 1]?.group;
-            const group = option.group ?? "";
-            const folded = option.foldable && !needle && !unfolded.includes(group);
-            const headerContent = (
-              <>
-                {option.groupIcon ? (
-                  <span className="grid size-3 place-items-center [&_svg]:size-3">
-                    {option.groupIcon}
-                  </span>
-                ) : null}
-                {option.group}
-              </>
-            );
-            // A folded group keeps only its header; empty wrappers would still take the list's gap.
-            if (folded && !header) return null;
-            return (
-              <div key={option.value}>
-                {header && index > 0 ? (
-                  <div aria-hidden="true" className="mx-2 my-1 h-px bg-border" />
-                ) : null}
-                {header && option.foldable && !needle ? (
-                  <button
-                    type="button"
-                    aria-expanded={!folded}
-                    onClick={() =>
-                      setUnfolded((current) =>
-                        folded ? [...current, group] : current.filter((entry) => entry !== group),
-                      )
-                    }
-                    className="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left text-[11px] text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted"
-                  >
-                    {headerContent}
-                    <ChevronDown
-                      aria-hidden="true"
-                      className={cn("ml-auto size-3 transition-transform", folded && "-rotate-90")}
-                    />
-                  </button>
-                ) : header ? (
-                  <div className="flex items-center gap-1.5 px-2 pt-1 pb-1 text-[11px] text-muted-foreground">
-                    {headerContent}
-                  </div>
-                ) : null}
-                {folded ? null : (
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={selected}
-                    disabled={option.disabled}
-                    onClick={(event) => {
-                      // Shift-click adds or removes the option and keeps the menu open.
-                      if (event.shiftKey && onToggle) {
-                        onToggle(option.value);
-                        return;
-                      }
-                      onChange(option.value);
-                      setOpen(false);
-                    }}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors outline-none hover:bg-muted focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-50",
-                      option.description ? "py-1.5" : "h-7",
-                      selected ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {option.icon ? (
-                      <span
-                        className={cn(
-                          "grid size-4 shrink-0 place-items-center [&_svg]:size-3.5",
-                          option.description && "self-start",
-                        )}
-                        style={option.description ? { marginTop: 2 } : undefined}
-                      >
-                        {option.icon}
-                      </span>
-                    ) : null}
-                    <span className="min-w-0 flex-1">
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <span className="truncate">{option.label}</span>
-                        {option.badge ? (
-                          <span className="grid shrink-0 place-items-center [&_svg]:size-3">
-                            {option.badge}
-                          </span>
-                        ) : null}
-                      </span>
-                      {option.description ? (
-                        <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">
-                          {option.description}
-                        </span>
-                      ) : null}
-                    </span>
-                    {numberedValues.includes(option.value) ? (
-                      <span className="shrink-0 text-[11px] text-muted-foreground/70 tabular-nums">
-                        {formatBinding(`mod+${numberedValues.indexOf(option.value) + 1}`)}
-                      </span>
-                    ) : null}
-                    {selected ? <Check className="size-3.5 shrink-0" /> : null}
-                  </button>
-                )}
-              </div>
-            );
-          })}
+        </label>
+        {/* Fixed height: switching tabs or searching would otherwise resize the panel under the pointer. */}
+        <div ref={listRef} className="h-80">
+          <OptionList
+            options={shown}
+            value={value}
+            onChange={onChange}
+            onClose={onClose}
+            searchThreshold={Infinity}
+            empty={
+              needle ? "No matches" : tab === null ? "Star a model to keep it here" : "No models"
+            }
+            multi={multi}
+            onToggle={onToggle}
+            favorites={favorites}
+            onToggleFavorite={onToggleFavorite}
+          />
         </div>
-        {note ? (
-          <div className="mt-1 border-t border-border px-2 pt-1.5 pb-1 text-[11px] leading-4 text-muted-foreground">
-            {note}
-          </div>
-        ) : null}
-      </MorphPopoverContent>
-    </MorphPopover>
+      </div>
+    </div>
   );
 }

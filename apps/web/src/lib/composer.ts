@@ -10,10 +10,10 @@ import { useEffect, useEffectEvent, useRef, useSyncExternalStore } from "react";
 import { type DraftAttachment, getDraft, setDraft, useDraft } from "./drafts.ts";
 import { firstTurnOptions, respondApproval, useStore } from "./store.ts";
 
-/** Effort levels each harness accepts, lowest first. */
+/** Efforts each harness can take, lowest first; a model's own list narrows it. */
 export const EFFORTS: Record<ProviderKind, ReadonlyArray<Effort>> = {
-  claude: ["low", "medium", "high", "xhigh", "max"],
-  codex: ["minimal", "low", "medium", "high", "xhigh"],
+  claude: ["low", "medium", "high", "xhigh", "max", "ultracode", "ultrathink"],
+  codex: ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
 };
 
 export const EFFORT_LABEL: Record<Effort, string> = {
@@ -23,6 +23,9 @@ export const EFFORT_LABEL: Record<Effort, string> = {
   high: "High",
   xhigh: "Extra high",
   max: "Max",
+  ultra: "Ultra",
+  ultracode: "Ultracode",
+  ultrathink: "Ultrathink",
 };
 
 /** Permission levels each harness offers; Codex has no plan or auto mode. */
@@ -50,6 +53,7 @@ export const PERMISSION_DESCRIPTION: Record<PermissionLevel, string> = {
 export interface TurnPrefs {
   /** Null leaves it to the harness. */
   readonly effort: Effort | null;
+  readonly fast: boolean;
   readonly permission: PermissionLevel;
 }
 
@@ -74,6 +78,7 @@ function setTurnPrefs(key: string, patch: Partial<TurnPrefs>) {
  * Codex), and Full access on a root host that isn't allowed yet.
  */
 const fit = (prefs: TurnPrefs, provider: ProviderKind, needsRootConsent: boolean): TurnPrefs => ({
+  fast: prefs.fast,
   effort: prefs.effort && EFFORTS[provider].includes(prefs.effort) ? prefs.effort : null,
   permission:
     PERMISSIONS[provider].includes(prefs.permission) &&
@@ -91,8 +96,13 @@ export const useTurnPrefs = (key: string, provider: ProviderKind, host: string |
   const prefs = fit(
     {
       effort: settings.newThreadEffort ?? null,
+      fast: false,
       permission: settings.newThreadPermission ?? "ask",
-      ...(first && { effort: first.effort, permission: first.permission }),
+      ...(first && {
+        effort: first.effort,
+        fast: first.fast ?? false,
+        permission: first.permission,
+      }),
       ...stored,
     },
     provider,
@@ -293,6 +303,7 @@ export const toTurnOptions = (
   attachments: ReadonlyArray<AttachmentInput>,
 ): TurnOptions => ({
   effort: prefs.effort,
+  fast: prefs.fast,
   permission: prefs.permission,
   attachments,
 });

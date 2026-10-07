@@ -21,7 +21,8 @@ import { usePopoverPortalPosition } from "@apcode/ui/lib/popover-position";
 import { EASE_OUT, SPRING_LAYOUT, SPRING_PANEL } from "@apcode/ui/lib/ease";
 import { cn } from "@apcode/ui/lib/utils";
 
-type Side = "top" | "bottom";
+/** "right" opens a flyout beside its trigger (a row in another panel), or on its left without room. */
+type Side = "top" | "bottom" | "right";
 type Align = "start" | "end";
 
 type MorphContextValue = {
@@ -116,6 +117,8 @@ export function MorphPopover({
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
     const onPointer = (e: PointerEvent) => {
       const target = e.target as Node;
+      // A flyout portals out of the panel it opens from, so a click in it isn't outside that panel.
+      if (target instanceof Element && target.closest("[data-morph-popover-portal]")) return;
       if (root && !root.contains(target) && !contentRef.current?.contains(target)) close();
     };
     window.addEventListener("keydown", onKey);
@@ -183,12 +186,12 @@ export function MorphPopoverTrigger({ children }: MorphPopoverTriggerProps) {
   });
 }
 
-const originFor = (side: Side, align: Align) =>
+const originFor = (side: Exclude<Side, "right">, align: Align) =>
   `${side === "bottom" ? "top" : "bottom"} ${align === "end" ? "right" : "left"}`;
 
 // A clip that hides everything but the corner nearest the trigger, so the
 // panel appears to grow out of it. inset(top right bottom left).
-function clipHidden(side: Side, align: Align, radius: number) {
+function clipHidden(side: Exclude<Side, "right">, align: Align, radius: number) {
   const top = side === "bottom" ? "0%" : "92%";
   const bottom = side === "bottom" ? "92%" : "0%";
   const right = align === "end" ? "0%" : "92%";
@@ -260,29 +263,47 @@ export function MorphPopoverContent({
   const viewport = document.documentElement;
   // The measured body sits inside the panel's 1px border.
   const panelWidth = layout ? layout.content.width + 2 : 0;
+  const panelHeight = layout ? layout.content.height + 2 : 0;
+  const flyoutLeft = layout ? layout.trigger.left + layout.trigger.width + sideOffset : 0;
+  const flipped =
+    side === "right" && flyoutLeft + panelWidth + VIEWPORT_MARGIN > viewport.clientWidth;
+  // A flyout grows down from its top corner nearest the trigger, like a bottom-side panel.
+  const growSide = side === "right" ? "bottom" : side;
+  const growAlign = side === "right" ? (flipped ? "end" : "start") : align;
   const horizontal = !layout
     ? { left: 0 }
-    : align === "end"
-      ? {
-          right: Math.min(
-            viewport.clientWidth - panelWidth - VIEWPORT_MARGIN,
-            Math.max(
-              VIEWPORT_MARGIN,
-              viewport.clientWidth - layout.trigger.left - layout.trigger.width,
+    : side === "right"
+      ? flipped
+        ? { right: viewport.clientWidth - layout.trigger.left + sideOffset }
+        : { left: flyoutLeft }
+      : align === "end"
+        ? {
+            right: Math.min(
+              viewport.clientWidth - panelWidth - VIEWPORT_MARGIN,
+              Math.max(
+                VIEWPORT_MARGIN,
+                viewport.clientWidth - layout.trigger.left - layout.trigger.width,
+              ),
             ),
-          ),
-        }
-      : {
-          left: Math.max(
-            VIEWPORT_MARGIN,
-            Math.min(layout.trigger.left, viewport.clientWidth - panelWidth - VIEWPORT_MARGIN),
-          ),
-        };
+          }
+        : {
+            left: Math.max(
+              VIEWPORT_MARGIN,
+              Math.min(layout.trigger.left, viewport.clientWidth - panelWidth - VIEWPORT_MARGIN),
+            ),
+          };
   const vertical = !layout
     ? { top: 0 }
-    : side === "bottom"
-      ? { top: layout.trigger.top + layout.trigger.height + sideOffset }
-      : { bottom: viewport.clientHeight - layout.trigger.top + sideOffset };
+    : side === "right"
+      ? {
+          top: Math.max(
+            VIEWPORT_MARGIN,
+            Math.min(layout.trigger.top, viewport.clientHeight - panelHeight - VIEWPORT_MARGIN),
+          ),
+        }
+      : side === "bottom"
+        ? { top: layout.trigger.top + layout.trigger.height + sideOffset }
+        : { bottom: viewport.clientHeight - layout.trigger.top + sideOffset };
 
   // Both directions travel between the exact same hidden/show states. Exit
   // targets "hidden" directly instead of introducing separate choreography.
@@ -298,7 +319,7 @@ export function MorphPopoverContent({
     ? undefined
     : {
         hidden: {
-          clipPath: clipHidden(side, align, radius),
+          clipPath: clipHidden(growSide, growAlign, radius),
           transition: MORPH_EXIT,
         },
         show: {
@@ -326,7 +347,7 @@ export function MorphPopoverContent({
             ...horizontal,
             ...vertical,
             visibility: layout ? "visible" : "hidden",
-            transformOrigin: originFor(side, align),
+            transformOrigin: originFor(growSide, growAlign),
           }}
           // Electron hit-tests `app-region: drag` regardless of stacking, so a panel over a drag area would lose its clicks.
           className="fixed z-[9999] [filter:drop-shadow(0_1px_1px_rgb(0_0_0/0.06))_drop-shadow(0_8px_20px_rgb(0_0_0/0.12))] [-webkit-app-region:no-drag]"

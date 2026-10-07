@@ -52,6 +52,8 @@ export interface TurnInput {
   readonly attachments: ReadonlyArray<Attachment>;
   /** Null leaves the harness's current effort. */
   readonly effort: Effort | null;
+  /** Absent leaves fast mode as it was. */
+  readonly fast?: boolean | undefined;
   readonly permission: PermissionLevel;
   /** Skills the text mentions as `$name`, in the order they appear. */
   readonly skills: ReadonlyArray<ProviderSkill>;

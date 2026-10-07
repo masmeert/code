@@ -892,11 +892,12 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   const clearRevealedComment = useCallback(() => setRevealedComment(null), []);
   const followUps = useStore((s) => s.threads[threadId]?.queue) ?? NO_QUEUE;
   const followUpMode = useStore((s) => s.settings.followUp ?? "queue");
-  const [{ effort, permission }] = useTurnPrefs(threadId, provider, host);
+  const [{ effort, fast, permission }] = useTurnPrefs(threadId, provider, host);
   // The turn its output starts runs at the composer's effort and permission level.
   const runReplyCommand = useCallback(
-    (command: string) => runCommand(threadId, command, toTurnOptions({ effort, permission }, [])),
-    [threadId, effort, permission],
+    (command: string) =>
+      runCommand(threadId, command, toTurnOptions({ effort, fast, permission }, [])),
+    [threadId, effort, fast, permission],
   );
   const runs = useStore((s) => s.runs[threadId]) ?? NO_RUNS;
   // Leaves the draft alone, and waits while the agent needs an approval or an answer.

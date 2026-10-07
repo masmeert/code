@@ -858,7 +858,7 @@ const make = Effect.gen(function* () {
         const threadId = entry.info.id;
         // Writing in an archived thread brings it back.
         yield* setArchived(entry, false);
-        const { text, attachments, effort, permission } = message;
+        const { text, attachments, effort, fast, permission } = message;
         const settings = yield* settingsStore.get;
         const turn = {
           // SAFETY: send() lets only UUIDs through.
@@ -866,6 +866,7 @@ const make = Effect.gen(function* () {
           text,
           attachments,
           effort,
+          fast,
           permission,
           skills: yield* Effect.promise(() =>
             skills.mentionedIn(entry.info.provider, entry.info.cwd, text),
@@ -961,6 +962,7 @@ const make = Effect.gen(function* () {
         text,
         attachments: yield* resolveAttachments(options.attachments),
         effort: options.effort,
+        fast: options.fast,
         permission: options.permission,
       };
       if (queue && isTurnActive(entry.info.status))
