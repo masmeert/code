@@ -224,14 +224,16 @@ const start = ({
     /** Runs once the turn ends, in place of going idle: building an approved plan. */
     let afterTurn: (() => void) | null = null;
 
-    const mcpServers = [
-      { name: "browser", url: mcpServer.url },
-      { name: "apcode", url: `${mcpServer.url}/apcode` },
-    ].map((server) => ({
-      type: "http",
-      ...server,
-      headers: [{ name: "Authorization", value: `Bearer ${mcpServer.token}` }],
-    }));
+    const mcpServers = mcpServer
+      ? [
+          { name: "browser", url: mcpServer.url },
+          { name: "apcode", url: `${mcpServer.url}/apcode` },
+        ].map((server) => ({
+          type: "http",
+          ...server,
+          headers: [{ name: "Authorization", value: `Bearer ${mcpServer.token}` }],
+        }))
+      : [];
 
     function finishThought() {
       if (thought?.text)

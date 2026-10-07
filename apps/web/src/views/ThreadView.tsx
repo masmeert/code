@@ -38,6 +38,8 @@ import {
 import { ProjectBadge, projectLabel } from "@/components/project-badge";
 import { addProject, projectKey } from "../lib/projects.ts";
 import { Button } from "@apcode/ui/motion/button/base";
+import { Drawer } from "@apcode/ui/motion/drawer";
+import { Textarea } from "@apcode/ui/components/textarea";
 import { cn } from "@apcode/ui/lib/utils";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import {
@@ -141,6 +143,9 @@ import {
   createThread,
   dismissForkError,
   forkThread,
+  openSideChat,
+  askSideChat,
+  closeSideChat,
   loadOlder,
   markSeen,
   queueMessage,
@@ -999,6 +1004,13 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   const choices = modelChoices(providers, settings, busy ? provider : undefined);
   const current = info.model ?? defaultModel(providers, settings, provider);
   const lastItem = items.at(-1);
+  // `/btw` asks about the newest reply whose turn is over.
+  const runningTurnStart = busy
+    ? items.findLastIndex((item) => item.kind === "user" && !item.steer)
+    : items.length;
+  const asideReplyId = items.findLast(
+    (item, index) => index < runningTurnStart && item.kind === "assistant",
+  )?.id;
   const [reveal, setReveal] = useState<ToolReveal | null>(null);
   const runningAgents = busy
     ? items.filter(
@@ -1138,6 +1150,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             }
           />
           <QuoteSelection container={scrollArea} threadId={threadId} />
+          <SideChatDrawer threadId={threadId} provider={provider} />
           <MessageScroller
             busy={busy}
             navigation="rail"
@@ -1258,6 +1271,14 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
               if (busy && !steer) queueMessage(threadId, text, options);
               else send(ClientCommand.cases["thread.send"].make({ threadId, text, options }));
             }}
+            onAskAside={
+              asideReplyId
+                ? (question) => {
+                    openSideChat(threadId, asideReplyId);
+                    if (question) askSideChat(question);
+                  }
+                : undefined
+            }
             onStop={() => {
               send(ClientCommand.cases["thread.interrupt"].make({ threadId }));
               returnToComposer(threadId, takeQueued(threadId));
@@ -1647,6 +1668,118 @@ function ForkDialog({
   );
 }
 
+/** Read-only side questions about one reply (BTW), over the thread; closing it ends them for good. */
+function SideChatDrawer({ threadId, provider }: { threadId: string; provider: ProviderKind }) {
+  const sideChat = useStore((s) => (s.sideChat?.threadId === threadId ? s.sideChat : null));
+  const label = useStore((s) => harnessLabel(s.settings, provider));
+  const [question, setQuestion] = useState("");
+  useEffect(() => () => closeSideChat(threadId), [threadId]);
+  const items = sideChat?.items ?? NO_ITEMS;
+  const running = sideChat?.running ?? false;
+  const lastItem = items.at(-1);
+  const blocks = useMemo(() => toBlocks(items), [items]);
+  function ask() {
+    const text = question.trim();
+    if (!text || running) return;
+    askSideChat(text);
+    setQuestion("");
+  }
+  return (
+    <Drawer
+      open={sideChat !== null}
+      onOpenChange={(open) => open || closeSideChat(threadId)}
+      ariaLabel="Side question"
+      className="w-[32rem]"
+    >
+      <div className="flex items-start gap-3 border-b border-border px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-medium">By the way</h2>
+          <p className="text-xs text-muted-foreground">
+            Ask {label} about this reply. It can read but not change anything, and nothing here goes
+            into the thread.
+          </p>
+        </div>
+        <button
+          type="button"
+          title="Close and discard (esc)"
+          aria-label="Close and discard"
+          onClick={() => closeSideChat(threadId)}
+          className="grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+      <MessageScroller
+        busy={running}
+        className="min-h-0 flex-1"
+        viewportClassName="px-4 py-4"
+        contentClassName="min-h-full w-full"
+      >
+        <MessageGroup spacing="default">
+          {sideChat
+            ? blocks.map((block) =>
+                block.kind === "user" ? (
+                  <Message key={block.id} from="user">
+                    <MessageContent>
+                      <MessageBubble variant="soft">
+                        <MessageBubbleContent className="selectable whitespace-pre-wrap">
+                          {block.text}
+                        </MessageBubbleContent>
+                      </MessageBubble>
+                    </MessageContent>
+                  </Message>
+                ) : (
+                  <AgentBlock
+                    key={block.id}
+                    block={block}
+                    threadId={sideChat.id}
+                    live={running}
+                    streaming={running && block === lastItem}
+                    showActions={false}
+                  />
+                ),
+              )
+            : null}
+          {running && lastItem?.kind !== "assistant" && lastItem?.kind !== "reasoning" ? (
+            <span role="status">
+              <ThinkingShimmer />
+            </span>
+          ) : null}
+        </MessageGroup>
+      </MessageScroller>
+      <form
+        className="border-t border-border p-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          ask();
+        }}
+      >
+        <Textarea
+          autoFocus
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            ask();
+          }}
+          placeholder={running ? `${label} is answering…` : "Ask a side question…"}
+          aria-label="Side question"
+          className="min-h-16 text-[13px]"
+        />
+        <div className="mt-2 flex justify-end">
+          <Button type="submit" size="sm" disabled={!question.trim() || running}>
+            Ask
+            <kbd aria-hidden className="font-sans text-[10px] opacity-70">
+              ↵
+            </kbd>
+          </Button>
+        </div>
+      </form>
+    </Drawer>
+  );
+}
+
 /** Latest calls a subagent row unfolds to; older ones are a jump to the chat away. */
 const RECENT_AGENT_CALLS = 5;
 
@@ -1923,6 +2056,7 @@ const AgentBlockContent = ({
               copyText={item.text}
               onFork={live ? undefined : () => setConfirmingFork(true)}
               forking={forking}
+              onAskAside={() => openSideChat(threadId, item.id)}
               showActions={showActions}
               showFeedback={false}
             >

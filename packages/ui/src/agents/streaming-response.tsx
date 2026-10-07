@@ -1,4 +1,13 @@
-import { Check, ChevronRight, Copy, GitFork, RotateCcw, ThumbsDown, ThumbsUp } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  Copy,
+  GitFork,
+  MessageCircleQuestionMark,
+  RotateCcw,
+  ThumbsDown,
+  ThumbsUp,
+} from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { type CitationItem, CitationList, CitationStack } from "@apcode/ui/agents/citations";
@@ -23,6 +32,8 @@ export interface StreamingResponseProps {
   onFork?: () => void;
   /** A fork asked for from here is on its way. */
   forking?: boolean;
+  /** Asks a read-only side question about this response, apart from the conversation. */
+  onAskAside?: () => void;
   /** Optional sources shown as a compact footer disclosure after streaming. */
   sources?: CitationItem[];
   sourcesOpen?: boolean;
@@ -83,6 +94,7 @@ export function StreamingResponse({
   onRetry,
   onFork,
   forking = false,
+  onAskAside,
   sources = [],
   sourcesOpen,
   defaultSourcesOpen = false,
@@ -114,7 +126,7 @@ export function StreamingResponse({
   const shouldShowActions =
     showActions &&
     !streaming &&
-    (canCopy || onRetry || onFork || (complete && showFeedback) || hasSources);
+    (canCopy || onRetry || onFork || onAskAside || (complete && showFeedback) || hasSources);
   const sourcesContentId = `${baseId}-sources`;
   const resolvedSourcePrefix = sourceIdPrefix ?? `response-source-${baseId.replace(/:/g, "")}`;
 
@@ -185,6 +197,11 @@ export function StreamingResponse({
               {onFork ? (
                 <ResponseAction label={forking ? "Forking…" : "Fork from here"} onClick={onFork}>
                   <GitFork className={cn("size-3.5", forking && "animate-pulse")} />
+                </ResponseAction>
+              ) : null}
+              {onAskAside ? (
+                <ResponseAction label="Ask a side question (BTW)" onClick={onAskAside}>
+                  <MessageCircleQuestionMark className="size-3.5" />
                 </ResponseAction>
               ) : null}
               {complete && showFeedback ? (

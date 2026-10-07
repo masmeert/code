@@ -40,7 +40,8 @@ export interface StartSessionInput {
   readonly onCwd: (cwd: string) => void;
   /** Adapters push normalized events for `threadId` here. */
   readonly emit: (event: RuntimeEvent) => void;
-  readonly mcpServer: McpServerAccess;
+  /** Null leaves out APCode's browser and thread tools. */
+  readonly mcpServer: McpServerAccess | null;
 }
 
 /** One user message plus the composer settings it was sent with. */

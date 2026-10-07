@@ -42,7 +42,7 @@ const fail = (message: string) => new ProviderError({ provider: "codex", message
 /** Codex's own presets: untrusted asks before most commands, on-request is "Auto", never + full access is "Full access". */
 const PERMISSION = {
   // The composer doesn't offer plan or auto mode for Codex; these only catch a stray one.
-  plan: { approvalPolicy: "untrusted", sandbox: "workspace-write" },
+  plan: { approvalPolicy: "untrusted", sandbox: "read-only" },
   auto: { approvalPolicy: "untrusted", sandbox: "workspace-write" },
   ask: { approvalPolicy: "untrusted", sandbox: "workspace-write" },
   "auto-edit": { approvalPolicy: "on-request", sandbox: "workspace-write" },
@@ -57,15 +57,17 @@ const CODEX_DECISION = {
 
 /** The per-turn form of `PERMISSION[level].sandbox`. */
 const codexSandboxPolicy = (level: PermissionLevel, cwd: string) =>
-  PERMISSION[level].sandbox === "danger-full-access"
-    ? { type: "dangerFullAccess" }
-    : {
-        type: "workspaceWrite",
-        writableRoots: [cwd],
-        networkAccess: false,
-        excludeTmpdirEnvVar: false,
-        excludeSlashTmp: false,
-      };
+  Match.value(PERMISSION[level].sandbox).pipe(
+    Match.when("danger-full-access", () => ({ type: "dangerFullAccess" })),
+    Match.when("read-only", () => ({ type: "readOnly" })),
+    Match.orElse(() => ({
+      type: "workspaceWrite",
+      writableRoots: [cwd],
+      networkAccess: false,
+      excludeTmpdirEnvVar: false,
+      excludeSlashTmp: false,
+    })),
+  );
 
 /** Ultracode and ultrathink are Claude's; Codex keeps its default effort for them. */
 const toCodexEffort = (effort: Effort) =>
@@ -527,22 +529,26 @@ const start = ({
             ...launch,
             args: [
               ...launch.args,
-              "-c",
-              `mcp_servers.browser.url="${mcpServer.url}"`,
-              "-c",
-              'mcp_servers.browser.bearer_token_env_var="APCODE_MCP_TOKEN"',
-              "-c",
-              `mcp_servers.apcode.url="${mcpServer.url}/apcode"`,
-              "-c",
-              'mcp_servers.apcode.bearer_token_env_var="APCODE_MCP_TOKEN"',
+              ...(mcpServer
+                ? [
+                    "-c",
+                    `mcp_servers.browser.url="${mcpServer.url}"`,
+                    "-c",
+                    'mcp_servers.browser.bearer_token_env_var="APCODE_MCP_TOKEN"',
+                    "-c",
+                    `mcp_servers.apcode.url="${mcpServer.url}/apcode"`,
+                    "-c",
+                    'mcp_servers.apcode.bearer_token_env_var="APCODE_MCP_TOKEN"',
+                    // Waiting on another thread's agent takes minutes; Codex gives up on a tool after 60 s by default.
+                    "-c",
+                    "mcp_servers.apcode.tool_timeout_sec=1800",
+                  ]
+                : []),
               // Codex leaves its thinking out of the transcript unless asked for summaries.
               "-c",
               'model_reasoning_summary="auto"',
-              // Waiting on another thread's agent takes minutes; Codex gives up on a tool after 60 s by default.
-              "-c",
-              "mcp_servers.apcode.tool_timeout_sec=1800",
             ],
-            env: { ...launch.env, APCODE_MCP_TOKEN: mcpServer.token },
+            env: { ...launch.env, ...(mcpServer && { APCODE_MCP_TOKEN: mcpServer.token }) },
           },
         );
       },

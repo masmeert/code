@@ -160,6 +160,15 @@ export interface State {
     readonly messageId: string;
     readonly error: string | null;
   } | null;
+  /** The side chat (BTW) open in this window: read-only questions about one reply, gone once closed. */
+  readonly sideChat: {
+    readonly id: string;
+    readonly threadId: string;
+    /** The reply it's about. */
+    readonly messageId: string;
+    readonly items: ReadonlyArray<TranscriptItem>;
+    readonly running: boolean;
+  } | null;
   /** A thread for this window to switch to: one it created or forked, or a link followed. */
   readonly switchTo: { readonly threadId: string } | null;
   readonly order: ReadonlyArray<string>;
@@ -261,6 +270,7 @@ const initial: State = {
   limits: {},
   readingUsage: {},
   forking: null,
+  sideChat: null,
   switchTo: null,
   order: [],
   threads: {},
@@ -1107,6 +1117,14 @@ const onFrame = (connection: Connection, frame: ServerFrame) =>
           ),
       ),
     event: ({ event, id }) => {
+      const { sideChat } = state;
+      if (sideChat && "threadId" in event && event.threadId === sideChat.id)
+        return setState({
+          ...state,
+          sideChat: RuntimeEvent.guards["thread.status"](event)
+            ? { ...sideChat, running: isTurnActive(event.status) }
+            : { ...sideChat, items: reduceItems(sideChat.items, event, id) },
+        });
       // A failed fork reports on the thread it was forked from.
       if (
         RuntimeEvent.guards.error(event) &&
@@ -1551,6 +1569,41 @@ export const forkThread = (threadId: string, messageId: string) => {
 /** Forgets a fork that failed, once its error has been seen. */
 export const dismissForkError = () => {
   if (state.forking?.error) setState({ ...state, forking: null });
+};
+
+export const openSideChat = (threadId: string, messageId: string) => {
+  if (state.sideChat) closeSideChat(state.sideChat.threadId);
+  setState({
+    ...state,
+    sideChat: { id: crypto.randomUUID(), threadId, messageId, items: [], running: false },
+  });
+};
+
+export const askSideChat = (text: string) => {
+  const { sideChat } = state;
+  if (!sideChat || sideChat.running) return;
+  setState({ ...state, sideChat: { ...sideChat, running: true } });
+  send(
+    ClientCommand.cases["sideChat.ask"].make({
+      threadId: sideChat.threadId,
+      messageId: sideChat.messageId,
+      sideChatId: sideChat.id,
+      text,
+    }),
+  );
+};
+
+/** Ends `threadId`'s side chat for good, stopping its agent. */
+export const closeSideChat = (threadId: string) => {
+  const { sideChat } = state;
+  if (sideChat?.threadId !== threadId) return;
+  setState({ ...state, sideChat: null });
+  send(
+    ClientCommand.cases["sideChat.close"].make({
+      threadId: sideChat.threadId,
+      sideChatId: sideChat.id,
+    }),
+  );
 };
 
 // --- queue ----------------------------------------------------------------------

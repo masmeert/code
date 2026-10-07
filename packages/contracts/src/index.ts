@@ -905,6 +905,41 @@ const LimitStopCommand = Schema.Union([
   Schema.TaggedStruct("thread.dismissLimitStop", { threadId: Schema.String }),
 ]);
 
+/** Going back to, or off from, an earlier point of a conversation; a union of their own for the same reason as `GitCommand`. */
+const BranchCommand = Schema.Union([
+  /**
+   * Rewinds the conversation to before user message `messageId`. With `restoreFiles`, the
+   * thread's folder also goes back to how it was when that message was sent.
+   */
+  Schema.TaggedStruct("thread.rewind", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+    restoreFiles: Schema.Boolean,
+  }),
+  /**
+   * Starts a new thread with the conversation through the turn of message `messageId`;
+   * the original stays as it is. Both work in the same folder.
+   */
+  Schema.TaggedStruct("thread.fork", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+    requestId: Schema.String,
+  }),
+  /**
+   * Asks a read-only side question (BTW) in side chat `sideChatId`; the first one starts it on a
+   * copy of the conversation through the turn of message `messageId`. Its events carry
+   * `sideChatId` as their `threadId`, reach only the connection that asked, and are never stored:
+   * closing it, or that connection going away, ends it for good.
+   */
+  Schema.TaggedStruct("sideChat.ask", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+    sideChatId: Schema.String,
+    text: Schema.String,
+  }),
+  Schema.TaggedStruct("sideChat.close", { threadId: Schema.String, sideChatId: Schema.String }),
+]);
+
 export const ClientCommand = Schema.Union([
   /** Creates a thread and sends its first message (drafts only exist client-side until then). */
   Schema.TaggedStruct("thread.create", {
@@ -956,24 +991,6 @@ export const ClientCommand = Schema.Union([
     threadId: Schema.String,
     messageIds: Schema.Array(Schema.String),
   }),
-  /**
-   * Rewinds the conversation to before user message `messageId`. With `restoreFiles`, the
-   * thread's folder also goes back to how it was when that message was sent.
-   */
-  Schema.TaggedStruct("thread.rewind", {
-    threadId: Schema.String,
-    messageId: Schema.String,
-    restoreFiles: Schema.Boolean,
-  }),
-  /**
-   * Starts a new thread with the conversation through the turn of message `messageId`;
-   * the original stays as it is. Both work in the same folder.
-   */
-  Schema.TaggedStruct("thread.fork", {
-    threadId: Schema.String,
-    messageId: Schema.String,
-    requestId: Schema.String,
-  }),
   /** Summarizes the conversation so far to free up context. */
   Schema.TaggedStruct("thread.compact", { threadId: Schema.String }),
   /** Answered with a `thread.commands` event. */
@@ -988,6 +1005,7 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("search", { query: Schema.String, requestId: Schema.String }),
   GitCommand,
   LimitStopCommand,
+  BranchCommand,
   Schema.TaggedStruct("thread.interrupt", { threadId: Schema.String }),
   /** Stops one subagent, the one started by tool call `toolId`; the turn carries on without it. */
   Schema.TaggedStruct("thread.stopAgent", { threadId: Schema.String, toolId: Schema.String }),

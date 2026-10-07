@@ -280,21 +280,23 @@ const start = ({
           // many SSH hosts sign in; IS_SANDBOX is its opt-out.
           ...(process.getuid?.() === 0 && { IS_SANDBOX: "1" }),
           ...launch.env,
-          APCODE_MCP_TOKEN: mcpServer.token,
+          ...(mcpServer && { APCODE_MCP_TOKEN: mcpServer.token }),
           CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
         },
-        mcpServers: {
-          browser: {
-            type: "http",
-            url: mcpServer.url,
-            headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
-          },
-          apcode: {
-            type: "http",
-            url: `${mcpServer.url}/apcode`,
-            headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
-          },
-        },
+        mcpServers: mcpServer
+          ? {
+              browser: {
+                type: "http",
+                url: mcpServer.url,
+                headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
+              },
+              apcode: {
+                type: "http",
+                url: `${mcpServer.url}/apcode`,
+                headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
+              },
+            }
+          : {},
         allowedTools: [
           "mcp__browser__snapshot",
           "mcp__browser__console",

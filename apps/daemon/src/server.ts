@@ -64,6 +64,8 @@ interface ConnectionData {
    * read was taken at: live events up to there are already in what it got.
    */
   threads: Map<string, number>;
+  /** Side chats this client asked in, by id, with their thread; they end when it goes. */
+  sideChats: Map<string, string>;
   viewer?: TerminalViewer;
   browserHost?: BrowserHost;
 }
@@ -158,6 +160,16 @@ export const serve = (port: number) =>
                   }),
                 );
               }),
+            "sideChat.ask": (command) => {
+              ws.data.sideChats.set(command.sideChatId, command.threadId);
+              ws.data.threads.set(command.sideChatId, 0);
+              return manager.dispatch(command);
+            },
+            "sideChat.close": (command) => {
+              ws.data.sideChats.delete(command.sideChatId);
+              ws.data.threads.delete(command.sideChatId);
+              return manager.dispatch(command);
+            },
             "thread.unsubscribe": (command) => {
               ws.data.threads.delete(command.threadId);
               return Effect.void;
@@ -239,6 +251,7 @@ export const serve = (port: number) =>
             const data: ConnectionData = {
               protocol: searchParams.get("protocol"),
               threads: new Map(),
+              sideChats: new Map(),
             };
             const upgraded = protocol
               ? server.upgrade(req, { data, headers: { "Sec-WebSocket-Protocol": protocol } })
@@ -270,6 +283,12 @@ export const serve = (port: number) =>
               if (ws.data.viewer) manager.terminals.detachViewer(ws.data.viewer);
               if (ws.data.browserHost) manager.browsers.detach(ws.data.browserHost);
               if (ws.data.fiber) Effect.runFork(Fiber.interrupt(ws.data.fiber));
+              for (const [sideChatId, threadId] of ws.data.sideChats)
+                Effect.runFork(
+                  manager.dispatch(
+                    ClientCommand.cases["sideChat.close"].make({ threadId, sideChatId }),
+                  ),
+                );
             },
           },
         }),

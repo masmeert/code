@@ -135,6 +135,8 @@ export interface ComposerProps {
   /** `alternate`: sent with ⌘/Ctrl+Enter, for the opposite of the usual behavior. */
   onSubmit: (text: string, options: TurnOptions, how: { alternate: boolean }) => void;
   onStop?: () => void;
+  /** Offers `/btw`, which asks a read-only side question (empty to just open the side chat) instead of sending. */
+  onAskAside?: (question: string) => void;
 }
 
 interface SlashItem {
@@ -225,8 +227,17 @@ export const Composer = (props: ComposerProps) => {
             hint: "",
             run: () => threadId && send(ClientCommand.cases["thread.compact"].make({ threadId })),
           },
+          ...(props.onAskAside
+            ? [
+                {
+                  name: "btw",
+                  description: "Ask a read-only side question about the latest reply",
+                  hint: "question",
+                },
+              ]
+            : []),
           ...(commands ?? [])
-            .filter((c) => c.name !== "compact")
+            .filter((c) => c.name !== "compact" && c.name !== "btw")
             .map((c) => ({ name: c.name, description: c.description, hint: c.argumentHint })),
         ].filter((item) => item.name.toLowerCase().startsWith(slashQuery));
   const slashTyped = slashQuery !== null;
@@ -410,6 +421,12 @@ export const Composer = (props: ComposerProps) => {
       return;
     }
     recall.current = null;
+    const aside = props.onAskAside && /^\s*\/btw(?:\s+([\s\S]*))?$/i.exec(text);
+    if (aside) {
+      setText("");
+      props.onAskAside?.(aside[1]?.trim() ?? "");
+      return;
+    }
     const options = toTurnOptions({ ...prefs, effort, fast }, files.take());
     setDraft(prefsKey, { text: "", attachments: [] });
     props.onSubmit(text, options, how);
