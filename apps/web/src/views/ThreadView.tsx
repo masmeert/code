@@ -1573,7 +1573,7 @@ function PeerReviewDialog({ threadId }: { threadId: string }) {
   const blocker = isTurnActive(info.status)
     ? `${authorName} is still working. Wait for it to finish, or stop it, then ask for a review.`
     : status?.checking
-      ? `Checking whether ${reviewerName} is set up…`
+      ? null
       : !status?.installed
         ? `${reviewerName} isn't installed on this machine. Install its CLI, then try again.`
         : !status.linked
@@ -1607,9 +1607,8 @@ function PeerReviewDialog({ threadId }: { threadId: string }) {
           <AlertDialogTitle className="text-sm">Ask {reviewerName} to review?</AlertDialogTitle>
         </div>
         <AlertDialogDescription className="text-xs">
-          {reviewerName} starts a new thread in this folder and checks what {authorName} changed
-          against what you asked. It runs with Ask first and is told not to edit anything. When it's
-          done, you can send its findings back here.
+          {reviewerName} checks {authorName}'s changes against what you asked, in a new thread that
+          asks before touching anything. You can send its findings back here.
         </AlertDialogDescription>
         {blocker || peerReview?.error ? (
           <p role="alert" className="text-xs text-destructive">
@@ -1626,15 +1625,21 @@ function PeerReviewDialog({ threadId }: { threadId: string }) {
           <AlertDialogAction
             ref={startButton}
             size="sm"
-            disabled={pending || blocker !== null}
+            disabled={pending || status?.checking || blocker !== null}
             onClick={(event) => {
               // Stays open until the review opens, which replaces this view.
               event.preventDefault();
               startPeerReview(threadId);
             }}
           >
-            {pending ? "Starting…" : peerReview?.error ? "Try again" : "Start review"}
-            {pending ? null : (
+            {pending
+              ? "Starting…"
+              : status?.checking
+                ? `Checking ${reviewerName}…`
+                : peerReview?.error
+                  ? "Try again"
+                  : "Start review"}
+            {pending || status?.checking ? null : (
               <kbd aria-hidden className="font-sans text-[10px] text-primary-foreground/60">
                 ↵
               </kbd>
