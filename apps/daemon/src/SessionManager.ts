@@ -6,12 +6,14 @@ import {
   isAwaitingUser,
   isTurnActive,
   peerOf,
+  PermissionLevel,
   ProviderKind,
   RuntimeEvent,
   ServerFrame,
   type Attachment,
   type GitAction,
   type PageInfo,
+  type QueuedMessage,
   type PullRequest,
   type RepoStatus,
   type SourceControlKind,
@@ -33,6 +35,7 @@ import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
@@ -67,6 +70,7 @@ import {
 } from "./git.ts";
 import { expandHome, listFolders } from "./folders.ts";
 import { harnessName, peerReviewPrompt } from "./peerReview.ts";
+import { handoffText } from "./handoff.ts";
 import { ClaudeAdapter } from "./providers/ClaudeAdapter.ts";
 import {
   detectSourceControl,
@@ -88,13 +92,15 @@ import { DATA_DIR } from "./storage/jsonFile.ts";
 import { ProjectsStore } from "./storage/ProjectsStore.ts";
 import { SettingsStore } from "./storage/SettingsStore.ts";
 import {
+  type Coverage,
   isPersisted,
+  type ResumeTokens,
   type ShelveOverride,
   type ThreadHome,
   ThreadStore,
 } from "./storage/ThreadStore.ts";
 import { type Browsers, createBrowsers } from "./browsers.ts";
-import { createMcp, type Mcp } from "./mcp.ts";
+import { createMcp, type Mcp, type SendMessageInput, type StartThreadInput } from "./mcp.ts";
 import { createTerminals, type Terminals } from "./terminals.ts";
 import { createSkillCatalog } from "./skills.ts";
 
@@ -158,14 +164,73 @@ interface ThreadEntry {
   readonly home: ThreadHome;
   /** Null until the first message after creation or restart; agent processes start lazily. */
   session: ProviderSession | null;
-  resumeToken: string | null;
+  resumeTokens: ResumeTokens;
+  coverage: Coverage;
   shelveOverride: ShelveOverride;
   /** Last time the thread's agent did or was asked anything; the reaper stops long-idle sessions. */
   activeAt: number;
   /** The user message that started the turn in progress; its snapshots bracket the turn. */
   currentTurn: string | null;
+  /**
+   * One message (or compaction) goes to the agent at a time: one sent while the agent is still
+   * starting waits for it, then joins the turn it started.
+   */
   readonly lock: Semaphore.Semaphore;
+  /** Goes up whenever the session is dropped or replaced: what an older one sends after is ignored. */
+  generation: number;
+  /** Messages waiting for the running turn, as `info.queue` shows them. */
+  queue: ReadonlyArray<QueuedMessage>;
+  /**
+   * Stop was pressed during the turn: the queue waits for the user instead of starting the next
+   * message, and a turn still starting is interrupted as soon as it has.
+   */
+  stopRequested: boolean;
+  /** Tool calls made inside subagents: one ending isn't a point the main agent takes messages at. */
+  readonly subagentTools: Set<string>;
+  /** Access of the last message sent: the most the thread's agent can give threads it starts. */
+  permission: PermissionLevel | null;
 }
+
+function newEntry(
+  info: ThreadInfo,
+  home: ThreadHome,
+  resumeTokens: ResumeTokens = {},
+  coverage: Coverage = {},
+  shelveOverride: ShelveOverride = null,
+): ThreadEntry {
+  return {
+    info,
+    home,
+    session: null,
+    resumeTokens,
+    coverage,
+    shelveOverride,
+    activeAt: Date.now(),
+    currentTurn: null,
+    lock: Semaphore.makeUnsafe(1),
+    generation: 0,
+    queue: info.queue ?? [],
+    stopRequested: false,
+    subagentTools: new Set(),
+    permission: null,
+  };
+}
+
+/** Levels go from least to most access, so a higher rank gives more. */
+function permissionRank(level: PermissionLevel) {
+  return PermissionLevel.literals.indexOf(level);
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The same id for the same caller and request, so a retried tool call finds what the first one made. */
+function requestUuid(caller: string, requestId: string) {
+  const hex = createHash("sha256").update(`${caller}\0${requestId}`).digest("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+const AGENT_GONE =
+  "The agent stopped before finishing its turn. Send a message to pick up where it left off.";
 
 /**
  * Runs `load` for a key one at a time. Calls made while it runs share a single
@@ -309,18 +374,25 @@ const make = Effect.gen(function* () {
   let latestSettings = yield* settingsStore.get;
 
   // --- restore -------------------------------------------------------------
-  for (const { info, home, resumeToken, shelveOverride } of yield* store.load) {
-    threads.set(info.id, {
-      info: { ...info, shelved: isShelved(info, shelveOverride, Date.now(), latestSettings) },
-      home,
-      session: null,
-      resumeToken,
-      shelveOverride,
-      activeAt: Date.now(),
-      currentTurn: null,
-      lock: yield* Semaphore.make(1),
-    });
+  for (const { info, home, resumeTokens, coverage, shelveOverride, queue } of yield* store.load) {
+    threads.set(
+      info.id,
+      newEntry(
+        {
+          ...info,
+          shelved: isShelved(info, shelveOverride, Date.now(), latestSettings),
+          ...(queue.length > 0 && { queue }),
+        },
+        home,
+        resumeTokens,
+        coverage,
+        shelveOverride,
+      ),
+    );
   }
+  /** Set as the daemon goes away: agents still running then mustn't touch its state. */
+  let stopped = false;
+  yield* Effect.addFinalizer(() => Effect.sync(() => void (stopped = true)));
   // Approvals pending when the daemon stopped died with their agent process.
   for (const [requestId, threadId] of store.unresolvedApprovals()) {
     store.appendEvent(
@@ -420,6 +492,7 @@ const make = Effect.gen(function* () {
   };
 
   const emit = (event: RuntimeEvent) => {
+    if (stopped) return;
     let id: number | null = null;
     if (RuntimeEvent.guards["assistant.delta"](event)) {
       const text = streaming.get(event.messageId)?.text ?? "";
@@ -526,7 +599,6 @@ const make = Effect.gen(function* () {
     closed: (terminal) => publish(RuntimeEvent.cases["terminal.closed"].make(terminal)),
   });
   const browsers = createBrowsers();
-  const mcp = createMcp((threadId, action) => browsers.request(threadId, action));
   const skills = createSkillCatalog({
     read: (provider, cwd) =>
       Effect.flatMap(settingsStore.get, (settings) =>
@@ -549,43 +621,71 @@ const make = Effect.gen(function* () {
       return entry ? Effect.succeed(entry) : Effect.fail(fail(`No thread ${threadId}`));
     });
 
-  /** Starts (or resumes) the agent process for a thread if it isn't running. */
+  function setResumeTokens(entry: ThreadEntry, tokens: ResumeTokens) {
+    entry.resumeTokens = tokens;
+    store.setResumeTokens(entry.info.id, tokens);
+  }
+
+  function setCoverage(entry: ThreadEntry, coverage: Coverage) {
+    entry.coverage = coverage;
+    store.setCoverage(entry.info.id, coverage);
+  }
+
+  /** The thread has run on more than one harness, so no single harness's conversation holds all of it. */
+  const switched = (entry: ThreadEntry) =>
+    Object.keys(entry.coverage).length > 0 ||
+    Object.keys(entry.resumeTokens).some((provider) => provider !== entry.info.provider);
+
+  /** Starts (or resumes) the agent process for a thread if it isn't running. Call it holding `entry.lock`. */
   const ensureSession = (entry: ThreadEntry, options: TurnOptions) =>
-    entry.lock.withPermit(
-      Effect.suspend(() => {
-        if (entry.session) return Effect.succeed(entry.session);
-        const threadId = entry.info.id;
-        return Effect.flatMap(settingsStore.get, (settings) =>
-          ADAPTERS[entry.info.provider].start({
-            threadId,
-            cwd: entry.home.path,
-            harness: settings.providers[entry.info.provider],
-            model:
-              entry.info.model ?? settings.providers[entry.info.provider].defaultModel ?? undefined,
-            resumeToken: entry.resumeToken ?? undefined,
-            effort: options.effort,
-            permission: options.permission,
-            onResumeToken: (token) => {
-              entry.resumeToken = token;
-              store.setResumeToken(threadId, token);
-            },
-            onCwd: (cwd) => void followAgent(entry, cwd),
-            emit: (event) => {
-              // The agent process ending isn't the thread ending: drop the session so the next message resumes it.
-              if (RuntimeEvent.guards["thread.status"](event) && event.status === "closed") {
-                entry.session = null;
-                if (threads.has(threadId))
-                  publish(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
-                return;
-              }
-              publish(event);
-              if (RuntimeEvent.guards["turn.completed"](event)) endTurn(entry);
-            },
-            mcpServer: mcp.issue(threadId),
-          }),
-        ).pipe(Effect.tap((session) => Effect.sync(() => (entry.session = session))));
-      }),
-    );
+    Effect.suspend(() => {
+      if (entry.session) return Effect.succeed(entry.session);
+      const threadId = entry.info.id;
+      const generation = ++entry.generation;
+      return Effect.flatMap(settingsStore.get, (settings) =>
+        ADAPTERS[entry.info.provider].start({
+          threadId,
+          cwd: entry.home.path,
+          harness: settings.providers[entry.info.provider],
+          model:
+            entry.info.model ?? settings.providers[entry.info.provider].defaultModel ?? undefined,
+          resumeToken: entry.resumeTokens[entry.info.provider],
+          effort: options.effort,
+          permission: options.permission,
+          onResumeToken: (token) =>
+            setResumeTokens(entry, { ...entry.resumeTokens, [entry.info.provider]: token }),
+          onCwd: (cwd) => void followAgent(entry, cwd),
+          emit: (event) => {
+            if (entry.generation !== generation || threads.get(threadId) !== entry) return;
+            // The agent process ending isn't the thread ending: drop the session so the next message
+            // resumes it. A crash has already said what happened.
+            if (
+              RuntimeEvent.guards["thread.status"](event) &&
+              (event.status === "closed" || event.status === "error")
+            ) {
+              Effect.runFork(
+                event.status === "closed"
+                  ? dropSession(entry, AGENT_GONE)
+                  : dropSession(entry, null, "error"),
+              );
+              return;
+            }
+            publish(event);
+            if (RuntimeEvent.guards["turn.completed"](event)) endTurn(entry);
+            takeQueueCue(entry, event);
+          },
+          mcpServer: mcp.issue(threadId),
+        }),
+      ).pipe(
+        Effect.flatMap((session) => {
+          if (entry.generation === generation) return Effect.sync(() => (entry.session = session));
+          return Effect.andThen(
+            session.close,
+            Effect.fail(fail("The agent stopped as it started. Send the message again.")),
+          );
+        }),
+      );
+    });
 
   /**
    * Snapshots the folder after a turn and announces what the turn changed. Runs in the
@@ -604,6 +704,104 @@ const make = Effect.gen(function* () {
     })();
   };
 
+  /**
+   * Forgets the thread's agent process, closing it if it's still up; what it sends after is
+   * ignored. A turn it had going ends here, since nothing else would end it: `reason` says why in
+   * the transcript (null when the agent already did), and the thread goes to `status`.
+   */
+  const dropSession = (
+    entry: ThreadEntry,
+    reason: string | null,
+    status: "idle" | "error" = "idle",
+  ) =>
+    Effect.suspend(() => {
+      const session = entry.session;
+      entry.session = null;
+      entry.generation++;
+      entry.subagentTools.clear();
+      const threadId = entry.info.id;
+      const turnCut = threads.get(threadId) === entry && isTurnActive(entry.info.status);
+      if (turnCut) {
+        publish(RuntimeEvent.cases["turn.completed"].make({ threadId, durationMs: null }));
+        endTurn(entry);
+        if (reason) publish(RuntimeEvent.cases.error.make({ threadId, message: reason }));
+      }
+      if (turnCut || status === "error")
+        publish(RuntimeEvent.cases["thread.status"].make({ threadId, status }));
+      return session?.close ?? Effect.void;
+    });
+
+  // Turns going when the daemon died: nothing else will end them.
+  for (const { threadId, messageId } of store.unfinishedTurns()) {
+    const entry = threads.get(threadId);
+    if (!entry) continue;
+    publish(RuntimeEvent.cases["turn.completed"].make({ threadId, durationMs: null }));
+    publish(
+      RuntimeEvent.cases.error.make({
+        threadId,
+        message:
+          "APCode stopped while this turn was running. Send a message to pick up where it left off.",
+      }),
+    );
+    entry.currentTurn = messageId;
+    endTurn(entry);
+  }
+
+  function setQueue(entry: ThreadEntry, queue: ReadonlyArray<QueuedMessage>) {
+    entry.queue = queue;
+    const { queue: _queue, ...info } = entry.info;
+    entry.info = queue.length > 0 ? { ...info, queue } : info;
+    store.setQueue(entry.info.id, queue);
+    publish(
+      RuntimeEvent.cases["thread.queue"].make({ threadId: entry.info.id, queue: [...queue] }),
+    );
+  }
+
+  /** Sends a queued message, reporting on the thread if it can't go. */
+  function sendQueued(entry: ThreadEntry, message: QueuedMessage) {
+    setQueue(
+      entry,
+      entry.queue.filter((queued) => queued.id !== message.id),
+    );
+    Effect.runFork(
+      deliver(entry, message).pipe(
+        Effect.catch((error) =>
+          Effect.sync(() =>
+            publish(
+              RuntimeEvent.cases.error.make({ threadId: entry.info.id, message: error.message }),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /**
+   * The agent takes messages in after a tool call of its own ends (t3code sends queued ones
+   * there too), and when its turn is over: the next queued message goes out then.
+   */
+  function takeQueueCue(entry: ThreadEntry, event: RuntimeEvent) {
+    if (RuntimeEvent.guards["tool.started"](event) && event.parentToolId)
+      entry.subagentTools.add(event.toolId);
+    const toolEnded =
+      RuntimeEvent.guards["tool.completed"](event) &&
+      !entry.subagentTools.delete(event.toolId) &&
+      isTurnActive(entry.info.status);
+    const turnEnded = RuntimeEvent.guards["thread.status"](event) && event.status === "idle";
+    const [next] = entry.queue;
+    if (next && !entry.stopRequested && (toolEnded || turnEnded)) sendQueued(entry, next);
+  }
+
+  /** Stops the thread's turn and holds its queue, then does the same for threads its agent started. */
+  const interrupt = (entry: ThreadEntry): Effect.Effect<void, ProviderError> =>
+    Effect.gen(function* () {
+      if (isTurnActive(entry.info.status)) entry.stopRequested = true;
+      if (entry.session) yield* entry.session.interrupt;
+      for (const started of threads.values())
+        if (started.info.startedBy === entry.info.id && isTurnActive(started.info.status))
+          yield* Effect.ignore(interrupt(started));
+    });
+
   /** Runs `f` against the thread's live session, if it has one. */
   const withLiveSession = (
     threadId: string,
@@ -618,7 +816,7 @@ const make = Effect.gen(function* () {
       threads.delete(threadId);
       terminals.closeThread(threadId);
       mcp.revoke(threadId);
-      if (entry.session) yield* entry.session.close;
+      yield* dropSession(entry, null);
       store.deleteThread(threadId);
       const { home } = entry;
       void (async () => {
@@ -650,58 +848,124 @@ const make = Effect.gen(function* () {
       if (archived) terminals.closeThread(entry.info.id);
       if (archived) mcp.revoke(entry.info.id);
       // An archived thread shouldn't keep an agent process around; the next message resumes it.
-      if (archived && entry.session) {
-        const session = entry.session;
-        entry.session = null;
-        yield* session.close;
-      }
+      if (archived) yield* dropSession(entry, "Archiving the thread stopped its agent.");
     });
 
-  const send = (entry: ThreadEntry, text: string, options: TurnOptions, run?: CommandRun) =>
-    Effect.gen(function* () {
-      const threadId = entry.info.id;
-      // Writing in an archived thread brings it back.
-      yield* setArchived(entry, false);
-      const attachments = yield* resolveAttachments(options.attachments);
-      const messageId = crypto.randomUUID();
-      const turn = {
-        messageId,
-        text,
-        attachments,
-        effort: options.effort,
-        permission: options.permission,
-        skills: yield* Effect.promise(() =>
-          skills.mentionedIn(entry.info.provider, entry.info.cwd, text),
-        ),
-      };
-      const message = RuntimeEvent.cases["user.message"].make({
-        threadId,
-        messageId,
-        text,
-        ...(attachments.length > 0 && { attachments }),
-        ...(run && { run }),
-      });
-      // A turn is running: the message joins it.
-      const { status } = entry.info;
-      if (entry.session && isTurnActive(status)) {
-        publish({ ...message, steer: true });
-        return yield* entry.session.steer(turn);
-      }
-      publish(message);
-      publish(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
-      // Snapshot the folder before the agent touches it, so the turn's changes can be shown and undone.
-      entry.currentTurn = messageId;
-      yield* Effect.promise(() =>
-        captureCheckpoint(entry.info.cwd, checkpointRef(threadId, messageId, "start")),
-      );
-      const session = yield* ensureSession(entry, options).pipe(
-        Effect.tapError(() =>
-          Effect.sync(() =>
-            publish(RuntimeEvent.cases["thread.status"].make({ threadId, status: "error" })),
+  /** Sends a message: into the running turn, or as the start of a new one. */
+  const deliver = (entry: ThreadEntry, message: QueuedMessage, run?: CommandRun) =>
+    entry.lock.withPermit(
+      Effect.gen(function* () {
+        const threadId = entry.info.id;
+        // Writing in an archived thread brings it back.
+        yield* setArchived(entry, false);
+        const { text, attachments, effort, permission } = message;
+        const settings = yield* settingsStore.get;
+        const turn = {
+          // SAFETY: send() lets only UUIDs through.
+          messageId: message.id as `${string}-${string}-${string}-${string}-${string}`,
+          text,
+          attachments,
+          effort,
+          permission,
+          skills: yield* Effect.promise(() =>
+            skills.mentionedIn(entry.info.provider, entry.info.cwd, text),
+          ),
+          handoff: null,
+        };
+        const { provider } = entry.info;
+        // The harness was switched to and hasn't seen what happened since it last took part.
+        const since = entry.coverage[provider];
+        const handoff =
+          since === undefined
+            ? null
+            : handoffText({
+                events: store.readAfter(threadId, since).map((stored) => stored.event),
+                to: provider,
+                fresh: entry.resumeTokens[provider] === undefined,
+                names: (kind) => harnessName(settings, kind),
+              });
+        const event = RuntimeEvent.cases["user.message"].make({
+          threadId,
+          messageId: message.id,
+          text,
+          ...(attachments.length > 0 && { attachments }),
+          ...(run && { run }),
+          provider,
+          ...(handoff && { handoff: { from: peerOf(provider), ...handoff } }),
+        });
+        entry.permission = permission;
+        // A turn is running: the message joins it.
+        if (entry.session && isTurnActive(entry.info.status)) {
+          publish({ ...event, steer: true });
+          return yield* entry.session.steer(turn);
+        }
+        entry.stopRequested = false;
+        publish(event);
+        publish(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
+        // Snapshot the folder before the agent touches it, so the turn's changes can be shown and undone.
+        entry.currentTurn = message.id;
+        yield* Effect.promise(() =>
+          captureCheckpoint(entry.info.cwd, checkpointRef(threadId, message.id, "start")),
+        );
+        const session = yield* ensureSession(entry, { effort, permission, attachments: [] }).pipe(
+          Effect.tap((session) => session.send({ ...turn, handoff: handoff?.text ?? null })),
+          // The turn never got going; the session may be what's broken, so the next message starts afresh.
+          Effect.tapError(() => dropSession(entry, null, "error")),
+        );
+        // Caught up now; until the turn got going, the next attempt hands over the same again.
+        if (since !== undefined) {
+          const { [provider]: _caughtUp, ...behind } = entry.coverage;
+          setCoverage(entry, behind);
+        }
+        // Stop came while the agent was starting, with no turn yet to interrupt.
+        if (entry.stopRequested) yield* session.interrupt;
+      }),
+    );
+
+  /**
+   * Reports a failure on the thread itself. For commands that start a thread, whose failure
+   * would otherwise go to no thread, since the command names none.
+   */
+  function reportOn(entry: ThreadEntry) {
+    return <A, R>(effect: Effect.Effect<A, ProviderError, R>) =>
+      Effect.tapError(effect, (error) =>
+        Effect.sync(() =>
+          publish(
+            RuntimeEvent.cases.error.make({ threadId: entry.info.id, message: error.message }),
           ),
         ),
       );
-      yield* session.send(turn);
+  }
+
+  /**
+   * Sends a message, or queues it with `queue` while a turn runs. A `messageId` already sent
+   * or queued is a retry, and does nothing.
+   */
+  const send = (
+    entry: ThreadEntry,
+    text: string,
+    options: TurnOptions,
+    {
+      run,
+      queue = false,
+      messageId = crypto.randomUUID(),
+    }: { run?: CommandRun; queue?: boolean | undefined; messageId?: string | undefined } = {},
+  ) =>
+    Effect.gen(function* () {
+      if (!UUID_PATTERN.test(messageId))
+        return yield* Effect.fail(fail(`Message ids must be UUIDs, not "${messageId}"`));
+      if (store.hasMessage(entry.info.id, messageId) || entry.queue.some((m) => m.id === messageId))
+        return;
+      const message: QueuedMessage = {
+        id: messageId,
+        text,
+        attachments: yield* resolveAttachments(options.attachments),
+        effort: options.effort,
+        permission: options.permission,
+      };
+      if (queue && isTurnActive(entry.info.status))
+        return setQueue(entry, [...entry.queue, message]);
+      yield* deliver(entry, message, run);
     });
 
   const isBusy = (entry: ThreadEntry) => isTurnActive(entry.info.status);
@@ -729,22 +993,23 @@ const make = Effect.gen(function* () {
           return yield* Effect.fail(fail("There's no snapshot of the files from that point"));
         }
       }
-      if (entry.session) {
-        const session = entry.session;
-        entry.session = null;
-        yield* session.close;
-      }
-      if (entry.resumeToken) {
+      yield* dropSession(entry, null);
+      const resumeToken = entry.resumeTokens[provider];
+      if (switched(entry)) {
+        // Each harness's own conversation holds only its turns, so none can be cut back to the
+        // same point: the next message starts this one afresh, handed what's left of the thread.
+        setResumeTokens(entry, {});
+        setCoverage(entry, { [provider]: 0 });
+      } else if (resumeToken) {
         const token = yield* ADAPTERS[provider].rewind({
           cwd: entry.home.path,
           harness: (yield* settingsStore.get).providers[provider],
-          resumeToken: entry.resumeToken,
+          resumeToken,
           messageId: command.messageId,
           keep: found.before,
           dropTurns: found.from.filter((message) => !message.steer).length,
         });
-        entry.resumeToken = token;
-        store.setResumeToken(threadId, token);
+        setResumeTokens(entry, token ? { [provider]: token } : {});
       }
       store.truncate(threadId, found.seq);
       publish(
@@ -773,16 +1038,19 @@ const make = Effect.gen(function* () {
       if (isBusy(source)) return yield* Effect.fail(fail("Stop the agent before forking"));
       const cut = store.findTurnsAfter(source.info.id, command.messageId);
       if (!cut) return yield* Effect.fail(fail("That message is gone"));
-      const resumeToken = source.resumeToken
-        ? yield* ADAPTERS[provider].fork({
-            cwd: source.home.path,
-            harness: (yield* settingsStore.get).providers[provider],
-            resumeToken: source.resumeToken,
-            messageId: cut.from[0]?.messageId ?? null,
-            keep: cut.before,
-            dropTurns: cut.from.filter((message) => !message.steer).length,
-          })
-        : null;
+      const sourceToken = source.resumeTokens[provider];
+      // A thread that switched harness forks like a rewind: afresh, handed the conversation.
+      const resumeToken =
+        sourceToken && !switched(source)
+          ? yield* ADAPTERS[provider].fork({
+              cwd: source.home.path,
+              harness: (yield* settingsStore.get).providers[provider],
+              resumeToken: sourceToken,
+              messageId: cut.from[0]?.messageId ?? null,
+              keep: cut.before,
+              dropTurns: cut.from.filter((message) => !message.steer).length,
+            })
+          : null;
       const now = Date.now();
       const info: ThreadInfo = {
         id: crypto.randomUUID(),
@@ -802,16 +1070,11 @@ const make = Effect.gen(function* () {
         seenRev: 0,
         shelved: false,
       };
-      threads.set(info.id, {
-        info,
-        home: source.home,
-        session: null,
-        resumeToken,
-        shelveOverride: null,
-        activeAt: now,
-        currentTurn: null,
-        lock: yield* Semaphore.make(1),
-      });
+      const coverage: Coverage = switched(source) ? { [provider]: 0 } : {};
+      threads.set(
+        info.id,
+        newEntry(info, source.home, resumeToken ? { [provider]: resumeToken } : {}, coverage),
+      );
       store.insertThread(info, source.home);
       store.copyEvents(source.info.id, info.id, cut.seq);
       store.appendEvent(
@@ -822,7 +1085,8 @@ const make = Effect.gen(function* () {
           fromTitle: source.info.title,
         }),
       );
-      if (resumeToken) store.setResumeToken(info.id, resumeToken);
+      if (resumeToken) store.setResumeTokens(info.id, { [provider]: resumeToken });
+      store.setCoverage(info.id, coverage);
       publish(
         RuntimeEvent.cases["thread.created"].make({
           thread: info,
@@ -838,6 +1102,25 @@ const make = Effect.gen(function* () {
       );
     });
 
+  /** Fails, saying how to fix it, unless `provider`'s CLI is installed and signed in. */
+  const harnessReady = (provider: ProviderKind) =>
+    Effect.gen(function* () {
+      const name = harnessName(yield* settingsStore.get, provider);
+      const status = (yield* registry.list).find((harness) => harness.kind === provider);
+      if (status?.checking)
+        return yield* Effect.fail(
+          fail(`Still checking whether ${name} is set up. Try again in a moment.`),
+        );
+      if (!status?.installed)
+        return yield* Effect.fail(
+          fail(`${name} isn't installed on this machine. Install its CLI, then try again.`),
+        );
+      if (!status.linked)
+        return yield* Effect.fail(
+          fail(`${name} isn't signed in. Sign in under Settings → Harnesses, then try again.`),
+        );
+    });
+
   /**
    * Starts a thread on the other harness that reviews this one's work: same folder, a prompt
    * quoting the conversation and pinning what changed, and Ask first, so it edits nothing unasked.
@@ -850,22 +1133,7 @@ const make = Effect.gen(function* () {
         return yield* Effect.fail(fail("Wait for the agent to finish before asking for a review"));
       const settings = yield* settingsStore.get;
       const reviewer = peerOf(provider);
-      const reviewerName = harnessName(settings, reviewer);
-      const status = (yield* registry.list).find((harness) => harness.kind === reviewer);
-      if (status?.checking)
-        return yield* Effect.fail(
-          fail(`Still checking whether ${reviewerName} is set up. Try again in a moment.`),
-        );
-      if (!status?.installed)
-        return yield* Effect.fail(
-          fail(`${reviewerName} isn't installed on this machine. Install its CLI, then try again.`),
-        );
-      if (!status.linked)
-        return yield* Effect.fail(
-          fail(
-            `${reviewerName} isn't signed in. Sign in under Settings → Harnesses, then try again.`,
-          ),
-        );
+      yield* harnessReady(reviewer);
       const messages = store.readMessages(source.info.id);
       const userMessageIds = messages.flatMap((message) =>
         RuntimeEvent.guards["user.message"](message) ? [message.messageId] : [],
@@ -898,16 +1166,7 @@ const make = Effect.gen(function* () {
       };
       // The reviewer starts where the work is; a worktree the agent switched into isn't the reviewer's to remove.
       const home = cwd === source.home.path ? source.home : { path: cwd, worktree: false };
-      const entry: ThreadEntry = {
-        info,
-        home,
-        session: null,
-        resumeToken: null,
-        shelveOverride: null,
-        activeAt: now,
-        currentTurn: null,
-        lock: yield* Semaphore.make(1),
-      };
+      const entry = newEntry(info, home);
       threads.set(id, entry);
       store.insertThread(info, home);
       publish(
@@ -924,7 +1183,7 @@ const make = Effect.gen(function* () {
         entry,
         peerReviewPrompt({ author: harnessName(settings, provider), messages, range }),
         { effort: null, permission: "ask", attachments: [] },
-      );
+      ).pipe(reportOn(entry), Effect.ignore);
     });
 
   const compact = (threadId: string) =>
@@ -932,13 +1191,12 @@ const make = Effect.gen(function* () {
       const entry = yield* getEntry(threadId);
       if (isBusy(entry))
         return yield* Effect.fail(fail("Wait for the agent to finish before compacting"));
-      if (!entry.resumeToken && !entry.session) return;
-      const session = yield* ensureSession(entry, {
-        effort: null,
-        permission: "ask",
-        attachments: [],
-      });
-      yield* session.compact;
+      if (!entry.resumeTokens[entry.info.provider] && !entry.session) return;
+      yield* entry.lock.withPermit(
+        ensureSession(entry, { effort: null, permission: "ask", attachments: [] }).pipe(
+          Effect.flatMap((session) => session.compact),
+        ),
+      );
     });
 
   const listCommands = (threadId: string) =>
@@ -966,9 +1224,7 @@ const make = Effect.gen(function* () {
       const { status } = entry.info;
       if (!entry.session || isTurnActive(status)) continue;
       if (now - entry.activeAt < SESSION_IDLE_MS) continue;
-      const session = entry.session;
-      entry.session = null;
-      yield* session.close;
+      yield* dropSession(entry, null);
     }
   });
   const reaper = setInterval(() => Effect.runFork(reapIdleSessions), REAP_INTERVAL_MS);
@@ -1049,7 +1305,7 @@ const make = Effect.gen(function* () {
     const entry = threads.get(threadId);
     if (!entry) return;
     const { provider, model } = entry.info;
-    const { resumeToken } = entry;
+    const resumeToken = entry.resumeTokens[provider];
     // A live session reports its usage when its turn ends.
     const usage =
       entry.info.usage ??
@@ -1193,6 +1449,24 @@ const make = Effect.gen(function* () {
       return join(path, relative(root, projectPath));
     });
 
+  /** Adds a thread and announces it; the first line of `text` names it until the writer model's summary lands. */
+  const openThread = (info: ThreadInfo, home: ThreadHome, text: string, requestId: string | null) =>
+    Effect.gen(function* () {
+      const entry = newEntry(info, home);
+      threads.set(info.id, entry);
+      store.insertThread(info, home);
+      publish(RuntimeEvent.cases["thread.created"].make({ thread: info, requestId }));
+      const { title } = info;
+      void generateThreadTitle({ ...writerFor(info.cwd, yield* settingsStore.get, []), text })
+        .then((summary) => {
+          // Unless it's been renamed meanwhile.
+          if (threads.get(info.id) === entry && entry.info.title === title)
+            retitle(entry, titleFrom(summary, title));
+        })
+        .catch(() => {});
+      return entry;
+    });
+
   const create = (command: Extract<ClientCommand, { _tag: "thread.create" }>) =>
     Effect.gen(function* () {
       const { project, created } = yield* projectsStore
@@ -1207,37 +1481,26 @@ const make = Effect.gen(function* () {
         command.workspace === "worktree"
           ? yield* makeWorktree(project.path, title, id)
           : project.path;
-      const info: ThreadInfo = {
-        id,
-        projectId: project.id,
-        provider: command.provider,
-        model: command.model,
-        cwd,
-        title,
-        status: "idle",
-        createdAt: now,
-        updatedAt: now,
-        branch: yield* Effect.promise(() => readBranch(cwd)),
-        archivedAt: null,
-        worktree: command.workspace === "worktree",
-        seenRev: 0,
-        shelved: false,
-      };
-      const home = { path: cwd, worktree: command.workspace === "worktree" };
-      const entry: ThreadEntry = {
-        info,
-        home,
-        session: null,
-        resumeToken: null,
-        shelveOverride: null,
-        activeAt: now,
-        currentTurn: null,
-        lock: yield* Semaphore.make(1),
-      };
-      threads.set(info.id, entry);
-      store.insertThread(info, home);
-      publish(
-        RuntimeEvent.cases["thread.created"].make({ thread: info, requestId: command.requestId }),
+      const entry = yield* openThread(
+        {
+          id,
+          projectId: project.id,
+          provider: command.provider,
+          model: command.model,
+          cwd,
+          title,
+          status: "idle",
+          createdAt: now,
+          updatedAt: now,
+          branch: yield* Effect.promise(() => readBranch(cwd)),
+          archivedAt: null,
+          worktree: command.workspace === "worktree",
+          seenRev: 0,
+          shelved: false,
+        },
+        { path: cwd, worktree: command.workspace === "worktree" },
+        command.text,
+        command.requestId,
       );
 
       // New chats preselect whichever harness was used last.
@@ -1246,17 +1509,215 @@ const make = Effect.gen(function* () {
         const next = yield* settingsStore.update({ ...settings, lastProvider: command.provider });
         publish(RuntimeEvent.cases["settings.updated"].make({ settings: next }));
       }
-      // The first line names the thread until the writer model's summary lands, unless it's renamed first.
-      void generateThreadTitle({
-        ...writerFor(cwd, yield* settingsStore.get, []),
-        text: command.text,
-      })
-        .then((summary) => {
-          if (threads.get(id) === entry && entry.info.title === title)
-            retitle(entry, titleFrom(summary, title));
-        })
-        .catch(() => {});
-      yield* send(entry, command.text, command.options);
+      yield* send(entry, command.text, command.options).pipe(reportOn(entry), Effect.ignore);
+    });
+
+  // --- orchestration: what agents do through APCode's MCP tools -------------------------
+
+  /** A thread as the tools describe it. */
+  function summary({ info }: ThreadEntry) {
+    return {
+      threadId: info.id,
+      title: info.title,
+      provider: info.provider,
+      model: info.model,
+      status: info.status,
+      ...(info.startedBy && { startedBy: info.startedBy }),
+    };
+  }
+
+  /** The thread's last answer, and the error it ended on, if it did. */
+  function lastTurn(threadId: string) {
+    let answer: string | null = null;
+    let error: string | null = null;
+    for (const { event } of store.readTurns(threadId, 1).events) {
+      if (RuntimeEvent.guards["assistant.completed"](event)) answer = event.text;
+      if (RuntimeEvent.guards.error(event)) error = event.message;
+    }
+    return { answer, ...(error && { error }) };
+  }
+
+  /** The most `caller`'s agent can give another: its own access. */
+  function withinCeiling(caller: ThreadEntry, wanted: PermissionLevel | null | undefined) {
+    const ceiling = caller.permission ?? "ask";
+    const level = wanted ?? ceiling;
+    return permissionRank(level) <= permissionRank(ceiling)
+      ? Effect.succeed(level)
+      : Effect.fail(
+          fail(
+            `Your thread runs with "${ceiling}" access, so it can't give another "${level}". Ask for "${ceiling}" or less.`,
+          ),
+        );
+  }
+
+  const agentEntry = (threadId: string) =>
+    Effect.mapError(getEntry(threadId), () =>
+      fail(`There's no thread ${threadId}. list_threads shows the ones in your project.`),
+    );
+
+  /** Waits for the thread's turn to end, up to `timeoutMs`. */
+  const waitForTurn = (entry: ThreadEntry, timeoutMs: number) =>
+    Effect.gen(function* () {
+      const deadline = Date.now() + timeoutMs;
+      // ponytail: polls the thread's status; a per-thread signal if many agents wait at once.
+      while (isTurnActive(entry.info.status)) {
+        if (Date.now() >= deadline) return { ...summary(entry), timedOut: true };
+        yield* Effect.sleep("200 millis");
+      }
+      return { ...summary(entry), ...lastTurn(entry.info.id) };
+    });
+
+  const startThread = (callerId: string, input: StartThreadInput) =>
+    Effect.gen(function* () {
+      const caller = yield* getEntry(callerId);
+      const id = input.requestId ? requestUuid(callerId, input.requestId) : crypto.randomUUID();
+      let entry = threads.get(id);
+      if (!entry) {
+        const permission = yield* withinCeiling(caller, input.permission);
+        const provider = input.provider ?? caller.info.provider;
+        yield* harnessReady(provider);
+        const project = (yield* projectsStore.list).find((p) => p.id === caller.info.projectId);
+        const title = titleFrom(input.prompt, caller.info.title);
+        const cwd = input.worktree
+          ? yield* makeWorktree(project?.path ?? caller.info.cwd, title, id)
+          : caller.info.cwd;
+        const now = Date.now();
+        entry = yield* openThread(
+          {
+            id,
+            projectId: caller.info.projectId,
+            provider,
+            model: input.model ?? (provider === caller.info.provider ? caller.info.model : null),
+            cwd,
+            title,
+            status: "idle",
+            createdAt: now,
+            updatedAt: now,
+            branch: yield* Effect.promise(() => readBranch(cwd)),
+            archivedAt: null,
+            worktree: input.worktree === true || caller.info.worktree,
+            seenRev: 0,
+            shelved: false,
+            startedBy: callerId,
+          },
+          // Same folder as the caller, which keeps it if it's a worktree made for the caller.
+          input.worktree
+            ? { path: cwd, worktree: true }
+            : cwd === caller.home.path
+              ? caller.home
+              : { path: cwd, worktree: false },
+          input.prompt,
+          null,
+        );
+        publish(
+          RuntimeEvent.cases["thread.startedBy"].make({
+            threadId: id,
+            byThreadId: callerId,
+            byTitle: caller.info.title,
+          }),
+        );
+        yield* send(entry, input.prompt, { effort: null, permission, attachments: [] }).pipe(
+          reportOn(entry),
+        );
+      }
+      return input.wait
+        ? yield* waitForTurn(entry, (input.timeoutSeconds ?? 600) * 1000)
+        : summary(entry);
+    });
+
+  const sendMessage = (callerId: string, input: SendMessageInput) =>
+    Effect.gen(function* () {
+      const caller = yield* getEntry(callerId);
+      const target = yield* agentEntry(input.threadId);
+      if (target === caller)
+        return yield* Effect.fail(fail("That's your own thread; reply in your turn instead."));
+      const ceiling = caller.permission ?? "ask";
+      // The target's own level, unless that's more than the caller may give.
+      const fallback =
+        target.permission && permissionRank(target.permission) < permissionRank(ceiling)
+          ? target.permission
+          : ceiling;
+      const permission = yield* withinCeiling(caller, input.permission ?? fallback);
+      yield* send(
+        target,
+        input.text,
+        { effort: null, permission, attachments: [] },
+        {
+          queue: input.queue,
+          messageId: input.requestId ? requestUuid(callerId, input.requestId) : undefined,
+        },
+      );
+      return summary(target);
+    });
+
+  const orchestration = {
+    listThreads: (callerId: string) =>
+      Effect.map(getEntry(callerId), (caller) => ({
+        threads: [...threads.values()]
+          .filter(
+            (entry) =>
+              entry !== caller &&
+              entry.info.projectId === caller.info.projectId &&
+              entry.info.archivedAt === null,
+          )
+          .sort((a, b) => b.info.updatedAt - a.info.updatedAt)
+          .slice(0, 50)
+          .map(summary),
+      })),
+    readThread: (_callerId: string, threadId: string, after: number | undefined) =>
+      Effect.map(agentEntry(threadId), (entry) => {
+        const messages = store.readAfter(threadId, after ?? 0).flatMap(({ id, event }) =>
+          RuntimeEvent.isAnyOf(["user.message", "assistant.completed"])(event)
+            ? [
+                {
+                  position: id,
+                  from: RuntimeEvent.guards["user.message"](event) ? "user" : "assistant",
+                  text: event.text.length > 8000 ? `${event.text.slice(0, 8000)}…` : event.text,
+                },
+              ]
+            : [],
+        );
+        return {
+          ...summary(entry),
+          messages: messages.slice(0, 50),
+          ...(messages.length > 50 && { more: true }),
+        };
+      }),
+    startThread,
+    sendMessage,
+    waitForThread: (_callerId: string, threadId: string, timeoutMs: number) =>
+      Effect.flatMap(agentEntry(threadId), (entry) => waitForTurn(entry, timeoutMs)),
+    stopThread: (_callerId: string, threadId: string) =>
+      Effect.flatMap(agentEntry(threadId), (entry) => Effect.as(interrupt(entry), summary(entry))),
+  };
+  const mcp = createMcp((threadId, action) => browsers.request(threadId, action), orchestration);
+
+  /**
+   * Moves the thread to another harness for its next turns. Nothing is handed over yet: the
+   * next message takes what the new harness missed, so switching back and forth costs nothing.
+   */
+  const switchHarness = (entry: ThreadEntry, provider: ProviderKind, model: string | null) =>
+    Effect.gen(function* () {
+      if (isBusy(entry))
+        return yield* Effect.fail(
+          fail("Stop the agent, or wait for its turn to end, before switching harness"),
+        );
+      yield* harnessReady(provider);
+      yield* dropSession(entry, null);
+      const threadId = entry.info.id;
+      const from = entry.info.provider;
+      // Messages from before switching existed don't say where they went: here, to `from`.
+      store.tagUserMessages(threadId, from);
+      setCoverage(entry, {
+        ...entry.coverage,
+        // The harness left has everything so far, unless it hadn't caught up yet itself.
+        [from]: entry.coverage[from] ?? store.cursor(threadId),
+        // One with no conversation of its own gets all of it.
+        ...(entry.resumeTokens[provider] === undefined && { [provider]: 0 }),
+      });
+      entry.info = { ...entry.info, provider, model };
+      store.setProvider(threadId, provider, model);
+      publish(RuntimeEvent.cases["thread.model"].make({ threadId, provider, model }));
     });
 
   /** Announces the branches after `run` switched or created one, and the meta of threads in `path`. */
@@ -1273,7 +1734,19 @@ const make = Effect.gen(function* () {
       "thread.create": create,
       "thread.send": (command) =>
         Effect.flatMap(getEntry(command.threadId), (entry) =>
-          send(entry, command.text, command.options),
+          send(entry, command.text, command.options, command),
+        ),
+      "thread.sendQueued": ({ threadId, messageId }) =>
+        Effect.map(getEntry(threadId), (entry) => {
+          const message = entry.queue.find((queued) => queued.id === messageId);
+          if (message) sendQueued(entry, message);
+        }),
+      "thread.unqueue": ({ threadId, messageIds }) =>
+        Effect.map(getEntry(threadId), (entry) =>
+          setQueue(
+            entry,
+            entry.queue.filter((queued) => !messageIds.includes(queued.id)),
+          ),
         ),
       "thread.rewind": rewind,
       "thread.fork": fork,
@@ -1376,18 +1849,21 @@ const make = Effect.gen(function* () {
             }),
           );
         }),
-      "thread.setModel": (command) =>
+      "thread.setModel": ({ threadId, provider, model }) =>
         Effect.gen(function* () {
-          const entry = yield* getEntry(command.threadId);
-          entry.info = { ...entry.info, model: command.model };
-          store.setModel(entry.info.id, command.model);
+          const entry = yield* getEntry(threadId);
+          if (provider && provider !== entry.info.provider)
+            return yield* switchHarness(entry, provider, model);
+          entry.info = { ...entry.info, model };
+          store.setModel(threadId, model);
           publish(
             RuntimeEvent.cases["thread.model"].make({
-              threadId: entry.info.id,
-              model: command.model,
+              threadId,
+              provider: entry.info.provider,
+              model,
             }),
           );
-          if (entry.session) yield* entry.session.setModel(command.model);
+          if (entry.session) yield* entry.session.setModel(model);
         }),
       "project.add": (command) =>
         projectsStore.ensure(command.path).pipe(
@@ -1426,7 +1902,7 @@ const make = Effect.gen(function* () {
       "provider.linkCancel": (command) => registry.cancelLink(command.provider),
       "provider.unlink": (command) => registry.unlink(command.provider),
       "provider.readLimits": (command) => Effect.promise(() => readLimits(command.provider)),
-      "thread.interrupt": (command) => withLiveSession(command.threadId, (s) => s.interrupt),
+      "thread.interrupt": (command) => Effect.flatMap(getEntry(command.threadId), interrupt),
       "thread.stopAgent": (command) =>
         withLiveSession(command.threadId, (s) => s.stopAgent?.(command.toolId) ?? Effect.void),
       "approval.respond": (command) =>
@@ -1472,7 +1948,9 @@ const make = Effect.gen(function* () {
         Effect.flatMap(getEntry(threadId), (entry) => {
           const failed = terminals.run(threadId, terminalId, command, columns, rows, (exit) =>
             Effect.runFork(
-              send(entry, describeRun({ command, ...exit }), options, { command, ...exit }).pipe(
+              send(entry, describeRun({ command, ...exit }), options, {
+                run: { command, ...exit },
+              }).pipe(
                 Effect.catch((error) =>
                   Effect.sync(() =>
                     publish(RuntimeEvent.cases.error.make({ threadId, message: error.message })),
@@ -1597,9 +2075,15 @@ const make = Effect.gen(function* () {
     shutdown: Effect.suspend(() => {
       flushDeltas();
       terminals.closeAll();
-      return Effect.forEach([...threads.values()], (t) => t.session?.close ?? Effect.void, {
-        discard: true,
-      });
+      return Effect.forEach(
+        [...threads.values()],
+        (entry) =>
+          dropSession(
+            entry,
+            "APCode quit while this turn was running. Send a message to pick up where it left off.",
+          ),
+        { discard: true },
+      );
     }),
   });
 });

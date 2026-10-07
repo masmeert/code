@@ -9,6 +9,7 @@ import {
   MessageScroller,
 } from "@apcode/ui/agents/message";
 import { Markdown } from "@apcode/ui/agents/markdown";
+import * as Match from "effect/Match";
 import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
 import { PromptInputTray, PromptSelect } from "@apcode/ui/agents/prompt-input";
 import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
@@ -47,10 +48,12 @@ import {
   peerOf,
   type Project,
   type ProviderKind,
+  type QueuedMessage,
   repositoryOf,
 } from "@apcode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
 import {
+  ArrowLeftRight,
   Check,
   ChevronRight,
   CornerDownRight,
@@ -73,7 +76,9 @@ import {
   Square,
   SquareTerminal,
   Undo2,
+  Workflow,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import {
   createContext,
@@ -122,21 +127,20 @@ import {
   cloneProject,
   closePeerReview,
   createThread,
-  type FollowUp,
   dismissForkError,
   forkThread,
   loadOlder,
   markSeen,
   openPeerReview,
-  queueFollowUp,
+  queueMessage,
   respondApproval,
   runCommand,
   type RunningCommand,
   send,
-  sendFollowUpNow,
+  sendQueuedNow,
   startPeerReview,
   switchToThread,
-  takeFollowUps,
+  takeQueued,
   toggleTerminalPanel,
   useFileRestoreBlocker,
   usePathHost,
@@ -168,34 +172,36 @@ const TerminalView = lazy(() =>
 /** Consecutive agent items form one turn under a single avatar. */
 type UserItem = Extract<TranscriptItem, { kind: "user" }>;
 
-type ForkedItem = Extract<TranscriptItem, { kind: "forked" }>;
-
-type PeerReviewItem = Extract<TranscriptItem, { kind: "peerReview" }>;
+/** Where a thread's own conversation starts: forked from, reviewing, or started by another thread. */
+type MarkerItem = Extract<TranscriptItem, { kind: "forked" | "peerReview" | "startedBy" }>;
 
 type Turn =
   | { readonly from: "user"; readonly id: string; readonly item: UserItem }
-  | { readonly from: "assistant"; readonly id: string; readonly items: Array<TranscriptItem> }
-  | { readonly from: "fork"; readonly id: string; readonly item: ForkedItem }
-  | { readonly from: "peerReview"; readonly id: string; readonly item: PeerReviewItem };
+  | {
+      readonly from: "assistant";
+      readonly id: string;
+      readonly items: Array<TranscriptItem>;
+      /** Who answered: the harness the message before went to, when it says. */
+      readonly provider: ProviderKind | null;
+    }
+  | { readonly from: "marker"; readonly id: string; readonly item: MarkerItem };
 
 const toTurns = (items: ReadonlyArray<TranscriptItem>): Array<Turn> => {
   const turns: Array<Turn> = [];
+  let answering: ProviderKind | null = null;
   for (const item of items) {
     if (item.kind === "user") {
+      answering = item.provider ?? answering;
       turns.push({ from: "user", id: item.id, item });
       continue;
     }
-    if (item.kind === "forked") {
-      turns.push({ from: "fork", id: item.id, item });
-      continue;
-    }
-    if (item.kind === "peerReview") {
-      turns.push({ from: "peerReview", id: item.id, item });
+    if (item.kind === "forked" || item.kind === "peerReview" || item.kind === "startedBy") {
+      turns.push({ from: "marker", id: item.id, item });
       continue;
     }
     const last = turns.at(-1);
     if (last?.from === "assistant") last.items.push(item);
-    else turns.push({ from: "assistant", id: item.id, items: [item] });
+    else turns.push({ from: "assistant", id: item.id, items: [item], provider: answering });
   }
   return turns;
 };
@@ -669,7 +675,7 @@ const AttachmentList = ({ attachments }: { attachments: ReadonlyArray<Attachment
 );
 
 const NO_ITEMS: ReadonlyArray<TranscriptItem> = [];
-const NO_FOLLOW_UPS: ReadonlyArray<FollowUp> = [];
+const NO_QUEUE: ReadonlyArray<QueuedMessage> = [];
 const NO_RUNS: ReadonlyArray<RunningCommand> = [];
 
 /** Opens the changes panel on one turn; provided by the thread view to the checkpoint chips deep in the transcript. */
@@ -680,9 +686,9 @@ const RevealContext = createContext<ToolReveal | null>(null);
 const RunCommandContext = createContext<((command: string) => void) | undefined>(undefined);
 
 /** Held messages go back into the composer, after whatever is there. */
-const returnToComposer = (threadId: string, followUps: ReadonlyArray<FollowUp>) => {
-  if (!followUps.length) return;
-  appendToDraft(threadId, followUps.map((f) => f.text).join("\n\n"));
+const returnToComposer = (threadId: string, queued: ReadonlyArray<QueuedMessage>) => {
+  if (!queued.length) return;
+  appendToDraft(threadId, queued.map((message) => message.text).join("\n\n"));
   focusComposer();
 };
 
@@ -693,7 +699,7 @@ const QueuedFollowUp = ({
   next,
 }: {
   threadId: string;
-  followUp: FollowUp;
+  followUp: QueuedMessage;
   /** First in line: it goes out at the next boundary, and the steer shortcut sends it. */
   next: boolean;
 }) => (
@@ -707,16 +713,16 @@ const QueuedFollowUp = ({
   >
     <CornerDownRight className="size-3.5 shrink-0" />
     <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/80">{followUp.text}</span>
-    {followUp.options.attachments.length ? (
+    {followUp.attachments.length ? (
       <span className="shrink-0">
-        {followUp.options.attachments.length} file
-        {followUp.options.attachments.length === 1 ? "" : "s"}
+        {followUp.attachments.length} file
+        {followUp.attachments.length === 1 ? "" : "s"}
       </span>
     ) : null}
     <button
       type="button"
       title={`Send now, into the running turn${next ? ` (${describe("composer.steerQueued")})` : ""}`}
-      onClick={() => sendFollowUpNow(threadId, followUp.id)}
+      onClick={() => sendQueuedNow(threadId, followUp.id)}
       className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
     >
       <CornerDownRight className="size-3.5" />
@@ -724,7 +730,7 @@ const QueuedFollowUp = ({
     </button>
     <IconAction
       label="Edit in the composer"
-      onClick={() => returnToComposer(threadId, takeFollowUps(threadId, followUp.id))}
+      onClick={() => returnToComposer(threadId, takeQueued(threadId, followUp.id))}
     >
       <Pencil className="size-3.5" />
     </IconAction>
@@ -852,10 +858,10 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   const providers = useProviders(host);
   const settings = useStore((s) => s.settings);
   const { status, provider } = info;
-  // The harness is fixed per thread; only its model can change.
-  const choices = modelChoices(providers, settings, provider);
-  const current = info.model ?? defaultModel(providers, settings, provider);
   const busy = isTurnActive(status);
+  // Another harness's model switches the thread to it, which waits for the turn to end.
+  const choices = modelChoices(providers, settings, busy ? provider : undefined);
+  const current = info.model ?? defaultModel(providers, settings, provider);
   const lastItem = items.at(-1);
   const [reveal, setReveal] = useState<ToolReveal | null>(null);
   const runningAgents = busy
@@ -884,7 +890,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   const reviewComments = useReviewComments(threadId);
   const [revealedComment, setRevealedComment] = useState<ReviewComment | null>(null);
   const clearRevealedComment = useCallback(() => setRevealedComment(null), []);
-  const followUps = useStore((s) => s.followUps[threadId]) ?? NO_FOLLOW_UPS;
+  const followUps = useStore((s) => s.threads[threadId]?.queue) ?? NO_QUEUE;
   const followUpMode = useStore((s) => s.settings.followUp ?? "queue");
   const [{ effort, permission }] = useTurnPrefs(threadId, provider, host);
   // The turn its output starts runs at the composer's effort and permission level.
@@ -896,7 +902,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   // Leaves the draft alone, and waits while the agent needs an approval or an answer.
   useKeybinding(
     followUps[0] && status === "running" ? "composer.steerQueued" : undefined,
-    () => followUps[0] && sendFollowUpNow(threadId, followUps[0].id),
+    () => followUps[0] && sendQueuedNow(threadId, followUps[0].id),
   );
   const history = useMemo(
     () => items.flatMap((item) => (item.kind === "user" && item.text ? [item.text] : [])),
@@ -1125,10 +1131,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             model={current ? encodeChoice(provider, current) : undefined}
             onModelChange={(value) =>
               send(
-                ClientCommand.cases["thread.setModel"].make({
-                  threadId,
-                  model: decodeChoice(value).model,
-                }),
+                ClientCommand.cases["thread.setModel"].make({ threadId, ...decodeChoice(value) }),
               )
             }
             placeholder={
@@ -1143,12 +1146,12 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
               const text = withReviewComments(takeReviewComments(threadId), typed);
               // While the agent works, a message waits for the turn to end, or steers it; ⌘Enter flips that.
               const steer = (followUpMode === "steer") !== how.alternate;
-              if (busy && !steer) queueFollowUp(threadId, text, options);
+              if (busy && !steer) queueMessage(threadId, text, options);
               else send(ClientCommand.cases["thread.send"].make({ threadId, text, options }));
             }}
             onStop={() => {
               send(ClientCommand.cases["thread.interrupt"].make({ threadId }));
-              returnToComposer(threadId, takeFollowUps(threadId));
+              returnToComposer(threadId, takeQueued(threadId));
             }}
           />
         </div>
@@ -1230,8 +1233,7 @@ export const TurnList = ({
       className="contents *:[contain-intrinsic-size:auto_240px] data-settled:[&>*:nth-last-child(n+3)]:[content-visibility:auto]"
     >
       {turns.map((turn, index) => {
-        if (turn.from === "fork") return <ForkedFrom key={turn.id} item={turn.item} />;
-        if (turn.from === "peerReview") return <PeerReviewOf key={turn.id} item={turn.item} />;
+        if (turn.from === "marker") return <ThreadMarker key={turn.id} item={turn.item} />;
         return turn.from === "user" ? (
           <UserTurn
             key={turn.id}
@@ -1244,7 +1246,7 @@ export const TurnList = ({
           <AssistantTurn
             key={turn.id}
             items={turn.items}
-            provider={provider}
+            provider={turn.provider ?? provider}
             threadId={threadId}
             busy={busy}
             last={index === turns.length - 1}
@@ -1313,46 +1315,39 @@ function CommandRunResult({ run }: { run: CommandRun }) {
   );
 }
 
-/** Where a fork's own conversation starts, with the way back to the original. */
-function ForkedFrom({ item }: { item: ForkedItem }) {
-  const original = useStore((s) => s.threads[item.fromThreadId]);
-  return (
-    <div className="flex items-center gap-3 py-2 text-xs text-muted-foreground">
-      <span className="h-px flex-1 bg-border" />
-      <GitFork className="size-3.5 shrink-0" />
-      {original ? (
-        <button
-          type="button"
-          onClick={() => switchToThread(item.fromThreadId)}
-          className="max-w-[60%] truncate rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          Forked from {original.title}
-        </button>
-      ) : (
-        <span className="max-w-[60%] truncate">Forked from {item.fromTitle} (deleted)</span>
-      )}
-      <span className="h-px flex-1 bg-border" />
-    </div>
-  );
-}
+const MARKERS: Record<MarkerItem["kind"], { readonly icon: LucideIcon; readonly label: string }> = {
+  forked: { icon: GitFork, label: "Forked from" },
+  peerReview: { icon: ScanEye, label: "Reviewing" },
+  startedBy: { icon: Workflow, label: "Started by" },
+};
 
-/** Where a peer review starts, with the way to the thread it reviews. */
-function PeerReviewOf({ item }: { item: PeerReviewItem }) {
-  const reviewed = useStore((s) => s.threads[item.ofThreadId]);
+/** Where a thread's own conversation starts, with the way to the thread it came from. */
+function ThreadMarker({ item }: { item: MarkerItem }) {
+  const [threadId, title] = Match.value(item).pipe(
+    Match.discriminatorsExhaustive("kind")({
+      forked: (forked) => [forked.fromThreadId, forked.fromTitle] as const,
+      peerReview: (review) => [review.ofThreadId, review.ofTitle] as const,
+      startedBy: (started) => [started.byThreadId, started.byTitle] as const,
+    }),
+  );
+  const source = useStore((s) => s.threads[threadId]);
+  const { icon: Icon, label } = MARKERS[item.kind];
   return (
     <div className="flex items-center gap-3 py-2 text-xs text-muted-foreground">
       <span className="h-px flex-1 bg-border" />
-      <ScanEye className="size-3.5 shrink-0" />
-      {reviewed ? (
+      <Icon className="size-3.5 shrink-0" />
+      {source ? (
         <button
           type="button"
-          onClick={() => switchToThread(item.ofThreadId)}
+          onClick={() => switchToThread(threadId)}
           className="max-w-[60%] truncate rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         >
-          Reviewing {reviewed.title}
+          {label} {source.title}
         </button>
       ) : (
-        <span className="max-w-[60%] truncate">Reviewing {item.ofTitle} (deleted)</span>
+        <span className="max-w-[60%] truncate">
+          {label} {title} (deleted)
+        </span>
       )}
       <span className="h-px flex-1 bg-border" />
     </div>
@@ -1424,6 +1419,9 @@ const UserTurn = memo(
     ) : (
       <Message from="user" animateIn={animateIn} className="group/turn">
         <MessageContent className="gap-1.5">
+          {item.handoff && item.provider ? (
+            <HandoffNote handoff={item.handoff} to={item.provider} />
+          ) : null}
           {item.attachments.length ? <AttachmentList attachments={item.attachments} /> : null}
           {item.text ? (
             <MessageBubble variant="soft">
@@ -1440,6 +1438,38 @@ const UserTurn = memo(
   // `animateIn` is only read on mount, so it flipping once the list settles is no reason to re-render.
   (a, b) => a.item === b.item && a.threadId === b.threadId && a.busy === b.busy,
 );
+
+/** Above a message sent right after switching harness: what the new one was told it missed. */
+function HandoffNote({
+  handoff,
+  to,
+}: {
+  handoff: NonNullable<UserItem["handoff"]>;
+  to: ProviderKind;
+}) {
+  const [open, setOpen] = useState(false);
+  const settings = useStore((s) => s.settings);
+  return (
+    <div className="flex flex-col items-end gap-1.5 text-xs text-muted-foreground">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <ArrowLeftRight className="size-3.5 shrink-0" />
+        Gave {harnessLabel(settings, to)} the {handoff.messages}{" "}
+        {handoff.messages === 1 ? "message" : "messages"} {harnessLabel(settings, handoff.from)} had
+        <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+      </button>
+      {open ? (
+        <pre className="selectable max-h-72 w-full overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[11px] whitespace-pre-wrap">
+          {handoff.text}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
 
 /** Rewinds to before this message and puts it back in the composer to edit and resend. */
 function EditFromHere({ item, threadId }: { item: UserItem; threadId: string }) {

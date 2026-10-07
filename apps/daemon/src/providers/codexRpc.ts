@@ -283,10 +283,17 @@ export async function connectCodex(
     "data",
     (chunk: Buffer) => (stderrTail = (stderrTail + chunk.toString()).slice(-4000)),
   );
-  const exited = new Promise<never>((_, reject) => child.on("error", (error) => reject(error)));
+  let reportExit: (error: Error) => void = () => {};
+  const exited = new Promise<never>((_, reject) => (reportExit = reject));
+  // Settled with nothing awaiting it yet; requests race it.
+  exited.catch(() => {});
+  child.on("error", (error) => reportExit(error));
+  // A write racing the exit fails with EPIPE; the exit itself is what's reported.
+  child.stdin.on("error", () => {});
   child.on("exit", (code) => {
-    for (const waiter of inflight.values())
-      waiter.reject(new Error(`codex exited (${code}): ${stderrTail}`));
+    const error = new Error(`Codex exited (code ${code}): ${stderrTail.trim() || "no output"}`);
+    reportExit(error);
+    for (const waiter of inflight.values()) waiter.reject(error);
     inflight.clear();
     handlers.onExit?.(code, stderrTail);
   });

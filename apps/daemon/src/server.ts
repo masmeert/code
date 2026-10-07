@@ -1,4 +1,10 @@
-import { ClientCommand, isTranscriptEvent, ServerFrame } from "@apcode/contracts";
+import {
+  ClientCommand,
+  isTranscriptEvent,
+  PROTOCOL_MISMATCH,
+  PROTOCOL_VERSION,
+  ServerFrame,
+} from "@apcode/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
@@ -50,6 +56,8 @@ const MAX_BUFFERED_BYTES = 8 * 1024 * 1024;
 const decodeCommand = Schema.decodeUnknownEffect(Schema.fromJsonString(ClientCommand));
 
 interface ConnectionData {
+  /** The protocol the client says it speaks; null from clients older than the check. */
+  protocol: string | null;
   fiber?: Fiber.Fiber<unknown, unknown>;
   /**
    * Threads whose transcript this client follows, each with the publish position its
@@ -86,6 +94,7 @@ export const serve = (port: number) =>
               threads,
               terminals,
               root: process.getuid?.() === 0,
+              protocol: PROTOCOL_VERSION,
             }),
           );
           yield* Stream.runForEach(live, ({ seq, id, event }) =>
@@ -219,14 +228,18 @@ export const serve = (port: number) =>
           hostname: "127.0.0.1",
           port,
           fetch(req, server) {
-            if (new URL(req.url).pathname === "/mcp") return manager.mcp.handle(req);
+            const { pathname, searchParams } = new URL(req.url);
+            if (pathname === "/mcp" || pathname === "/mcp/apcode") return manager.mcp.handle(req);
             const origin = req.headers.get("origin");
             if (!origin || !ALLOWED_ORIGINS.has(origin))
               return new Response("Forbidden origin", { status: 403 });
             const protocol = tokenProtocol(req);
             if (TOKEN && !protocol) return new Response("Unauthorized", { status: 401 });
             // The accepted subprotocol must be echoed back, or the browser drops the connection.
-            const data: ConnectionData = { threads: new Map() };
+            const data: ConnectionData = {
+              protocol: searchParams.get("protocol"),
+              threads: new Map(),
+            };
             const upgraded = protocol
               ? server.upgrade(req, { data, headers: { "Sec-WebSocket-Protocol": protocol } })
               : server.upgrade(req, { data });
@@ -235,10 +248,17 @@ export const serve = (port: number) =>
           },
           websocket: {
             open(ws) {
+              // Upgraded before closing: a refused upgrade reaches a browser with no reason attached.
+              if (ws.data.protocol !== String(PROTOCOL_VERSION))
+                return ws.close(
+                  PROTOCOL_MISMATCH,
+                  "This app and APCode on this machine are different versions. Update the older one.",
+                );
               ws.data.viewer = { send: (frame) => send(ws, frame) };
               ws.data.fiber = Effect.runFork(connection(ws));
             },
             message(ws, raw) {
+              if (ws.data.protocol !== String(PROTOCOL_VERSION)) return;
               Effect.runFork(
                 decodeCommand(raw.toString()).pipe(
                   Effect.flatMap((command) => handle(ws, command)),

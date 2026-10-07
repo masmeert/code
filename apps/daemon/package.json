@@ -6,7 +6,9 @@
     "dev": "bun --watch src/main.ts",
     "build": "bun build src/main.ts --compile --minify --outfile dist/apcode-daemon",
     "build:linux": "for arch in x64 arm64; do bun build src/main.ts --compile --minify --target=bun-linux-$arch --outfile dist/apcode-daemon-linux-$arch && gzip -f dist/apcode-daemon-linux-$arch; done",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "test": "bun test",
+    "record": "bun test/replay/record.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.281",

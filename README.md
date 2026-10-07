@@ -23,6 +23,8 @@ pnpm dev          # daemon (bun --watch) + Vite + Electron (restarts on shell ch
 pnpm dev:daemon   # or run pieces separately; pnpm dev:web for UI in a browser
 pnpm build        # compiles the daemon binary and bundles the .app, .dmg and .zip into apps/desktop/release
 pnpm release      # same, then uploads a draft GitHub release that installed apps update from
+pnpm test         # the daemon against recorded claude/codex traffic (apps/daemon/test)
+pnpm --filter @apcode/daemon record [name]   # re-records those fixtures from the real CLIs, on your logins
 ```
 
 Builds sign with the Developer ID in your keychain. To notarize, store credentials once with `xcrun notarytool store-credentials apcode --apple-id <email> --team-id <team>`, then build with `APPLE_KEYCHAIN_PROFILE=apcode`. `pnpm release` also needs `GH_TOKEN` (e.g. `GH_TOKEN=$(gh auth token)`) and a bumped `version` in `apps/desktop/package.json`.

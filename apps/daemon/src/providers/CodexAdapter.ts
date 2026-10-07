@@ -467,13 +467,24 @@ const start = ({
           {
             onNotification,
             onServerRequest,
-            onExit: (code) =>
+            onExit: (code, stderrTail) => {
+              const crashed = code !== 0 && code !== null;
+              if (crashed)
+                emit(
+                  RuntimeEvent.cases.error.make({
+                    threadId,
+                    message: `Codex exited unexpectedly (code ${code})${
+                      stderrTail.trim() ? `: ${stderrTail.trim().split("\n").at(-1)}` : ""
+                    }. Send a message to pick the thread back up.`,
+                  }),
+                );
               emit(
                 RuntimeEvent.cases["thread.status"].make({
                   threadId,
-                  status: code === 0 || code === null ? "closed" : "error",
+                  status: crashed ? "error" : "closed",
                 }),
-              ),
+              );
+            },
           },
           {
             ...launch,
@@ -483,6 +494,13 @@ const start = ({
               `mcp_servers.browser.url="${mcpServer.url}"`,
               "-c",
               'mcp_servers.browser.bearer_token_env_var="APCODE_MCP_TOKEN"',
+              "-c",
+              `mcp_servers.apcode.url="${mcpServer.url}/apcode"`,
+              "-c",
+              'mcp_servers.apcode.bearer_token_env_var="APCODE_MCP_TOKEN"',
+              // Waiting on another thread's agent takes minutes; Codex gives up on a tool after 60 s by default.
+              "-c",
+              "mcp_servers.apcode.tool_timeout_sec=1800",
             ],
             env: { ...launch.env, APCODE_MCP_TOKEN: mcpServer.token },
           },
@@ -520,6 +538,7 @@ const start = ({
     const input = (turn: TurnInput) => {
       const text = textWithFiles(turn);
       return [
+        ...(turn.handoff ? [{ type: "text", text: turn.handoff, text_elements: [] }] : []),
         ...turn.attachments
           .filter((a) => a.isImage)
           .map((a) => ({ type: "localImage", path: a.path })),

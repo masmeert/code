@@ -1,15 +1,176 @@
 import { createHash, randomBytes } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { BrowserAction, type BrowserResult } from "@apcode/contracts";
+import {
+  BrowserAction,
+  PermissionLevel,
+  ProviderKind,
+  type BrowserResult,
+} from "@apcode/contracts";
+import * as Effect from "effect/Effect";
 import { z } from "zod";
 import { PORT } from "./port.ts";
 
 export type Mcp = ReturnType<typeof createMcp>;
 
 export interface McpServerAccess {
+  /** The browser tools; the orchestration tools are at `${url}/apcode`. */
   readonly url: string;
   readonly token: string;
+}
+
+const StartThreadInput = {
+  prompt: z
+    .string()
+    .describe("The task, complete: the new thread's agent sees nothing of this conversation."),
+  provider: z
+    .enum(ProviderKind.literals)
+    .optional()
+    .describe("Which harness runs it: claude or codex. Yours when left out."),
+  model: z.string().optional().describe("The harness's default model when left out."),
+  permission: z
+    .enum(PermissionLevel.literals)
+    .optional()
+    .describe(
+      "How much it may do without asking: plan, ask, auto-edit, auto or full-access. No more than yours; yours when left out.",
+    ),
+  worktree: z
+    .boolean()
+    .optional()
+    .describe("Start it in a new git worktree on a branch of its own, instead of your folder."),
+  wait: z.boolean().optional().describe("Wait for its answer before returning."),
+  timeoutSeconds: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("How long to wait; 600 when left out."),
+  requestId: z
+    .string()
+    .optional()
+    .describe(
+      "Any id of yours for this request: retrying with it returns the same thread instead of starting another.",
+    ),
+};
+
+const SendMessageInput = {
+  threadId: z.string(),
+  text: z.string(),
+  queue: z
+    .boolean()
+    .optional()
+    .describe(
+      "If its agent is working: wait for its turn to end instead of joining the turn in progress.",
+    ),
+  permission: z.enum(PermissionLevel.literals).optional().describe("No more than yours."),
+  requestId: z.string().optional().describe("Retrying with the same id doesn't send it twice."),
+};
+
+const WaitInput = {
+  threadId: z.string(),
+  timeoutSeconds: z.number().int().positive().optional().describe("600 when left out."),
+};
+
+export type StartThreadInput = z.infer<z.ZodObject<typeof StartThreadInput>>;
+export type SendMessageInput = z.infer<z.ZodObject<typeof SendMessageInput>>;
+
+/** What the orchestration tools do, for the agent of thread `caller`; failures are messages for that agent. */
+export interface Orchestration {
+  readonly listThreads: (caller: string) => Effect.Effect<unknown, Error>;
+  readonly readThread: (
+    caller: string,
+    threadId: string,
+    after: number | undefined,
+  ) => Effect.Effect<unknown, Error>;
+  readonly startThread: (caller: string, input: StartThreadInput) => Effect.Effect<unknown, Error>;
+  readonly sendMessage: (caller: string, input: SendMessageInput) => Effect.Effect<unknown, Error>;
+  readonly waitForThread: (
+    caller: string,
+    threadId: string,
+    timeoutMs: number,
+  ) => Effect.Effect<unknown, Error>;
+  readonly stopThread: (caller: string, threadId: string) => Effect.Effect<unknown, Error>;
+}
+
+const WAIT_MS = 600_000;
+
+function orchestrationServer(caller: string, orchestration: Orchestration) {
+  function run(effect: Effect.Effect<unknown, Error>) {
+    return Effect.runPromise(
+      Effect.match(effect, {
+        onSuccess: (result) => ({
+          content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        }),
+        onFailure: (error) => ({
+          content: [{ type: "text" as const, text: error.message }],
+          isError: true,
+        }),
+      }),
+    );
+  }
+  const server = new McpServer(
+    { name: "apcode", version: "1.0.0" },
+    {
+      instructions:
+        "APCode's threads. Start agents (Claude or Codex) in threads of their own to work on tasks in parallel, get a second opinion from the other harness, or review work; message them, wait for and read their answers. Threads you start show in the user's sidebar, in your project, where the user can watch and steer them. Stopping your thread stops them too.",
+    },
+  );
+  const readOnly = { readOnlyHint: true };
+  server.registerTool(
+    "list_threads",
+    {
+      description: "Threads in your project, newest first: id, title, harness and status.",
+      annotations: readOnly,
+    },
+    () => run(orchestration.listThreads(caller)),
+  );
+  server.registerTool(
+    "read_thread",
+    {
+      description:
+        "A thread's messages, oldest first. Pass `after` (a message's position) to read only what came since.",
+      inputSchema: { threadId: z.string(), after: z.number().int().optional() },
+      annotations: readOnly,
+    },
+    ({ threadId, after }) => run(orchestration.readThread(caller, threadId, after)),
+  );
+  server.registerTool(
+    "start_thread",
+    {
+      description:
+        "Starts an agent on a task in a new thread in your project. Returns its id; with `wait`, also its answer.",
+      inputSchema: StartThreadInput,
+    },
+    (input) => run(orchestration.startThread(caller, input)),
+  );
+  server.registerTool(
+    "send_message",
+    {
+      description: "Sends a message to a thread: it starts a turn, or joins the one running.",
+      inputSchema: SendMessageInput,
+    },
+    (input) => run(orchestration.sendMessage(caller, input)),
+  );
+  server.registerTool(
+    "wait_for_thread",
+    {
+      description:
+        "Waits until a thread's agent finishes its turn, then returns its status and last answer. A timeout returns the status so far and leaves it working.",
+      inputSchema: WaitInput,
+      annotations: readOnly,
+    },
+    ({ threadId, timeoutSeconds }) =>
+      run(orchestration.waitForThread(caller, threadId, (timeoutSeconds ?? WAIT_MS / 1000) * 1000)),
+  );
+  server.registerTool(
+    "stop_thread",
+    {
+      description: "Stops a thread's running turn, and the threads its agent started.",
+      inputSchema: { threadId: z.string() },
+    },
+    ({ threadId }) => run(orchestration.stopThread(caller, threadId)),
+  );
+  return server;
 }
 
 function hashOf(token: string) {
@@ -122,6 +283,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
 
 export function createMcp(
   browser: (threadId: string, action: BrowserAction) => Promise<BrowserResult>,
+  orchestration: Orchestration,
 ) {
   const threadByTokenHash = new Map<string, string>();
   const tokenHashByThread = new Map<string, string>();
@@ -152,7 +314,11 @@ export function createMcp(
           headers: { "www-authenticate": "Bearer" },
         });
       const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
-      await browserServer((action) => browser(threadId, action)).connect(transport);
+      await (
+        new URL(request.url).pathname === "/mcp/apcode"
+          ? orchestrationServer(threadId, orchestration)
+          : browserServer((action) => browser(threadId, action))
+      ).connect(transport);
       return transport.handleRequest(request);
     },
   };

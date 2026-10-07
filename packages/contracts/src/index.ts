@@ -2,6 +2,13 @@ import * as Schema from "effect/Schema";
 
 export const DEFAULT_DAEMON_PORT = 47821;
 
+/**
+ * Bumped when clients and daemons stop understanding each other's frames. The daemon turns
+ * other versions away (closing with `PROTOCOL_MISMATCH`), and clients check the shell's.
+ */
+export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_MISMATCH = 4426;
+
 export const ProviderKind = Schema.Literals(["claude", "codex"]);
 export type ProviderKind = typeof ProviderKind.Type;
 
@@ -403,6 +410,16 @@ export const PendingRequest = Schema.Struct({
 });
 export type PendingRequest = typeof PendingRequest.Type;
 
+/** A message written while the agent worked, held by the daemon until the turn reaches a point it takes messages at. */
+export const QueuedMessage = Schema.Struct({
+  id: Schema.String,
+  text: Schema.String,
+  attachments: Schema.Array(Attachment),
+  effort: Schema.NullOr(Effort),
+  permission: PermissionLevel,
+});
+export type QueuedMessage = typeof QueuedMessage.Type;
+
 export const ThreadInfo = Schema.Struct({
   id: Schema.String,
   projectId: Schema.String,
@@ -434,6 +451,10 @@ export const ThreadInfo = Schema.Struct({
   request: Schema.optional(PendingRequest),
   /** The thread whose work this one's agent was asked to review, when it's a peer review. */
   peerReviewOf: Schema.optional(Schema.String),
+  /** The thread whose agent started this one, through APCode's orchestration tools. */
+  startedBy: Schema.optional(Schema.String),
+  /** Messages waiting for the running turn; absent when none are. */
+  queue: Schema.optional(Schema.Array(QueuedMessage)),
 });
 export type ThreadInfo = typeof ThreadInfo.Type;
 
@@ -570,6 +591,7 @@ export const RuntimeEvent = Schema.Union([
   }),
   Schema.TaggedStruct("thread.model", {
     threadId: Schema.String,
+    provider: ProviderKind,
     model: Schema.NullOr(Schema.String),
   }),
   Schema.TaggedStruct("thread.archived", {
@@ -586,6 +608,10 @@ export const RuntimeEvent = Schema.Union([
   Schema.TaggedStruct("thread.request", {
     threadId: Schema.String,
     request: Schema.NullOr(PendingRequest),
+  }),
+  Schema.TaggedStruct("thread.queue", {
+    threadId: Schema.String,
+    queue: Schema.Array(QueuedMessage),
   }),
   /** Null answers a `thread.readUsage` that found nothing: the thread never finished a turn, or its log couldn't be read. */
   Schema.TaggedStruct("thread.usage", {
@@ -613,6 +639,12 @@ export const RuntimeEvent = Schema.Union([
     steer: Schema.optionalKey(Schema.Boolean),
     /** Sent by a finished command run rather than typed; `text` is what the agent reads. */
     run: Schema.optionalKey(CommandRun),
+    /** The harness it went to; missing on messages from before threads could switch harness. */
+    provider: Schema.optionalKey(ProviderKind),
+    /** What the harness was told ahead of it: the `messages` it missed while `from` had the thread. */
+    handoff: Schema.optionalKey(
+      Schema.Struct({ from: ProviderKind, messages: Schema.Number, text: Schema.String }),
+    ),
   }),
   Schema.TaggedStruct("assistant.delta", {
     threadId: Schema.String,
@@ -691,6 +723,13 @@ export const RuntimeEvent = Schema.Union([
     ofThreadId: Schema.String,
     /** The reviewed thread's title then, for when it's gone. */
     ofTitle: Schema.String,
+  }),
+  /** Starts the transcript of a thread another thread's agent started. */
+  Schema.TaggedStruct("thread.startedBy", {
+    threadId: Schema.String,
+    byThreadId: Schema.String,
+    /** That thread's title then, for when it's gone. */
+    byTitle: Schema.String,
   }),
   /** Slash commands the thread's harness offers; answers `thread.listCommands`. */
   Schema.TaggedStruct("thread.commands", {
@@ -806,8 +845,10 @@ export const ClientCommand = Schema.Union([
     /** "worktree" starts the thread in a new git worktree on its own branch. */
     workspace: Schema.Literals(["local", "worktree"]),
   }),
+  /** A model of another harness switches the thread to it, when no turn is running. */
   Schema.TaggedStruct("thread.setModel", {
     threadId: Schema.String,
+    provider: Schema.optional(ProviderKind),
     model: Schema.NullOr(Schema.String),
   }),
   Schema.TaggedStruct("project.add", { path: Schema.String }),
@@ -825,11 +866,22 @@ export const ClientCommand = Schema.Union([
     name: Schema.optional(Schema.String),
     requestId: Schema.String,
   }),
-  /** Starts a turn; while one is running, the message goes into it instead (steering). */
+  /** Starts a turn; while one is running, the message goes into it instead (steering), or waits with `queue`. */
   Schema.TaggedStruct("thread.send", {
     threadId: Schema.String,
     text: Schema.String,
     options: TurnOptions,
+    /** While a turn runs, hold the message until the agent's next tool call ends or the turn does. */
+    queue: Schema.optional(Schema.Boolean),
+    /** Our id for the message: sending it again is a no-op, so retries are safe. */
+    messageId: Schema.optional(Schema.String),
+  }),
+  /** Sends a queued message right away: into the running turn, or as a new one. */
+  Schema.TaggedStruct("thread.sendQueued", { threadId: Schema.String, messageId: Schema.String }),
+  /** Takes queued messages back out, e.g. to edit them in the composer. */
+  Schema.TaggedStruct("thread.unqueue", {
+    threadId: Schema.String,
+    messageIds: Schema.Array(Schema.String),
   }),
   /**
    * Rewinds the conversation to before user message `messageId`. With `restoreFiles`, the
@@ -998,6 +1050,7 @@ export function isTranscriptEvent(
       "thread.rewound",
       "thread.forked",
       "thread.peerReview",
+      "thread.startedBy",
     ])(event) ||
     (RuntimeEvent.guards.error(event) && event.threadId !== null)
   );
@@ -1036,6 +1089,8 @@ export const ServerFrame = Schema.Union([
     terminals: Schema.Array(TerminalInfo),
     /** The daemon runs as root, so Full access lets agents change anything on its machine. */
     root: Schema.Boolean,
+    /** Its `PROTOCOL_VERSION`; missing from daemons older than the check. */
+    protocol: Schema.optional(Schema.Number),
   }),
   /** A transcript from scratch: the latest turns, plus the text of any message still streaming. */
   Schema.TaggedStruct("thread.snapshot", {

@@ -1,5 +1,7 @@
 import {
   DEFAULT_DAEMON_PORT,
+  PROTOCOL_MISMATCH,
+  PROTOCOL_VERSION,
   DEFAULT_SETTINGS,
   type AuthFlow,
   HostStatus,
@@ -25,6 +27,7 @@ import {
   type SlashCommand,
   type StoredEvent,
   type ThreadInfo,
+  type QueuedMessage,
   type TurnOptions,
   type UsageLimit,
   type UserAnswers,
@@ -50,6 +53,14 @@ export type TranscriptItem =
       readonly steer: boolean;
       /** Set when a finished command run sent it, rather than the user typing it. */
       readonly run: CommandRun | null;
+      /** The harness it went to; null on messages from before threads could switch harness. */
+      readonly provider: ProviderKind | null;
+      /** What that harness was told ahead of it, having just been switched to. */
+      readonly handoff: {
+        readonly from: ProviderKind;
+        readonly messages: number;
+        readonly text: string;
+      } | null;
     }
   /** What a turn changed on disk; `id` is `checkpoint:<messageId>` of the message that started it. */
   | {
@@ -73,6 +84,13 @@ export type TranscriptItem =
       readonly id: string;
       readonly ofThreadId: string;
       readonly ofTitle: string;
+    }
+  /** Where a thread another thread's agent started begins: that thread. */
+  | {
+      readonly kind: "startedBy";
+      readonly id: string;
+      readonly byThreadId: string;
+      readonly byTitle: string;
     }
   | {
       readonly kind: "tool";
@@ -122,6 +140,8 @@ export interface Transcript {
 
 export interface State {
   readonly connected: boolean;
+  /** Why this Mac's daemon can't be used: it runs another version of APCode. */
+  readonly incompatible: string | null;
   /**
    * Where the data on screen came from: nothing yet, the local cache from the last
    * run (shown while the daemon starts), or the daemon itself.
@@ -174,8 +194,6 @@ export interface State {
   readonly skills: Readonly<Record<string, SkillList>>;
   /** One turn's changes, keyed `<threadId>:<messageId>`, fetched by the changes panel. */
   readonly turnDiffs: Readonly<Record<string, RepoDiff>>;
-  /** Messages written while the agent worked, held here until its turn ends. Per window. */
-  readonly followUps: Readonly<Record<string, ReadonlyArray<FollowUp>>>;
   readonly terminals: Readonly<Record<string, ReadonlyArray<string>>>;
   readonly activeTerminals: Readonly<Record<string, string>>;
   /** Commands from agents' replies still running, per thread; shown in the transcript, not the terminal panel. */
@@ -194,6 +212,8 @@ export interface State {
 export interface HostState {
   readonly status: HostStatus;
   readonly connected: boolean;
+  /** Why its daemon can't be used: it runs another version of APCode. */
+  readonly incompatible: string | null;
   readonly dataId: string | null;
   readonly root: boolean;
   readonly settings: Settings | null;
@@ -208,12 +228,6 @@ export interface ProviderLimits {
   readonly error: string | null;
   /** A fresh read is on its way; what's above is from the last one. */
   readonly loading: boolean;
-}
-
-export interface FollowUp {
-  readonly id: string;
-  readonly text: string;
-  readonly options: TurnOptions;
 }
 
 export interface RepoState {
@@ -250,6 +264,7 @@ export function skillsKey(provider: ProviderKind, path: string) {
 
 const initial: State = {
   connected: false,
+  incompatible: null,
   source: "none",
   dataId: null,
   settings: DEFAULT_SETTINGS,
@@ -272,7 +287,6 @@ const initial: State = {
   commands: {},
   skills: {},
   turnDiffs: {},
-  followUps: {},
   terminals: {},
   activeTerminals: {},
   runs: {},
@@ -336,6 +350,8 @@ const reduceItems = (
         attachments: message.attachments ?? [],
         steer: message.steer === true,
         run: message.run ?? null,
+        provider: message.provider ?? null,
+        handoff: message.handoff ?? null,
       })),
     ),
     Match.tag("turn.checkpoint", ({ messageId, files, additions, deletions }) => {
@@ -375,6 +391,14 @@ const reduceItems = (
         id: `peerReview:${ofThreadId}`,
         ofThreadId,
         ofTitle,
+      })),
+    ),
+    Match.tag("thread.startedBy", ({ byThreadId, byTitle }) =>
+      upsert(items, `startedBy:${byThreadId}`, () => ({
+        kind: "startedBy",
+        id: `startedBy:${byThreadId}`,
+        byThreadId,
+        byTitle,
       })),
     ),
     Match.tag("thread.rewound", (rewound) => {
@@ -614,8 +638,8 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
     Match.tags({
       "thread.status": ({ threadId, status }) =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, status })),
-      "thread.model": ({ threadId, model }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, model })),
+      "thread.model": ({ threadId, provider, model }) =>
+        updateThreadInfo(state, threadId, (info) => ({ ...info, provider, model })),
       "thread.archived": ({ threadId, archivedAt }) =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, archivedAt })),
       "thread.shelved": ({ threadId, shelved }) =>
@@ -626,6 +650,11 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, activity: activity ?? undefined })),
       "thread.request": ({ threadId, request }) =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, request: request ?? undefined })),
+      "thread.queue": ({ threadId, queue }) =>
+        updateThreadInfo(state, threadId, (info) => ({
+          ...info,
+          queue: queue.length > 0 ? queue : undefined,
+        })),
     }),
     Match.tag("thread.usage", ({ threadId, usage }) => {
       const { [threadId]: _reading, ...readingUsage } = state.readingUsage;
@@ -836,6 +865,7 @@ const NO_PROVIDERS: ReadonlyArray<ProviderStatus> = [];
 const newHost = (status: HostStatus): HostState => ({
   status,
   connected: false,
+  incompatible: null,
   dataId: null,
   root: false,
   settings: null,
@@ -850,10 +880,32 @@ function updateHost(state: State, host: string, update: (current: HostState) => 
   return current ? { ...state, hosts: { ...state.hosts, [host]: update(current) } } : state;
 }
 
+/** Notes that `host`'s daemon (this Mac's when null) runs another version, and how to fix it. */
+function markIncompatible(host: string | null) {
+  setState(
+    host === null
+      ? {
+          ...state,
+          incompatible:
+            "APCode's daemon is a different version from this window. Quit APCode and open it again.",
+        }
+      : updateHost(state, host, (current) => ({
+          ...current,
+          incompatible: `${host} runs a different version of APCode. Restart it from Settings → Connections.`,
+        })),
+  );
+}
+
 /** Replaces one host's threads and projects with what its daemon sent; other hosts' stay. */
 const onShell = (connection: Connection, frame: Extract<ServerFrame, { _tag: "shell" }>) => {
-  connection.attempt = 0;
   const { host } = connection;
+  // A daemon older than the check doesn't say, and may not understand what this window sends.
+  if (frame.protocol !== PROTOCOL_VERSION) {
+    markIncompatible(host);
+    connection.socket?.close();
+    return;
+  }
+  connection.attempt = 0;
   const previousDataId = host === null ? state.dataId : (state.hosts[host]?.dataId ?? null);
   const sameData = frame.dataId === previousDataId;
   const incoming = Object.fromEntries(frame.threads.map((info) => [info.id, info]));
@@ -924,6 +976,7 @@ const onShell = (connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
       ? {
           ...merged,
           connected: true,
+          incompatible: null,
           source: "daemon",
           dataId: frame.dataId,
           settings: frame.settings,
@@ -932,6 +985,7 @@ const onShell = (connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
       : updateHost(merged, host, (current) => ({
           ...current,
           connected: true,
+          incompatible: null,
           dataId: frame.dataId,
           root: frame.root,
           settings: frame.settings,
@@ -1071,12 +1125,6 @@ const onFrame = (connection: Connection, frame: ServerFrame) =>
           ...state,
           peerReview: { ...state.peerReview, pending: false, error: event.message },
         });
-      if (RuntimeEvent.guards["tool.started"](event) && event.parentToolId)
-        subagentCalls.add(event.toolId);
-      // A finished tool call is where the agent picks up steering, so the next held message
-      // goes out there rather than at the end of the turn (t3code does the same).
-      if (RuntimeEvent.guards["tool.completed"](event) && !subagentCalls.delete(event.toolId))
-        sendNextFollowUp(event.threadId);
       if (!isTranscriptEvent(event)) return applyShellEvent(connection.host, event);
       const transcript = state.transcripts[event.threadId];
       // Not following this thread, or already have it (a replay can overlap live events).
@@ -1135,13 +1183,6 @@ function applyShellEvent(host: string | null, event: RuntimeEvent) {
     before.hosts[host]?.authFlows[event.flow.provider]?.url !== event.flow.url
   )
     window.open(event.flow.url, "_blank");
-  // The turn ended: the next held message goes out.
-  if (
-    RuntimeEvent.guards["thread.status"](event) &&
-    event.status === "idle" &&
-    before.threads[event.threadId]?.status !== "idle"
-  )
-    sendNextFollowUp(event.threadId);
 }
 
 /**
@@ -1173,7 +1214,7 @@ const connect = async (connection: Connection) => {
   if (connection.removed) return;
   if (host !== null && !daemon) return retry(connection);
   const ws = new WebSocket(
-    `ws://127.0.0.1:${daemon?.port ?? DEFAULT_DAEMON_PORT}`,
+    `ws://127.0.0.1:${daemon?.port ?? DEFAULT_DAEMON_PORT}/?protocol=${PROTOCOL_VERSION}`,
     daemon ? [`apcode.${daemon.token}`] : undefined,
   );
   connection.socket = ws;
@@ -1183,9 +1224,10 @@ const connect = async (connection: Connection) => {
   };
   ws.onmessage = (message) =>
     onFrame(connection, Schema.decodeUnknownSync(Schema.fromJsonString(ServerFrame))(message.data));
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     if (connection.socket !== ws) return;
     connection.socket = null;
+    if (event.code === PROTOCOL_MISMATCH) markIncompatible(host);
     // Keep everything on screen; transcripts fall back to cached until the next connect catches them up.
     const transcripts = Object.fromEntries(
       Object.entries(state.transcripts).map(([id, t]) => [
@@ -1542,54 +1584,29 @@ export const dismissForkError = () => {
   if (state.forking?.error) setState({ ...state, forking: null });
 };
 
-// --- follow-ups ----------------------------------------------------------------
-// A message written while the agent works waits here (t3code's "queue"), then goes
-// out on its own when the turn ends. Sending it now steers the running turn instead.
+// --- queue ----------------------------------------------------------------------
+// A message written while the agent works waits in the daemon (t3code's "queue"), then goes
+// out on its own after the agent's next tool call or when the turn ends.
 
-const setFollowUps = (threadId: string, list: ReadonlyArray<FollowUp>) =>
-  setState({ ...state, followUps: { ...state.followUps, [threadId]: list } });
+export const queueMessage = (threadId: string, text: string, options: TurnOptions) =>
+  send(ClientCommand.cases["thread.send"].make({ threadId, text, options, queue: true }));
 
-export const queueFollowUp = (threadId: string, text: string, options: TurnOptions) =>
-  setFollowUps(threadId, [
-    ...(state.followUps[threadId] ?? []),
-    { id: crypto.randomUUID(), text, options },
-  ]);
+/** Sends a queued message right away, into the running turn. */
+export const sendQueuedNow = (threadId: string, messageId: string) =>
+  send(ClientCommand.cases["thread.sendQueued"].make({ threadId, messageId }));
 
-/** Sends a held message right away, into the running turn. */
-export const sendFollowUpNow = (threadId: string, id: string) => {
-  const followUp = state.followUps[threadId]?.find((f) => f.id === id);
-  if (!followUp) return;
-  setFollowUps(
-    threadId,
-    (state.followUps[threadId] ?? []).filter((f) => f.id !== id),
-  );
-  send(
-    ClientCommand.cases["thread.send"].make({
-      threadId,
-      text: followUp.text,
-      options: followUp.options,
-    }),
-  );
-};
-
-/** Takes held messages back out of the queue (all of them without `id`), for the composer. */
-export const takeFollowUps = (threadId: string, id?: string): ReadonlyArray<FollowUp> => {
-  const list = state.followUps[threadId] ?? [];
-  const taken = id ? list.filter((f) => f.id === id) : list;
-  setFollowUps(threadId, id ? list.filter((f) => f.id !== id) : []);
+/** Takes queued messages back out (all of them without `messageId`), for the composer. */
+export const takeQueued = (threadId: string, messageId?: string): ReadonlyArray<QueuedMessage> => {
+  const queue = state.threads[threadId]?.queue ?? [];
+  const taken = messageId ? queue.filter((message) => message.id === messageId) : queue;
+  if (taken.length)
+    send(
+      ClientCommand.cases["thread.unqueue"].make({
+        threadId,
+        messageIds: taken.map((message) => message.id),
+      }),
+    );
   return taken;
-};
-
-/** Calls made inside a subagent; finishing one isn't a boundary the main agent reads messages at. */
-const subagentCalls = new Set<string>();
-
-const sendNextFollowUp = (threadId: string) => {
-  const [next, ...rest] = state.followUps[threadId] ?? [];
-  if (!next) return;
-  setFollowUps(threadId, rest);
-  send(
-    ClientCommand.cases["thread.send"].make({ threadId, text: next.text, options: next.options }),
-  );
 };
 
 // --- search --------------------------------------------------------------------

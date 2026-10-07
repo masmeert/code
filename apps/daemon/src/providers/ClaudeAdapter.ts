@@ -154,7 +154,7 @@ const toContent = async (turn: TurnInput): Promise<SDKUserMessage["message"]["co
     const mediaType = IMAGE_TYPES.get(extname(a.path).toLowerCase());
     return a.isImage && mediaType ? [{ path: a.path, mediaType }] : [];
   });
-  if (!images.length && texts.length <= 1) return texts[0] ?? "";
+  if (!images.length && texts.length <= 1 && !turn.handoff) return texts[0] ?? "";
   const blocks = await Promise.all(
     images.map(async (image) => ({
       type: "image" as const,
@@ -165,7 +165,11 @@ const toContent = async (turn: TurnInput): Promise<SDKUserMessage["message"]["co
       },
     })),
   );
-  return [...blocks, ...texts.map((text) => ({ type: "text" as const, text }))];
+  return [
+    ...(turn.handoff ? [{ type: "text" as const, text: turn.handoff }] : []),
+    ...blocks,
+    ...texts.map((text) => ({ type: "text" as const, text })),
+  ];
 };
 
 function contextUsage(usage: SDKControlGetContextUsageResponse) {
@@ -274,8 +278,19 @@ const start = ({
             url: mcpServer.url,
             headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
           },
+          apcode: {
+            type: "http",
+            url: `${mcpServer.url}/apcode`,
+            headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
+          },
         },
-        allowedTools: ["mcp__browser__snapshot", "mcp__browser__console"],
+        allowedTools: [
+          "mcp__browser__snapshot",
+          "mcp__browser__console",
+          "mcp__apcode__list_threads",
+          "mcp__apcode__read_thread",
+          "mcp__apcode__wait_for_thread",
+        ],
         hooks: {
           PostToolUse: [
             {

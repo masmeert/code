@@ -47,6 +47,9 @@ export const App = () => {
   const threads = useStore((s) => s.threads);
   const projects = useStore((s) => s.projects);
   const connected = useStore((s) => s.connected);
+  const incompatible = useStore(
+    (s) => s.incompatible ?? Object.values(s.hosts).find((host) => host.incompatible)?.incompatible,
+  );
   const source = useStore((s) => s.source);
   // A cold start takes a moment and the cached threads are already on screen, so
   // only speak up if it's slow. Losing a live daemon is worth saying right away.
@@ -111,7 +114,11 @@ export const App = () => {
             onDraft={draft}
           />
           <AnimatedSidebarInset className="relative min-h-0 bg-background">
-            {connected || (source !== "daemon" && !slowStart) ? null : (
+            {incompatible ? (
+              <div className="absolute top-16 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1 text-[11px] text-destructive shadow-panel">
+                {incompatible}
+              </div>
+            ) : connected || (source !== "daemon" && !slowStart) ? null : (
               <div className="absolute top-16 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1 text-[11px] text-muted-foreground shadow-panel">
                 {source === "daemon" ? "Reconnecting to daemon…" : "Starting daemon…"}
               </div>

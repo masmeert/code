@@ -55,6 +55,8 @@ export interface TurnInput {
   readonly permission: PermissionLevel;
   /** Skills the text mentions as `$name`, in the order they appear. */
   readonly skills: ReadonlyArray<ProviderSkill>;
+  /** What happened in the thread on another harness, for the agent to read before the message. */
+  readonly handoff: string | null;
 }
 
 /** A skill as the harness reports it; `path` is its SKILL.md, for harnesses that say. */

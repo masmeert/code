@@ -3,6 +3,7 @@ import {
   RuntimeEvent,
   type PageInfo,
   type ProviderKind,
+  QueuedMessage,
   type SearchHit,
   type StoredEvent,
   type ThreadInfo,
@@ -28,11 +29,22 @@ export interface ThreadHome {
   readonly worktree: boolean;
 }
 
+/** Per harness, the conversation id to resume it from. */
+export type ResumeTokens = Partial<Record<ProviderKind, string>>;
+
+/**
+ * Per harness not caught up on the thread, the stored event id its own conversation goes up
+ * to; 0 for one that has none. The harness in use is missing unless it has a handoff coming.
+ */
+export type Coverage = Partial<Record<ProviderKind, number>>;
+
 export interface StoredThread {
   readonly info: ThreadInfo;
   readonly home: ThreadHome;
-  readonly resumeToken: string | null;
+  readonly resumeTokens: ResumeTokens;
+  readonly coverage: Coverage;
   readonly shelveOverride: ShelveOverride;
+  readonly queue: ReadonlyArray<QueuedMessage>;
 }
 
 /** Events worth replaying after a restart: the transcript, with deltas folded into `assistant.completed`. */
@@ -53,6 +65,12 @@ export class ThreadStore extends Context.Service<
     readonly load: Effect.Effect<ReadonlyArray<StoredThread>>;
     /** Approvals requested but never resolved, as `[requestId, threadId]`. */
     readonly unresolvedApprovals: () => ReadonlyArray<readonly [string, string]>;
+    /** Turns that started and never ended (the daemon died during them), by the message that started each. */
+    readonly unfinishedTurns: () => ReadonlyArray<{
+      readonly threadId: string;
+      readonly messageId: string;
+    }>;
+    readonly hasMessage: (threadId: string, messageId: string) => boolean;
     readonly firstUserMessage: (threadId: string) => string | null;
     /** The thread's messages, user and assistant, oldest first; tool calls and the rest left out. */
     readonly readMessages: (
@@ -79,8 +97,12 @@ export class ThreadStore extends Context.Service<
     readonly insertThread: (info: ThreadInfo, home: ThreadHome) => void;
     /** Null puts the agent back in its home folder. */
     readonly setAgentCwd: (threadId: string, cwd: string | null) => void;
-    /** Null starts the provider conversation over on the next message. */
-    readonly setResumeToken: (threadId: string, token: string | null) => void;
+    /** A harness missing from them starts its conversation over on its next message. */
+    readonly setResumeTokens: (threadId: string, tokens: ResumeTokens) => void;
+    readonly setCoverage: (threadId: string, coverage: Coverage) => void;
+    readonly setProvider: (threadId: string, provider: ProviderKind, model: string | null) => void;
+    /** Marks the thread's user messages that don't say which harness they went to as `provider`'s. */
+    readonly tagUserMessages: (threadId: string, provider: ProviderKind) => void;
     /** Where user message `messageId` is in the thread, and the ids of the user messages from it on. */
     readonly findUserMessage: (
       threadId: string,
@@ -112,6 +134,7 @@ export class ThreadStore extends Context.Service<
     /** Messages matching `query` (words, prefix-matched), newest first. */
     readonly search: (query: string, limit: number) => ReadonlyArray<SearchHit>;
     readonly setModel: (threadId: string, model: string | null) => void;
+    readonly setQueue: (threadId: string, queue: ReadonlyArray<QueuedMessage>) => void;
     readonly setUsage: (threadId: string, usage: ThreadUsage) => void;
     readonly setArchived: (threadId: string, archivedAt: number | null) => void;
     readonly setSeenRev: (threadId: string, seenRev: number) => void;
@@ -128,6 +151,35 @@ export class ThreadStore extends Context.Service<
 
 const decodeEvent = Schema.decodeUnknownOption(Schema.fromJsonString(RuntimeEvent));
 const decodeUsage = Schema.decodeUnknownOption(Schema.fromJsonString(ThreadUsage));
+const decodeQueue = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(QueuedMessage)));
+const decodeTokens = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({
+      claude: Schema.optionalKey(Schema.String),
+      codex: Schema.optionalKey(Schema.String),
+    }),
+  ),
+);
+const decodeCoverage = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({
+      claude: Schema.optionalKey(Schema.Number),
+      codex: Schema.optionalKey(Schema.Number),
+    }),
+  ),
+);
+
+/** Per-harness tokens, with the one stored before there were several counted for the thread's harness. */
+function legacyTokens(row: {
+  readonly provider: ProviderKind;
+  readonly resume_token: string | null;
+  readonly resume_tokens: string | null;
+}): ResumeTokens {
+  const tokens: ResumeTokens =
+    row.resume_tokens === null ? {} : Option.getOrElse(decodeTokens(row.resume_tokens), () => ({}));
+  if (row.resume_token !== null) tokens[row.provider] ??= row.resume_token;
+  return tokens;
+}
 
 const make = Effect.acquireRelease(
   Effect.sync(() => {
@@ -210,6 +262,11 @@ const make = Effect.acquireRelease(
       db.run("ALTER TABLE threads ADD COLUMN shelve_override TEXT");
     if (!columns.has("peer_review_of"))
       db.run("ALTER TABLE threads ADD COLUMN peer_review_of TEXT");
+    if (!columns.has("started_by")) db.run("ALTER TABLE threads ADD COLUMN started_by TEXT");
+    if (!columns.has("queue")) db.run("ALTER TABLE threads ADD COLUMN queue TEXT");
+    // Per-harness tokens replace `resume_token`, which is emptied once they're written.
+    if (!columns.has("resume_tokens")) db.run("ALTER TABLE threads ADD COLUMN resume_tokens TEXT");
+    if (!columns.has("coverage")) db.run("ALTER TABLE threads ADD COLUMN coverage TEXT");
     if (columns.has("settle_override")) {
       // Shelving was called settling. Both columns can exist, so a newer shelve value wins.
       db.run(
@@ -235,20 +292,40 @@ const make = Effect.acquireRelease(
 ).pipe(
   Effect.map((db) => {
     const insertThread = db.prepare(
-      "INSERT INTO threads (id, project_id, provider, model, cwd, agent_cwd, title, created_at, updated_at, worktree, peer_review_of) VALUES ($id, $projectId, $provider, $model, $cwd, $agentCwd, $title, $createdAt, $updatedAt, $worktree, $peerReviewOf)",
+      "INSERT INTO threads (id, project_id, provider, model, cwd, agent_cwd, title, created_at, updated_at, worktree, peer_review_of, started_by) VALUES ($id, $projectId, $provider, $model, $cwd, $agentCwd, $title, $createdAt, $updatedAt, $worktree, $peerReviewOf, $startedBy)",
     );
     const setAgentCwd = db.prepare("UPDATE threads SET agent_cwd = $cwd WHERE id = $id");
     const setMeta = db.prepare(
       "UPDATE threads SET title = $title, updated_at = $updatedAt WHERE id = $id",
     );
     const setModel = db.prepare("UPDATE threads SET model = $model WHERE id = $id");
+    const setQueue = db.prepare("UPDATE threads SET queue = $queue WHERE id = $id");
+    // A turn starts at a user message not sent into a running one, and ends at turn.completed.
+    const selectUnfinished = db.prepare<{ thread_id: string; message_id: string }, []>(
+      `SELECT thread_id, (SELECT json_extract(json, '$.messageId') FROM events WHERE seq = turn_seq) AS message_id
+       FROM (
+         SELECT thread_id,
+           MAX(CASE WHEN kind = 'user.message' AND COALESCE(json_extract(json, '$.steer'), 0) = 0 THEN seq END) AS turn_seq,
+           MAX(CASE WHEN kind = 'turn.completed' THEN seq END) AS done_seq
+         FROM events WHERE kind IN ('user.message', 'turn.completed') GROUP BY thread_id
+       ) WHERE turn_seq > COALESCE(done_seq, 0)`,
+    );
     const setUsage = db.prepare("UPDATE threads SET usage = $usage WHERE id = $id");
     const setArchived = db.prepare("UPDATE threads SET archived_at = $archivedAt WHERE id = $id");
     const setSeenRev = db.prepare("UPDATE threads SET seen_rev = $seenRev WHERE id = $id");
     const setShelveOverride = db.prepare(
       "UPDATE threads SET shelve_override = $override WHERE id = $id",
     );
-    const setResumeToken = db.prepare("UPDATE threads SET resume_token = $token WHERE id = $id");
+    const setResumeTokens = db.prepare(
+      "UPDATE threads SET resume_tokens = $tokens, resume_token = NULL WHERE id = $id",
+    );
+    const setCoverage = db.prepare("UPDATE threads SET coverage = $coverage WHERE id = $id");
+    const setProvider = db.prepare(
+      "UPDATE threads SET provider = $provider, model = $model WHERE id = $id",
+    );
+    const tagUserMessages = db.prepare(
+      "UPDATE events SET json = json_set(json, '$.provider', $provider) WHERE thread_id = $threadId AND kind = 'user.message' AND json_extract(json, '$.provider') IS NULL",
+    );
     const appendEvent = db.prepare(
       "INSERT INTO events (thread_id, kind, json) VALUES ($threadId, $kind, $json)",
     );
@@ -354,11 +431,15 @@ const make = Effect.acquireRelease(
               updated_at: number;
               archived_at: number | null;
               resume_token: string | null;
+              resume_tokens: string | null;
+              coverage: string | null;
               worktree: number;
               usage: string | null;
               seen_rev: number;
               shelve_override: ShelveOverride;
               peer_review_of: string | null;
+              started_by: string | null;
+              queue: string | null;
             },
             []
           >("SELECT * FROM threads ORDER BY created_at")
@@ -381,10 +462,16 @@ const make = Effect.acquireRelease(
               seenRev: row.seen_rev,
               shelved: false,
               ...(row.peer_review_of !== null && { peerReviewOf: row.peer_review_of }),
+              ...(row.started_by !== null && { startedBy: row.started_by }),
             },
             home: { path: row.cwd, worktree: row.worktree === 1 },
-            resumeToken: row.resume_token,
+            resumeTokens: legacyTokens(row),
+            coverage:
+              row.coverage === null
+                ? {}
+                : Option.getOrElse(decodeCoverage(row.coverage), () => ({})),
             shelveOverride: row.shelve_override,
+            queue: row.queue === null ? [] : Option.getOrElse(decodeQueue(row.queue), () => []),
           })),
       ),
       unresolvedApprovals: () => {
@@ -401,6 +488,11 @@ const make = Effect.acquireRelease(
         }
         return [...pending];
       },
+      unfinishedTurns: () =>
+        selectUnfinished
+          .all()
+          .map((row) => ({ threadId: row.thread_id, messageId: row.message_id })),
+      hasMessage: (threadId, messageId) => selectMessageSeq.get({ threadId, messageId }) !== null,
       firstUserMessage: (threadId) => {
         const row = selectFirstUser.get({ threadId });
         if (!row) return null;
@@ -443,13 +535,23 @@ const make = Effect.acquireRelease(
           updatedAt: info.updatedAt,
           worktree: home.worktree ? 1 : 0,
           peerReviewOf: info.peerReviewOf ?? null,
+          startedBy: info.startedBy ?? null,
         });
       },
       setAgentCwd: (id, cwd) => {
         setAgentCwd.run({ id, cwd });
       },
-      setResumeToken: (id, token) => {
-        setResumeToken.run({ id, token });
+      setResumeTokens: (id, tokens) => {
+        setResumeTokens.run({ id, tokens: JSON.stringify(tokens) });
+      },
+      setCoverage: (id, coverage) => {
+        setCoverage.run({ id, coverage: JSON.stringify(coverage) });
+      },
+      setProvider: (id, provider, model) => {
+        setProvider.run({ id, provider, model });
+      },
+      tagUserMessages: (threadId, provider) => {
+        tagUserMessages.run({ threadId, provider });
       },
       setArchived: (id, archivedAt) => {
         setArchived.run({ id, archivedAt });
@@ -462,6 +564,9 @@ const make = Effect.acquireRelease(
       },
       setModel: (id, model) => {
         setModel.run({ id, model });
+      },
+      setQueue: (id, queue) => {
+        setQueue.run({ id, queue: queue.length ? JSON.stringify(queue) : null });
       },
       setUsage: (id, usage) => {
         setUsage.run({ id, usage: JSON.stringify(usage) });

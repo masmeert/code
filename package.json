@@ -10,6 +10,7 @@
     "build": "pnpm --filter @apcode/daemon build && pnpm --filter @apcode/web build && pnpm --filter @apcode/desktop dist",
     "release": "pnpm --filter @apcode/daemon build && pnpm --filter @apcode/web build && pnpm --filter @apcode/desktop release",
     "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @apcode/daemon test",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix --no-error-on-unmatched-pattern",
     "fmt": "oxfmt",
