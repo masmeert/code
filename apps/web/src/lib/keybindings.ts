@@ -22,6 +22,8 @@ export const KEYBINDINGS = {
   "browser.toggle": "mod+shift+b",
   "usage.toggle": "mod+shift+u",
   "diff.saveComment": "mod+enter",
+  "thread.find": "mod+f",
+  "thread.findNext": "mod+g",
 } as const;
 
 export type KeybindingId = keyof typeof KEYBINDINGS;

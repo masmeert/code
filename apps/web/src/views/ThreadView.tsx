@@ -120,6 +120,7 @@ import {
 } from "../lib/composer.ts";
 import { appendToDraft, focusComposer, getDraft, setDraft } from "../lib/drafts.ts";
 import { describe, useKeybinding } from "../lib/keybindings.ts";
+import { TranscriptFind } from "./TranscriptFind.tsx";
 import {
   describeRange,
   removeReviewComment,
@@ -1058,6 +1059,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
     [items],
   );
   const scrollArea = useRef<HTMLDivElement>(null);
+  const transcriptViewport = useRef<HTMLElement>(null);
   // Re-read the diff whenever a tool finishes or a turn ends: either may have changed files.
   const finishedTools = items.reduce(
     (n, item) => (item.kind === "tool" && item.output !== null ? n + 1 : n),
@@ -1151,11 +1153,13 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
           />
           <QuoteSelection container={scrollArea} threadId={threadId} />
           <SideChatDrawer threadId={threadId} provider={provider} />
+          <TranscriptFind scope={transcriptViewport} />
           <MessageScroller
             busy={busy}
             navigation="rail"
+            viewportRef={transcriptViewport}
             className="min-h-0 flex-1"
-            viewportClassName="px-3 py-5 sm:px-5"
+            viewportClassName="px-3 py-5 sm:px-5 [&_*::highlight(find)]:bg-amber-300/40 [&_*::highlight(find-active)]:bg-amber-400 [&_*::highlight(find-active)]:text-black"
             contentClassName="mx-auto min-h-full w-full max-w-3xl"
           >
             <MessageGroup spacing="default">

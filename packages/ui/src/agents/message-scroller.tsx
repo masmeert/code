@@ -74,7 +74,7 @@ export interface MessageScrollerProps extends ComponentPropsWithRef<"div"> {
   label?: string;
   /** Marks the transcript as waiting for more streamed content. */
   busy?: boolean;
-  /** Adds a compact rail for navigating between rendered Message rows. */
+  /** Adds a compact rail with one mark per user message, for jumping between prompts. */
   navigation?: "rail";
   /** Accessible label for the optional message navigation rail. */
   navigationLabel?: string;
@@ -168,21 +168,15 @@ export function MessageScroller({
       return;
     }
 
+    // The prompt whose exchange holds the middle of the view: the last one that starts above it.
     const viewportCenter = viewportRect.top + viewportRect.height / 2;
-    let nearestId = targets[0]?.[0] ?? "";
-    let nearestDistance = Number.POSITIVE_INFINITY;
-
-    for (const [id, element] of targets) {
-      const rect = element.getBoundingClientRect();
-      const messageCenter = rect.top + rect.height / 2;
-      const distance = Math.abs(messageCenter - viewportCenter);
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        nearestId = id;
-      }
-    }
-
-    setActiveRailId((current) => (current === nearestId ? current : nearestId));
+    const activeId =
+      targets.findLast(
+        ([, element]) => element.getBoundingClientRect().top <= viewportCenter,
+      )?.[0] ??
+      targets[0]?.[0] ??
+      "";
+    setActiveRailId((current) => (current === activeId ? current : activeId));
   }, [followThreshold, navigation]);
 
   const syncRailItems = useCallback(() => {
@@ -192,8 +186,9 @@ export function MessageScroller({
     if (!content || !viewport) return;
 
     const messages = Array.from(content.querySelectorAll<HTMLElement>('[data-slot="message"]'));
+    const prompts = messages.filter((message) => message.dataset.from === "user");
     const targets = new Map<string, HTMLElement>();
-    const nextItems = messages.map((message, index) => {
+    const nextItems = prompts.map((message, index) => {
       let id = railIdRef.current.get(message);
       if (!id) {
         railIdCounterRef.current += 1;
@@ -201,18 +196,16 @@ export function MessageScroller({
         railIdRef.current.set(message, id);
       }
       targets.set(id, message);
-      const sender = message.dataset.from ?? "conversation";
-      const assistantResponse =
-        sender === "user"
-          ? messages.slice(index + 1).find((candidate) => candidate.dataset.from === "assistant")
-          : undefined;
+      const assistantResponse = messages
+        .slice(messages.indexOf(message) + 1)
+        .find((candidate) => candidate.dataset.from === "assistant");
       const preview = getMessagePreview(message, assistantResponse);
 
       return {
         id,
         label: preview.label,
         description: preview.description,
-        ariaLabel: `Go to ${sender} message ${index + 1} of ${messages.length}`,
+        ariaLabel: `Go to prompt ${index + 1} of ${prompts.length}`,
       };
     });
 
@@ -229,7 +222,7 @@ export function MessageScroller({
         );
       return unchanged ? current : nextItems;
     });
-    setRailOverflowing(viewport.scrollHeight > viewport.clientHeight + 1 && messages.length > 1);
+    setRailOverflowing(viewport.scrollHeight > viewport.clientHeight + 1 && prompts.length > 1);
   }, [navigation]);
 
   const scheduleRailSync = useCallback(() => {
@@ -343,23 +336,13 @@ export function MessageScroller({
       const target = railTargetsRef.current.get(item.id);
       if (!viewport || !target) return;
 
-      const lastItem = railItems.at(-1)?.id === item.id;
       setActiveRailId(item.id);
-      if (lastItem) {
-        setFollowing(true);
-        scrollToEnd(reduce || !smooth ? "auto" : "smooth");
-        return;
-      }
-
       setFollowing(false);
       programmaticScrollRef.current = true;
       const viewportRect = viewport.getBoundingClientRect();
       const targetRect = target.getBoundingClientRect();
-      const top =
-        viewport.scrollTop +
-        targetRect.top -
-        viewportRect.top -
-        (viewport.clientHeight - targetRect.height) / 2;
+      // A little of the previous reply stays in view, so the jump reads as landing on a turn.
+      const top = viewport.scrollTop + targetRect.top - viewportRect.top - 16;
       const behavior = reduce || !smooth ? "auto" : "smooth";
 
       if (typeof viewport.scrollTo === "function") {
@@ -375,7 +358,7 @@ export function MessageScroller({
         behavior === "smooth" ? 320 : 0,
       );
     },
-    [railItems, reduce, scrollToEnd, setFollowing, smooth],
+    [reduce, setFollowing, smooth],
   );
 
   const viewport = (
