@@ -12,11 +12,6 @@ export const PROTOCOL_MISMATCH = 4426;
 export const ProviderKind = Schema.Literals(["claude", "codex"]);
 export type ProviderKind = typeof ProviderKind.Type;
 
-/** The harness that peer reviews work done on `provider`: the other one. */
-export function peerOf(provider: ProviderKind): ProviderKind {
-  return provider === "claude" ? "codex" : "claude";
-}
-
 export const ThreadStatus = Schema.Literals([
   "idle",
   "running",
@@ -470,8 +465,6 @@ export const ThreadInfo = Schema.Struct({
   activity: Schema.optional(ThreadActivity),
   /** Live only, never stored: lets the thread list answer approvals without opening the thread. */
   request: Schema.optional(PendingRequest),
-  /** The thread whose work this one's agent was asked to review, when it's a peer review. */
-  peerReviewOf: Schema.optional(Schema.String),
   /** The thread whose agent started this one, through APCode's orchestration tools. */
   startedBy: Schema.optional(Schema.String),
   /** Messages waiting for the running turn; absent when none are. */
@@ -738,13 +731,6 @@ export const RuntimeEvent = Schema.Union([
     /** The original's title then, for when it's gone. */
     fromTitle: Schema.String,
   }),
-  /** Starts a peer review's transcript: the thread whose work it reviews. */
-  Schema.TaggedStruct("thread.peerReview", {
-    threadId: Schema.String,
-    ofThreadId: Schema.String,
-    /** The reviewed thread's title then, for when it's gone. */
-    ofTitle: Schema.String,
-  }),
   /** Starts the transcript of a thread another thread's agent started. */
   Schema.TaggedStruct("thread.startedBy", {
     threadId: Schema.String,
@@ -922,15 +908,6 @@ export const ClientCommand = Schema.Union([
     messageId: Schema.String,
     requestId: Schema.String,
   }),
-  /**
-   * Starts a thread on the other harness, in the same folder, that reviews what this thread
-   * asked for and changed, without editing files. Its agent never sees this one's conversation
-   * beyond what the review prompt quotes.
-   */
-  Schema.TaggedStruct("thread.peerReview", {
-    threadId: Schema.String,
-    requestId: Schema.String,
-  }),
   /** Summarizes the conversation so far to free up context. */
   Schema.TaggedStruct("thread.compact", { threadId: Schema.String }),
   /** Answered with a `thread.commands` event. */
@@ -1070,7 +1047,6 @@ export function isTranscriptEvent(
       "turn.checkpoint",
       "thread.rewound",
       "thread.forked",
-      "thread.peerReview",
       "thread.startedBy",
     ])(event) ||
     (RuntimeEvent.guards.error(event) && event.threadId !== null)

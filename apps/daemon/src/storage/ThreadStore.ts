@@ -260,8 +260,6 @@ const make = Effect.acquireRelease(
     }
     if (!columns.has("shelve_override"))
       db.run("ALTER TABLE threads ADD COLUMN shelve_override TEXT");
-    if (!columns.has("peer_review_of"))
-      db.run("ALTER TABLE threads ADD COLUMN peer_review_of TEXT");
     if (!columns.has("started_by")) db.run("ALTER TABLE threads ADD COLUMN started_by TEXT");
     if (!columns.has("queue")) db.run("ALTER TABLE threads ADD COLUMN queue TEXT");
     // Per-harness tokens replace `resume_token`, which is emptied once they're written.
@@ -292,7 +290,7 @@ const make = Effect.acquireRelease(
 ).pipe(
   Effect.map((db) => {
     const insertThread = db.prepare(
-      "INSERT INTO threads (id, project_id, provider, model, cwd, agent_cwd, title, created_at, updated_at, worktree, peer_review_of, started_by) VALUES ($id, $projectId, $provider, $model, $cwd, $agentCwd, $title, $createdAt, $updatedAt, $worktree, $peerReviewOf, $startedBy)",
+      "INSERT INTO threads (id, project_id, provider, model, cwd, agent_cwd, title, created_at, updated_at, worktree, started_by) VALUES ($id, $projectId, $provider, $model, $cwd, $agentCwd, $title, $createdAt, $updatedAt, $worktree, $startedBy)",
     );
     const setAgentCwd = db.prepare("UPDATE threads SET agent_cwd = $cwd WHERE id = $id");
     const setMeta = db.prepare(
@@ -437,7 +435,6 @@ const make = Effect.acquireRelease(
               usage: string | null;
               seen_rev: number;
               shelve_override: ShelveOverride;
-              peer_review_of: string | null;
               started_by: string | null;
               queue: string | null;
             },
@@ -461,7 +458,6 @@ const make = Effect.acquireRelease(
               usage: row.usage === null ? undefined : Option.getOrUndefined(decodeUsage(row.usage)),
               seenRev: row.seen_rev,
               shelved: false,
-              ...(row.peer_review_of !== null && { peerReviewOf: row.peer_review_of }),
               ...(row.started_by !== null && { startedBy: row.started_by }),
             },
             home: { path: row.cwd, worktree: row.worktree === 1 },
@@ -534,7 +530,6 @@ const make = Effect.acquireRelease(
           createdAt: info.createdAt,
           updatedAt: info.updatedAt,
           worktree: home.worktree ? 1 : 0,
-          peerReviewOf: info.peerReviewOf ?? null,
           startedBy: info.startedBy ?? null,
         });
       },

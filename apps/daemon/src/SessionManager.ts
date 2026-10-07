@@ -5,7 +5,6 @@ import {
   fileRestoreBlocker,
   isAwaitingUser,
   isTurnActive,
-  peerOf,
   PermissionLevel,
   ProviderKind,
   RuntimeEvent,
@@ -52,7 +51,6 @@ import {
   deleteThreadCheckpoints,
   hasCheckpoint,
   listBranches,
-  pinPeerReviewRange,
   listFiles,
   mergeIntoBase,
   pushBranch,
@@ -69,7 +67,6 @@ import {
   restoreCheckpoint,
 } from "./git.ts";
 import { expandHome, listFolders } from "./folders.ts";
-import { harnessName, peerReviewPrompt } from "./peerReview.ts";
 import { handoffText } from "./handoff.ts";
 import { ClaudeAdapter } from "./providers/ClaudeAdapter.ts";
 import {
@@ -321,6 +318,14 @@ function describeRun({ command, exitCode, output }: CommandRun) {
 }
 
 /** A thread is named after its first message, like a chat title. */
+/** The harness's name as the user set it in Settings, else its own; the same one the app shows. */
+function harnessName(settings: Settings, provider: ProviderKind) {
+  return (
+    settings.providers[provider].displayName?.trim() ||
+    ({ claude: "Claude", codex: "Codex" } as const)[provider]
+  );
+}
+
 const titleFrom = (text: string, fallback: string) => {
   const line = text.trim().split("\n")[0]!.trim();
   if (!line) return fallback;
@@ -881,7 +886,6 @@ const make = Effect.gen(function* () {
             ? null
             : handoffText({
                 events: store.readAfter(threadId, since).map((stored) => stored.event),
-                to: provider,
                 fresh: entry.resumeTokens[provider] === undefined,
                 names: (kind) => harnessName(settings, kind),
               });
@@ -892,7 +896,7 @@ const make = Effect.gen(function* () {
           ...(attachments.length > 0 && { attachments }),
           ...(run && { run }),
           provider,
-          ...(handoff && { handoff: { from: peerOf(provider), ...handoff } }),
+          ...(handoff && { handoff }),
         });
         entry.permission = permission;
         // A turn is running: the message joins it.
@@ -1121,71 +1125,6 @@ const make = Effect.gen(function* () {
         return yield* Effect.fail(
           fail(`${name} isn't signed in. Sign in under Settings → Harnesses, then try again.`),
         );
-    });
-
-  /**
-   * Starts a thread on the other harness that reviews this one's work: same folder, a prompt
-   * quoting the conversation and pinning what changed, and Ask first, so it edits nothing unasked.
-   */
-  const peerReview = (command: Extract<ClientCommand, { _tag: "thread.peerReview" }>) =>
-    Effect.gen(function* () {
-      const source = yield* getEntry(command.threadId);
-      const { cwd, provider } = source.info;
-      if (isBusy(source))
-        return yield* Effect.fail(fail("Wait for the agent to finish before asking for a review"));
-      const settings = yield* settingsStore.get;
-      const reviewer = peerOf(provider);
-      yield* harnessReady(reviewer);
-      const messages = store.readMessages(source.info.id);
-      const userMessageIds = messages.flatMap((message) =>
-        RuntimeEvent.guards["user.message"](message) ? [message.messageId] : [],
-      );
-      if (!userMessageIds.length)
-        return yield* Effect.fail(
-          fail("There's nothing to review yet: this thread has no messages"),
-        );
-      const id = crypto.randomUUID();
-      const range = yield* Effect.promise(() =>
-        pinPeerReviewRange(cwd, source.info.id, userMessageIds, id),
-      );
-      const now = Date.now();
-      const info: ThreadInfo = {
-        id,
-        projectId: source.info.projectId,
-        provider: reviewer,
-        model: null,
-        cwd,
-        title: titleFrom(`Review of ${source.info.title}`, source.info.title),
-        status: "idle",
-        createdAt: now,
-        updatedAt: now,
-        branch: source.info.branch,
-        archivedAt: null,
-        worktree: source.info.worktree,
-        seenRev: 0,
-        shelved: false,
-        peerReviewOf: source.info.id,
-      };
-      // The reviewer starts where the work is; a worktree the agent switched into isn't the reviewer's to remove.
-      const home = cwd === source.home.path ? source.home : { path: cwd, worktree: false };
-      const entry = newEntry(info, home);
-      threads.set(id, entry);
-      store.insertThread(info, home);
-      publish(
-        RuntimeEvent.cases["thread.created"].make({ thread: info, requestId: command.requestId }),
-      );
-      publish(
-        RuntimeEvent.cases["thread.peerReview"].make({
-          threadId: id,
-          ofThreadId: source.info.id,
-          ofTitle: source.info.title,
-        }),
-      );
-      yield* send(
-        entry,
-        peerReviewPrompt({ author: harnessName(settings, provider), messages, range }),
-        { effort: null, permission: "ask", attachments: [] },
-      ).pipe(reportOn(entry), Effect.ignore);
     });
 
   const compact = (threadId: string) =>
@@ -1752,7 +1691,6 @@ const make = Effect.gen(function* () {
         ),
       "thread.rewind": rewind,
       "thread.fork": fork,
-      "thread.peerReview": peerReview,
       "thread.compact": (command) => compact(command.threadId),
       "thread.listCommands": (command) => listCommands(command.threadId),
       "skills.list": (command) => Effect.sync(() => skills.request(command.provider, command.path)),

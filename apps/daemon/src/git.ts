@@ -669,41 +669,6 @@ export const restoreCheckpoint = async (
   return null;
 };
 
-/**
- * Pins what a thread changed, from the snapshot before the earliest of `messageIds` that has one
- * to the working tree now, as refs of the thread reviewing it: they outlive the reviewed thread,
- * and go when the review does. Null when there's no snapshot to start from (outside a repo).
- */
-export const pinPeerReviewRange = async (
-  cwd: string,
-  threadId: string,
-  messageIds: ReadonlyArray<string>,
-  reviewThreadId: string,
-) => {
-  let startCommit: string | null = null;
-  for (const messageId of messageIds) {
-    const resolved = await git(cwd, [
-      "rev-parse",
-      "--verify",
-      "--quiet",
-      `${checkpointRef(threadId, messageId, "start")}^{commit}`,
-    ]);
-    if (resolved.ok && resolved.stdout) {
-      startCommit = resolved.stdout;
-      break;
-    }
-  }
-  if (!startCommit) return null;
-  const endCommit = await snapshot(cwd, "apcode peer review");
-  if (!endCommit) return null;
-  // Named like a turn's snapshots, so deleting the review's checkpoints takes these too.
-  const start = checkpointRef(reviewThreadId, "peer-review", "start");
-  const end = checkpointRef(reviewThreadId, "peer-review", "end");
-  await updateRefs(cwd, `update ${start} ${startCommit}\nupdate ${end} ${endCommit}\n`);
-  const stats = await readCheckpointStats(cwd, reviewThreadId, "peer-review");
-  return stats && { start, end, ...stats };
-};
-
 /** Whether the turn started by `messageId` has a snapshot to go back to. */
 export const hasCheckpoint = (cwd: string, threadId: string, messageId: string) =>
   refExists(cwd, checkpointRef(threadId, messageId, "start"));
