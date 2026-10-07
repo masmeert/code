@@ -118,7 +118,7 @@ export const summarize = (calls: ReadonlyArray<ToolCall>): string => {
 const outputLanguage = (call: ToolCall): AgentCodeLanguage =>
   call.name === "edit" ? "diff" : categoryOf(call.name) === "run" ? "bash" : "text";
 
-function Chevron({ open }: { open: boolean }) {
+export function Chevron({ open }: { open: boolean }) {
   return (
     <ChevronRight
       aria-hidden="true"

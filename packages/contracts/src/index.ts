@@ -688,6 +688,17 @@ export const RuntimeEvent = Schema.Union([
     messageId: Schema.String,
     text: Schema.String,
   }),
+  /** The agent's thinking before or between its replies, as its harness summarizes it. */
+  Schema.TaggedStruct("reasoning.delta", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+    delta: Schema.String,
+  }),
+  Schema.TaggedStruct("reasoning.completed", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+    text: Schema.String,
+  }),
   Schema.TaggedStruct("tool.started", {
     threadId: Schema.String,
     toolId: Schema.String,
@@ -1056,6 +1067,8 @@ export function isTranscriptEvent(
       "user.message",
       "assistant.delta",
       "assistant.completed",
+      "reasoning.delta",
+      "reasoning.completed",
       "tool.started",
       "tool.progress",
       "tool.completed",

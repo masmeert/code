@@ -269,7 +269,8 @@ const start = ({
         // Only lets the composer switch to "Full access" later; the mode above still applies.
         allowDangerouslySkipPermissions: true,
         pathToClaudeCodeExecutable: launch.bin,
-        extraArgs: claudeExtraArgs(launch.args),
+        // Thinking streams empty unless shown summarized; launch arguments can still say otherwise.
+        extraArgs: { "thinking-display": "summarized", ...claudeExtraArgs(launch.args) },
         settingSources: ["user", "project", "local"],
         includePartialMessages: true,
         agentProgressSummaries: true,
@@ -327,6 +328,8 @@ const start = ({
       const streamed = new Set<string>();
       // Text accumulated per streamed block, flushed as `assistant.completed` when the block stops.
       const blocks = new Map<string, string>();
+      // The same for thinking blocks, flushed as `reasoning.completed`.
+      const thoughts = new Map<string, string>();
       let currentMessageId = "";
       // Subagents launched in the background: their tool call returns a placeholder at once, and the
       // real end comes later as a task notification, so the call stays running until then.
@@ -375,6 +378,30 @@ const start = ({
                   delta: event.delta.text,
                 }),
               );
+            }
+            if (
+              event.type === "content_block_delta" &&
+              event.delta.type === "thinking_delta" &&
+              event.delta.thinking
+            ) {
+              thoughts.set(blockId, (thoughts.get(blockId) ?? "") + event.delta.thinking);
+              emit(
+                RuntimeEvent.cases["reasoning.delta"].make({
+                  threadId,
+                  messageId: blockId,
+                  delta: event.delta.thinking,
+                }),
+              );
+            }
+            if (event.type === "content_block_stop" && thoughts.has(blockId)) {
+              emit(
+                RuntimeEvent.cases["reasoning.completed"].make({
+                  threadId,
+                  messageId: blockId,
+                  text: thoughts.get(blockId)!,
+                }),
+              );
+              thoughts.delete(blockId);
             }
             if (event.type === "content_block_stop" && blocks.has(blockId)) {
               emit(

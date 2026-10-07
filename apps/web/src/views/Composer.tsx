@@ -330,7 +330,7 @@ export const Composer = (props: ComposerProps) => {
             empty: !skillList
               ? "Loading skills…"
               : (skillList.error ??
-                `No skills here yet. Add one as ${props.provider === "claude" ? ".claude" : ".agents"}/skills/<name>/SKILL.md in the project.`),
+                `No skills here yet. Add one as ${{ claude: ".claude", codex: ".agents", cursor: ".cursor" }[props.provider]}/skills/<name>/SKILL.md in the project.`),
           }
         : mentionQuery !== null
           ? {

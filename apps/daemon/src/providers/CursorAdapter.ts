@@ -38,6 +38,7 @@ import {
   type StartSessionInput,
   type TurnInput,
 } from "./ProviderAdapter.ts";
+import { skillMentions } from "../skills.ts";
 
 const fail = (message: string) => new ProviderError({ provider: "cursor", message });
 
@@ -210,6 +211,7 @@ const start = ({
     /** Set while `session/load` replays the conversation, which the transcript already has. */
     let replaying = false;
     let reply: { readonly id: string; text: string } | null = null;
+    let thought: { readonly id: string; text: string } | null = null;
     const runningTools = new Set<string>();
     /** Edits started without saying which file, by tool id, with their transcript name. */
     const unnamedEdits = new Map<string, string>();
@@ -231,7 +233,21 @@ const start = ({
       headers: [{ name: "Authorization", value: `Bearer ${mcpServer.token}` }],
     }));
 
-    function finishReply() {
+    function finishThought() {
+      if (thought?.text)
+        emit(
+          RuntimeEvent.cases["reasoning.completed"].make({
+            threadId,
+            messageId: thought.id,
+            text: thought.text,
+          }),
+        );
+      thought = null;
+    }
+
+    /** Ends the reply and thought in progress: a tool call or the turn's end closes both. */
+    function finishText() {
+      finishThought();
       if (reply?.text)
         emit(
           RuntimeEvent.cases["assistant.completed"].make({
@@ -257,8 +273,22 @@ const start = ({
       )
         return;
       SessionUpdate.match(update, {
+        agent_thought_chunk: ({ content }) => {
+          if (!content.text) return;
+          if (reply) finishText();
+          thought ??= { id: randomUUID(), text: "" };
+          thought.text += content.text;
+          emit(
+            RuntimeEvent.cases["reasoning.delta"].make({
+              threadId,
+              messageId: thought.id,
+              delta: content.text,
+            }),
+          );
+        },
         agent_message_chunk: ({ content }) => {
           if (!content.text) return;
+          finishThought();
           reply ??= { id: randomUUID(), text: "" };
           reply.text += content.text;
           emit(
@@ -270,7 +300,7 @@ const start = ({
           );
         },
         tool_call: (call) => {
-          finishReply();
+          finishText();
           if (runningTools.has(call.toolCallId) || unnamedEdits.has(call.toolCallId)) return;
           const { command, path } = decodeToolRaw(call.rawInput);
           if (command) commandOf.set(call.toolCallId, command);
@@ -480,7 +510,12 @@ const start = ({
             : [];
         }),
       );
-      const text = textWithFiles(turn);
+      const written = textWithFiles(turn);
+      // Cursor takes a `/name` anywhere in the message as the skill to load.
+      const text = skillMentions(written, turn.skills).reduce(
+        (result, mention) => `${result.slice(0, mention.start)}/${result.slice(mention.start + 1)}`,
+        written,
+      );
       return [
         ...(turn.handoff ? [{ type: "text", text: turn.handoff }] : []),
         ...images,
@@ -508,12 +543,12 @@ const start = ({
         .request("session/prompt", { sessionId, prompt: blocks }, PromptResponse)
         .then(
           ({ stopReason }) => {
-            finishReply();
+            finishText();
             const stopped = STOPPED_EARLY.get(stopReason);
             if (stopped) emit(RuntimeEvent.cases.error.make({ threadId, message: stopped }));
           },
           (error) => {
-            finishReply();
+            finishText();
             // A process that exited has said so already.
             if (launched === generation && !message(error).startsWith("Cursor exited"))
               emit(RuntimeEvent.cases.error.make({ threadId, message: message(error) }));
@@ -521,6 +556,18 @@ const start = ({
         )
         .then(() => {
           prompting = false;
+          // Tools still open when the turn ends were cut off: stopped, or the process went.
+          for (const toolId of runningTools)
+            emit(
+              RuntimeEvent.cases["tool.completed"].make({
+                threadId,
+                toolId,
+                output: "Stopped",
+                isError: false,
+              }),
+            );
+          runningTools.clear();
+          unnamedEdits.clear();
           emit(
             RuntimeEvent.cases["turn.completed"].make({
               threadId,
@@ -633,6 +680,45 @@ const start = ({
     return session;
   });
 
+/** Cursor lists skills among its slash commands, telling them apart by a note on the description. */
+const SKILL_NOTE = /\s*\((?:(?:builtin|user|project) )?skill\)$/;
+
+/** The skills Cursor reports in `cwd`, read from the commands a new session announces. */
+const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
+  Effect.tryPromise({
+    try: async () => {
+      let report: (
+        commands: ReadonlyArray<{ name: string; description: string }>,
+      ) => void = () => {};
+      const reported = new Promise<ReadonlyArray<{ name: string; description: string }>>(
+        (resolve) => (report = resolve),
+      );
+      const launch = harnessLaunch("cursor", harness);
+      const rpc = await connectAcp("Cursor", launch, acpArgs(launch, null), cwd, {
+        onUpdate: (update) => {
+          if (SessionUpdate.guards.available_commands_update(update))
+            report(update.availableCommands);
+        },
+      });
+      try {
+        await rpc.request("session/new", { cwd, mcpServers: [] }, SessionSetup);
+        const commands = await Promise.race([
+          reported,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
+        ]);
+        if (commands === null) throw new Error("Cursor didn't list its skills within 15 s");
+        return commands.flatMap(({ name, description }) =>
+          SKILL_NOTE.test(description)
+            ? [{ name, description: description.replace(SKILL_NOTE, ""), path: null }]
+            : [],
+        );
+      } finally {
+        rpc.close();
+      }
+    },
+    catch: (e) => fail(message(e)),
+  });
+
 const unsupported = (action: string) => () =>
   Effect.fail(fail(`Cursor can't ${action} a conversation yet.`));
 
@@ -642,5 +728,5 @@ export const CursorAdapter: ProviderAdapter = {
   rewind: unsupported("rewind"),
   fork: unsupported("fork"),
   readUsage: () => Effect.succeed({ context: null, costUsd: null }),
-  listSkills: () => Effect.succeed([]),
+  listSkills,
 };

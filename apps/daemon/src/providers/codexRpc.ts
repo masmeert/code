@@ -34,6 +34,12 @@ export const StartedItem = Schema.Union([
 /** An item as `item/completed` reports it, for the kinds shown in the transcript. */
 export const CompletedItem = Schema.Union([
   Schema.Struct({ type: Schema.Literal("agentMessage"), id: Schema.String, text: Schema.String }),
+  /** Summaries of the model's thinking; empty unless `model_reasoning_summary` asks for them. */
+  Schema.Struct({
+    type: Schema.Literal("reasoning"),
+    id: Schema.String,
+    summary: Schema.Array(Schema.String),
+  }),
   /** A subagent starting or ending; it runs as a thread of its own, `agentThreadId`. */
   Schema.Struct({
     type: Schema.Literal("subAgentActivity"),
@@ -93,6 +99,10 @@ export const CodexNotification = Schema.Union([
   }),
   Schema.Struct({
     method: Schema.Literal("item/agentMessage/delta"),
+    params: Schema.Struct({ threadId: Schema.String, itemId: Schema.String, delta: Schema.String }),
+  }),
+  Schema.Struct({
+    method: Schema.Literal("item/reasoning/summaryTextDelta"),
     params: Schema.Struct({ threadId: Schema.String, itemId: Schema.String, delta: Schema.String }),
   }),
   Schema.Struct({

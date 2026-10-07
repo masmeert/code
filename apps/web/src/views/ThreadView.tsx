@@ -9,6 +9,7 @@ import {
   MessageScroller,
 } from "@apcode/ui/agents/message";
 import { Markdown } from "@apcode/ui/agents/markdown";
+import { Reasoning } from "@apcode/ui/agents/reasoning";
 import * as Match from "effect/Match";
 import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
 import { PromptInputTray, PromptSelect } from "@apcode/ui/agents/prompt-input";
@@ -1027,6 +1028,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
 
               {status === "running" &&
               lastItem?.kind !== "assistant" &&
+              lastItem?.kind !== "reasoning" &&
               !(lastItem?.kind === "tool" && lastItem.output === null) ? (
                 <Message from="assistant" animateIn>
                   <MessageAvatar placeholder />
@@ -1784,6 +1786,14 @@ const AgentBlockContent = ({
             <ForkDialog threadId={threadId} item={item} onClose={() => setConfirmingFork(false)} />
           ) : null}
         </MessageBubble>
+      );
+    case "reasoning":
+      return (
+        <Reasoning text={item.text} streaming={streaming}>
+          <Markdown streaming={streaming} className="selectable leading-relaxed">
+            {item.text}
+          </Markdown>
+        </Reasoning>
       );
     case "tools":
       return (

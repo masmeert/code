@@ -242,6 +242,16 @@ const start = ({
               }),
             );
           },
+          "item/reasoning/summaryTextDelta": ({ params }) => {
+            if (params.threadId !== codexThreadId) return;
+            emit(
+              RuntimeEvent.cases["reasoning.delta"].make({
+                threadId,
+                messageId: params.itemId,
+                delta: params.delta,
+              }),
+            );
+          },
           "item/started": ({ params }) => {
             const subagent = subagents.get(params.threadId);
             if (params.threadId !== codexThreadId && !subagent) return;
@@ -287,6 +297,14 @@ const start = ({
                   text: item.text,
                 });
               },
+              reasoning: (item) =>
+                subagent || !item.summary.length
+                  ? null
+                  : RuntimeEvent.cases["reasoning.completed"].make({
+                      threadId,
+                      messageId: item.id,
+                      text: item.summary.join("\n\n"),
+                    }),
               subAgentActivity: (item) => {
                 // Subagents also report on the main thread ("/root"); taking it for one of them
                 // would swallow the main agent's answer as a subagent's report.
@@ -502,6 +520,9 @@ const start = ({
               `mcp_servers.apcode.url="${mcpServer.url}/apcode"`,
               "-c",
               'mcp_servers.apcode.bearer_token_env_var="APCODE_MCP_TOKEN"',
+              // Codex leaves its thinking out of the transcript unless asked for summaries.
+              "-c",
+              'model_reasoning_summary="auto"',
               // Waiting on another thread's agent takes minutes; Codex gives up on a tool after 60 s by default.
               "-c",
               "mcp_servers.apcode.tool_timeout_sec=1800",

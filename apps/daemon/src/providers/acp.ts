@@ -51,6 +51,7 @@ const ToolFields = {
 /** The `session/update` kinds APCode acts on; others are dropped. */
 export const SessionUpdate = Schema.Union([
   Schema.Struct({ sessionUpdate: Schema.Literal("agent_message_chunk"), content: TextBlock }),
+  Schema.Struct({ sessionUpdate: Schema.Literal("agent_thought_chunk"), content: TextBlock }),
   Schema.Struct({ sessionUpdate: Schema.Literal("tool_call"), ...ToolFields }),
   Schema.Struct({ sessionUpdate: Schema.Literal("tool_call_update"), ...ToolFields }),
   Schema.Struct({

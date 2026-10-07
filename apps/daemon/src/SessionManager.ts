@@ -139,7 +139,8 @@ const DELTA_FLUSH_MS = 40;
 const SESSION_IDLE_MS = 30 * 60 * 1000;
 const REAP_INTERVAL_MS = 5 * 60 * 1000;
 
-type AssistantDelta = Extract<RuntimeEvent, { _tag: "assistant.delta" }>;
+type TextDelta = Extract<RuntimeEvent, { _tag: "assistant.delta" | "reasoning.delta" }>;
+const isTextDelta = RuntimeEvent.isAnyOf(["assistant.delta", "reasoning.delta"]);
 
 /**
  * Shelved threads aren't working or waiting on you, and were either shelved by hand or idle
@@ -369,10 +370,10 @@ const make = Effect.gen(function* () {
   const registry = yield* ProviderRegistry;
   const pubsub = yield* PubSub.unbounded<SequencedEvent>();
   const threads = new Map<string, ThreadEntry>();
-  /** Text published so far of messages still streaming, keyed by message id; dropped once the message completes. */
-  const streaming = new Map<string, { readonly threadId: string; readonly text: string }>();
+  /** Messages and thoughts still streaming, as one delta of all their text so far, keyed by id; dropped once they complete. */
+  const streaming = new Map<string, TextDelta>();
   /** Deltas waiting for the next flush, merged per message. */
-  const pendingDeltas = new Map<string, AssistantDelta>();
+  const pendingDeltas = new Map<string, TextDelta>();
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let seq = 0;
 
@@ -483,7 +484,7 @@ const make = Effect.gen(function* () {
   };
 
   const publish = (event: RuntimeEvent) => {
-    if (RuntimeEvent.guards["assistant.delta"](event)) {
+    if (isTextDelta(event)) {
       const pending = pendingDeltas.get(event.messageId);
       pendingDeltas.set(
         event.messageId,
@@ -499,11 +500,12 @@ const make = Effect.gen(function* () {
   const emit = (event: RuntimeEvent) => {
     if (stopped) return;
     let id: number | null = null;
-    if (RuntimeEvent.guards["assistant.delta"](event)) {
-      const text = streaming.get(event.messageId)?.text ?? "";
-      streaming.set(event.messageId, { threadId: event.threadId, text: text + event.delta });
+    if (isTextDelta(event)) {
+      const sent = streaming.get(event.messageId)?.delta ?? "";
+      streaming.set(event.messageId, { ...event, delta: sent + event.delta });
     } else if (isPersisted(event)) {
-      if (RuntimeEvent.guards["assistant.completed"](event)) streaming.delete(event.messageId);
+      if (RuntimeEvent.isAnyOf(["assistant.completed", "reasoning.completed"])(event))
+        streaming.delete(event.messageId);
       id = store.appendEvent(event.threadId, event);
     }
     if (RuntimeEvent.guards["thread.status"](event)) {
@@ -1964,18 +1966,7 @@ const make = Effect.gen(function* () {
     mcp,
     readThread: (threadId, after, turnLimit) => {
       if (!threads.has(threadId)) return null;
-      // Each streaming message's text so far, as one delta.
-      const live: Array<RuntimeEvent> = [];
-      for (const [messageId, message] of streaming) {
-        if (message.threadId === threadId)
-          live.push(
-            RuntimeEvent.cases["assistant.delta"].make({
-              threadId,
-              messageId,
-              delta: message.text,
-            }),
-          );
-      }
+      const live = [...streaming.values()].filter((delta) => delta.threadId === threadId);
       const cursor = store.cursor(threadId);
       // A cursor past the end means the cache is from another database: start over.
       // Sized before anything is decoded, so a huge gap never gets read.

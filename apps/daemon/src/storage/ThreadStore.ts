@@ -52,7 +52,8 @@ export function isPersisted(
   event: RuntimeEvent,
 ): event is Extract<RuntimeEvent, { threadId: string }> {
   return (
-    isTranscriptEvent(event) && !RuntimeEvent.isAnyOf(["assistant.delta", "tool.progress"])(event)
+    isTranscriptEvent(event) &&
+    !RuntimeEvent.isAnyOf(["assistant.delta", "reasoning.delta", "tool.progress"])(event)
   );
 }
 

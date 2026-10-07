@@ -72,6 +72,8 @@ export type TranscriptItem =
       readonly deletions: number;
     }
   | { readonly kind: "assistant"; readonly id: string; readonly text: string }
+  /** The agent's thinking, folded to a line in the transcript. */
+  | { readonly kind: "reasoning"; readonly id: string; readonly text: string }
   | {
       readonly kind: "forked";
       readonly id: string;
@@ -394,6 +396,20 @@ const reduceItems = (
         text: completed.text,
       })),
     ),
+    Match.tag("reasoning.delta", (delta) =>
+      upsert(items, delta.messageId, (prev) => ({
+        kind: "reasoning",
+        id: delta.messageId,
+        text: (prev?.kind === "reasoning" ? prev.text : "") + delta.delta,
+      })),
+    ),
+    Match.tag("reasoning.completed", (completed) =>
+      upsert(items, completed.messageId, () => ({
+        kind: "reasoning",
+        id: completed.messageId,
+        text: completed.text,
+      })),
+    ),
     Match.tag("tool.started", (tool) => {
       const call = {
         id: tool.toolId,
@@ -481,13 +497,16 @@ const applyStreaming = (
   items: ReadonlyArray<TranscriptItem>,
   deltas: ReadonlyArray<RuntimeEvent>,
 ) => {
-  const texts = new Map<string, string>();
+  const texts = new Map<string, { kind: "assistant" | "reasoning"; text: string }>();
   for (const event of deltas)
-    if (RuntimeEvent.guards["assistant.delta"](event))
-      texts.set(event.messageId, (texts.get(event.messageId) ?? "") + event.delta);
+    if (RuntimeEvent.isAnyOf(["assistant.delta", "reasoning.delta"])(event))
+      texts.set(event.messageId, {
+        kind: RuntimeEvent.guards["assistant.delta"](event) ? "assistant" : "reasoning",
+        text: (texts.get(event.messageId)?.text ?? "") + event.delta,
+      });
   let next = items;
-  for (const [messageId, text] of texts)
-    next = upsert(next, messageId, () => ({ kind: "assistant", id: messageId, text }));
+  for (const [messageId, { kind, text }] of texts)
+    next = upsert(next, messageId, () => ({ kind, id: messageId, text }));
   return next;
 };
 
