@@ -77,10 +77,10 @@ export function UsageMeter({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        title={`Context and usage (${describe("usage.toggle")})`}
+        title={`${context ? `Context ${percent}% full` : "Context and usage"} (${describe("usage.toggle")})`}
         aria-label={context ? `Context ${percent}% full` : "Context and usage"}
         className={cn(
-          "flex h-8 items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+          "flex h-8 items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring @max-md:w-8 @max-md:justify-center @max-md:px-0",
           percent >= 90 && "text-destructive hover:text-destructive",
         )}
       >
@@ -103,7 +103,7 @@ export function UsageMeter({
             className={cn("stroke-current", percent === 0 && "opacity-0")}
           />
         </svg>
-        {context ? `${percent}%` : null}
+        {context ? <span className="@max-md:hidden">{percent}%</span> : null}
       </button>
       <MorphPopoverContent side="top" align="end" sideOffset={6} radius={12} className="w-80 p-3">
         <ContextSection

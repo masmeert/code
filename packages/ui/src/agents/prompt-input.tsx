@@ -274,7 +274,7 @@ export function PromptInput({
       <form
         onSubmit={submit}
         className={cn(
-          "relative z-10 w-full rounded-2xl border border-border bg-card p-1.5",
+          "@container relative z-10 w-full rounded-2xl border border-border bg-card p-1.5",
           disabled && "*:opacity-60",
         )}
       >
@@ -557,8 +557,11 @@ function PickerTrigger({
   className?: string;
   children: ReactNode;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & { ref?: Ref<HTMLButtonElement> }) {
+  // In a narrow composer an icon reads better than a label truncated to a letter or two.
+  const collapsible = Boolean(icon) && variant === "pill";
   return (
     <button
+      title={typeof children === "string" ? children : undefined}
       {...rest}
       type="button"
       disabled={disabled}
@@ -566,6 +569,7 @@ function PickerTrigger({
         "flex max-w-56 min-w-0 items-center gap-1.5 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
         variant === "pill" && "h-8 rounded-full border border-border bg-background px-3 text-xs",
         variant === "plain" && "h-6 rounded-lg px-2 text-[11px]",
+        collapsible && "@max-md:w-8 @max-md:shrink-0 @max-md:justify-center @max-md:px-0",
         open && "bg-muted text-foreground",
         className,
       )}
@@ -573,8 +577,8 @@ function PickerTrigger({
       {icon ? (
         <span className="grid size-3.5 shrink-0 place-items-center [&_svg]:size-3.5">{icon}</span>
       ) : null}
-      <span className="truncate">{children}</span>
-      <ChevronDown className="size-3 shrink-0 opacity-60" />
+      <span className={cn("truncate", collapsible && "@max-md:sr-only")}>{children}</span>
+      <ChevronDown className={cn("size-3 shrink-0 opacity-60", collapsible && "@max-md:hidden")} />
     </button>
   );
 }
