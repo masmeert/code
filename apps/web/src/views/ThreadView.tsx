@@ -95,6 +95,7 @@ import { toggleBrowser, useBrowser } from "../lib/browser.ts";
 import {
   approvePlan,
   BUILD_WITH_LABEL,
+  PERMISSIONS,
   fromSent,
   toTurnOptions,
   useNeedsRootConsent,
@@ -567,9 +568,9 @@ export const DraftView = ({
         ) : providers.some((p) => p.checking) ? (
           "Checking Claude and Codex…"
         ) : host ? (
-          `Link Claude or Codex on ${host} in Settings → Harnesses to start.`
+          `Link a harness on ${host} in Settings → Harnesses to start.`
         ) : (
-          "Link Claude or Codex in Settings to start."
+          "Link a harness in Settings to start."
         )}
       </div>
       <Composer
@@ -1754,6 +1755,7 @@ const AgentBlockContent = ({
   const needsRootConsent = useNeedsRootConsent(host);
   const [confirmingRoot, setConfirmingRoot] = useState(false);
   const runCommand = use(RunCommandContext);
+  const provider = useStore((s) => s.threads[threadId]?.provider);
   switch (item.kind) {
     case "user":
       return null;
@@ -1811,15 +1813,20 @@ const AgentBlockContent = ({
               }
               defaultOpen
               approveLabel={BUILD_WITH_LABEL["auto-edit"]}
-              approveOptions={(["ask", "auto-edit", "auto", "full-access"] as const).map(
-                (level) => ({
-                  id: level,
-                  label: BUILD_WITH_LABEL[level],
-                  onSelect: () =>
-                    level === "full-access" && needsRootConsent
-                      ? setConfirmingRoot(true)
-                      : approvePlan(threadId, item.id, level),
-                }),
+              approveOptions={(["ask", "auto-edit", "auto", "full-access"] as const).flatMap(
+                (level) =>
+                  provider !== undefined && !PERMISSIONS[provider].includes(level)
+                    ? []
+                    : [
+                        {
+                          id: level,
+                          label: BUILD_WITH_LABEL[level],
+                          onSelect: () =>
+                            level === "full-access" && needsRootConsent
+                              ? setConfirmingRoot(true)
+                              : approvePlan(threadId, item.id, level),
+                        },
+                      ],
               )}
               denyLabel="Reject"
               onApprove={() => approvePlan(threadId, item.id, "auto-edit")}

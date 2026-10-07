@@ -7,6 +7,9 @@ import type { ProviderKind, ProviderSettings, Settings } from "@apcode/contracts
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { CodexNotification, connectCodex, ThreadResponse } from "./providers/codexRpc.ts";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { cursorModelFlag } from "./providers/CursorAdapter.ts";
 import { claudeExtraArgs, harnessLaunch } from "./providers/launch.ts";
 
 /** Enough of the patch to describe it; the model doesn't need every line of a big change. */
@@ -149,6 +152,38 @@ const withCodex = async (
   }
 };
 
+/** Cursor's print mode, read-only ("ask"); `--trust` skips the prompt for a folder it hasn't seen. */
+const withCursor = async (
+  cwd: string,
+  harness: ProviderSettings,
+  model: string | undefined,
+  prompt: string,
+) => {
+  const launch = harnessLaunch("cursor", harness);
+  const { stdout } = await promisify(execFile)(
+    launch.bin,
+    [
+      ...launch.args,
+      "--print",
+      "--output-format",
+      "text",
+      "--mode",
+      "ask",
+      "--trust",
+      ...cursorModelFlag(model),
+      prompt,
+    ],
+    { cwd, env: launch.env, maxBuffer: 10 * 1024 * 1024 },
+  );
+  return stdout;
+};
+
+const WRITE: Record<ProviderKind, typeof withCursor> = {
+  claude: withClaude,
+  codex: withCodex,
+  cursor: withCursor,
+};
+
 interface WriterInput {
   readonly cwd: string;
   readonly provider: ProviderKind;
@@ -159,7 +194,7 @@ interface WriterInput {
 }
 
 async function write(input: WriterInput, prompt: string) {
-  const run = input.provider === "claude" ? withClaude : withCodex;
+  const run = WRITE[input.provider];
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>(
     (_, reject) => (timer = setTimeout(() => reject(new Error("Timed out")), TIMEOUT_MS)),

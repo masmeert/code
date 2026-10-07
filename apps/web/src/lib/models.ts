@@ -4,20 +4,16 @@ import { Star } from "lucide-react";
 import { createElement } from "react";
 import {
   type ModelOption,
+  PROVIDER_NAME,
   ProviderKind,
   type ProviderSettings,
   type ProviderStatus,
   type Settings,
 } from "@apcode/contracts";
 
-export const PROVIDER_LABEL: Record<ProviderKind, string> = {
-  claude: "Claude",
-  codex: "Codex",
-};
-
 /** The harness's name as the user set it in Settings, else its own. */
 export const harnessLabel = (settings: Settings, provider: ProviderKind) =>
-  settings.providers[provider].displayName?.trim() || PROVIDER_LABEL[provider];
+  settings.providers[provider].displayName?.trim() || PROVIDER_NAME[provider];
 
 /** Models in the order the user arranged them; ones they haven't placed keep the harness's order, after the rest. */
 export const orderedModels = (models: ReadonlyArray<ModelOption>, harness: ProviderSettings) => {

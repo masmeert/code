@@ -1,0 +1,646 @@
+/**
+ * Cursor via `cursor-agent acp`, the Agent Client Protocol server in Cursor's CLI. It runs on the
+ * user's Cursor login.
+ */
+import {
+  Effort,
+  RuntimeEvent,
+  type ModelOption,
+  type SlashCommand,
+  type UserQuestion,
+} from "@apcode/contracts";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
+import {
+  ConfigOption,
+  connectAcp,
+  contentText,
+  PermissionRequest,
+  PromptResponse,
+  SessionSetup,
+  SessionUpdate,
+  type RpcId,
+  type ToolContent,
+} from "./acp.ts";
+import type { JsonRpc } from "./jsonRpc.ts";
+import { harnessLaunch, type HarnessLaunch } from "./launch.ts";
+import {
+  IMAGE_TYPES,
+  ProviderError,
+  textWithFiles,
+  type ProviderAdapter,
+  type ProviderSession,
+  type StartSessionInput,
+  type TurnInput,
+} from "./ProviderAdapter.ts";
+
+const fail = (message: string) => new ProviderError({ provider: "cursor", message });
+
+const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+
+/** Cursor's id for its Auto model; its CLI calls it `auto`. */
+const AUTO = "default";
+
+/**
+ * Model is only picked at launch: switching it over ACP is accepted and then ignored, which also
+ * leaves the model's effort and fast settings unknown to the session.
+ */
+const acpArgs = (launch: HarnessLaunch, model: string | null) => [
+  ...launch.args,
+  ...cursorModelFlag(model),
+  "acp",
+];
+
+/** The CLI flag that picks `model`; none leaves the CLI's own default. */
+export const cursorModelFlag = (model: string | null | undefined) =>
+  model ? ["--model", model === AUTO ? "auto" : model] : [];
+
+/** Effort as APCode names it; some models spell xhigh "extra-high". */
+function toEffort(value: string) {
+  const effort = value === "extra-high" ? "xhigh" : value;
+  return Schema.is(Effort)(effort) ? effort : undefined;
+}
+
+/** The setting a model takes its effort from: `effort`, `reasoning` or `reasoning_effort`, by model. */
+const effortOption = (options: ReadonlyArray<ConfigOption>) =>
+  options.find((option) => option.category === "thought_level" && option.id !== "thinking");
+
+const ListedModels = Schema.Struct({
+  models: Schema.Array(
+    Schema.Struct({
+      value: Schema.String,
+      name: Schema.String,
+      configOptions: Schema.Array(ConfigOption),
+    }),
+  ),
+});
+
+/** The models the account can use, with each one's efforts and fast mode. */
+export async function readCursorModels(launch: HarnessLaunch): Promise<Array<ModelOption>> {
+  const rpc = await connectAcp("Cursor", launch, acpArgs(launch, null), undefined);
+  try {
+    const { models } = await rpc.request("cursor/list_available_models", {}, ListedModels);
+    return models.map((model) => {
+      const effort = effortOption(model.configOptions);
+      return {
+        id: model.value,
+        label: model.name,
+        recommended: model.value === AUTO || undefined,
+        defaultEffort: Predicate.isString(effort?.currentValue)
+          ? toEffort(effort.currentValue)
+          : undefined,
+        efforts: (effort?.options ?? []).flatMap((option) => toEffort(option.value) ?? []),
+        fast: model.configOptions.some((option) => option.id === "fast") || undefined,
+      };
+    });
+  } finally {
+    rpc.close();
+  }
+}
+
+const CreatePlan = Schema.Struct({ plan: Schema.String });
+
+const AskQuestion = Schema.Struct({
+  title: Schema.optional(Schema.NullOr(Schema.String)),
+  questions: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      prompt: Schema.String,
+      options: Schema.Array(Schema.Struct({ id: Schema.String, label: Schema.String })),
+      allowMultiple: Schema.optional(Schema.NullOr(Schema.Boolean)),
+    }),
+  ),
+});
+
+/** Turn endings that aren't the agent finishing or the user stopping it. */
+const STOPPED_EARLY = new Map([
+  ["max_tokens", "Cursor stopped: the reply hit the model's output limit."],
+  [
+    "max_turn_requests",
+    "Cursor stopped: the turn hit its limit of model requests. Send a message to carry on.",
+  ],
+  ["refusal", "Cursor's model refused to continue."],
+]);
+
+/** Transcript names for ACP's tool kinds, the ones Claude's tools show under. */
+const TOOL_NAME = new Map([
+  ["execute", "Bash"],
+  ["edit", "Edit"],
+  ["read", "Read"],
+  ["search", "Grep"],
+  ["fetch", "WebFetch"],
+  ["delete", "Delete"],
+  ["move", "Move"],
+]);
+
+/** The fields of a tool's raw input and output that the transcript shows. */
+const ToolRaw = Schema.Struct({
+  command: Schema.optional(Schema.String),
+  path: Schema.optional(Schema.String),
+  stdout: Schema.optional(Schema.String),
+  stderr: Schema.optional(Schema.String),
+  /** A read file's text. */
+  content: Schema.optional(Schema.String),
+});
+const decodeToolRaw = (raw: Schema.Json | undefined): typeof ToolRaw.Type =>
+  Option.getOrElse(Schema.decodeUnknownOption(ToolRaw)(raw), () => ({}));
+
+/** What a finished tool printed or changed. */
+function toolOutput(update: {
+  readonly content?: ReadonlyArray<ToolContent> | null | undefined;
+  readonly rawOutput?: Schema.Json | undefined;
+}) {
+  const text = contentText(update.content);
+  if (text) return text;
+  if (update.rawOutput === undefined || update.rawOutput === null) return "";
+  if (Predicate.isString(update.rawOutput)) return update.rawOutput;
+  const { stdout, stderr, content } = decodeToolRaw(update.rawOutput);
+  return (
+    [stdout, stderr].filter(Boolean).join("\n").trim() ||
+    content ||
+    JSON.stringify(update.rawOutput)
+  );
+}
+
+type Pending =
+  | {
+      readonly kind: "permission";
+      readonly rpcId: RpcId;
+      readonly request: PermissionRequest;
+      /** What "allow for this session" remembers it by. */
+      readonly key: string;
+    }
+  | { readonly kind: "plan"; readonly rpcId: RpcId }
+  | {
+      readonly kind: "question";
+      readonly rpcId: RpcId;
+      readonly questions: typeof AskQuestion.Type.questions;
+    };
+
+const start = ({
+  threadId,
+  cwd,
+  harness,
+  model: initialModel,
+  resumeToken,
+  permission: initialPermission,
+  onResumeToken,
+  emit,
+  mcpServer,
+}: StartSessionInput) =>
+  Effect.gen(function* () {
+    const launch = yield* Effect.try({
+      try: () => harnessLaunch("cursor", harness),
+      catch: (e) => fail(message(e)),
+    });
+    let rpc: JsonRpc | undefined;
+    // Bumped on each launch, so a process closed for a relaunch doesn't report its exit.
+    let generation = 0;
+    let sessionId = resumeToken ?? "";
+    let model = initialModel ?? null;
+    let launchedModel: string | null = null;
+    let permission = initialPermission;
+    let configOptions: ReadonlyArray<ConfigOption> = [];
+    let commands: ReadonlyArray<SlashCommand> = [];
+    /** Set while `session/load` replays the conversation, which the transcript already has. */
+    let replaying = false;
+    let reply: { readonly id: string; text: string } | null = null;
+    const runningTools = new Set<string>();
+    /** Edits started without saying which file, by tool id, with their transcript name. */
+    const unnamedEdits = new Map<string, string>();
+    const commandOf = new Map<string, string>();
+    const pending = new Map<string, Pending>();
+    const allowedForSession = new Set<string>();
+    let prompting = false;
+    /** Messages sent while a turn runs: ACP can't add to a turn, so each starts the next one. */
+    const steered: Array<TurnInput> = [];
+    /** Runs once the turn ends, in place of going idle: building an approved plan. */
+    let afterTurn: (() => void) | null = null;
+
+    const mcpServers = [
+      { name: "browser", url: mcpServer.url },
+      { name: "apcode", url: `${mcpServer.url}/apcode` },
+    ].map((server) => ({
+      type: "http",
+      ...server,
+      headers: [{ name: "Authorization", value: `Bearer ${mcpServer.token}` }],
+    }));
+
+    function finishReply() {
+      if (reply?.text)
+        emit(
+          RuntimeEvent.cases["assistant.completed"].make({
+            threadId,
+            messageId: reply.id,
+            text: reply.text,
+          }),
+        );
+      reply = null;
+    }
+
+    function startTool(toolId: string, name: string, summary: string) {
+      runningTools.add(toolId);
+      emit(RuntimeEvent.cases["tool.started"].make({ threadId, toolId, name, summary }));
+    }
+
+    // The process holds one session. What `session/load` replays is in the transcript already;
+    // the commands and options it reports alongside aren't.
+    function onUpdate(update: SessionUpdate) {
+      if (
+        replaying &&
+        !SessionUpdate.isAnyOf(["available_commands_update", "config_option_update"])(update)
+      )
+        return;
+      SessionUpdate.match(update, {
+        agent_message_chunk: ({ content }) => {
+          if (!content.text) return;
+          reply ??= { id: randomUUID(), text: "" };
+          reply.text += content.text;
+          emit(
+            RuntimeEvent.cases["assistant.delta"].make({
+              threadId,
+              messageId: reply.id,
+              delta: content.text,
+            }),
+          );
+        },
+        tool_call: (call) => {
+          finishReply();
+          if (runningTools.has(call.toolCallId) || unnamedEdits.has(call.toolCallId)) return;
+          const { command, path } = decodeToolRaw(call.rawInput);
+          if (command) commandOf.set(call.toolCallId, command);
+          const name = TOOL_NAME.get(call.kind ?? "") ?? call.title ?? "Tool";
+          const summary = command ?? path ?? call.locations?.[0]?.path;
+          // Cursor names an edit's file only once it's made; the row waits for it.
+          if (summary === undefined && call.kind === "edit")
+            unnamedEdits.set(call.toolCallId, name);
+          else startTool(call.toolCallId, name, summary ?? call.title ?? "");
+        },
+        tool_call_update: (update) => {
+          const done = update.status === "completed" || update.status === "failed";
+          const unnamed = unnamedEdits.get(update.toolCallId);
+          const path =
+            update.locations?.[0]?.path ??
+            update.content?.flatMap((part) => (part.type === "diff" ? [part.path] : []))[0];
+          if (unnamed !== undefined && (path !== undefined || done)) {
+            unnamedEdits.delete(update.toolCallId);
+            startTool(update.toolCallId, unnamed, path ?? update.title ?? "");
+          }
+          if (!done || !runningTools.delete(update.toolCallId)) return;
+          emit(
+            RuntimeEvent.cases["tool.completed"].make({
+              threadId,
+              toolId: update.toolCallId,
+              output: toolOutput(update),
+              isError: update.status === "failed",
+            }),
+          );
+        },
+        available_commands_update: ({ availableCommands }) => {
+          commands = availableCommands.map((command) => ({
+            name: command.name,
+            description: command.description,
+            argumentHint: command.input?.hint ?? "",
+          }));
+        },
+        config_option_update: (update) => {
+          configOptions = update.configOptions;
+        },
+      });
+    }
+
+    function ask(
+      rpcId: RpcId,
+      entry: Pending,
+      title: string,
+      detail: string,
+      questions?: ReadonlyArray<UserQuestion>,
+    ) {
+      // Each process numbers its requests from 0, and the transcript keeps approvals across relaunches.
+      const requestId = `cursor-${randomUUID()}`;
+      pending.set(requestId, entry);
+      emit(
+        RuntimeEvent.cases["thread.status"].make({
+          threadId,
+          status: questions ? "awaiting-answer" : "awaiting-approval",
+        }),
+      );
+      emit(
+        RuntimeEvent.cases["approval.requested"].make({
+          threadId,
+          requestId,
+          title,
+          detail,
+          questions,
+        }),
+      );
+    }
+
+    function onRequest(rpcId: RpcId, method: string, params: Schema.Json | undefined) {
+      if (method === "session/request_permission") {
+        const request = Option.getOrUndefined(
+          Schema.decodeUnknownOption(PermissionRequest)(params),
+        );
+        if (!request) return false;
+        const { toolCall } = request;
+        const command = commandOf.get(toolCall.toolCallId);
+        const key = `${toolCall.kind}:${command ?? toolCall.title}`;
+        if (permission === "full-access" || allowedForSession.has(key)) {
+          answerPermission(rpcId, request, "allow_once");
+          return true;
+        }
+        ask(
+          rpcId,
+          { kind: "permission", rpcId, request, key },
+          toolCall.kind === "execute" ? "Run command" : (toolCall.title ?? "Allow this?"),
+          command ?? contentText(toolCall.content),
+        );
+        return true;
+      }
+      if (method === "cursor/create_plan") {
+        const plan = Option.getOrUndefined(Schema.decodeUnknownOption(CreatePlan)(params));
+        if (!plan) return false;
+        // Outside plan mode a plan is the agent's own outline: nothing to approve.
+        if (permission !== "plan") rpc?.respond(rpcId, { outcome: { outcome: "accepted" } });
+        else ask(rpcId, { kind: "plan", rpcId }, "ExitPlanMode", plan.plan);
+        return true;
+      }
+      if (method === "cursor/ask_question") {
+        const asked = Option.getOrUndefined(Schema.decodeUnknownOption(AskQuestion)(params));
+        if (!asked) return false;
+        ask(
+          rpcId,
+          { kind: "question", rpcId, questions: asked.questions },
+          "AskUserQuestion",
+          asked.questions.map((question) => question.prompt).join("\n"),
+          asked.questions.map((question) => ({
+            id: question.id,
+            header: asked.title ?? "Question",
+            question: question.prompt,
+            options: question.options.map((option) => ({ label: option.label, description: "" })),
+            multiSelect: question.allowMultiple ?? false,
+          })),
+        );
+        return true;
+      }
+      return false;
+    }
+
+    function answerPermission(rpcId: RpcId, request: PermissionRequest, kind: string) {
+      const option = request.options.find((candidate) => candidate.kind === kind);
+      rpc?.respond(
+        rpcId,
+        option
+          ? { outcome: { outcome: "selected", optionId: option.optionId } }
+          : { outcome: { outcome: "cancelled" } },
+      );
+    }
+
+    async function connect() {
+      const launched = ++generation;
+      rpc?.close();
+      launchedModel = model;
+      rpc = await connectAcp("Cursor", launch, acpArgs(launch, model), cwd, {
+        onUpdate,
+        onRequest,
+        onExit: (code, stderrTail) => {
+          if (launched !== generation) return;
+          const crashed = code !== 0 && code !== null;
+          if (crashed)
+            emit(
+              RuntimeEvent.cases.error.make({
+                threadId,
+                message: `Cursor exited unexpectedly (code ${code})${
+                  stderrTail.trim() ? `: ${stderrTail.trim().split("\n").at(-1)}` : ""
+                }. Send a message to pick the thread back up.`,
+              }),
+            );
+          emit(
+            RuntimeEvent.cases["thread.status"].make({
+              threadId,
+              status: crashed ? "error" : "closed",
+            }),
+          );
+        },
+      });
+      const resumed = sessionId
+        ? await (async () => {
+            replaying = true;
+            try {
+              return await rpc.request(
+                "session/load",
+                { sessionId, cwd, mcpServers },
+                SessionSetup,
+              );
+            } catch {
+              // Gone from Cursor's store (or another machine's): carry on in a new conversation.
+              return null;
+            } finally {
+              replaying = false;
+            }
+          })()
+        : null;
+      const setup =
+        resumed ?? (await rpc.request("session/new", { cwd, mcpServers }, SessionSetup));
+      if (!resumed && setup.sessionId) {
+        sessionId = setup.sessionId;
+        onResumeToken(sessionId);
+      }
+      configOptions = setup.configOptions ?? configOptions;
+    }
+
+    async function setOption(configId: string, value: string) {
+      const current = configOptions.find((option) => option.id === configId);
+      if (!current || current.currentValue === value) return;
+      const result = await rpc!.request(
+        "session/set_config_option",
+        { sessionId, configId, value },
+        SessionSetup,
+      );
+      configOptions = result.configOptions ?? configOptions;
+    }
+
+    async function prompt(turn: TurnInput) {
+      const images = await Promise.all(
+        turn.attachments.flatMap((attachment) => {
+          const mimeType = IMAGE_TYPES.get(extname(attachment.path).toLowerCase());
+          return attachment.isImage && mimeType
+            ? [
+                readFile(attachment.path).then((data) => ({
+                  type: "image",
+                  mimeType,
+                  data: data.toString("base64"),
+                })),
+              ]
+            : [];
+        }),
+      );
+      const text = textWithFiles(turn);
+      return [
+        ...(turn.handoff ? [{ type: "text", text: turn.handoff }] : []),
+        ...images,
+        ...(text ? [{ type: "text", text }] : []),
+      ];
+    }
+
+    /** Applies the turn's settings and starts it; resolves once Cursor has it, not when it ends. */
+    async function begin(turn: TurnInput) {
+      emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
+      permission = turn.permission;
+      if (!rpc || model !== launchedModel) await connect();
+      await setOption("mode", permission === "plan" ? "plan" : "agent");
+      const effort = effortOption(configOptions);
+      const effortValue = effort?.options?.find(
+        (option) => turn.effort !== null && toEffort(option.value) === turn.effort,
+      )?.value;
+      if (effort && effortValue) await setOption(effort.id, effortValue);
+      if (turn.fast !== undefined) await setOption("fast", String(turn.fast));
+      const blocks = await prompt(turn);
+      const startedAt = Date.now();
+      const launched = generation;
+      prompting = true;
+      void rpc!
+        .request("session/prompt", { sessionId, prompt: blocks }, PromptResponse)
+        .then(
+          ({ stopReason }) => {
+            finishReply();
+            const stopped = STOPPED_EARLY.get(stopReason);
+            if (stopped) emit(RuntimeEvent.cases.error.make({ threadId, message: stopped }));
+          },
+          (error) => {
+            finishReply();
+            // A process that exited has said so already.
+            if (launched === generation && !message(error).startsWith("Cursor exited"))
+              emit(RuntimeEvent.cases.error.make({ threadId, message: message(error) }));
+          },
+        )
+        .then(() => {
+          prompting = false;
+          emit(
+            RuntimeEvent.cases["turn.completed"].make({
+              threadId,
+              durationMs: Date.now() - startedAt,
+            }),
+          );
+          const next = afterTurn ?? (steered.length ? () => void run(steered.shift()!) : null);
+          afterTurn = null;
+          if (next) next();
+          else emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
+        });
+    }
+
+    function run(turn: TurnInput) {
+      begin(turn).catch((error) => {
+        emit(RuntimeEvent.cases.error.make({ threadId, message: message(error) }));
+        emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
+      });
+    }
+
+    yield* Effect.tryPromise({ try: connect, catch: (e) => fail(message(e)) });
+
+    const session: ProviderSession = {
+      send: (turn) => Effect.tryPromise({ try: () => begin(turn), catch: (e) => fail(message(e)) }),
+      steer: (turn) =>
+        Effect.suspend(() => {
+          if (!prompting) return session.send(turn);
+          steered.push(turn);
+          return Effect.void;
+        }),
+      compact: Effect.fail(
+        fail("Cursor can't compact a conversation. Start a new thread to free up context."),
+      ),
+      commands: Effect.sync(() => commands),
+      interrupt: Effect.sync(() => {
+        steered.length = 0;
+        afterTurn = null;
+        for (const [requestId, entry] of pending) {
+          rpc?.respond(entry.rpcId, { outcome: { outcome: "cancelled" } });
+          emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
+        }
+        pending.clear();
+        rpc?.notify("session/cancel", { sessionId });
+      }),
+      respondApproval: (requestId, decision, { permission: buildPermission, answers } = {}) =>
+        Effect.suspend(() => {
+          const entry = pending.get(requestId);
+          if (!entry) return Effect.fail(fail(`Unknown approval request ${requestId}`));
+          pending.delete(requestId);
+          switch (entry.kind) {
+            case "permission":
+              if (decision === "allow-session") allowedForSession.add(entry.key);
+              answerPermission(
+                entry.rpcId,
+                entry.request,
+                decision === "deny" ? "reject_once" : "allow_once",
+              );
+              break;
+            case "plan":
+              rpc?.respond(entry.rpcId, {
+                outcome: { outcome: decision === "deny" ? "rejected" : "accepted" },
+              });
+              // Cursor ends its turn with the plan; building it is the next one.
+              if (decision !== "deny") {
+                permission = buildPermission ?? "auto-edit";
+                afterTurn = () =>
+                  run({
+                    messageId: randomUUID(),
+                    text: "The user approved the plan. Implement it now.",
+                    attachments: [],
+                    effort: null,
+                    permission,
+                    skills: [],
+                    handoff: null,
+                  });
+              }
+              break;
+            case "question":
+              rpc?.respond(
+                entry.rpcId,
+                decision === "deny" || !answers
+                  ? { outcome: { outcome: "skipped", reason: "The user chose not to answer" } }
+                  : {
+                      outcome: {
+                        outcome: "answered",
+                        answers: entry.questions.map((question) => ({
+                          questionId: question.id,
+                          selectedOptionIds: question.options
+                            .filter((option) => answers[question.id]?.includes(option.label))
+                            .map((option) => option.id),
+                        })),
+                      },
+                    },
+              );
+          }
+          emit(
+            RuntimeEvent.cases["approval.resolved"].make({
+              threadId,
+              requestId,
+              answers: entry.kind === "question" && decision !== "deny" ? answers : undefined,
+            }),
+          );
+          emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
+          return Effect.void;
+        }),
+      // Cursor only takes a model at launch, so the next turn relaunches it.
+      setModel: (next) => Effect.sync(() => void (model = next)),
+      close: Effect.sync(() => rpc?.close()),
+    };
+    return session;
+  });
+
+const unsupported = (action: string) => () =>
+  Effect.fail(fail(`Cursor can't ${action} a conversation yet.`));
+
+export const CursorAdapter: ProviderAdapter = {
+  kind: "cursor",
+  start,
+  rewind: unsupported("rewind"),
+  fork: unsupported("fork"),
+  readUsage: () => Effect.succeed({ context: null, costUsd: null }),
+  listSkills: () => Effect.succeed([]),
+};

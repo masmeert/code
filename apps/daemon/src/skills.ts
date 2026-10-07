@@ -3,7 +3,7 @@
  * mentions that run them. Scanning skill folders ourselves would mean copying each harness's
  * lookup rules (scopes, plugins, overrides), which change with every release.
  */
-import type { ProviderKind } from "@apcode/contracts";
+import { PROVIDER_NAME, type ProviderKind } from "@apcode/contracts";
 import * as Effect from "effect/Effect";
 import type { ProviderError, ProviderSkill } from "./providers/ProviderAdapter.ts";
 
@@ -59,7 +59,7 @@ export function createSkillCatalog(options: {
           onSuccess: (skills) => ({ skills, error: null }),
           onFailure: (error) => ({
             skills: listings.get(key)?.skills ?? [],
-            error: `Couldn't read ${provider === "claude" ? "Claude" : "Codex"}'s skills: ${error.message}`,
+            error: `Couldn't read ${PROVIDER_NAME[provider]}'s skills: ${error.message}`,
           }),
         }),
       ),

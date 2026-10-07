@@ -6,6 +6,7 @@ import {
   isAwaitingUser,
   isTurnActive,
   PermissionLevel,
+  PROVIDER_NAME,
   ProviderKind,
   RuntimeEvent,
   ServerFrame,
@@ -79,6 +80,7 @@ import {
 } from "./sourceControl.ts";
 import { generateCommitMessage, generatePullRequest, generateThreadTitle } from "./writer.ts";
 import { CodexAdapter } from "./providers/CodexAdapter.ts";
+import { CursorAdapter } from "./providers/CursorAdapter.ts";
 import {
   ProviderError,
   type ProviderAdapter,
@@ -104,6 +106,7 @@ import { createSkillCatalog } from "./skills.ts";
 const ADAPTERS: Record<ProviderKind, ProviderAdapter> = {
   claude: ClaudeAdapter,
   codex: CodexAdapter,
+  cursor: CursorAdapter,
 };
 
 export interface SequencedEvent {
@@ -320,10 +323,7 @@ function describeRun({ command, exitCode, output }: CommandRun) {
 /** A thread is named after its first message, like a chat title. */
 /** The harness's name as the user set it in Settings, else its own; the same one the app shows. */
 function harnessName(settings: Settings, provider: ProviderKind) {
-  return (
-    settings.providers[provider].displayName?.trim() ||
-    ({ claude: "Claude", codex: "Codex" } as const)[provider]
-  );
+  return settings.providers[provider].displayName?.trim() || PROVIDER_NAME[provider];
 }
 
 const titleFrom = (text: string, fallback: string) => {

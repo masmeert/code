@@ -143,6 +143,7 @@ export function ThreadListMenu(props: {
             all: "All",
             claude: harnessLabel(settings, "claude"),
             codex: harnessLabel(settings, "codex"),
+            cursor: harnessLabel(settings, "cursor"),
           }}
           onChange={(provider) => props.onChange({ provider })}
         />

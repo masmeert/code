@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 export const DEFAULT_DAEMON_PORT = 47821;
@@ -9,8 +10,14 @@ export const DEFAULT_DAEMON_PORT = 47821;
 export const PROTOCOL_VERSION = 1;
 export const PROTOCOL_MISMATCH = 4426;
 
-export const ProviderKind = Schema.Literals(["claude", "codex"]);
+export const ProviderKind = Schema.Literals(["claude", "codex", "cursor"]);
 export type ProviderKind = typeof ProviderKind.Type;
+
+export const PROVIDER_NAME: Record<ProviderKind, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  cursor: "Cursor",
+};
 
 export const ThreadStatus = Schema.Literals([
   "idle",
@@ -251,7 +258,7 @@ export const ProviderSettings = Schema.Struct({
   color: Schema.optional(HarnessColor),
   /** CLI to run instead of the one found on PATH. */
   binaryPath: Schema.optional(Schema.String),
-  /** CLAUDE_CONFIG_DIR for Claude Code, CODEX_HOME for Codex. */
+  /** CLAUDE_CONFIG_DIR for Claude Code, CODEX_HOME for Codex, CURSOR_CONFIG_DIR for Cursor. */
   configDir: Schema.optional(Schema.String),
   launchArgs: Schema.optional(Schema.Array(Schema.String)),
   env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
@@ -266,7 +273,14 @@ export const Settings = Schema.Struct({
   theme: Theme,
   /** Harness preselected in new chats; follows the last one used. */
   lastProvider: ProviderKind,
-  providers: Schema.Struct({ claude: ProviderSettings, codex: ProviderSettings }),
+  providers: Schema.Struct({
+    claude: ProviderSettings,
+    codex: ProviderSettings,
+    // Settings files from before Cursor have no entry for it.
+    cursor: ProviderSettings.pipe(
+      Schema.withDecodingDefaultKey(Effect.succeed({ defaultModel: null })),
+    ),
+  }),
   /** A message sent while the agent works: held until the turn ends ("queue"), or sent into it right away ("steer"). */
   followUp: Schema.optional(Schema.Literals(["queue", "steer"])),
   /** Model new threads start with, as `provider:model`; null/absent follows the last harness used. */
@@ -307,7 +321,11 @@ export const DEFAULT_AUTO_SHELVE_DAYS = 7;
 export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   lastProvider: "claude",
-  providers: { claude: { defaultModel: null }, codex: { defaultModel: null } },
+  providers: {
+    claude: { defaultModel: null },
+    codex: { defaultModel: null },
+    cursor: { defaultModel: null },
+  },
 };
 
 export const ModelOption = Schema.Struct({

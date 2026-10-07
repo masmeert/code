@@ -54,6 +54,7 @@ function settingsWith(harness: Partial<Settings["providers"]>): Settings {
     providers: {
       claude: harness.claude ?? replaying("claude"),
       codex: harness.codex ?? replaying("codex"),
+      cursor: { defaultModel: null },
     },
   };
 }

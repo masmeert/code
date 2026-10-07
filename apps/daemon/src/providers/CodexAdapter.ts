@@ -10,6 +10,7 @@ import {
   type ThreadUsage,
 } from "@apcode/contracts";
 import * as Effect from "effect/Effect";
+import { randomUUID } from "node:crypto";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -419,7 +420,8 @@ const start = ({
       detail: string,
       fromThreadId?: string,
     ) {
-      const requestId = `codex-${rpcId}`;
+      // Each process numbers its requests from 0, and the transcript keeps approvals across relaunches.
+      const requestId = `codex-${randomUUID()}`;
       pendingApprovals.set(requestId, { rpcId, elicitation });
       emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "awaiting-approval" }));
       emit(

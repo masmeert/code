@@ -14,6 +14,7 @@ import { firstTurnOptions, respondApproval, useStore } from "./store.ts";
 export const EFFORTS: Record<ProviderKind, ReadonlyArray<Effort>> = {
   claude: ["low", "medium", "high", "xhigh", "max", "ultracode", "ultrathink"],
   codex: ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+  cursor: ["minimal", "low", "medium", "high", "xhigh", "max"],
 };
 
 export const EFFORT_LABEL: Record<Effort, string> = {
@@ -28,10 +29,14 @@ export const EFFORT_LABEL: Record<Effort, string> = {
   ultrathink: "Ultrathink",
 };
 
-/** Permission levels each harness offers; Codex has no plan or auto mode. */
+/**
+ * Permission levels each harness offers, safest first; Codex has no plan or auto mode. Cursor edits
+ * without asking, so it can't offer "ask first".
+ */
 export const PERMISSIONS: Record<ProviderKind, ReadonlyArray<PermissionLevel>> = {
   claude: ["plan", "ask", "auto-edit", "auto", "full-access"],
   codex: ["ask", "auto-edit", "full-access"],
+  cursor: ["plan", "auto-edit", "full-access"],
 };
 
 export const PERMISSION_LABEL: Record<PermissionLevel, string> = {
@@ -84,7 +89,8 @@ const fit = (prefs: TurnPrefs, provider: ProviderKind, needsRootConsent: boolean
     PERMISSIONS[provider].includes(prefs.permission) &&
     !(needsRootConsent && prefs.permission === "full-access")
       ? prefs.permission
-      : "ask",
+      : // Every harness offers a level besides plan.
+        PERMISSIONS[provider].find((level) => level !== "plan")!,
 });
 
 /** Effort and permission level for the composer identified by `key` (a thread id, or a draft's path). */

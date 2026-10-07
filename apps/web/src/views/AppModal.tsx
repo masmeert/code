@@ -29,6 +29,7 @@ import {
   SourceControlKind,
   WritingStyle,
   HostStatus,
+  PROVIDER_NAME,
   type ProviderStatus,
   Theme,
   UpdateStatus,
@@ -65,7 +66,6 @@ import {
   encodeChoice,
   harnessLabel,
   orderedModels,
-  PROVIDER_LABEL,
   visibleModels,
 } from "../lib/models.ts";
 import {
@@ -847,6 +847,7 @@ function WriterModelSelect() {
 const CONFIG_DIR: Record<ProviderKind, { env: string; placeholder: string }> = {
   claude: { env: "CLAUDE_CONFIG_DIR", placeholder: "~/.claude" },
   codex: { env: "CODEX_HOME", placeholder: "~/.codex" },
+  cursor: { env: "CURSOR_CONFIG_DIR", placeholder: "~/.apcode/cursor" },
 };
 
 function ConnectionsPage() {
@@ -1149,7 +1150,7 @@ function LocalHarnessSettings({
             <SettingsTextField
               label="Display name"
               value={harness.displayName ?? ""}
-              placeholder={PROVIDER_LABEL[kind]}
+              placeholder={PROVIDER_NAME[kind]}
               onCommit={(displayName) => updateHarness(kind, { displayName })}
             />
           </SettingsRow>
@@ -1209,7 +1210,7 @@ function LocalHarnessSettings({
               label="Launch arguments"
               mono
               value={(harness.launchArgs ?? []).join(" ")}
-              placeholder={kind === "claude" ? "--flag value" : "-c key=value"}
+              placeholder={kind === "codex" ? "-c key=value" : "--flag value"}
               onCommit={(args) =>
                 updateHarness(kind, { launchArgs: args.split(/\s+/).filter(Boolean) })
               }

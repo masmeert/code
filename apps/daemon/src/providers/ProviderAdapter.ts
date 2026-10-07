@@ -142,6 +142,17 @@ export interface ProviderAdapter {
   ) => Effect.Effect<ReadonlyArray<ProviderSkill>, ProviderError>;
 }
 
+/** Image extensions models take, with their media types. */
+export const IMAGE_TYPES = new Map<string, "image/png" | "image/jpeg" | "image/gif" | "image/webp">(
+  [
+    [".png", "image/png"],
+    [".jpg", "image/jpeg"],
+    [".jpeg", "image/jpeg"],
+    [".gif", "image/gif"],
+    [".webp", "image/webp"],
+  ],
+);
+
 /** One-line human summary of a tool input, for the transcript. */
 export function summarizeToolInput(input: Schema.Json): string {
   if (input === null) return "";

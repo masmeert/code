@@ -1,24 +1,12 @@
 /**
- * Minimal client for `codex app-server`: newline-delimited JSON-RPC over stdio.
- * Promise-based; callers wrap it in Effect at their boundary. Incoming messages are
- * decoded here, down to the fields APCode reads.
+ * What `codex app-server` says over its JSON-RPC, decoded down to the fields APCode reads.
  */
-import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { connectJsonRpc, type JsonRpc, type RpcId } from "./jsonRpc.ts";
 import type { HarnessLaunch } from "./launch.ts";
 
-export type RpcId = number | string;
-
-const RpcMessage = Schema.Struct({
-  id: Schema.optional(Schema.Union([Schema.Number, Schema.String])),
-  method: Schema.optional(Schema.String),
-  params: Schema.optional(Schema.Unknown),
-  result: Schema.optional(Schema.Unknown),
-  error: Schema.optional(Schema.NullOr(Schema.Struct({ message: Schema.String }))),
-});
-type RpcMessage = typeof RpcMessage.Type;
+export type { RpcId };
 
 const ErrorMessage = Schema.Struct({ message: Schema.String });
 
@@ -213,7 +201,6 @@ export const ThreadResponse = Schema.Struct({
   model: Schema.String,
 });
 
-const decodeRpcMessage = Schema.decodeUnknownOption(Schema.fromJsonString(RpcMessage));
 const decodeNotification = Schema.decodeUnknownOption(CodexNotification);
 const decodeServerRequest = Schema.decodeUnknownOption(CodexServerRequest);
 
@@ -224,17 +211,7 @@ export interface CodexRpcHandlers {
   readonly onExit?: (code: number | null, stderrTail: string) => void;
 }
 
-export interface CodexRpc {
-  /** Resolves to the result, decoded with `response`. */
-  readonly request: <A>(
-    method: string,
-    params: Schema.Json,
-    response: Schema.Decoder<A>,
-  ) => Promise<A>;
-  readonly notify: (method: string, params?: Schema.Json) => void;
-  readonly respond: (id: RpcId, result: Schema.Json) => void;
-  readonly close: () => void;
-}
+export type CodexRpc = JsonRpc;
 
 /** Spawns `codex app-server` and completes the initialize handshake. */
 export async function connectCodex(
@@ -242,87 +219,18 @@ export async function connectCodex(
   handlers: CodexRpcHandlers = {},
   launch: HarnessLaunch,
 ): Promise<CodexRpc> {
-  const child = spawn(launch.bin, ["app-server", ...launch.args], {
-    cwd,
-    env: launch.env,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-
-  let nextId = 0;
-  const inflight = new Map<
-    RpcId,
-    { readonly resolve: (reply: RpcMessage) => void; readonly reject: (error: Error) => void }
-  >();
-  function write(message: Schema.Json) {
-    child.stdin.write(`${JSON.stringify(message)}\n`);
-  }
-
-  createInterface({ input: child.stdout }).on("line", (line) => {
-    const message = Option.getOrUndefined(decodeRpcMessage(line));
-    if (message === undefined) return;
-    const { id, method, params } = message;
-    if (method !== undefined && id !== undefined) {
-      const request = decodeServerRequest({ method, params });
-      const handled =
-        Option.isSome(request) && (handlers.onServerRequest?.(id, request.value) ?? false);
-      if (!handled)
-        write({ id, error: { code: -32601, message: `APCode does not handle ${method}` } });
-      return;
-    }
-    if (method !== undefined) {
+  const rpc = connectJsonRpc("Codex", launch, ["app-server", ...launch.args], cwd, {
+    onNotification: (method, params) => {
       const notification = decodeNotification({ method, params });
       if (Option.isSome(notification)) handlers.onNotification?.(notification.value);
-      return;
-    }
-    if (id !== undefined) {
-      const waiter = inflight.get(id);
-      inflight.delete(id);
-      waiter?.resolve(message);
-    }
-  });
-
-  let stderrTail = "";
-  child.stderr.on(
-    "data",
-    (chunk: Buffer) => (stderrTail = (stderrTail + chunk.toString()).slice(-4000)),
-  );
-  let reportExit: (error: Error) => void = () => {};
-  const exited = new Promise<never>((_, reject) => (reportExit = reject));
-  // Settled with nothing awaiting it yet; requests race it.
-  exited.catch(() => {});
-  child.on("error", (error) => reportExit(error));
-  // A write racing the exit fails with EPIPE; the exit itself is what's reported.
-  child.stdin.on("error", () => {});
-  child.on("exit", (code) => {
-    const error = new Error(`Codex exited (code ${code}): ${stderrTail.trim() || "no output"}`);
-    reportExit(error);
-    for (const waiter of inflight.values()) waiter.reject(error);
-    inflight.clear();
-    handlers.onExit?.(code, stderrTail);
-  });
-
-  const rpc: CodexRpc = {
-    request: (method, params, response) =>
-      Promise.race([
-        exited,
-        new Promise<RpcMessage>((resolve, reject) => {
-          const id = ++nextId;
-          inflight.set(id, { resolve, reject });
-          write({ id, method, params });
-        }),
-      ]).then((reply) =>
-        reply.error
-          ? Promise.reject(new Error(reply.error.message))
-          : Schema.decodeUnknownPromise(response)(reply.result),
-      ),
-    notify: (method, params) => write(params === undefined ? { method } : { method, params }),
-    respond: (id, result) => write({ id, result }),
-    close: () => {
-      child.stdin.end();
-      child.kill();
     },
-  };
-
+    onRequest: (id, method, params) =>
+      Option.match(decodeServerRequest({ method, params }), {
+        onNone: () => false,
+        onSome: (request) => handlers.onServerRequest?.(id, request) ?? false,
+      }),
+    onExit: handlers.onExit,
+  });
   await rpc.request(
     "initialize",
     {

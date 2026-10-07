@@ -31,6 +31,7 @@ import * as Schema from "effect/Schema";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import {
+  IMAGE_TYPES,
   ProviderError,
   summarizeToolInput,
   textWithFiles,
@@ -132,14 +133,6 @@ const effortSettings = (effort: Effort): Parameters<Query["applyFlagSettings"]>[
 /** Claude Code looks for the "ultrathink" keyword in the message itself. */
 const withUltrathink = (turn: TurnInput): TurnInput =>
   turn.effort === "ultrathink" ? { ...turn, text: `${turn.text}\n\nultrathink` } : turn;
-
-const IMAGE_TYPES = new Map<string, "image/png" | "image/jpeg" | "image/gif" | "image/webp">([
-  [".png", "image/png"],
-  [".jpg", "image/jpeg"],
-  [".jpeg", "image/jpeg"],
-  [".gif", "image/gif"],
-  [".webp", "image/webp"],
-]);
 
 /** Tool inputs come from the model as JSON; anything else gets an empty summary. */
 const decodeToolInput = Schema.decodeUnknownOption(Schema.Json);

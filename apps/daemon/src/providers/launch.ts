@@ -1,7 +1,9 @@
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import type { ProviderKind, ProviderSettings } from "@apcode/contracts";
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { expandHome } from "../folders.ts";
+import { DATA_DIR } from "../storage/jsonFile.ts";
 import { resolveExecutable } from "./resolveExecutable.ts";
 
 /** How to run one harness CLI, from its Settings. */
@@ -11,9 +13,20 @@ export interface HarnessLaunch {
   readonly env: Record<string, string | undefined>;
 }
 
-const CLI: Record<ProviderKind, { name: string; pathEnv: string; configEnv: string }> = {
+const CLI: Record<
+  ProviderKind,
+  { name: string; pathEnv: string; configEnv: string; defaultConfigDir?: string }
+> = {
   claude: { name: "claude", pathEnv: "APCODE_CLAUDE_PATH", configEnv: "CLAUDE_CONFIG_DIR" },
   codex: { name: "codex", pathEnv: "APCODE_CODEX_PATH", configEnv: "CODEX_HOME" },
+  cursor: {
+    name: "cursor-agent",
+    pathEnv: "APCODE_CURSOR_PATH",
+    configEnv: "CURSOR_CONFIG_DIR",
+    // Picking a model saves it as the CLI's default, so APCode's picks would change the user's own
+    // `cursor-agent`. The login lives in the keychain, so a separate config keeps it.
+    defaultConfigDir: join(DATA_DIR, "cursor"),
+  },
 };
 
 export function harnessLaunch(kind: ProviderKind, settings: ProviderSettings): HarnessLaunch {
@@ -24,7 +37,10 @@ export function harnessLaunch(kind: ProviderKind, settings: ProviderSettings): H
   if (!existsSync(bin))
     throw new Error(`No file at ${bin}. Fix the binary path in Settings → Harnesses.`);
   const env = { ...process.env, ...settings.env };
-  if (settings.configDir?.trim()) env[cli.configEnv] = expandHome(settings.configDir);
+  const configDir = settings.configDir?.trim()
+    ? expandHome(settings.configDir)
+    : cli.defaultConfigDir;
+  if (configDir) env[cli.configEnv] = configDir;
   return { bin, args: settings.launchArgs ?? [], env };
 }
 

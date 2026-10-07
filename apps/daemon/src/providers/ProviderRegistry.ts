@@ -7,7 +7,7 @@ import {
   Effort,
   type AuthFlow,
   type ModelOption,
-  type ProviderKind,
+  ProviderKind,
   ProviderStatus,
   type UsageLimit,
 } from "@apcode/contracts";
@@ -21,6 +21,7 @@ import * as Predicate from "effect/Predicate";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { CODEX_FAST_TIER, CodexNotification, connectCodex, type CodexRpc } from "./codexRpc.ts";
+import { readCursorModels } from "./CursorAdapter.ts";
 import { harnessLaunch, promptlessQuery, type HarnessLaunch } from "./launch.ts";
 
 const exec = promisify(execFile);
@@ -181,6 +182,30 @@ const probeCodex = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
   }
 };
 
+const probeCursor = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
+  const version = firstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
+  const { stdout } = await exec(launch.bin, ["status"], { env: launch.env }).catch((e) => ({
+    stdout: String(e.stdout ?? ""),
+  }));
+  const account = stdout.match(new RegExp(String.raw`Logged in as ([^\s\u001b]+)`))?.[1] ?? null;
+  return {
+    kind: "cursor",
+    installed: true,
+    version,
+    linked: account !== null,
+    account,
+    plan: null,
+    models: account === null ? [] : await readCursorModels(launch),
+    error: null,
+  };
+};
+
+const PROBE: Record<ProviderKind, (launch: HarnessLaunch) => Promise<ProviderStatus>> = {
+  claude: probeClaude,
+  codex: probeCodex,
+  cursor: probeCursor,
+};
+
 // --- usage limits --------------------------------------------------------------
 
 const ClaudeWindow = Schema.Struct({
@@ -276,6 +301,19 @@ const readCodexLimits = async (launch: HarnessLaunch): Promise<Array<UsageLimit>
   }
 };
 
+// Cursor's CLI doesn't report its plan's limits.
+const READ_LIMITS: Record<ProviderKind, (launch: HarnessLaunch) => Promise<Array<UsageLimit>>> = {
+  claude: readClaudeLimits,
+  codex: readCodexLimits,
+  cursor: async () => [],
+};
+
+const LOGOUT_ARGS: Record<ProviderKind, ReadonlyArray<string>> = {
+  claude: ["auth", "logout"],
+  codex: ["logout"],
+  cursor: ["logout"],
+};
+
 // --- service -----------------------------------------------------------------
 
 /** Single listener (the session manager) that fans changes out to clients. */
@@ -308,18 +346,19 @@ const make = Effect.gen(function* () {
     harnessLaunch(kind, (await Effect.runPromise(settingsStore.get)).providers[kind]);
   const probe = (kind: ProviderKind) =>
     launchFor(kind)
-      .then((launch) => (kind === "claude" ? probeClaude(launch) : probeCodex(launch)))
+      .then((launch) => PROBE[kind](launch))
       .catch((e) => {
         const text = message(e);
         return unknown(kind, text.includes("Could not find") ? null : text);
       });
   // Checking the CLIs takes seconds; until it's done, clients get what the last check found rather
   // than "not installed", which hid every model picker and disabled sending on each launch.
-  const lastChecked = yield* openJsonFile("providers.json", Schema.Array(ProviderStatus), [
-    { ...unknown("claude"), checking: true },
-    { ...unknown("codex"), checking: true },
-  ]);
-  let providers = [...(yield* lastChecked.get)];
+  const lastChecked = yield* openJsonFile("providers.json", Schema.Array(ProviderStatus), []);
+  const checked = yield* lastChecked.get;
+  let providers = ProviderKind.literals.map(
+    (kind) =>
+      checked.find((provider) => provider.kind === kind) ?? { ...unknown(kind), checking: true },
+  );
   let listener: ProviderListener = { providers: () => {}, flow: () => {} };
   /** In-flight sign-in per harness. */
   const flows = new Map<ProviderKind, { child?: ChildProcess; rpc?: CodexRpc; loginId?: string }>();
@@ -338,7 +377,7 @@ const make = Effect.gen(function* () {
     await Effect.runPromise(lastChecked.set(providers));
   };
   async function refreshAll() {
-    await Promise.all([refreshOne("claude"), refreshOne("codex")]);
+    await Promise.all(ProviderKind.literals.map(refreshOne));
   }
 
   const finish = async (kind: ProviderKind, ok: boolean, text: string | null) => {
@@ -404,6 +443,42 @@ const make = Effect.gen(function* () {
     flow("codex", "browser", res.authUrl);
   };
 
+  /** Cursor's login opens the browser itself and finishes when the page does. */
+  const linkCursor = async () => {
+    const launch = await launchFor("cursor");
+    const child = spawn(launch.bin, ["login"], {
+      env: launch.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    flows.set("cursor", { child });
+    let output = "";
+    let announced = false;
+    const onData = (chunk: Buffer) => {
+      output += chunk.toString();
+      const url = output.match(new RegExp(String.raw`https://[^\s\u0007\u001b]+`))?.[0];
+      if (url && !announced) {
+        announced = true;
+        flow("cursor", "browser", url);
+      }
+    };
+    child.stdout.on("data", onData);
+    child.stderr.on("data", onData);
+    child.on("exit", (code) => {
+      if (flows.get("cursor")?.child !== child) return;
+      void finish(
+        "cursor",
+        code === 0,
+        code === 0 ? null : firstLine(output.slice(-500)) || `exited with ${code}`,
+      );
+    });
+  };
+
+  const LINK: Record<ProviderKind, () => Promise<void>> = {
+    claude: linkClaude,
+    codex: linkCodex,
+    cursor: linkCursor,
+  };
+
   const cancel = (kind: ProviderKind) => {
     const active = flows.get(kind);
     flows.delete(kind);
@@ -433,8 +508,7 @@ const make = Effect.gen(function* () {
         cancel(kind);
         flow(kind, "starting");
         try {
-          if (kind === "claude") await linkClaude();
-          else await linkCodex();
+          await LINK[kind]();
         } catch (e) {
           cancel(kind);
           flow(kind, "failed", null, message(e));
@@ -448,7 +522,7 @@ const make = Effect.gen(function* () {
     unlink: (kind) =>
       background(async () => {
         const launch = await launchFor(kind);
-        await exec(launch.bin, kind === "claude" ? ["auth", "logout"] : ["logout"], {
+        await exec(launch.bin, [...LOGOUT_ARGS[kind]], {
           env: launch.env,
         }).catch(() => {});
         await refreshOne(kind);
@@ -456,9 +530,7 @@ const make = Effect.gen(function* () {
     readLimits: (kind) =>
       Effect.promise(() =>
         launchFor(kind)
-          .then((launch) =>
-            kind === "claude" ? readClaudeLimits(launch) : readCodexLimits(launch),
-          )
+          .then((launch) => READ_LIMITS[kind](launch))
           .then(
             (limits) => ({ limits, error: null }),
             (e) => ({ limits: [], error: `Couldn't read usage limits: ${message(e)}` }),
