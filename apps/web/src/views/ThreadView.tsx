@@ -41,32 +41,46 @@ import { Button } from "@apcode/ui/motion/button/base";
 import { cn } from "@apcode/ui/lib/utils";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@apcode/ui/components/dropdown-menu";
+import {
   type Attachment,
   ClientCommand,
   type CommandRun,
   isTurnActive,
+  type LimitStop,
   type Project,
   type ProviderKind,
+  type ProviderStatus,
   type QueuedMessage,
   repositoryOf,
+  type Settings,
+  type TurnOptions,
 } from "@apcode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
 import {
   ArrowLeftRight,
   Check,
+  ChevronDown,
   ChevronRight,
+  Clock,
   CornerDownRight,
   FileDiff,
   FileText,
   GitFork,
   FolderPlus,
   FolderTree,
+  Gauge,
   Globe,
   ImageIcon,
   LoaderCircle,
   MessageSquare,
   Monitor,
   PanelLeft,
+  Play,
   Pencil,
   Quote,
   Server,
@@ -113,6 +127,7 @@ import {
   withReviewComments,
 } from "../lib/reviewComments.ts";
 import { useNow } from "../lib/time.ts";
+import { resetLabel } from "./UsageMeter.tsx";
 import {
   decodeChoice,
   defaultModel,
@@ -732,6 +747,132 @@ const QueuedFollowUp = ({
   </div>
 );
 
+/** A usage limit stopped the thread and holds its queue: when it resets, and the ways to carry on. */
+function LimitStopNotice({
+  threadId,
+  stop,
+  provider,
+  providers,
+  settings,
+  options,
+}: {
+  threadId: string;
+  stop: LimitStop;
+  provider: ProviderKind;
+  providers: ReadonlyArray<ProviderStatus>;
+  settings: Settings;
+  /** The composer's, for the message that continues the thread. */
+  options: TurnOptions;
+}) {
+  const now = useNow(30_000);
+  const waiting = stop.resetsAt !== null && stop.resetsAt > now;
+  const others = providers.filter(
+    (other) => other.linked && other.kind !== stop.provider && other.kind !== provider,
+  );
+  return (
+    <div role="status" className="pb-1.5">
+      <div className="flex h-8 items-center gap-2 pl-1.5">
+        <Gauge className="size-3.5 shrink-0 text-amber-500" />
+        <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/80">
+          {harnessLabel(settings, stop.provider)} hit its usage limit
+          {stop.resetsAt === null ? null : (
+            <span className="ml-1 text-muted-foreground">
+              {" "}
+              {waiting ? resetLabel(stop.resetsAt, now) : "It has reset"}
+            </span>
+          )}
+        </span>
+        <IconAction
+          label="Dismiss; queued messages go back to the composer"
+          onClick={() => {
+            send(ClientCommand.cases["thread.dismissLimitStop"].make({ threadId }));
+            returnToComposer(threadId, takeQueued(threadId));
+          }}
+        >
+          <X className="size-3.5" />
+        </IconAction>
+      </div>
+      <div className="flex items-center gap-1 pl-5">
+        <button
+          type="button"
+          title={`Continue with ${harnessLabel(settings, provider)} now`}
+          onClick={() =>
+            send(ClientCommand.cases["thread.resumeAfterLimit"].make({ threadId, options }))
+          }
+          className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Play className="size-3.5" />
+          Resume
+        </button>
+        {waiting ? (
+          <button
+            type="button"
+            aria-pressed={stop.resumeAtReset !== null}
+            title={
+              stop.resumeAtReset
+                ? "Don't continue by itself"
+                : "Continue by itself once the limit resets"
+            }
+            onClick={() =>
+              send(
+                ClientCommand.cases["thread.resumeAtReset"].make({
+                  threadId,
+                  options: stop.resumeAtReset ? null : options,
+                }),
+              )
+            }
+            className={cn(
+              "flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+              stop.resumeAtReset && "text-amber-500",
+            )}
+          >
+            <Clock className="size-3.5" />
+            {stop.resumeAtReset ? "Resuming at reset" : "Resume at reset"}
+          </button>
+        ) : null}
+        {others.length > 0 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                title="Move the thread to another harness and continue there; it's told what happened so far"
+                className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-muted/60 data-[state=open]:text-foreground"
+              >
+                <ArrowLeftRight className="size-3.5" />
+                Hand off
+                <ChevronDown className="size-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" sideOffset={4} collisionPadding={8}>
+              {others.map((other) => {
+                const Logo = PROVIDER_LOGO[other.kind];
+                return (
+                  <DropdownMenuItem
+                    key={other.kind}
+                    onSelect={() =>
+                      send(
+                        ClientCommand.cases["thread.resumeAfterLimit"].make({
+                          threadId,
+                          // Effort levels differ per harness; the new one starts on its own.
+                          options: { ...options, effort: null, fast: undefined },
+                          provider: other.kind,
+                        }),
+                      )
+                    }
+                  >
+                    <Logo className="size-3.5" />
+                    {harnessLabel(settings, other.kind)}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 /** A diff comment waiting to go out with the next message; clicking it shows it in the diff. */
 function ReviewCommentRow({
   threadId,
@@ -1059,6 +1200,18 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                     canStopOne={provider === "claude"}
                     onReveal={(toolId) => setReveal({ toolId })}
                   />
+                </PromptInputTray>
+                <PromptInputTray open={info.limitStop !== undefined} detached>
+                  {info.limitStop ? (
+                    <LimitStopNotice
+                      threadId={threadId}
+                      stop={info.limitStop}
+                      provider={provider}
+                      providers={providers}
+                      settings={settings}
+                      options={toTurnOptions({ effort, fast, permission }, [])}
+                    />
+                  ) : null}
                 </PromptInputTray>
                 <PromptInputTray open={followUps.length > 0 || reviewComments.length > 0}>
                   {reviewComments.map((comment) => (

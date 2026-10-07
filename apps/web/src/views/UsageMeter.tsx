@@ -38,7 +38,7 @@ function percentOf(part: number, whole: number) {
 }
 
 /** "Resets in 3 hr 21 min" within a day, else the weekday and time. */
-function resetLabel(resetsAt: number, now: number) {
+export function resetLabel(resetsAt: number, now: number) {
   const minutes = Math.max(0, Math.round((resetsAt - now) / 60_000));
   if (minutes >= 24 * 60)
     return `Resets ${new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }).format(resetsAt)}`;

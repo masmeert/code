@@ -2,6 +2,7 @@ import {
   isTranscriptEvent,
   RuntimeEvent,
   type PageInfo,
+  LimitStop,
   type ProviderKind,
   QueuedMessage,
   type SearchHit,
@@ -136,6 +137,7 @@ export class ThreadStore extends Context.Service<
     readonly search: (query: string, limit: number) => ReadonlyArray<SearchHit>;
     readonly setModel: (threadId: string, model: string | null) => void;
     readonly setQueue: (threadId: string, queue: ReadonlyArray<QueuedMessage>) => void;
+    readonly setLimitStop: (threadId: string, limitStop: LimitStop | null) => void;
     readonly setUsage: (threadId: string, usage: ThreadUsage) => void;
     readonly setArchived: (threadId: string, archivedAt: number | null) => void;
     readonly setSeenRev: (threadId: string, seenRev: number) => void;
@@ -153,6 +155,7 @@ export class ThreadStore extends Context.Service<
 const decodeEvent = Schema.decodeUnknownOption(Schema.fromJsonString(RuntimeEvent));
 const decodeUsage = Schema.decodeUnknownOption(Schema.fromJsonString(ThreadUsage));
 const decodeQueue = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(QueuedMessage)));
+const decodeLimitStop = Schema.decodeUnknownOption(Schema.fromJsonString(LimitStop));
 const decodeTokens = Schema.decodeUnknownOption(
   Schema.fromJsonString(
     Schema.Struct({
@@ -263,6 +266,7 @@ const make = Effect.acquireRelease(
       db.run("ALTER TABLE threads ADD COLUMN shelve_override TEXT");
     if (!columns.has("started_by")) db.run("ALTER TABLE threads ADD COLUMN started_by TEXT");
     if (!columns.has("queue")) db.run("ALTER TABLE threads ADD COLUMN queue TEXT");
+    if (!columns.has("limit_stop")) db.run("ALTER TABLE threads ADD COLUMN limit_stop TEXT");
     // Per-harness tokens replace `resume_token`, which is emptied once they're written.
     if (!columns.has("resume_tokens")) db.run("ALTER TABLE threads ADD COLUMN resume_tokens TEXT");
     if (!columns.has("coverage")) db.run("ALTER TABLE threads ADD COLUMN coverage TEXT");
@@ -299,6 +303,7 @@ const make = Effect.acquireRelease(
     );
     const setModel = db.prepare("UPDATE threads SET model = $model WHERE id = $id");
     const setQueue = db.prepare("UPDATE threads SET queue = $queue WHERE id = $id");
+    const setLimitStop = db.prepare("UPDATE threads SET limit_stop = $limitStop WHERE id = $id");
     // A turn starts at a user message not sent into a running one, and ends at turn.completed.
     const selectUnfinished = db.prepare<{ thread_id: string; message_id: string }, []>(
       `SELECT thread_id, (SELECT json_extract(json, '$.messageId') FROM events WHERE seq = turn_seq) AS message_id
@@ -438,6 +443,7 @@ const make = Effect.acquireRelease(
               shelve_override: ShelveOverride;
               started_by: string | null;
               queue: string | null;
+              limit_stop: string | null;
             },
             []
           >("SELECT * FROM threads ORDER BY created_at")
@@ -460,6 +466,10 @@ const make = Effect.acquireRelease(
               seenRev: row.seen_rev,
               shelved: false,
               ...(row.started_by !== null && { startedBy: row.started_by }),
+              limitStop:
+                row.limit_stop === null
+                  ? undefined
+                  : Option.getOrUndefined(decodeLimitStop(row.limit_stop)),
             },
             home: { path: row.cwd, worktree: row.worktree === 1 },
             resumeTokens: legacyTokens(row),
@@ -563,6 +573,9 @@ const make = Effect.acquireRelease(
       },
       setQueue: (id, queue) => {
         setQueue.run({ id, queue: queue.length ? JSON.stringify(queue) : null });
+      },
+      setLimitStop: (id, limitStop) => {
+        setLimitStop.run({ id, limitStop: limitStop && JSON.stringify(limitStop) });
       },
       setUsage: (id, usage) => {
         setUsage.run({ id, usage: JSON.stringify(usage) });

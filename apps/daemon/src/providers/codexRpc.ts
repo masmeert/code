@@ -8,7 +8,11 @@ import type { HarnessLaunch } from "./launch.ts";
 
 export type { RpcId };
 
-const ErrorMessage = Schema.Struct({ message: Schema.String });
+const ErrorMessage = Schema.Struct({
+  message: Schema.String,
+  /** A name like "usageLimitExceeded", or an object for kinds that carry details. */
+  codexErrorInfo: Schema.optional(Schema.NullOr(Schema.Unknown)),
+});
 
 /** An item as `item/started` reports it, for the kinds shown as tool calls. */
 export const StartedItem = Schema.Union([

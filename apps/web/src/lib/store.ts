@@ -643,6 +643,11 @@ const reduceShell = (state: State, event: RuntimeEvent): State =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, activity: activity ?? undefined })),
       "thread.request": ({ threadId, request }) =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, request: request ?? undefined })),
+      "thread.limitStop": ({ threadId, limitStop }) =>
+        updateThreadInfo(state, threadId, (info) => ({
+          ...info,
+          limitStop: limitStop ?? undefined,
+        })),
       "thread.queue": ({ threadId, queue }) =>
         updateThreadInfo(state, threadId, (info) => ({
           ...info,

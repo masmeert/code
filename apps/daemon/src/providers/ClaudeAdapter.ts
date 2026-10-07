@@ -347,6 +347,9 @@ const start = ({
       let effort = initialLevel ? initialEffort : null;
       // Unknown until a turn sets it, so the user's own Claude Code setting can't linger unseen.
       let fast: boolean | undefined;
+      // The plan's limit refused a request this turn: when it resets (epoch ms, null if unsaid),
+      // undefined while it hasn't. Told only if the turn then fails, since extra usage can pay on.
+      let limitResetsAt: number | null | undefined;
 
       /** "summary" estimates the breakdown locally; "full" would make a token-count request per category. */
       async function reportUsage(costUsd: number) {
@@ -415,8 +418,19 @@ const start = ({
             }
             return;
           }
+          case "rate_limit_event": {
+            const info = msg.rate_limit_info;
+            limitResetsAt =
+              info.status === "rejected" && !info.isUsingOverage
+                ? info.resetsAt === undefined
+                  ? null
+                  : info.resetsAt * 1000
+                : undefined;
+            return;
+          }
           case "assistant": {
             const parentToolId = msg.parent_tool_use_id;
+            if (msg.error === "rate_limit" && !parentToolId) limitResetsAt ??= null;
             for (const block of msg.message.content) {
               if (block.type === "text" && !parentToolId && !streamed.has(msg.message.id)) {
                 emit(
@@ -513,6 +527,14 @@ const start = ({
             return;
           }
           case "result": {
+            if (msg.is_error && limitResetsAt !== undefined)
+              emit(
+                RuntimeEvent.cases["thread.limitStop"].make({
+                  threadId,
+                  limitStop: { provider: "claude", resetsAt: limitResetsAt, resumeAtReset: null },
+                }),
+              );
+            limitResetsAt = undefined;
             if (msg.subtype !== "success")
               emit(
                 RuntimeEvent.cases.error.make({ threadId, message: `Turn ended: ${msg.subtype}` }),

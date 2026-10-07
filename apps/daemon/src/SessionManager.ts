@@ -12,6 +12,7 @@ import {
   ServerFrame,
   type Attachment,
   type GitAction,
+  type LimitStop,
   type PageInfo,
   type QueuedMessage,
   type PullRequest,
@@ -137,6 +138,8 @@ const DELTA_FLUSH_MS = 40;
 
 /** An agent process idle this long is stopped; the next message resumes it (t3code reaps at 30 min too). */
 const SESSION_IDLE_MS = 30 * 60 * 1000;
+/** Harnesses can still refuse right at the reset (MonoCode waits this long too). */
+const LIMIT_RESET_GRACE_MS = 30_000;
 const REAP_INTERVAL_MS = 5 * 60 * 1000;
 
 type TextDelta = Extract<RuntimeEvent, { _tag: "assistant.delta" | "reasoning.delta" }>;
@@ -588,8 +591,18 @@ const make = Effect.gen(function* () {
     publish(RuntimeEvent.cases["thread.shelved"].make({ threadId: entry.info.id, shelved }));
   };
   // Idle threads shelve with time alone; the threshold is in days, so a check a minute is plenty.
+  // Resuming at a usage limit's reset rides along: a minute late is fine, and it survives sleep.
   const shelver = setInterval(() => {
-    for (const entry of threads.values()) refreshShelved(entry);
+    for (const entry of threads.values()) {
+      refreshShelved(entry);
+      const stop = entry.info.limitStop;
+      if (
+        stop?.resumeAtReset &&
+        stop.resetsAt !== null &&
+        Date.now() >= stop.resetsAt + LIMIT_RESET_GRACE_MS
+      )
+        Effect.runFork(Effect.ignore(reportOn(entry)(resumeAfterLimit(entry, stop.resumeAtReset))));
+    }
   }, 60_000);
   yield* Effect.addFinalizer(() => Effect.sync(() => clearInterval(shelver)));
 
@@ -675,6 +688,10 @@ const make = Effect.gen(function* () {
                   ? dropSession(entry, AGENT_GONE)
                   : dropSession(entry, null, "error"),
               );
+              return;
+            }
+            if (RuntimeEvent.guards["thread.limitStop"](event)) {
+              if (event.limitStop) stopForLimit(entry, event.limitStop);
               return;
             }
             publish(event);
@@ -764,6 +781,27 @@ const make = Effect.gen(function* () {
     );
   }
 
+  function setLimitStop(entry: ThreadEntry, limitStop: LimitStop | null) {
+    const { limitStop: _limitStop, ...info } = entry.info;
+    entry.info = limitStop ? { ...info, limitStop } : info;
+    store.setLimitStop(entry.info.id, limitStop);
+    publish(RuntimeEvent.cases["thread.limitStop"].make({ threadId: entry.info.id, limitStop }));
+  }
+
+  /** Holds the thread's queue on a usage limit, and asks for the reset when the harness didn't say. */
+  function stopForLimit(entry: ThreadEntry, limitStop: LimitStop) {
+    setLimitStop(entry, limitStop);
+    if (limitStop.resetsAt !== null) return;
+    void Effect.runPromise(registry.readLimits(limitStop.provider)).then(({ limits }) => {
+      const spent = limits.flatMap((limit) =>
+        limit.usedPercent >= 100 && limit.resetsAt !== null ? [limit.resetsAt] : [],
+      );
+      const current = entry.info.limitStop;
+      if (spent.length > 0 && current?.resetsAt === null && threads.get(entry.info.id) === entry)
+        setLimitStop(entry, { ...current, resetsAt: Math.max(...spent) });
+    });
+  }
+
   /** Sends a queued message, reporting on the thread if it can't go. */
   function sendQueued(entry: ThreadEntry, message: QueuedMessage) {
     setQueue(
@@ -796,7 +834,8 @@ const make = Effect.gen(function* () {
       isTurnActive(entry.info.status);
     const turnEnded = RuntimeEvent.guards["thread.status"](event) && event.status === "idle";
     const [next] = entry.queue;
-    if (next && !entry.stopRequested && (toolEnded || turnEnded)) sendQueued(entry, next);
+    if (next && !entry.stopRequested && !entry.info.limitStop && (toolEnded || turnEnded))
+      sendQueued(entry, next);
   }
 
   /** Stops the thread's turn and holds its queue, then does the same for threads its agent started. */
@@ -907,6 +946,7 @@ const make = Effect.gen(function* () {
           return yield* entry.session.steer(turn);
         }
         entry.stopRequested = false;
+        if (entry.info.limitStop) setLimitStop(entry, null);
         publish(event);
         publish(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
         // Snapshot the folder before the agent touches it, so the turn's changes can be shown and undone.
@@ -1663,6 +1703,17 @@ const make = Effect.gen(function* () {
       publish(RuntimeEvent.cases["thread.model"].make({ threadId, provider, model }));
     });
 
+  /** Picks a thread up after a usage limit stopped it, on `provider` when given. */
+  const resumeAfterLimit = (entry: ThreadEntry, options: TurnOptions, provider?: ProviderKind) =>
+    Effect.gen(function* () {
+      if (!entry.info.limitStop || isBusy(entry)) return;
+      if (provider && provider !== entry.info.provider) yield* switchHarness(entry, provider, null);
+      setLimitStop(entry, null);
+      const [next] = entry.queue;
+      if (next) return sendQueued(entry, next);
+      yield* send(entry, "Continue where you left off.", options);
+    });
+
   /** Announces the branches after `run` switched or created one, and the meta of threads in `path`. */
   function changeBranch(path: string, run: () => Promise<string | null>) {
     return Effect.gen(function* () {
@@ -1691,6 +1742,17 @@ const make = Effect.gen(function* () {
             entry.queue.filter((queued) => !messageIds.includes(queued.id)),
           ),
         ),
+      "thread.resumeAfterLimit": ({ threadId, options, provider }) =>
+        Effect.flatMap(getEntry(threadId), (entry) => resumeAfterLimit(entry, options, provider)),
+      "thread.resumeAtReset": ({ threadId, options }) =>
+        Effect.map(getEntry(threadId), (entry) => {
+          const stop = entry.info.limitStop;
+          if (stop) setLimitStop(entry, { ...stop, resumeAtReset: options });
+        }),
+      "thread.dismissLimitStop": ({ threadId }) =>
+        Effect.map(getEntry(threadId), (entry) => {
+          if (entry.info.limitStop) setLimitStop(entry, null);
+        }),
       "thread.rewind": rewind,
       "thread.fork": fork,
       "thread.compact": (command) => compact(command.threadId),

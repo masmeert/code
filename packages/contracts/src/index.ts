@@ -426,6 +426,16 @@ export const UsageLimit = Schema.Struct({
 });
 export type UsageLimit = typeof UsageLimit.Type;
 
+/** A turn the harness refused because the plan's usage limit is spent; the thread's queue waits until it's answered. */
+export const LimitStop = Schema.Struct({
+  provider: ProviderKind,
+  /** Epoch ms; null when the harness didn't say. */
+  resetsAt: Schema.NullOr(Schema.Number),
+  /** What to continue with by itself once the limit resets; null when it won't. */
+  resumeAtReset: Schema.NullOr(TurnOptions),
+});
+export type LimitStop = typeof LimitStop.Type;
+
 /** The tool call a thread's agent has in flight. */
 export const ThreadActivity = Schema.Struct({
   toolId: Schema.String,
@@ -487,6 +497,8 @@ export const ThreadInfo = Schema.Struct({
   startedBy: Schema.optional(Schema.String),
   /** Messages waiting for the running turn; absent when none are. */
   queue: Schema.optional(Schema.Array(QueuedMessage)),
+  /** Absent unless the last turn hit a usage limit nobody has answered yet. */
+  limitStop: Schema.optional(LimitStop),
 });
 export type ThreadInfo = typeof ThreadInfo.Type;
 
@@ -644,6 +656,11 @@ export const RuntimeEvent = Schema.Union([
   Schema.TaggedStruct("thread.queue", {
     threadId: Schema.String,
     queue: Schema.Array(QueuedMessage),
+  }),
+  /** Null once the stop is answered, or a new turn starts. */
+  Schema.TaggedStruct("thread.limitStop", {
+    threadId: Schema.String,
+    limitStop: Schema.NullOr(LimitStop),
   }),
   /** Null answers a `thread.readUsage` that found nothing: the thread never finished a turn, or its log couldn't be read. */
   Schema.TaggedStruct("thread.usage", {
@@ -868,6 +885,26 @@ const GitCommand = Schema.Union([
   Schema.TaggedStruct("sourceControl.refresh", {}),
 ]);
 
+/** Answers to a usage-limit stop, a union of their own for the same reason as `GitCommand`. */
+const LimitStopCommand = Schema.Union([
+  /**
+   * Continues a thread a usage limit stopped, on `provider` when given (switching the thread to
+   * it): its next queued message goes out, else one asking the agent to carry on.
+   */
+  Schema.TaggedStruct("thread.resumeAfterLimit", {
+    threadId: Schema.String,
+    options: TurnOptions,
+    provider: Schema.optional(ProviderKind),
+  }),
+  /** Does the same by itself once the limit resets; null options call that off. */
+  Schema.TaggedStruct("thread.resumeAtReset", {
+    threadId: Schema.String,
+    options: Schema.NullOr(TurnOptions),
+  }),
+  /** Puts a usage-limit stop away without continuing. */
+  Schema.TaggedStruct("thread.dismissLimitStop", { threadId: Schema.String }),
+]);
+
 export const ClientCommand = Schema.Union([
   /** Creates a thread and sends its first message (drafts only exist client-side until then). */
   Schema.TaggedStruct("thread.create", {
@@ -950,6 +987,7 @@ export const ClientCommand = Schema.Union([
   /** Full-text search over messages; answered with a `search.results` frame. */
   Schema.TaggedStruct("search", { query: Schema.String, requestId: Schema.String }),
   GitCommand,
+  LimitStopCommand,
   Schema.TaggedStruct("thread.interrupt", { threadId: Schema.String }),
   /** Stops one subagent, the one started by tool call `toolId`; the turn carries on without it. */
   Schema.TaggedStruct("thread.stopAgent", { threadId: Schema.String, toolId: Schema.String }),

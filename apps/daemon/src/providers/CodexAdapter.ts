@@ -179,6 +179,8 @@ const start = ({
     let codexThreadId = "";
     let startedModel = "";
     let activeTurnId: string | null = null;
+    // The plan's limit refused the turn; Codex says so in an error before the turn fails.
+    let limited = false;
     // Subagents run as Codex threads of their own, and their notifications arrive here tagged with
     // that thread's id. Each maps to the Agent row it shows under, `open` until it ends; a subagent's
     // own subagents are `nested` and fold into the same row.
@@ -383,6 +385,18 @@ const start = ({
               return;
             }
             activeTurnId = null;
+            // Codex doesn't say when the limit resets; the session manager asks for the windows.
+            if (
+              params.turn.status === "failed" &&
+              (limited || params.turn.error?.codexErrorInfo === "usageLimitExceeded")
+            )
+              emit(
+                RuntimeEvent.cases["thread.limitStop"].make({
+                  threadId,
+                  limitStop: { provider: "codex", resetsAt: null, resumeAtReset: null },
+                }),
+              );
+            limited = false;
             if (params.turn.status === "failed")
               emit(
                 RuntimeEvent.cases.error.make({
@@ -401,9 +415,10 @@ const start = ({
           },
           error: ({ params }) => {
             if (params.willRetry) return;
-            if (params.threadId === codexThreadId)
+            if (params.threadId === codexThreadId) {
+              limited ||= params.error.codexErrorInfo === "usageLimitExceeded";
               emit(RuntimeEvent.cases.error.make({ threadId, message: params.error.message }));
-            else {
+            } else {
               // A subagent's error is its own: it ends its row instead of showing on the thread.
               const subagent = subagents.get(params.threadId);
               if (subagent) closeSubagent(subagent, params.error.message, true);
