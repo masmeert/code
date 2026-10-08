@@ -303,7 +303,7 @@ const Header = ({
   return (
     // Same row geometry as the sidebar's title bar, so both line up with the traffic lights.
     <header
-      className={`flex h-10 shrink-0 items-center gap-2 pr-4 pb-[3px] [-webkit-app-region:drag] ${open ? "pl-5" : hasTrafficLights ? "pl-[86px]" : "pl-3"}`}
+      className={`@container flex h-10 shrink-0 items-center gap-2 pr-4 pb-[3px] [-webkit-app-region:drag] ${open ? "pl-5" : hasTrafficLights ? "pl-[86px]" : "pl-3"}`}
     >
       {open ? null : (
         <AnimatedSidebarTrigger className="mr-1 size-7 rounded-lg text-muted-foreground [-webkit-app-region:no-drag] hover:bg-muted/60 hover:text-foreground">
@@ -313,10 +313,10 @@ const Header = ({
       {project ? (
         <>
           <ProjectBadge project={project} className="translate-y-px" />
-          <span className="shrink-0 text-sm text-muted-foreground">
+          <span className="shrink-0 text-sm text-muted-foreground @max-lg:hidden">
             {projectLabel(project.name, host)}
           </span>
-          <span className="shrink-0 text-sm text-muted-foreground/50">/</span>
+          <span className="shrink-0 text-sm text-muted-foreground/50 @max-lg:hidden">/</span>
         </>
       ) : null}
       <span className="min-w-0 truncate text-sm font-medium text-foreground">{title}</span>
@@ -1211,10 +1211,10 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
               info.worktree ? (
                 <span
                   title={`Worktree: ${info.cwd}`}
-                  className="flex shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground [-webkit-app-region:no-drag]"
+                  className="flex max-w-40 min-w-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground [-webkit-app-region:no-drag]"
                 >
-                  <FolderTree className="size-3" />
-                  {info.branch ?? "worktree"}
+                  <FolderTree className="size-3 shrink-0" />
+                  <span className="truncate">{info.branch ?? "worktree"}</span>
                 </span>
               ) : null
             }

@@ -266,7 +266,8 @@ export const GitMenu = ({
           ) : (
             <GitCommitHorizontal className="size-4" />
           )}
-          {pending ? pendingLabel : primaryLabel}
+          {/* Collapses to the icon when the thread pane is narrow; the header is the container. */}
+          <span className="@max-md:sr-only">{pending ? pendingLabel : primaryLabel}</span>
           {!pending && primaryPushes && status.upstream ? (
             <span className="font-mono tabular-nums opacity-70">{status.ahead}</span>
           ) : null}
