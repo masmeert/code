@@ -244,6 +244,13 @@ export function ToolGroup({
   const running = live ? calls.find((call) => call.output === null) : undefined;
   const failed = calls.filter((call) => call.isError).length;
 
+  if (calls.length === 1)
+    return (
+      <div className="w-full text-sm">
+        <ToolCallRow call={calls[0]!} live={live} reveal={revealHere} />
+      </div>
+    );
+
   return (
     <div className="w-full text-sm">
       <button
