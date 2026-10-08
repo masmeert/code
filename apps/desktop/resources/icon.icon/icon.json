@@ -1,26 +1,11 @@
 {
-  "fill-specializations": [
-    { "value": { "solid": "srgb:0.96078,0.96078,0.96078,1.00000" } },
-    { "appearance": "dark", "value": { "solid": "srgb:0.00000,0.00000,0.00000,1.00000" } }
-  ],
   "groups": [
     {
       "name": "Orb",
-      "layers": [
-        {
-          "name": "Orb",
-          "image-name-specializations": [
-            { "value": "light.png" },
-            { "appearance": "dark", "value": "dark.png" }
-          ],
-          "glass": false,
-          "position": { "scale": 1.18, "translation-in-points": [0, 0] }
-        }
-      ],
-      "shadow": { "kind": "none", "opacity": 0 },
+      "layers": [{ "name": "Orb", "image-name": "orb.png", "glass": false }],
+      "shadow": { "kind": "neutral", "opacity": 0.5 },
       "specular": false,
-      "translucency": { "enabled": false, "value": 0 },
-      "blur-material": null
+      "translucency": { "enabled": false, "value": 0 }
     }
   ],
   "supported-platforms": { "squares": ["macOS"] }
