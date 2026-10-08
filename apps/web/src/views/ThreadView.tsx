@@ -39,6 +39,7 @@ import { ProjectBadge, projectLabel } from "@/components/project-badge";
 import { addProject, projectKey } from "../lib/projects.ts";
 import { Button } from "@apcode/ui/motion/button/base";
 import { Drawer } from "@apcode/ui/motion/drawer";
+import { MorphingModal } from "@apcode/ui/motion/morphing-modal";
 import { Textarea } from "@apcode/ui/components/textarea";
 import { cn } from "@apcode/ui/lib/utils";
 import { PROVIDER_LOGO } from "@/components/provider-logo";
@@ -144,6 +145,7 @@ import {
   createThread,
   dismissForkError,
   forkThread,
+  imageUrl,
   openSideChat,
   askSideChat,
   closeSideChat,
@@ -715,23 +717,92 @@ export const DraftView = ({
   );
 };
 
-const AttachmentList = ({ attachments }: { attachments: ReadonlyArray<Attachment> }) => (
-  <div className="flex flex-wrap justify-end gap-1.5">
-    {attachments.map((attachment) => {
-      const Icon = attachment.isImage ? ImageIcon : FileText;
-      return (
-        <span
-          key={attachment.path}
-          title={attachment.path}
-          className="flex h-7 max-w-52 items-center gap-1.5 rounded-lg border border-border bg-card px-2 text-xs text-muted-foreground"
-        >
-          <Icon className="size-3.5 shrink-0" />
-          <span className="truncate text-foreground">{attachment.name}</span>
-        </span>
-      );
-    })}
-  </div>
-);
+function AttachmentChip({ attachment }: { attachment: Attachment }) {
+  const Icon = attachment.isImage ? ImageIcon : FileText;
+  return (
+    <span
+      title={attachment.path}
+      className="flex h-7 max-w-52 items-center gap-1.5 rounded-lg border border-border bg-card px-2 text-xs text-muted-foreground"
+    >
+      <Icon className="size-3.5 shrink-0" />
+      <span className="truncate text-foreground">{attachment.name}</span>
+    </span>
+  );
+}
+
+/** Falls back to the chip when the file is gone or the host can't serve it. */
+function AttachmentThumbnail({
+  threadId,
+  attachment,
+}: {
+  threadId: string;
+  attachment: Attachment;
+}) {
+  // Undefined while signing, null once it can't be shown.
+  const [url, setUrl] = useState<string | null | undefined>(undefined);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void imageUrl(threadId, attachment.path).then((signed) => current && setUrl(signed));
+    return () => {
+      current = false;
+    };
+  }, [threadId, attachment.path]);
+  if (url === null) return <AttachmentChip attachment={attachment} />;
+  if (url === undefined) return <span className="size-20 animate-pulse rounded-lg bg-muted" />;
+  return (
+    <>
+      <button
+        type="button"
+        title={attachment.path}
+        onClick={() => setOpen(true)}
+        className="cursor-zoom-in overflow-hidden rounded-lg border border-border transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        <img
+          src={url}
+          alt={attachment.name}
+          onError={() => setUrl(null)}
+          className="h-20 max-w-40 object-cover"
+        />
+      </button>
+      <MorphingModal
+        viewId={open ? attachment.path : null}
+        onClose={() => setOpen(false)}
+        placement="center"
+        className="w-auto max-w-[90vw]"
+      >
+        <img
+          src={url}
+          alt={attachment.name}
+          className="max-h-[80vh] max-w-full rounded-lg object-contain"
+        />
+        <p className="mt-3 truncate text-xs text-muted-foreground" title={attachment.path}>
+          {attachment.name}
+        </p>
+      </MorphingModal>
+    </>
+  );
+}
+
+function AttachmentList({
+  threadId,
+  attachments,
+}: {
+  threadId: string;
+  attachments: ReadonlyArray<Attachment>;
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-end gap-1.5">
+      {attachments.map((attachment) =>
+        attachment.isImage ? (
+          <AttachmentThumbnail key={attachment.path} threadId={threadId} attachment={attachment} />
+        ) : (
+          <AttachmentChip key={attachment.path} attachment={attachment} />
+        ),
+      )}
+    </div>
+  );
+}
 
 const NO_ITEMS: ReadonlyArray<TranscriptItem> = [];
 const NO_QUEUE: ReadonlyArray<QueuedMessage> = [];
@@ -1557,7 +1628,9 @@ const UserTurn = memo(
           {item.handoff && item.provider ? (
             <HandoffNote handoff={item.handoff} to={item.provider} />
           ) : null}
-          {item.attachments.length ? <AttachmentList attachments={item.attachments} /> : null}
+          {item.attachments.length ? (
+            <AttachmentList threadId={threadId} attachments={item.attachments} />
+          ) : null}
           {item.text ? (
             <MessageBubble variant="soft">
               <MessageBubbleContent className="selectable whitespace-pre-wrap">
@@ -2149,6 +2222,7 @@ const AgentBlockContent = ({
   const needsRootConsent = useNeedsRootConsent(host);
   const [confirmingRoot, setConfirmingRoot] = useState(false);
   const runCommand = use(RunCommandContext);
+  const resolveImage = useCallback((src: string) => imageUrl(threadId, src), [threadId]);
   const provider = useStore((s) => s.threads[threadId]?.provider);
   switch (item.kind) {
     case "user":
@@ -2169,6 +2243,7 @@ const AgentBlockContent = ({
               <Markdown
                 streaming={streaming}
                 onRunCommand={runCommand}
+                resolveImage={resolveImage}
                 className="selectable leading-relaxed"
               >
                 {item.text}
