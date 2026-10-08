@@ -2,6 +2,18 @@
 
 Release notes for the APCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.4](https://github.com/masmeert/code/compare/v0.1.3...v0.1.4) (2026-10-08)
+
+
+### Added
+
+* use the overlay scrollbar for plan approval details ([ae272c2](https://github.com/masmeert/code/commit/ae272c278e5d20e8c20045d0357aa490fa918bbc))
+
+
+### Fixed
+
+* **ui:** portal MorphingModal to body so it paints above the composer ([627c693](https://github.com/masmeert/code/commit/627c6933f4003b02b7b72ebf49b9f978b0d22ee1))
+
 ## [0.1.3](https://github.com/masmeert/code/compare/v0.1.2...v0.1.3) (2026-10-08)
 
 
