@@ -2,6 +2,14 @@
 
 Release notes for the APCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.1](https://github.com/masmeert/code/compare/v0.1.0...v0.1.1) (2026-10-08)
+
+
+### Added
+
+* find in a thread with ⌘F, and an outline of its prompts ([27bd1d3](https://github.com/masmeert/code/commit/27bd1d36b38aa5f66281b34e5cdb40d2ca40a706))
+* fold the steps before an answer into one thinking row ([2b52b95](https://github.com/masmeert/code/commit/2b52b95c3c5b790b1a650c603762141c1f472b92))
+
 ## [0.1.0](https://github.com/masmeert/code/compare/v0.0.18...v0.1.0) (2026-10-07)
 
 
