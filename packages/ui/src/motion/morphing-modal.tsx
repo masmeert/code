@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { EASE_OUT, SPRING_PANEL } from "@apcode/ui/lib/ease";
 import { PresenceGate } from "@apcode/ui/motion/presence-gate";
 import { cn } from "@apcode/ui/lib/utils";
@@ -60,7 +61,8 @@ export function MorphingModal({
   // off `PresenceGate`, so interaction releases in the same commit that starts
   // the exit rather than when it ends — `open` is already false for those
   // frames. See tests/fixed-overlay-edge-sampling.test.tsx.
-  return (
+  // Portaled so a caller inside a stacking context (the transcript) still paints above the composer.
+  return createPortal(
     <AnimatePresence initial={false}>
       {open ? (
         <PresenceGate key="backdrop">
@@ -167,6 +169,7 @@ export function MorphingModal({
           )}
         </PresenceGate>
       ) : null}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
