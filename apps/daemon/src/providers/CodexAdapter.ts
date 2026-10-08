@@ -23,6 +23,7 @@ import {
   StartedItem,
   ThreadResponse,
   type CodexElicitation,
+  type CodexRpc,
   type RpcId,
   type TokenUsage,
 } from "./codexRpc.ts";
@@ -682,6 +683,20 @@ const start = ({
     return session;
   });
 
+/** `thread/revert` cuts history before a turn id, so look up the oldest of the last `dropTurns` turns. */
+async function dropLastTurns(rpc: CodexRpc, threadId: string, dropTurns: number) {
+  if (dropTurns <= 0) return;
+  const { data: turns } = await rpc.request(
+    "thread/turns/list",
+    { threadId, limit: dropTurns, sortDirection: "desc" },
+    Schema.Struct({ data: Schema.Array(Schema.Struct({ id: Schema.String })) }),
+  );
+  const firstDropped = turns[dropTurns - 1];
+  if (firstDropped === undefined)
+    throw new Error(`the thread has ${turns.length} turns, can't drop ${dropTurns}`);
+  await rpc.request("thread/revert", { threadId, beforeTurnId: firstDropped.id }, Schema.Unknown);
+}
+
 /** Loads the thread in a short-lived app-server and drops its last turns. The thread id stays. */
 const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, dropTurns }) =>
   Effect.tryPromise({
@@ -693,12 +708,7 @@ const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, dropTurn
           { threadId: resumeToken, excludeTurns: true, cwd },
           Schema.Unknown,
         );
-        if (dropTurns > 0)
-          await rpc.request(
-            "thread/rollback",
-            { threadId: resumeToken, numTurns: dropTurns },
-            Schema.Unknown,
-          );
+        await dropLastTurns(rpc, resumeToken, dropTurns);
         return resumeToken;
       } finally {
         rpc.close();
@@ -718,12 +728,7 @@ const fork: ProviderAdapter["fork"] = ({ cwd, harness, resumeToken, dropTurns })
           { threadId: resumeToken, excludeTurns: true, cwd },
           ThreadResponse,
         );
-        if (dropTurns > 0)
-          await rpc.request(
-            "thread/rollback",
-            { threadId: thread.id, numTurns: dropTurns },
-            Schema.Unknown,
-          );
+        await dropLastTurns(rpc, thread.id, dropTurns);
         return thread.id;
       } finally {
         rpc.close();
