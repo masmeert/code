@@ -2,6 +2,28 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.4](https://github.com/masmeert/code/compare/v0.1.3...v0.1.4) (2026-10-08)
+
+
+### Added
+
+* Android emulators, H.264 streaming and rotation in the Simulator panel ([bca7f01](https://github.com/masmeert/code/commit/bca7f0157801099cac00d7d2634cea22aef673ba))
+* move the terminal, browser and simulator toggles into a menu ([25df14c](https://github.com/masmeert/code/commit/25df14c6ad99c107995145e3b75ff278a018025a))
+* show an iOS Simulator panel agents can drive ([d23ac50](https://github.com/masmeert/code/commit/d23ac502a8eea2afb683f134beedef6a1e2dc6eb))
+* shrink the orb inside the app icon ([d469567](https://github.com/masmeert/code/commit/d469567f71152790d48698c7cd0c09cd6eb051eb))
+* use the overlay scrollbar for plan approval details ([ae272c2](https://github.com/masmeert/code/commit/ae272c278e5d20e8c20045d0357aa490fa918bbc))
+
+
+### Fixed
+
+* cancel a device's idle shutdown before reattaching it ([4f3164a](https://github.com/masmeert/code/commit/4f3164ae602887dc73b92eb056800997c3cc4682))
+* enlarge the app icon avatar ([02f7c64](https://github.com/masmeert/code/commit/02f7c646229e33a2293d36ccd8b8895d40df6617))
+* hide the file tree and fall back to stacked diffs in a narrow changes panel ([4a51f1e](https://github.com/masmeert/code/commit/4a51f1e74a57290ede35dbe305c7c32de23024c0))
+* keep the thread header's actions visible in a narrow pane ([5061401](https://github.com/masmeert/code/commit/50614011471bb7b3393566a7ea9b8cf84858c7fa))
+* list and boot simulators through simctl so never-booted ones show ([0f6b9bf](https://github.com/masmeert/code/commit/0f6b9bfd4fd607200a45e872d2e2a721e67f8642))
+* stop doubling the live thinking row and keep its chevron beside the text ([d4a15eb](https://github.com/masmeert/code/commit/d4a15eb4692637b109ca9b939319fcdcf267746a))
+* **ui:** portal MorphingModal to body so it paints above the composer ([627c693](https://github.com/masmeert/code/commit/627c6933f4003b02b7b72ebf49b9f978b0d22ee1))
+
 ## [0.1.3](https://github.com/masmeert/code/compare/v0.1.2...v0.1.3) (2026-10-08)
 
 ### Added
