@@ -7,8 +7,8 @@ import {
   type Variants,
 } from "motion/react";
 import type { ReactNode } from "react";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type AnimatedBadgeStatus = "neutral" | "info" | "success" | "warning" | "danger" | "loading";
 

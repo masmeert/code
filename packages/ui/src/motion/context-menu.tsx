@@ -20,9 +20,9 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_PANEL } from "@apcode/ui/lib/ease";
-import { holdSelection, TOUCH_GESTURE_CONTENT_CLASS } from "@apcode/ui/lib/touch";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT, SPRING_LAYOUT, SPRING_PANEL } from "@masscode/ui/lib/ease";
+import { holdSelection, TOUCH_GESTURE_CONTENT_CLASS } from "@masscode/ui/lib/touch";
+import { cn } from "@masscode/ui/lib/utils";
 
 type OpenModality = "pointer" | "keyboard" | "touch";
 type MenuPoint = { x: number; y: number };

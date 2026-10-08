@@ -1,5 +1,5 @@
 import { Script } from "node:vm";
-import { BrowserAction, type BrowserResult } from "@apcode/contracts";
+import { BrowserAction, type BrowserResult } from "@masscode/contracts";
 import { type BrowserWindow, type WebContents, webContents } from "electron";
 
 const consoleLines = new Map<number, Array<string>>();
@@ -41,8 +41,8 @@ function snapshotPage() {
     ["SELECT", "combobox"],
     ["SUMMARY", "button"],
   ]);
-  for (const element of document.querySelectorAll("[data-apcode-ref]"))
-    element.removeAttribute("data-apcode-ref");
+  for (const element of document.querySelectorAll("[data-masscode-ref]"))
+    element.removeAttribute("data-masscode-ref");
   const lines: Array<string> = [];
   for (const element of document.querySelectorAll<HTMLElement>(
     'a[href], button, input:not([type="hidden"]), textarea, select, summary, [role], [contenteditable="true"], [tabindex]:not([tabindex="-1"])',
@@ -71,7 +71,7 @@ function snapshotPage() {
       continue;
     if (lines.length === 200) break;
     const ref = `e${lines.length + 1}`;
-    element.setAttribute("data-apcode-ref", ref);
+    element.setAttribute("data-masscode-ref", ref);
     const value =
       element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
         ? element.value
@@ -116,7 +116,7 @@ function targetElement(purpose: "point" | "focus", target: string) {
   let element: Element | null;
   try {
     element = /^e\d+$/.test(target)
-      ? document.querySelector(`[data-apcode-ref="${target}"]`)
+      ? document.querySelector(`[data-masscode-ref="${target}"]`)
       : document.querySelector(target);
   } catch {
     return { error: `${target} isn't a ref or a valid CSS selector` };

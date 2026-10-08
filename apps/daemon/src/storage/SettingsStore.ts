@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, Settings } from "@apcode/contracts";
+import { DEFAULT_SETTINGS, Settings } from "@masscode/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -12,7 +12,7 @@ export class SettingsStore extends Context.Service<
     readonly get: Effect.Effect<Settings>;
     readonly update: (settings: Settings) => Effect.Effect<Settings>;
   }
->()("apcode/SettingsStore") {}
+>()("masscode/SettingsStore") {}
 
 const make = Effect.gen(function* () {
   // Shelving was called settling; carry over autoSettle/autoSettleDays.

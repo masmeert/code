@@ -1,10 +1,10 @@
 import { BookOpenText, ChevronRight, ExternalLink, Globe2 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useId, useState } from "react";
-import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
-import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
-import { useFavicon } from "@apcode/ui/hooks/use-favicon";
-import { cn } from "@apcode/ui/lib/utils";
+import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
+import { EASE_OUT, SPRING_LAYOUT } from "@masscode/ui/lib/ease";
+import { useFavicon } from "@masscode/ui/hooks/use-favicon";
+import { cn } from "@masscode/ui/lib/utils";
 
 export interface CitationItem {
   id: string;

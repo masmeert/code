@@ -2,9 +2,9 @@
  * Stands in for the `claude` or `codex` CLI at the stdio boundary the adapters talk to, so the
  * real adapters, SessionManager and SQLite run against recorded provider traffic.
  *
- * - Replay: `APCODE_REPLAY=<fixture.json>`. Each spawn plays the fixture's next session. Paths are
+ * - Replay: `MASSCODE_REPLAY=<fixture.json>`. Each spawn plays the fixture's next session. Paths are
  *   relative to the folder the CLI is started in, the thread's, so each test's threads get their own.
- * - Record: `APCODE_REAL_BIN=<cli> APCODE_RECORD=<out.jsonl>` runs the real CLI and logs every frame.
+ * - Record: `MASSCODE_REAL_BIN=<cli> MASSCODE_RECORD=<out.jsonl>` runs the real CLI and logs every frame.
  * - Convert: `bun peer.ts fixture <recording.jsonl>` prints a recording as a fixture.
  *
  * Replay appends what the adapter sent to `<fixture>.log.jsonl`, for tests to assert on.
@@ -117,7 +117,7 @@ function replay(fixturePath: string) {
   }
   appendFileSync(
     log,
-    `${JSON.stringify({ spawn: spawnIndex, pid: process.pid, args, mcpToken: process.env.APCODE_MCP_TOKEN ?? null })}\n`,
+    `${JSON.stringify({ spawn: spawnIndex, pid: process.pid, args, mcpToken: process.env.MASSCODE_MCP_TOKEN ?? null })}\n`,
   );
   const steps = decodeFixture(readFileSync(fixturePath, "utf8")).sessions[spawnIndex];
   if (!steps) {
@@ -275,11 +275,13 @@ export function readRecording(path: string): ReadonlyArray<Recorded> {
 if (import.meta.main) {
   if (process.argv[2] === "fixture" && process.argv[3])
     process.stdout.write(`${JSON.stringify(toFixture(readRecording(process.argv[3])), null, 2)}\n`);
-  else if (process.env.APCODE_REPLAY) replay(resolve(process.env.APCODE_REPLAY));
-  else if (process.env.APCODE_REAL_BIN && process.env.APCODE_RECORD)
-    record(process.env.APCODE_REAL_BIN, resolve(process.env.APCODE_RECORD));
+  else if (process.env.MASSCODE_REPLAY) replay(resolve(process.env.MASSCODE_REPLAY));
+  else if (process.env.MASSCODE_REAL_BIN && process.env.MASSCODE_RECORD)
+    record(process.env.MASSCODE_REAL_BIN, resolve(process.env.MASSCODE_RECORD));
   else {
-    process.stderr.write("replay peer: set APCODE_REPLAY, or APCODE_REAL_BIN and APCODE_RECORD\n");
+    process.stderr.write(
+      "replay peer: set MASSCODE_REPLAY, or MASSCODE_REAL_BIN and MASSCODE_RECORD\n",
+    );
     process.exit(2);
   }
 }

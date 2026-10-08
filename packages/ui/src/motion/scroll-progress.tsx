@@ -1,7 +1,7 @@
 import { type MotionValue, motion, useReducedMotion, useSpring, useTransform } from "motion/react";
 
-import { useSmoothScroll } from "@apcode/ui/motion/smooth-scroll";
-import { cn } from "@apcode/ui/lib/utils";
+import { useSmoothScroll } from "@masscode/ui/motion/smooth-scroll";
+import { cn } from "@masscode/ui/lib/utils";
 
 // Soft follow so the indicator trails the scroll smoothly instead of snapping;
 // looser than the UI springs in lib/ease.ts on purpose.

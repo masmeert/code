@@ -1,4 +1,4 @@
-import { BROWSER_PARTITION, DesktopBrowserEvent } from "@apcode/contracts";
+import { BROWSER_PARTITION, DesktopBrowserEvent } from "@masscode/contracts";
 import {
   type BrowserWindow,
   clipboard,

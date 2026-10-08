@@ -6,9 +6,9 @@ import {
   useSpring,
 } from "motion/react";
 import { useRef, type ReactNode } from "react";
-import { SPRING_MOUSE } from "@apcode/ui/lib/ease";
-import { useHoverCapable } from "@apcode/ui/hooks/use-hover-capable";
-import { cn } from "@apcode/ui/lib/utils";
+import { SPRING_MOUSE } from "@masscode/ui/lib/ease";
+import { useHoverCapable } from "@masscode/ui/hooks/use-hover-capable";
+import { cn } from "@masscode/ui/lib/utils";
 
 export interface TiltCardProps {
   children: ReactNode;

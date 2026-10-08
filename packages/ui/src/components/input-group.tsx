@@ -1,9 +1,9 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 
-import { Textarea } from "@apcode/ui/components/textarea";
-import { buttonVariants, type ButtonVariant } from "@apcode/ui/motion/button";
+import { Textarea } from "@masscode/ui/components/textarea";
+import { buttonVariants, type ButtonVariant } from "@masscode/ui/motion/button";
 
 function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (

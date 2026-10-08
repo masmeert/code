@@ -2,29 +2,29 @@ import {
   AnimatedSidebar,
   AnimatedSidebarRail,
   AnimatedSidebarTrigger,
-} from "@apcode/ui/motion/animated-sidebar";
-import { Button } from "@apcode/ui/motion/button";
+} from "@masscode/ui/motion/animated-sidebar";
+import { Button } from "@masscode/ui/motion/button";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
-} from "@apcode/ui/motion/context-menu";
-import { Input } from "@apcode/ui/motion/input";
-import { Tooltip } from "@apcode/ui/motion/tooltip";
+} from "@masscode/ui/motion/context-menu";
+import { Input } from "@masscode/ui/motion/input";
+import { Tooltip } from "@masscode/ui/motion/tooltip";
 import {
   MorphPopover,
   MorphPopoverContent,
   MorphPopoverMenu,
   MorphPopoverTrigger,
-} from "@apcode/ui/motion/popover-morph";
-import { SPRING_LAYOUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
-import { NumberTicker } from "@apcode/ui/motion/number-ticker";
-import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
+} from "@masscode/ui/motion/popover-morph";
+import { SPRING_LAYOUT, SPRING_SWAP } from "@masscode/ui/lib/ease";
+import { NumberTicker } from "@masscode/ui/motion/number-ticker";
+import { SharedLayoutBg } from "@masscode/ui/motion/shared-layout-bg";
 import { ProjectBadge, projectLabel } from "@/components/project-badge";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
-import { cn } from "@apcode/ui/lib/utils";
-import { formatBinding, isMac } from "@apcode/ui/lib/keys";
+import { cn } from "@masscode/ui/lib/utils";
+import { formatBinding, isMac } from "@masscode/ui/lib/keys";
 import {
   ClientCommand,
   isAwaitingUser,
@@ -32,10 +32,10 @@ import {
   type ThreadActivity,
   type ThreadInfo,
   UpdateStatus,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import * as Match from "effect/Match";
-import { categoryOf, livePhrase } from "@apcode/ui/agents/tool-group";
-import { TextShimmer } from "@apcode/ui/motion/text-shimmer";
+import { categoryOf, livePhrase } from "@masscode/ui/agents/tool-group";
+import { TextShimmer } from "@masscode/ui/motion/text-shimmer";
 import {
   Archive,
   ArchiveRestore,
@@ -122,7 +122,7 @@ export const Sidebar = (props: {
 
   // Grouped by state: whatever still needs you on top, then shelved threads, then archived ones.
   const [showArchived, setShowArchived] = useState(false);
-  const [showShelved, setShowShelved] = usePersistedFlag("apcode.sidebar.shelvedOpen", true);
+  const [showShelved, setShowShelved] = usePersistedFlag("masscode.sidebar.shelvedOpen", true);
   const [collapsedProjects, setCollapsedProjects] = useState<ReadonlyArray<string>>([]);
   // Sections render a page of rows at a time: recent history is the common lookup, the deep tail shouldn't dominate the list.
   const [shownCounts, setShownCounts] = useState<Readonly<Record<string, number>>>({});

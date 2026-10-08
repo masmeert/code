@@ -1,10 +1,10 @@
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 import type { ElementType, ReactNode } from "react";
 import {
   TEXT_SHIMMER_CLASS_NAME,
   TEXT_SHIMMER_KEYFRAMES,
   textShimmerStyle,
-} from "@apcode/ui/lib/text-shimmer";
+} from "@masscode/ui/lib/text-shimmer";
 
 export interface TextShimmerProps {
   children: ReactNode;

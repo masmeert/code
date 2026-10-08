@@ -8,9 +8,9 @@ import {
 } from "motion/react";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { SPRING_LAYOUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { useHoverCapable } from "@apcode/ui/hooks/use-hover-capable";
-import { cn } from "@apcode/ui/lib/utils";
+import { SPRING_LAYOUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { useHoverCapable } from "@masscode/ui/hooks/use-hover-capable";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type ProjectFolderPreview = {
   id: string;

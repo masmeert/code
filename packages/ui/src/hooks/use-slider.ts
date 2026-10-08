@@ -1,5 +1,5 @@
 import { type KeyboardEvent, type PointerEvent, useCallback, useRef, useState } from "react";
-import { capturePointer, releasePointer } from "@apcode/ui/lib/touch";
+import { capturePointer, releasePointer } from "@masscode/ui/lib/touch";
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 

@@ -1,8 +1,8 @@
 import { motion, useInView, useReducedMotion } from "motion/react";
 import { type ReactNode, type RefObject, useRef } from "react";
 
-import { EASE_OUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 export interface ScrollRevealProps {
   children: ReactNode;

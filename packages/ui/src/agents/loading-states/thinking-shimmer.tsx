@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { TextShimmer } from "@apcode/ui/motion/text-shimmer";
-import { cn } from "@apcode/ui/lib/utils";
+import { TextShimmer } from "@masscode/ui/motion/text-shimmer";
+import { cn } from "@masscode/ui/lib/utils";
 
 export interface ThinkingShimmerProps {
   /** Loading message shown to the user. */

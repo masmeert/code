@@ -1,7 +1,7 @@
-import { AttachmentInput } from "@apcode/contracts";
+import { AttachmentInput } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
-import type { PromptAttachment } from "@apcode/ui/agents/prompt-input";
+import type { PromptAttachment } from "@masscode/ui/agents/prompt-input";
 
 /**
  * What's typed in each composer, keyed like the composer's prefs (a thread id, or
@@ -67,7 +67,7 @@ export interface Stash {
   readonly at: number;
 }
 
-const STASH_KEY = "apcode.stash";
+const STASH_KEY = "masscode.stash";
 const decodeStashes = Schema.decodeUnknownSync(
   Schema.fromJsonString(
     Schema.Array(

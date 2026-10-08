@@ -16,8 +16,8 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useId, useRef, useState } from "react";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type FileUploadStatus = "queued" | "uploading" | "success" | "error";
 export type FileUploadVariant = "default" | "centered";

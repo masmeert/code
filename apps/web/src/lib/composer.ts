@@ -5,7 +5,7 @@ import {
   type PermissionLevel,
   type ProviderKind,
   type TurnOptions,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import { useEffect, useEffectEvent, useRef, useSyncExternalStore } from "react";
 import { type DraftAttachment, getDraft, setDraft, useDraft } from "./drafts.ts";
 import { firstTurnOptions, respondApproval, useStore } from "./store.ts";
@@ -121,7 +121,7 @@ export const useTurnPrefs = (key: string, provider: ProviderKind, host: string |
 // A daemon running as root lets Full access change anything on its machine, so each such host
 // needs a one-time OK first.
 
-const rootConsentKey = (host: string) => `apcode.fullAccessAsRoot.${host}`;
+const rootConsentKey = (host: string) => `masscode.fullAccessAsRoot.${host}`;
 
 /** Whether Full access on `host` still waits for that OK. */
 export function useNeedsRootConsent(host: string | null) {

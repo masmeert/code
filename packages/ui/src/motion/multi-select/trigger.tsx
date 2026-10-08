@@ -6,8 +6,8 @@ import type {
   ReactNode,
   Ref,
 } from "react";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 import { mergeRefs, useMultiSelectContext } from "./context";
 
 export interface MultiSelectTriggerProps {

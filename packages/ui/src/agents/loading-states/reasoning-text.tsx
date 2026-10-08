@@ -1,13 +1,13 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { TextScramble } from "@apcode/ui/motion/text-scramble";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
+import { TextScramble } from "@masscode/ui/motion/text-scramble";
+import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@masscode/ui/lib/ease";
 import {
   TEXT_SHIMMER_CLASS_NAME,
   TEXT_SHIMMER_KEYFRAMES,
   textShimmerStyle,
-} from "@apcode/ui/lib/text-shimmer";
-import { cn } from "@apcode/ui/lib/utils";
+} from "@masscode/ui/lib/text-shimmer";
+import { cn } from "@masscode/ui/lib/utils";
 
 const DEFAULT_PHRASES = [
   "Schlepping",

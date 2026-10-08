@@ -10,7 +10,7 @@ import type {
   SlashCommand,
   ThreadUsage,
   UserAnswers,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import type * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
@@ -40,7 +40,7 @@ export interface StartSessionInput {
   readonly onCwd: (cwd: string) => void;
   /** Adapters push normalized events for `threadId` here. */
   readonly emit: (event: RuntimeEvent) => void;
-  /** Null leaves out APCode's browser and thread tools. */
+  /** Null leaves out MassCode's browser and thread tools. */
   readonly mcpServer: McpServerAccess | null;
 }
 

@@ -18,7 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 
 // Shared-layout morph: trigger box grows into the panel and back, one surface.
 const MORPH: Transition = { type: "spring", duration: 0.5, bounce: 0.22 };

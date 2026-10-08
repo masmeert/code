@@ -1,4 +1,4 @@
-import type { UpdateStatus } from "@apcode/contracts";
+import type { UpdateStatus } from "@masscode/contracts";
 import { useEffect, useState } from "react";
 
 export function useUpdateStatus() {

@@ -8,9 +8,9 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { TOUCH_GESTURE_CLASS, TOUCH_GESTURE_CONTENT_CLASS } from "@apcode/ui/lib/touch";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { TOUCH_GESTURE_CLASS, TOUCH_GESTURE_CONTENT_CLASS } from "@masscode/ui/lib/touch";
+import { cn } from "@masscode/ui/lib/utils";
 
 export interface SlideActionButtonProps extends Omit<HTMLAttributes<HTMLDivElement>, "children"> {
   children: ReactNode;

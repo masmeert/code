@@ -6,7 +6,7 @@
     "types": ["vite/client"],
     "paths": {
       "@/*": ["./src/*"],
-      "@apcode/ui/*": ["../../packages/ui/src/*"]
+      "@masscode/ui/*": ["../../packages/ui/src/*"]
     },
     "exactOptionalPropertyTypes": false,
     "noUncheckedIndexedAccess": false

@@ -1,6 +1,6 @@
 import { animate, motionValue, type MotionValue } from "motion/react";
 import { useLayoutEffect, useState } from "react";
-import { SPRING_LAYOUT } from "@apcode/ui/lib/ease";
+import { SPRING_LAYOUT } from "@masscode/ui/lib/ease";
 
 export type BumpPosition = { x: MotionValue<number>; y: MotionValue<number> };
 export type BumpTarget = { key: string; x: number; y: number };

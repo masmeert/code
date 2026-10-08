@@ -1,4 +1,4 @@
-import type { ProviderKind } from "@apcode/contracts";
+import type { ProviderKind } from "@masscode/contracts";
 import { useMemo, useState } from "react";
 import { useStore } from "./store.ts";
 
@@ -20,7 +20,7 @@ export const DEFAULT_THREAD_LIST_VIEW: ThreadListView = {
   sortBy: "updated",
 };
 
-const STORAGE_KEY = "apcode.sidebar.view";
+const STORAGE_KEY = "masscode.sidebar.view";
 
 export function useThreadListView() {
   const projects = useStore((state) => state.projects);

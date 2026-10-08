@@ -7,12 +7,12 @@
  * The daemon always wins: its shell replaces the cached one on connect, and transcripts
  * resume from their cursor. Cached data is never used to decide that something is gone.
  */
-import type { PageInfo, Project, ProviderStatus, Settings, ThreadInfo } from "@apcode/contracts";
+import type { PageInfo, Project, ProviderStatus, Settings, ThreadInfo } from "@masscode/contracts";
 import type { TranscriptItem } from "./store.ts";
 
 /** Bump when a record's shape changes; older records then read as a cold cache. */
 const VERSION = 4;
-const DB = "apcode.cache";
+const DB = "masscode.cache";
 const SHELL = "shell";
 const THREADS = "threads";
 

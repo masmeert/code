@@ -8,10 +8,10 @@ import {
 } from "motion/react";
 import { useEffect } from "react";
 
-import { SPRING_GLIDE, SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { type SliderOptions, useSlider } from "@apcode/ui/hooks/use-slider";
-import { TOUCH_GESTURE_CLASS } from "@apcode/ui/lib/touch";
-import { cn } from "@apcode/ui/lib/utils";
+import { SPRING_GLIDE, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { type SliderOptions, useSlider } from "@masscode/ui/hooks/use-slider";
+import { TOUCH_GESTURE_CLASS } from "@masscode/ui/lib/touch";
+import { cn } from "@masscode/ui/lib/utils";
 
 export interface FluidSliderProps extends SliderOptions {
   /** Text shown on the left of the track. */

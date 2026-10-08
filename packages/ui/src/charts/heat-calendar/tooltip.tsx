@@ -1,7 +1,7 @@
 import { type ReactNode, useMemo, useState } from "react";
-import { NumberTicker } from "@apcode/ui/motion/number-ticker";
-import { Tooltip } from "@apcode/ui/motion/tooltip";
-import { cn } from "@apcode/ui/lib/utils";
+import { NumberTicker } from "@masscode/ui/motion/number-ticker";
+import { Tooltip } from "@masscode/ui/motion/tooltip";
+import { cn } from "@masscode/ui/lib/utils";
 import { useHeatCalendar } from "./context";
 import { fmtDay, fmtRange } from "./utils";
 

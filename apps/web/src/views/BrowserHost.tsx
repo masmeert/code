@@ -1,4 +1,4 @@
-import { browserPartition, DesktopBrowserEvent } from "@apcode/contracts";
+import { browserPartition, DesktopBrowserEvent } from "@masscode/contracts";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {

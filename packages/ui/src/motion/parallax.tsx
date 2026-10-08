@@ -8,7 +8,7 @@ import {
 } from "motion/react";
 import { type ReactNode, type RefObject, useRef } from "react";
 
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 
 // Soft follow so the drift trails the scroll smoothly; looser than the UI
 // springs in lib/ease.ts on purpose.

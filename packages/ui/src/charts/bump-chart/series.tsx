@@ -1,6 +1,6 @@
 import { useId, useRef } from "react";
 import { motion, useTransform, useMotionValueEvent } from "motion/react";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
+import { EASE_OUT } from "@masscode/ui/lib/ease";
 import { useBumpChart } from "./context";
 import { bumpPath, PLOT } from "./model";
 import type { BumpPosition } from "./use-geometry";

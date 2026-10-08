@@ -3,7 +3,7 @@ import type {
   DesktopBrowserEvent,
   RemoteHost,
   UpdateStatus,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
 
 const dropListeners = new Set<(paths: ReadonlyArray<string>) => void>();

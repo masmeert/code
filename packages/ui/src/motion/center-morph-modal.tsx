@@ -15,9 +15,9 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
-import { PresenceGate } from "@apcode/ui/motion/presence-gate";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { PresenceGate } from "@masscode/ui/motion/presence-gate";
+import { cn } from "@masscode/ui/lib/utils";
 
 type CenterMorphModalContextValue = {
   open: boolean;

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 import { HoverCard as HoverCardPrimitive } from "radix-ui";
 
 function HoverCard({ ...props }: React.ComponentProps<typeof HoverCardPrimitive.Root>) {

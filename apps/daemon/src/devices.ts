@@ -1,4 +1,4 @@
-import type { Device, DeviceHub } from "@apcode/contracts";
+import type { Device, DeviceHub } from "@masscode/contracts";
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -15,7 +15,7 @@ const TOOLS = { "expo-device-hub": "0.15.2", "agent-device": "0.21.23" } as cons
 type Tool = keyof typeof TOOLS;
 
 /** Only this Mac's simulators: the panel can't reach a remote host's hub. */
-export const DEVICES_SUPPORTED = process.platform === "darwin" && !process.env.APCODE_DETACHED;
+export const DEVICES_SUPPORTED = process.platform === "darwin" && !process.env.MASSCODE_DETACHED;
 
 const NODE_MISSING =
   "The iOS Simulator panel needs Node.js 20 or later. Install it (for example `brew install node`) and try again.";

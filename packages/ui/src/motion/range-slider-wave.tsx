@@ -1,9 +1,9 @@
 import { motion, useReducedMotion } from "motion/react";
 import { useMemo } from "react";
 
-import { type SliderOptions, useSlider } from "@apcode/ui/hooks/use-slider";
-import { TOUCH_GESTURE_CLASS } from "@apcode/ui/lib/touch";
-import { cn } from "@apcode/ui/lib/utils";
+import { type SliderOptions, useSlider } from "@masscode/ui/hooks/use-slider";
+import { TOUCH_GESTURE_CLASS } from "@masscode/ui/lib/touch";
+import { cn } from "@masscode/ui/lib/utils";
 
 // Per-bar spring: soft enough that the crest wobbles as it travels.
 const SPRING_BAR = { type: "spring", stiffness: 420, damping: 20, mass: 0.5 } as const;

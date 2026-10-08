@@ -1,9 +1,9 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { NumberTicker } from "@apcode/ui/motion/number-ticker";
-import { Tooltip } from "@apcode/ui/motion/tooltip";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { NumberTicker } from "@masscode/ui/motion/number-ticker";
+import { Tooltip } from "@masscode/ui/motion/tooltip";
+import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 import { buildFunnel, funnelPath, type FunnelStage } from "./funnel-chart/model";
 
 const defaultFormat = (value: number) =>

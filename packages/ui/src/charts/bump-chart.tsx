@@ -1,4 +1,4 @@
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 import { BumpChartContext, useBumpChartModel, type BumpChartProps } from "./bump-chart/context";
 import { BumpChartLegend } from "./bump-chart/legend";
 import { BumpChartPlot } from "./bump-chart/plot";

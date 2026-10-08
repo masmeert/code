@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
-import { EASE_IN_OUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_IN_OUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 const GRID_CELLS = [
   { id: "top-left", delay: 0 },

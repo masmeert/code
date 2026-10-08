@@ -1,6 +1,6 @@
 import * as React from "react";
-import { cn } from "@apcode/ui/lib/utils";
-import { EASE_OUT, SPRING_PANEL } from "@apcode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
+import { EASE_OUT, SPRING_PANEL } from "@masscode/ui/lib/ease";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";

@@ -3,7 +3,7 @@
  * without one, and pull request titles and bodies. Runs on the harness the user picked in settings.
  */
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
-import type { ProviderKind, ProviderSettings, Settings } from "@apcode/contracts";
+import type { ProviderKind, ProviderSettings, Settings } from "@masscode/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { CodexNotification, connectCodex, ThreadResponse } from "./providers/codexRpc.ts";

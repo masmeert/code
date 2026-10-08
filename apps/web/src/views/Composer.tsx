@@ -3,9 +3,9 @@ import {
   PromptModelMenu,
   type PromptOption,
   PromptSelect,
-} from "@apcode/ui/agents/prompt-input";
-import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
-import { cn } from "@apcode/ui/lib/utils";
+} from "@masscode/ui/agents/prompt-input";
+import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
+import { cn } from "@masscode/ui/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,14 +14,14 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogTitle,
-} from "@apcode/ui/components/alert-dialog";
+} from "@masscode/ui/components/alert-dialog";
 import {
   ClientCommand,
   Effort,
   PermissionLevel,
   type ProviderKind,
   type TurnOptions,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import {
   Archive,
@@ -611,7 +611,7 @@ export function RootFullAccessDialog({
           <AlertDialogTitle className="text-sm">Allow Full access on {host}?</AlertDialogTitle>
         </div>
         <AlertDialogDescription className="text-xs">
-          APCode signs in to {host} as root, so agents with Full access can run anything on that
+          MassCode signs in to {host} as root, so agents with Full access can run anything on that
           machine without asking. To limit what they can reach, connect as a normal user instead.
         </AlertDialogDescription>
         <AlertDialogFooter className="flex-row justify-end">

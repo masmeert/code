@@ -1,4 +1,4 @@
-import { RuntimeEvent } from "@apcode/contracts";
+import { RuntimeEvent } from "@masscode/contracts";
 import { afterEach, expect, test } from "bun:test";
 import {
   awaiting,

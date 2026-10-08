@@ -4,7 +4,7 @@
  * then writes `test/fixtures/<name>.json`. Rerun after a CLI or SDK upgrade changes the protocol.
  */
 import "./setup.ts";
-import { ClientCommand, RuntimeEvent, type ProviderKind } from "@apcode/contracts";
+import { ClientCommand, RuntimeEvent, type ProviderKind } from "@masscode/contracts";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { writeFileSync } from "node:fs";
@@ -116,11 +116,11 @@ for (const scenario of SCENARIOS.filter((s) => !only || s.name === only)) {
       defaultModel: scenario.model,
       binaryPath: FAKE_CLI,
       env: {
-        APCODE_REAL_BIN: resolveExecutable(
+        MASSCODE_REAL_BIN: resolveExecutable(
           scenario.provider,
-          scenario.provider === "claude" ? "APCODE_CLAUDE_PATH" : "APCODE_CODEX_PATH",
+          scenario.provider === "claude" ? "MASSCODE_CLAUDE_PATH" : "MASSCODE_CODEX_PATH",
         ),
-        APCODE_RECORD: "recording.jsonl",
+        MASSCODE_RECORD: "recording.jsonl",
       },
     },
   });

@@ -1,7 +1,7 @@
 import { type HTMLMotionProps, motion, useReducedMotion } from "motion/react";
 import { forwardRef, type ReactNode } from "react";
-import { SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "outline";
 export type ButtonSize = "sm" | "md" | "lg" | "icon";

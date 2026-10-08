@@ -9,14 +9,14 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
-import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
-import { ActionSwapRollText } from "@apcode/ui/motion/action-swap-roll";
-import { Button } from "@apcode/ui/motion/button";
-import { Checkbox } from "@apcode/ui/motion/checkbox";
-import { Input } from "@apcode/ui/motion/input";
-import { RadioGroup, RadioGroupItem } from "@apcode/ui/motion/radio";
-import { EASE_OUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
+import { ActionSwapRollText } from "@masscode/ui/motion/action-swap-roll";
+import { Button } from "@masscode/ui/motion/button";
+import { Checkbox } from "@masscode/ui/motion/checkbox";
+import { Input } from "@masscode/ui/motion/input";
+import { RadioGroup, RadioGroupItem } from "@masscode/ui/motion/radio";
+import { EASE_OUT, SPRING_SWAP } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 import type {
   ApprovalCardAnswer,
   ApprovalCardAnswers,

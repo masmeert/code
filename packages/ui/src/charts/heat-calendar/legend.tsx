@@ -1,4 +1,4 @@
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 import { useHeatCalendar } from "./context";
 import { fmtRange, STEPS } from "./utils";
 

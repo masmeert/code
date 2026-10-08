@@ -27,10 +27,10 @@ import {
   MorphPopoverContent,
   MorphPopoverMenu,
   MorphPopoverTrigger,
-} from "@apcode/ui/motion/popover-morph";
-import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
-import { useTouchCapable } from "@apcode/ui/hooks/use-touch-capable";
-import { cn } from "@apcode/ui/lib/utils";
+} from "@masscode/ui/motion/popover-morph";
+import { EASE_OUT, SPRING_LAYOUT } from "@masscode/ui/lib/ease";
+import { useTouchCapable } from "@masscode/ui/hooks/use-touch-capable";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type SidebarResourceKind = "folder" | "project" | "file" | "bookmark";
 

@@ -16,10 +16,10 @@ import {
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Tooltip } from "@apcode/ui/motion/tooltip";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { PresenceGate } from "@apcode/ui/motion/presence-gate";
-import { cn } from "@apcode/ui/lib/utils";
+import { Tooltip } from "@masscode/ui/motion/tooltip";
+import { EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { PresenceGate } from "@masscode/ui/motion/presence-gate";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type AttachmentUploadKind = "file" | "link" | "image" | "audio";
 export type AttachmentRejectReason = "too-large" | "max-files";

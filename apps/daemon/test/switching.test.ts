@@ -1,4 +1,4 @@
-import { ClientCommand, RuntimeEvent } from "@apcode/contracts";
+import { ClientCommand, RuntimeEvent } from "@masscode/contracts";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { afterEach, expect, test } from "bun:test";

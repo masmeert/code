@@ -1,4 +1,4 @@
-import { ServerFrame, type BrowserAction, type BrowserResult } from "@apcode/contracts";
+import { ServerFrame, type BrowserAction, type BrowserResult } from "@masscode/contracts";
 
 export interface BrowserHost {
   send(frame: ServerFrame): void;
@@ -34,7 +34,7 @@ export function createBrowsers() {
       hosts.delete(host);
       for (const [requestId, request] of pending) {
         if (request.host === host)
-          take(requestId)?.reject(new Error("The APCode window running the browser closed"));
+          take(requestId)?.reject(new Error("The MassCode window running the browser closed"));
       }
     },
     respond(
@@ -53,7 +53,7 @@ export function createBrowsers() {
       const host =
         candidates.findLast((candidate) => candidate.shows(threadId)) ?? candidates.at(-1);
       if (!host)
-        return Promise.reject(new Error("The browser needs the APCode desktop app to be open"));
+        return Promise.reject(new Error("The browser needs the MassCode desktop app to be open"));
       const requestId = crypto.randomUUID();
       return new Promise<BrowserResult>((resolve, reject) => {
         const timer = setTimeout(

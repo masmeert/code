@@ -1,13 +1,13 @@
-import type { Device, DeviceHub } from "@apcode/contracts";
+import type { Device, DeviceHub } from "@masscode/contracts";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@apcode/ui/components/dropdown-menu";
-import { ResizeHandle } from "@apcode/ui/components/resize-handle";
-import { useResizable } from "@apcode/ui/hooks/use-resizable";
+} from "@masscode/ui/components/dropdown-menu";
+import { ResizeHandle } from "@masscode/ui/components/resize-handle";
+import { useResizable } from "@masscode/ui/hooks/use-resizable";
 import { ChevronDown, House, LoaderCircle, X } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { IconButton } from "../components/icon-button.tsx";
@@ -78,7 +78,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
   const { deviceId } = useSimulator(threadId);
   const aside = useRef<HTMLElement>(null);
   const panel = useResizable({
-    key: "apcode.simulatorPanelWidth",
+    key: "masscode.simulatorPanelWidth",
     initial: 400,
     side: "start",
     clamp: (width) =>
@@ -94,7 +94,8 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
   async function load(install: boolean) {
     setSetup({ status: install ? "installing" : "loading" });
     const listed = await listDevices(install);
-    if (!listed) return setSetup({ status: "failed", message: "APCode didn't answer. Try again." });
+    if (!listed)
+      return setSetup({ status: "failed", message: "MassCode didn't answer. Try again." });
     if (listed.error) return setSetup({ status: "failed", message: listed.error });
     if (!listed.hub) return setSetup({ status: "missing" });
     setSetup({ status: "ready", hub: listed.hub, devices: listed.devices });
@@ -175,7 +176,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
         <Message>
           <span>
             Run iOS simulators here, for you and the agent. This installs expo-device-hub and
-            agent-device from npm into ~/.apcode/tools.
+            agent-device from npm into ~/.masscode/tools.
           </span>
           <ActionButton onClick={() => void load(true)}>Set up</ActionButton>
         </Message>

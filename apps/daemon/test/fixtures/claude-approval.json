@@ -222,7 +222,7 @@
         "send": {
           "type": "system",
           "subtype": "init",
-          "cwd": "/private/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-QEKlk9",
+          "cwd": "/private/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-QEKlk9",
           "session_id": "d2e5c4d4-3720-42d9-9e41-d0145d80d613",
           "tools": [],
           "mcp_servers": [],
@@ -700,7 +700,7 @@
               {
                 "type": "addDirectories",
                 "directories": [
-                  "/private/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-QEKlk9"
+                  "/private/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-QEKlk9"
                 ],
                 "destination": "session"
               },
@@ -710,7 +710,7 @@
                 "destination": "session"
               }
             ],
-            "blocked_path": "/private/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-QEKlk9/hi.txt",
+            "blocked_path": "/private/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-QEKlk9/hi.txt",
             "tool_use_id": "toolu_01Dd1vjwqnBm3UU7H66an7SR"
           }
         }

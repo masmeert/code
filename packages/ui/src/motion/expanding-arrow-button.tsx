@@ -1,8 +1,8 @@
 import { motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
 import { forwardRef, useState, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { useHoverCapable } from "@apcode/ui/hooks/use-hover-capable";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { useHoverCapable } from "@masscode/ui/hooks/use-hover-capable";
+import { cn } from "@masscode/ui/lib/utils";
 
 export interface ExpandingArrowButtonProps extends Omit<HTMLMotionProps<"button">, "children"> {
   children: ReactNode;

@@ -1,4 +1,4 @@
-import { type Project, repositoryOf } from "@apcode/contracts";
+import { type Project, repositoryOf } from "@masscode/contracts";
 import { useSyncExternalStore } from "react";
 import { addProjectOn, getHosts, getSettings } from "./store.ts";
 

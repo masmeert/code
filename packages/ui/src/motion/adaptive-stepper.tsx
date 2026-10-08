@@ -13,9 +13,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { EASE_OUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { Liquid, LiquidItem, type LiquidTransition } from "@apcode/ui/motion/liquid";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { Liquid, LiquidItem, type LiquidTransition } from "@masscode/ui/motion/liquid";
+import { cn } from "@masscode/ui/lib/utils";
 
 // The deliberately elastic separation curve from the liquid email reference.
 const STEPPER_LIQUID_TRANSITION = {

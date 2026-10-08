@@ -12,8 +12,8 @@ import {
   useId,
   useState,
 } from "react";
-import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT, SPRING_LAYOUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 export interface SharedLayoutBgProps extends Omit<HTMLAttributes<HTMLElement>, "children"> {
   children: ReactNode;

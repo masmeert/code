@@ -3,8 +3,8 @@ import {
   AnimatedSidebarProvider,
   type AnimatedSidebarProviderProps,
   useAnimatedSidebar,
-} from "@apcode/ui/motion/animated-sidebar";
-import { cn } from "@apcode/ui/lib/utils";
+} from "@masscode/ui/motion/animated-sidebar";
+import { cn } from "@masscode/ui/lib/utils";
 
 /**
  * Shell width below which a docked sidebar leaves too little room for the

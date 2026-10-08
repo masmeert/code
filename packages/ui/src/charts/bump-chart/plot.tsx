@@ -1,4 +1,4 @@
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 import { useBumpChart } from "./context";
 import { PLOT } from "./model";
 import { BumpChartPoint } from "./point";

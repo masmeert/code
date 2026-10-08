@@ -1,7 +1,7 @@
-import { ResizeHandle } from "@apcode/ui/components/resize-handle";
-import { useResizable } from "@apcode/ui/hooks/use-resizable";
-import { cn } from "@apcode/ui/lib/utils";
-import { Input } from "@apcode/ui/motion/input";
+import { ResizeHandle } from "@masscode/ui/components/resize-handle";
+import { useResizable } from "@masscode/ui/hooks/use-resizable";
+import { cn } from "@masscode/ui/lib/utils";
+import { Input } from "@masscode/ui/motion/input";
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, Plus, RotateCw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconButton } from "../components/icon-button.tsx";
@@ -39,7 +39,7 @@ export function BrowserPanel({ threadId }: { threadId: string }) {
   const activity = useBrowser((state) => (tab ? state.activity[tab.id] : undefined));
   const aside = useRef<HTMLElement>(null);
   const panel = useResizable({
-    key: "apcode.browserPanelWidth",
+    key: "masscode.browserPanelWidth",
     initial: Math.min(720, Math.round(window.innerWidth * 0.4)),
     side: "start",
     clamp: (width) =>

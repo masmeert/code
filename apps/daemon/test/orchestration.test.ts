@@ -1,4 +1,4 @@
-import { ClientCommand } from "@apcode/contracts";
+import { ClientCommand } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import { afterEach, expect, test } from "bun:test";
 import {

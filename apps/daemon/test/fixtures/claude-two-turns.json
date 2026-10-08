@@ -222,7 +222,7 @@
         "send": {
           "type": "system",
           "subtype": "init",
-          "cwd": "/private/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-dlkzBT",
+          "cwd": "/private/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-dlkzBT",
           "session_id": "14cdcc52-b8b5-4c9a-b7d2-2e438bacbc13",
           "tools": [],
           "mcp_servers": [],
@@ -844,7 +844,7 @@
         "send": {
           "type": "system",
           "subtype": "init",
-          "cwd": "/private/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-dlkzBT",
+          "cwd": "/private/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-dlkzBT",
           "session_id": "14cdcc52-b8b5-4c9a-b7d2-2e438bacbc13",
           "tools": [],
           "mcp_servers": [],

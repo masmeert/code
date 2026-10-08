@@ -4,7 +4,7 @@ Source: https://github.com/hardbeat920/monocode at commit `9a7b6a2` (v0.9.0).
 Local clone: `/tmp/monocode-review/monocode`. If it's gone, run `git clone https://github.com/hardbeat920/monocode /tmp/monocode-review/monocode`.
 
 Links below are pinned to that commit (`MC = https://github.com/hardbeat920/monocode/blob/9a7b6a2`).
-MonoCode is Tauri + React, and its harness layer runs in the frontend. APCode's runs in the Bun/Effect daemon, so port the ideas, not the code.
+MonoCode is Tauri + React, and its harness layer runs in the frontend. MassCode's runs in the Bun/Effect daemon, so port the ideas, not the code.
 
 ---
 
@@ -22,7 +22,7 @@ Cursor, Grok Build, Hermes, Antigravity and fx all speak the Agent Client Protoc
 - `src/integrations/harness/providers/cursor/cursor.ts`: reference consumer (`initialize` at ~L315, `session/prompt` at ~L461)
 - Thinner examples: `providers/grok/`, `providers/hermes/`, `providers/fx/`, `providers/antigravity/`
 
-**APCode touchpoints**
+**MassCode touchpoints**
 
 - `apps/daemon/src/providers/ProviderAdapter.ts`: `ProviderAdapter` interface (start, rewind, fork, readUsage, listSkills)
 - `apps/daemon/src/providers/ProviderRegistry.ts`: registration, availability, usage
@@ -47,7 +47,7 @@ When a limit hits: show the reset countdown, pause the queue, and offer to resum
 - `src/features/sessions/model/messageQueue.ts`: queue pausing
 - `src/features/sessions/model/handoff.ts`: switching provider using the recap
 
-**APCode touchpoints**
+**MassCode touchpoints**
 
 - `apps/daemon/src/providers/ClaudeAdapter.ts`, `CodexAdapter.ts`: where limit errors surface
 - `apps/daemon/src/SessionManager.ts`: queue (`setQueue` ~L750, `queue` ~L181) and the existing "stop pauses queue" flag (~L184)
@@ -73,7 +73,7 @@ Named Claude/Codex accounts, each project remembers its choice, threads stay on 
 - `src/features/providers/model/rateLimitsFetch.ts`, `rateLimitsCache.ts`, `src-tauri/src/rate_limits.rs`: per-account usage
 - `src/app/shell/UsageFooter.tsx`, `UsageProviderChip.tsx`: picker and headroom suggestion
 
-**APCode touchpoints**
+**MassCode touchpoints**
 
 - `apps/daemon/src/providers/ProviderRegistry.ts` (~L38, ~L113, ~L124): single `account` today
 - `apps/daemon/src/providers/launch.ts`: where to inject the per-account config dir (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`)
@@ -97,7 +97,7 @@ PR checks show the failing GitHub Actions job and step, with an action that send
 - `src/features/inbox/model/ciRepair.ts`, `ciRepairTracking.ts`: building the repair prompt and tracking it
 - `src/features/inbox/ui/InboxPrChecks.tsx`, `CheckEvidence.tsx`, `CheckRepairForm.tsx`, `CheckRepairProgress.tsx`
 
-**APCode touchpoints**
+**MassCode touchpoints**
 
 - `apps/daemon/src/sourceControl.ts`: `readPullRequest` (~L190); add a checks read next to it
 - `apps/web/src/views/GitMenu.tsx`: PR view
@@ -119,7 +119,7 @@ Ask a read-only question about a finished reply without touching the main thread
 - `src/features/sessions/ui/BtwSheet.tsx`: sheet UI
 - `src/features/sessions/ui/BtwQuestionBurst.tsx`, `modeCommands.tsx` (`/btw`)
 
-**APCode touchpoints**
+**MassCode touchpoints**
 
 - `apps/daemon/src/SessionManager.ts` `fork` (~L1036): reuse the provider fork with a read-only permission mode and don't persist it as a thread
 - `apps/web/src/views/ThreadView.tsx`: `AssistantTurn` (~L1870) actions and `ForkDialog` (~L1522)
@@ -139,7 +139,7 @@ Ask a read-only question about a finished reply without touching the main thread
 - `src/features/sessions/ui/TranscriptFind.tsx` (+ `TranscriptFind.test.ts`)
 - `src/features/sessions/ui/PromptOutline.tsx`
 
-**APCode touchpoints**
+**MassCode touchpoints**
 
 - `apps/web/src/views/ThreadView.tsx`: `UserTurn` (~L1405), `AssistantTurn` (~L1870)
 - `apps/web/src/lib/keybindings.ts`, `useShortcut.ts`
@@ -158,7 +158,7 @@ Ask a read-only question about a finished reply without touching the main thread
 
 - `host/workspace.ts` ~L788 and `src-tauri/src/fs.rs` ~L2426 / ~L2504: `--literal-pathspecs`
 
-**APCode touchpoints**
+**MassCode touchpoints**
 
 - `apps/daemon/src/git.ts`: `execGit` (~L37) and `gitLong` (~L190); `restoreCheckpoint` (~L634, restore at ~L656)
 
@@ -170,14 +170,14 @@ Ask a read-only question about a finished reply without touching the main thread
 
 ## 8. Slower updates for background threads (low priority)
 
-APCode already re-renders at most once per frame (`apps/web/src/lib/store.ts` ~L738) and memoizes turns. MonoCode goes one step further: threads that aren't visible flush on a 100 ms timer instead of every frame, and approvals and questions are still shown immediately.
+MassCode already re-renders at most once per frame (`apps/web/src/lib/store.ts` ~L738) and memoizes turns. MonoCode goes one step further: threads that aren't visible flush on a 100 ms timer instead of every frame, and approvals and questions are still shown immediately.
 
 **MonoCode**
 
 - `src/app/model/harnessFlush.ts`: `scheduleHarnessFlush`, `HarnessEventQueue`
 - `src/features/sessions/ui/TranscriptPool.tsx`: reuses mounted transcripts across tab switches
 
-**APCode touchpoints**
+**MassCode touchpoints**
 
 - `apps/web/src/lib/store.ts` `setState` / `notify` (~L725) and `ws.onmessage` (~L1225)
 
@@ -189,4 +189,4 @@ APCode already re-renders at most once per frame (`apps/web/src/lib/store.ts` ~L
 
 ## Skipped on purpose
 
-Monos (persistent agents with soul, memory and habits), mascots and empty-pane games, background effects, Jira/Linear/Azure DevOps inbox, the notes app, a full code editor, and the extra Linux packaging targets. These are features that pile up from shipping daily; they're out of APCode's scope.
+Monos (persistent agents with soul, memory and habits), mascots and empty-pane games, background effects, Jira/Linear/Azure DevOps inbox, the notes app, a full code editor, and the extra Linux packaging targets. These are features that pile up from shipping daily; they're out of MassCode's scope.

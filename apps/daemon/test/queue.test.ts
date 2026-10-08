@@ -1,4 +1,4 @@
-import { ClientCommand, RuntimeEvent } from "@apcode/contracts";
+import { ClientCommand, RuntimeEvent } from "@masscode/contracts";
 import { afterEach, expect, test } from "bun:test";
 import {
   fixture,

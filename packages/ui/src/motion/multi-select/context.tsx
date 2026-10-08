@@ -12,8 +12,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { useActiveOption } from "@apcode/ui/hooks/use-active-option";
-import { cn } from "@apcode/ui/lib/utils";
+import { useActiveOption } from "@masscode/ui/hooks/use-active-option";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type RegisteredMultiSelectItem = {
   value: string;

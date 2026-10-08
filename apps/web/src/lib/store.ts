@@ -35,8 +35,8 @@ import {
   fileRestoreBlocker,
   isTranscriptEvent,
   isTurnActive,
-} from "@apcode/contracts";
-import type { ToolCall } from "@apcode/ui/agents/tool-group";
+} from "@masscode/contracts";
+import type { ToolCall } from "@masscode/ui/agents/tool-group";
 import * as Match from "effect/Match";
 import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
@@ -137,7 +137,7 @@ export interface Transcript {
 
 export interface State {
   readonly connected: boolean;
-  /** Why this Mac's daemon can't be used: it runs another version of APCode. */
+  /** Why this Mac's daemon can't be used: it runs another version of MassCode. */
   readonly incompatible: string | null;
   /**
    * Where the data on screen came from: nothing yet, the local cache from the last
@@ -209,7 +209,7 @@ export interface State {
 export interface HostState {
   readonly status: HostStatus;
   readonly connected: boolean;
-  /** Why its daemon can't be used: it runs another version of APCode. */
+  /** Why its daemon can't be used: it runs another version of MassCode. */
   readonly incompatible: string | null;
   readonly dataId: string | null;
   readonly root: boolean;
@@ -897,11 +897,11 @@ function markIncompatible(host: string | null) {
       ? {
           ...state,
           incompatible:
-            "APCode's daemon is a different version from this window. Quit APCode and open it again.",
+            "MassCode's daemon is a different version from this window. Quit MassCode and open it again.",
         }
       : updateHost(state, host, (current) => ({
           ...current,
-          incompatible: `${host} runs a different version of APCode. Restart it from Settings → Connections.`,
+          incompatible: `${host} runs a different version of MassCode. Restart it from Settings → Connections.`,
         })),
   );
 }
@@ -1229,7 +1229,7 @@ const connect = async (connection: Connection) => {
   if (host !== null && !daemon) return retry(connection);
   const ws = new WebSocket(
     `ws://127.0.0.1:${daemon?.port ?? DEFAULT_DAEMON_PORT}/?protocol=${PROTOCOL_VERSION}`,
-    daemon ? [`apcode.${daemon.token}`] : undefined,
+    daemon ? [`masscode.${daemon.token}`] : undefined,
   );
   connection.socket = ws;
   ws.onopen = () => {
@@ -1485,7 +1485,7 @@ export const attachDevice = async (threadId: string, deviceId: string | null) =>
     }),
     3 * 60_000,
   );
-  return attached ? attached.error : "APCode didn't answer in time. Try again.";
+  return attached ? attached.error : "MassCode didn't answer in time. Try again.";
 };
 
 /** Signed URLs by thread and source, renewed before the daemon's hour runs out. */

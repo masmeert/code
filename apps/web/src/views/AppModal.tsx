@@ -1,29 +1,29 @@
-import { Button } from "@apcode/ui/motion/button/base";
-import { MorphingModal } from "@apcode/ui/motion/morphing-modal";
+import { Button } from "@masscode/ui/motion/button/base";
+import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@apcode/ui/motion/select";
-import { Input } from "@apcode/ui/motion/input";
-import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
-import { Switch } from "@apcode/ui/motion/switch";
+} from "@masscode/ui/motion/select";
+import { Input } from "@masscode/ui/motion/input";
+import { SharedLayoutBg } from "@masscode/ui/motion/shared-layout-bg";
+import { Switch } from "@masscode/ui/motion/switch";
 import {
   MorphPopover,
   MorphPopoverContent,
   MorphPopoverTrigger,
-} from "@apcode/ui/motion/popover-morph";
-import { ModelList } from "@apcode/ui/agents/prompt-input";
-import { Skeleton } from "@apcode/ui/components/skeleton";
-import { ScrollArea } from "@apcode/ui/components/scroll-area";
-import { Textarea } from "@apcode/ui/components/textarea";
-import { Tabs, TabsList, TabsTrigger } from "@apcode/ui/motion/tabs";
+} from "@masscode/ui/motion/popover-morph";
+import { ModelList } from "@masscode/ui/agents/prompt-input";
+import { Skeleton } from "@masscode/ui/components/skeleton";
+import { ScrollArea } from "@masscode/ui/components/scroll-area";
+import { Textarea } from "@masscode/ui/components/textarea";
+import { Tabs, TabsList, TabsTrigger } from "@masscode/ui/motion/tabs";
 import { IconButton } from "@/components/icon-button";
 import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import { SOURCE_CONTROL_LABEL, SOURCE_CONTROL_LOGO } from "@/components/source-control-logo";
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 import {
   ClientCommand,
   DEFAULT_AUTO_SHELVE_DAYS,
@@ -39,7 +39,7 @@ import {
   type ProviderStatus,
   Theme,
   UpdateStatus,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import * as Match from "effect/Match";
 import * as Schema from "effect/Schema";
 import {
@@ -511,7 +511,7 @@ function GeneralPage() {
             label={
               <RowLabel
                 title="Notifications"
-                description="When a thread finishes or needs you, while APCode is in the background"
+                description="When a thread finishes or needs you, while MassCode is in the background"
               />
             }
           >
@@ -634,7 +634,7 @@ function UpdatesSection() {
               ) : (
                 <p className="text-xs text-muted-foreground">
                   {ready
-                    ? `Version ${status.version} is downloaded and installs when APCode restarts.`
+                    ? `Version ${status.version} is downloaded and installs when MassCode restarts.`
                     : available
                       ? `Version ${status.version} is available.`
                       : "Current version of the application."}
@@ -882,7 +882,7 @@ function WriterModelSelect() {
 const CONFIG_DIR: Record<ProviderKind, { env: string; placeholder: string }> = {
   claude: { env: "CLAUDE_CONFIG_DIR", placeholder: "~/.claude" },
   codex: { env: "CODEX_HOME", placeholder: "~/.codex" },
-  cursor: { env: "CURSOR_CONFIG_DIR", placeholder: "~/.apcode/cursor" },
+  cursor: { env: "CURSOR_CONFIG_DIR", placeholder: "~/.masscode/cursor" },
 };
 
 function ConnectionsPage() {
@@ -1077,7 +1077,7 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
       {confirming ? (
         <p className="px-3 py-2.5 text-xs text-muted-foreground">
           {confirm === "remove"
-            ? `This stops APCode on ${alias}, and any agents working there. Its threads stay on ${alias} for when you add it again.`
+            ? `This stops MassCode on ${alias}, and any agents working there. Its threads stay on ${alias} for when you add it again.`
             : `This stops the turns running on ${alias} and restarts it on this version.`}
         </p>
       ) : null}

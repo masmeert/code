@@ -29,18 +29,18 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button } from "@apcode/ui/motion/button";
-import { Fold } from "@apcode/ui/motion/fold";
+import { Button } from "@masscode/ui/motion/button";
+import { Fold } from "@masscode/ui/motion/fold";
 import {
   MorphPopover,
   MorphPopoverContent,
   MorphPopoverMenu,
   MorphPopoverTrigger,
-} from "@apcode/ui/motion/popover-morph";
-import { Switch } from "@apcode/ui/motion/switch";
-import { SPRING_SWAP } from "@apcode/ui/lib/ease";
-import { formatBinding, matches } from "@apcode/ui/lib/keys";
-import { cn } from "@apcode/ui/lib/utils";
+} from "@masscode/ui/motion/popover-morph";
+import { Switch } from "@masscode/ui/motion/switch";
+import { SPRING_SWAP } from "@masscode/ui/lib/ease";
+import { formatBinding, matches } from "@masscode/ui/lib/keys";
+import { cn } from "@masscode/ui/lib/utils";
 
 /** One row in a composer picker (model, effort, permissions, branch…). */
 export interface PromptOption {

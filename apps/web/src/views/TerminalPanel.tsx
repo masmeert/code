@@ -1,6 +1,6 @@
-import { ClientCommand } from "@apcode/contracts";
-import { ResizeHandle } from "@apcode/ui/components/resize-handle";
-import { cn } from "@apcode/ui/lib/utils";
+import { ClientCommand } from "@masscode/contracts";
+import { ResizeHandle } from "@masscode/ui/components/resize-handle";
+import { cn } from "@masscode/ui/lib/utils";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -22,7 +22,7 @@ import {
   toggleTerminalPanel,
   useStore,
 } from "../lib/store.ts";
-import { useResizableSize } from "@apcode/ui/hooks/use-resizable";
+import { useResizableSize } from "@masscode/ui/hooks/use-resizable";
 
 const symbolsFont = new FontFace("Symbols Nerd Font Mono", `url(${symbolsFontUrl})`);
 document.fonts.add(symbolsFont);
@@ -93,7 +93,7 @@ export function TerminalPanel({
   const terminalIds = useStore((state) => state.terminals[threadId]) ?? [];
   const section = useRef<HTMLElement>(null);
   const panel = useResizableSize({
-    key: "apcode.terminalHeight",
+    key: "masscode.terminalHeight",
     initial: 288,
     side: "start",
     axis: "y",

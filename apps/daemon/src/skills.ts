@@ -3,7 +3,7 @@
  * mentions that run them. Scanning skill folders ourselves would mean copying each harness's
  * lookup rules (scopes, plugins, overrides), which change with every release.
  */
-import { PROVIDER_NAME, type ProviderKind } from "@apcode/contracts";
+import { PROVIDER_NAME, type ProviderKind } from "@masscode/contracts";
 import * as Effect from "effect/Effect";
 import type { ProviderError, ProviderSkill } from "./providers/ProviderAdapter.ts";
 

@@ -4,7 +4,7 @@ import {
   PROTOCOL_MISMATCH,
   PROTOCOL_VERSION,
   ServerFrame,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
@@ -23,17 +23,17 @@ import type { TerminalViewer } from "./terminals.ts";
 
 // Browsers don't apply CORS to WebSockets, so any page could connect to localhost.
 // Only accept the desktop shell and the Vite dev server.
-const ALLOWED_ORIGINS = new Set(["app://apcode", "http://localhost:1420"]);
+const ALLOWED_ORIGINS = new Set(["app://masscode", "http://localhost:1420"]);
 
 /**
  * Per-launch secret from the desktop shell (release builds). Origin checks only stop
  * browsers; any local process can claim an origin. Removed from our env so the agents
  * we spawn don't inherit it.
  */
-const TOKEN = process.env.APCODE_TOKEN || null;
-delete process.env.APCODE_TOKEN;
+const TOKEN = process.env.MASSCODE_TOKEN || null;
+delete process.env.MASSCODE_TOKEN;
 /** Browsers can't set headers on a WebSocket, so the token rides in as a subprotocol. */
-const TOKEN_PROTOCOL_PREFIX = "apcode.";
+const TOKEN_PROTOCOL_PREFIX = "masscode.";
 
 /** The subprotocol carrying the right token, if the request offers one. */
 const tokenProtocol = (req: Request) => {
@@ -291,7 +291,7 @@ export const serve = (port: number) =>
               ? server.upgrade(req, { data, headers: { "Sec-WebSocket-Protocol": protocol } })
               : server.upgrade(req, { data });
             if (upgraded) return undefined;
-            return new Response("APCode daemon", { status: 426 });
+            return new Response("MassCode daemon", { status: 426 });
           },
           websocket: {
             open(ws) {
@@ -299,7 +299,7 @@ export const serve = (port: number) =>
               if (ws.data.protocol !== String(PROTOCOL_VERSION))
                 return ws.close(
                   PROTOCOL_MISMATCH,
-                  "This app and APCode on this machine are different versions. Update the older one.",
+                  "This app and MassCode on this machine are different versions. Update the older one.",
                 );
               ws.data.viewer = { send: (frame) => send(ws, frame) };
               ws.data.fiber = Effect.runFork(connection(ws));
@@ -333,7 +333,7 @@ export const serve = (port: number) =>
     // Port 0 lets the OS pick, for remote hosts where another user's daemon may hold ours.
     // SAFETY: a server bound to a TCP hostname always has a port.
     setPort(server.port!);
-    const portFile = process.env.APCODE_PORT_FILE;
+    const portFile = process.env.MASSCODE_PORT_FILE;
     if (portFile) yield* Effect.promise(() => writeFile(portFile, String(server.port)));
-    yield* Effect.logInfo(`APCode daemon listening on ws://127.0.0.1:${server.port}`);
+    yield* Effect.logInfo(`MassCode daemon listening on ws://127.0.0.1:${server.port}`);
   });

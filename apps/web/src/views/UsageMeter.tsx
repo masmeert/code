@@ -1,6 +1,6 @@
-import { MorphPopover, MorphPopoverContent } from "@apcode/ui/motion/popover-morph";
-import { cn } from "@apcode/ui/lib/utils";
-import { ClientCommand, type ContextUsage, type ProviderKind } from "@apcode/contracts";
+import { MorphPopover, MorphPopoverContent } from "@masscode/ui/motion/popover-morph";
+import { cn } from "@masscode/ui/lib/utils";
+import { ClientCommand, type ContextUsage, type ProviderKind } from "@masscode/contracts";
 import { ChevronRight, LoaderCircle, Minimize2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { describe, useKeybinding } from "../lib/keybindings.ts";

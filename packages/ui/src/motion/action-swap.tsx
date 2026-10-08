@@ -7,8 +7,8 @@ import {
 } from "motion/react";
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { EASE_OUT, SPRING_PRESS, SPRING_SWAP } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT, SPRING_PRESS, SPRING_SWAP } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type ActionSwapItem = {
   id: string;

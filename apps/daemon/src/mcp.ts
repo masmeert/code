@@ -6,7 +6,7 @@ import {
   PermissionLevel,
   ProviderKind,
   type BrowserResult,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
@@ -17,7 +17,7 @@ import { PORT } from "./port.ts";
 export type Mcp = ReturnType<typeof createMcp>;
 
 export interface McpServerAccess {
-  /** The browser tools; the orchestration tools are at `${url}/apcode`, the simulator's at `${url}/device`. */
+  /** The browser tools; the orchestration tools are at `${url}/masscode`, the simulator's at `${url}/device`. */
   readonly url: string;
   readonly token: string;
 }
@@ -112,10 +112,10 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
     );
   }
   const server = new McpServer(
-    { name: "apcode", version: "1.0.0" },
+    { name: "masscode", version: "1.0.0" },
     {
       instructions:
-        "APCode's threads. Start agents (Claude or Codex) in threads of their own to work on tasks in parallel, get a second opinion from the other harness, or review work; message them, wait for and read their answers. Threads you start show in the user's sidebar, in your project, where the user can watch and steer them. Stopping your thread stops them too.",
+        "MassCode's threads. Start agents (Claude or Codex) in threads of their own to work on tasks in parallel, get a second opinion from the other harness, or review work; message them, wait for and read their answers. Threads you start show in the user's sidebar, in your project, where the user can watch and steer them. Stopping your thread stops them too.",
     },
   );
   const readOnly = { readOnlyHint: true };
@@ -209,7 +209,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
     { name: "browser", version: "1.0.0" },
     {
       instructions:
-        "A real browser the user watches in APCode's Browser panel next to this thread; it shares their logins. Use it to check web apps you build (such as a local dev server) or to read pages. Call snapshot to see the page (text, interactive elements with refs like e3, and a screenshot), then click or type by ref. Refs go stale after navigation or re-renders, so take a new snapshot when an action says nothing matches.",
+        "A real browser the user watches in MassCode's Browser panel next to this thread; it shares their logins. Use it to check web apps you build (such as a local dev server) or to read pages. Call snapshot to see the page (text, interactive elements with refs like e3, and a screenshot), then click or type by ref. Refs go stale after navigation or re-renders, so take a new snapshot when an action says nothing matches.",
     },
   );
   const alwaysLoad = { "anthropic/alwaysLoad": true };
@@ -300,7 +300,7 @@ function deviceServer(threadId: string, devices: Devices) {
     { name: "device", version: "1.0.0" },
     {
       instructions:
-        "An iOS Simulator the user watches in APCode's Simulator panel next to this thread. Call device_open to show one and learn how to drive it, before simctl or computer use.",
+        "An iOS Simulator the user watches in MassCode's Simulator panel next to this thread. Call device_open to show one and learn how to drive it, before simctl or computer use.",
     },
   );
   server.registerTool(
@@ -318,7 +318,7 @@ function deviceServer(threadId: string, devices: Devices) {
     ({ deviceId }) =>
       run(async () => {
         const { device, cli } = await devices.open(threadId, deviceId ?? null);
-        const target = `--platform ios --udid ${device.id} --session apcode-${threadId}`;
+        const target = `--platform ios --udid ${device.id} --session masscode-${threadId}`;
         return [
           {
             type: "text",
@@ -387,7 +387,7 @@ export function createMcp(
       const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
       await Match.value(new URL(request.url).pathname)
         .pipe(
-          Match.when("/mcp/apcode", () => orchestrationServer(threadId, orchestration)),
+          Match.when("/mcp/masscode", () => orchestrationServer(threadId, orchestration)),
           Match.when("/mcp/device", () => deviceServer(threadId, devices)),
           Match.orElse(() => browserServer((action) => browser(threadId, action))),
         )

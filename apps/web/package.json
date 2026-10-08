@@ -1,5 +1,5 @@
 {
-  "name": "@apcode/web",
+  "name": "@masscode/web",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,8 +8,8 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
-    "@apcode/contracts": "workspace:*",
-    "@apcode/ui": "workspace:*",
+    "@masscode/contracts": "workspace:*",
+    "@masscode/ui": "workspace:*",
     "@pierre/diffs": "^1.4.3",
     "@pierre/trees": "1.0.0-beta.6",
     "@xterm/addon-fit": "^0.11.0",

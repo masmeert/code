@@ -8,7 +8,7 @@ import {
   type ModelOption,
   type SlashCommand,
   type UserQuestion,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
@@ -62,7 +62,7 @@ const acpArgs = (launch: HarnessLaunch, model: string | null) => [
 export const cursorModelFlag = (model: string | null | undefined) =>
   model ? ["--model", model === AUTO ? "auto" : model] : [];
 
-/** Effort as APCode names it; some models spell xhigh "extra-high". */
+/** Effort as MassCode names it; some models spell xhigh "extra-high". */
 function toEffort(value: string) {
   const effort = value === "extra-high" ? "xhigh" : value;
   return Schema.is(Effort)(effort) ? effort : undefined;
@@ -228,7 +228,7 @@ const start = ({
     const mcpServers = mcpServer
       ? [
           { name: "browser", url: mcpServer.url },
-          { name: "apcode", url: `${mcpServer.url}/apcode` },
+          { name: "masscode", url: `${mcpServer.url}/masscode` },
           ...(DEVICES_SUPPORTED ? [{ name: "device", url: `${mcpServer.url}/device` }] : []),
         ].map((server) => ({
           type: "http",

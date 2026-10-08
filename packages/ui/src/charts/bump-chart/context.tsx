@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { useReducedMotion } from "motion/react";
-import { useHoverCapable } from "@apcode/ui/hooks/use-hover-capable";
+import { useHoverCapable } from "@masscode/ui/hooks/use-hover-capable";
 import { buildBumpChart, type BumpSeries } from "./model";
 
 export interface BumpChartProps {

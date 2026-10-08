@@ -1,4 +1,4 @@
-import { BrowserAction, type BrowserResult } from "@apcode/contracts";
+import { BrowserAction, type BrowserResult } from "@masscode/contracts";
 import { useSyncExternalStore } from "react";
 
 export interface Webview extends HTMLElement {
@@ -47,7 +47,7 @@ interface BrowserState {
   readonly surface: { readonly threadId: string; readonly rect: SurfaceRect } | null;
 }
 
-const STORAGE_KEY = "apcode.browser";
+const STORAGE_KEY = "masscode.browser";
 
 function readThreads(): Record<string, ThreadBrowser> {
   try {
@@ -294,7 +294,7 @@ export async function performBrowserAction(
   action: BrowserAction,
 ): Promise<BrowserResult> {
   const desktop = window.desktop;
-  if (!desktop) throw new Error("The browser is only available in the APCode desktop app");
+  if (!desktop) throw new Error("The browser is only available in the MassCode desktop app");
   const url = BrowserAction.guards.navigate(action) ? normalizeUrl(action.url) : null;
   if (BrowserAction.guards.navigate(action) && !url)
     throw new Error(`Not a web address: ${action.url}`);

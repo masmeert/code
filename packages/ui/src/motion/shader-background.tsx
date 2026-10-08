@@ -44,7 +44,7 @@ import {
 } from "@paper-design/shaders-react";
 import { useReducedMotion } from "motion/react";
 import type { ComponentType } from "react";
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 
 type ShaderVariantProps = {
   "mesh-gradient": MeshGradientProps;

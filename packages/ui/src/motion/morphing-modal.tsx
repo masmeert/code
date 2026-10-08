@@ -1,9 +1,9 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { EASE_OUT, SPRING_PANEL } from "@apcode/ui/lib/ease";
-import { PresenceGate } from "@apcode/ui/motion/presence-gate";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT, SPRING_PANEL } from "@masscode/ui/lib/ease";
+import { PresenceGate } from "@masscode/ui/motion/presence-gate";
+import { cn } from "@masscode/ui/lib/utils";
 
 export interface MorphingModalProps {
   /** Which view is currently shown. `null` closes the modal. Escape and the backdrop call `onClose`. */

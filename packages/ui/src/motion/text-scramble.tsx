@@ -1,6 +1,6 @@
 import { useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 
 const DEFAULT_GLYPHS = "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789#%&@$?/";
 

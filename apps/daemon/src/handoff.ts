@@ -1,4 +1,4 @@
-import { RuntimeEvent, type ProviderKind } from "@apcode/contracts";
+import { RuntimeEvent, type ProviderKind } from "@masscode/contracts";
 
 /** Enough to carry on with; a long thread keeps its newest part. */
 const MAX_CHARS = 40_000;
@@ -54,8 +54,8 @@ export function handoffText({
   }
   const from = names(answering);
   const intro = fresh
-    ? `This conversation started with ${from} in APCode, and you're taking it over. Here it is so far, oldest first.`
-    : `While you were away, ${from} carried on this conversation in APCode. Here's what was said since your last turn, oldest first.`;
+    ? `This conversation started with ${from} in MassCode, and you're taking it over. Here it is so far, oldest first.`
+    : `While you were away, ${from} carried on this conversation in MassCode. Here's what was said since your last turn, oldest first.`;
   return {
     from: answering,
     messages,

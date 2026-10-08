@@ -1,8 +1,8 @@
 import { Bell, FileText, FolderClosed, LayoutGrid, Link, Plus, Table, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ComponentType, useEffect, useId, useRef, useState } from "react";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 type MenuItem = { label: string; icon: ComponentType<{ className?: string }> };
 

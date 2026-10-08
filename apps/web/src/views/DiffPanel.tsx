@@ -7,11 +7,11 @@ import {
 import { CodeView, type CodeViewHandle, type CodeViewItem } from "@pierre/diffs/react";
 import { ChevronLeft, Columns2, ListTree, RefreshCw, Rows2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ResizeHandle } from "@apcode/ui/components/resize-handle";
-import { cn } from "@apcode/ui/lib/utils";
-import { useResizable } from "@apcode/ui/hooks/use-resizable";
+import { ResizeHandle } from "@masscode/ui/components/resize-handle";
+import { cn } from "@masscode/ui/lib/utils";
+import { useResizable } from "@masscode/ui/hooks/use-resizable";
 import { IconButton } from "../components/icon-button.tsx";
-import { ClientCommand } from "@apcode/contracts";
+import { ClientCommand } from "@masscode/contracts";
 import {
   isAnchoredIn,
   removeReviewComment,
@@ -25,9 +25,9 @@ import { ChangedFilesTree } from "./ChangedFilesTree.tsx";
 import { DiffComment, DiffCommentForm } from "./DiffComment.tsx";
 import { HIGHLIGHT, useDiffWorkersReady } from "./DiffWorkers.tsx";
 
-export const PANEL_WIDTH_KEY = "apcode.diffPanelWidth";
+export const PANEL_WIDTH_KEY = "masscode.diffPanelWidth";
 export const defaultPanelWidth = () => Math.min(960, Math.round(window.innerWidth * 0.45));
-const TREE_WIDTH_KEY = "apcode.diffTreeWidth";
+const TREE_WIDTH_KEY = "masscode.diffTreeWidth";
 /** The chat keeps at least this much room next to the panel. */
 const MIN_CHAT = 380;
 const MIN_PANEL = 360;
@@ -36,7 +36,7 @@ const MIN_DIFF = 320;
 /** Below this, each side of a split diff is too narrow to read a line of code. */
 const MIN_SPLIT_DIFF = 720;
 
-const TREE_KEY = "apcode.diffTree";
+const TREE_KEY = "masscode.diffTree";
 
 const readTree = () => {
   try {

@@ -1,4 +1,4 @@
-import { formatBinding, matches } from "@apcode/ui/lib/keys";
+import { formatBinding, matches } from "@masscode/ui/lib/keys";
 import { useEffect, useRef } from "react";
 
 /**

@@ -1,4 +1,4 @@
-import { ServerFrame, type TerminalInfo } from "@apcode/contracts";
+import { ServerFrame, type TerminalInfo } from "@masscode/contracts";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal as HeadlessTerminal } from "@xterm/headless";
@@ -110,7 +110,7 @@ export function createTerminals(options: {
               ...Object.fromEntries(
                 Object.entries(process.env).filter(
                   ([key]) =>
-                    !/^(APCODE_|npm_|PNPM_|VSCODE_|ITERM_)|^(INIT_CWD|TMUX|TMUX_PANE|TERM_PROGRAM(_VERSION)?|TERM_SESSION_ID|COLUMNS|LINES)$/.test(
+                    !/^(MASSCODE_|npm_|PNPM_|VSCODE_|ITERM_)|^(INIT_CWD|TMUX|TMUX_PANE|TERM_PROGRAM(_VERSION)?|TERM_SESSION_ID|COLUMNS|LINES)$/.test(
                       key,
                     ),
                 ),
@@ -118,7 +118,7 @@ export function createTerminals(options: {
               LANG: process.env.LANG ?? "en_US.UTF-8",
               TERM: "xterm-256color",
               COLORTERM: "truecolor",
-              TERM_PROGRAM: "APCode",
+              TERM_PROGRAM: "MassCode",
             },
             terminal: {
               cols: columns,

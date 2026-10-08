@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { BROWSER_PARTITION } from "@apcode/contracts";
+import { BROWSER_PARTITION } from "@masscode/contracts";
 import { app, BrowserWindow, session } from "electron";
 import { registerBridge } from "./bridge.ts";
 import { configureBrowserSession } from "./browser.ts";
@@ -20,8 +20,8 @@ let quitting = false;
 // so ours failed to bind and the app waited on a daemon that rejects its token.
 function startDaemon() {
   daemonPort = freePort().then((port) => {
-    daemon = spawn(join(process.resourcesPath, "apcode-daemon"), {
-      env: { ...process.env, APCODE_TOKEN: daemonToken, APCODE_PORT: String(port) },
+    daemon = spawn(join(process.resourcesPath, "masscode-daemon"), {
+      env: { ...process.env, MASSCODE_TOKEN: daemonToken, MASSCODE_PORT: String(port) },
       stdio: "ignore",
     });
     // ponytail: fixed 1s respawn, add backoff if a daemon that always crashes becomes a problem

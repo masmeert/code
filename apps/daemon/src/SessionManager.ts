@@ -27,7 +27,7 @@ import {
   type TerminalInfo,
   type ThreadInfo,
   type TurnOptions,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -316,7 +316,7 @@ export class SessionManager extends Context.Service<
     /** Some thread's turn is going, the agent working or waiting on the user. */
     readonly busy: () => boolean;
   }
->()("apcode/SessionManager") {}
+>()("masscode/SessionManager") {}
 
 const fail = (message: string) => new ProviderError({ provider: "none", message });
 
@@ -775,7 +775,7 @@ const make = Effect.gen(function* () {
       RuntimeEvent.cases.error.make({
         threadId,
         message:
-          "APCode stopped while this turn was running. Send a message to pick up where it left off.",
+          "MassCode stopped while this turn was running. Send a message to pick up where it left off.",
       }),
     );
     entry.currentTurn = messageId;
@@ -1170,7 +1170,7 @@ const make = Effect.gen(function* () {
   };
 
   /**
-   * Starts a side chat's agent in plan mode, with no APCode tools, on a copy of the thread's
+   * Starts a side chat's agent in plan mode, with no MassCode tools, on a copy of the thread's
    * conversation through the turn of `messageId`. Resolves to what to hand it with the first
    * question when there's no copy, and to null when the chat was closed while it started.
    */
@@ -1580,7 +1580,7 @@ const make = Effect.gen(function* () {
       const path = join(WORKTREES_DIR, basename(root), slug);
       const { worktreeFromOrigin } = yield* settingsStore.get;
       const error = yield* Effect.promise(() =>
-        addWorktree(projectPath, path, `apcode/${slug}`, worktreeFromOrigin === true),
+        addWorktree(projectPath, path, `masscode/${slug}`, worktreeFromOrigin === true),
       );
       if (error) return yield* Effect.fail(fail(`Couldn't create a worktree: ${error}`));
       return join(path, relative(root, projectPath));
@@ -1649,7 +1649,7 @@ const make = Effect.gen(function* () {
       yield* send(entry, command.text, command.options).pipe(reportOn(entry), Effect.ignore);
     });
 
-  // --- orchestration: what agents do through APCode's MCP tools -------------------------
+  // --- orchestration: what agents do through MassCode's MCP tools -------------------------
 
   /** A thread as the tools describe it. */
   function summary({ info }: ThreadEntry) {
@@ -2239,7 +2239,7 @@ const make = Effect.gen(function* () {
           (entry) =>
             dropSession(
               entry,
-              "APCode quit while this turn was running. Send a message to pick up where it left off.",
+              "MassCode quit while this turn was running. Send a message to pick up where it left off.",
             ),
           { discard: true },
         ),

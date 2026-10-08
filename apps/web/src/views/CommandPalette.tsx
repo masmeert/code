@@ -1,8 +1,8 @@
 import { ProjectBadge, projectLabel } from "@/components/project-badge";
-import { searchCommands } from "@apcode/ui/lib/command-search";
-import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
-import { cn } from "@apcode/ui/lib/utils";
-import type { SearchHit } from "@apcode/contracts";
+import { searchCommands } from "@masscode/ui/lib/command-search";
+import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
+import { cn } from "@masscode/ui/lib/utils";
+import type { SearchHit } from "@masscode/contracts";
 import { MessageSquare, Search } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import {

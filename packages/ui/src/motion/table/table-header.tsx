@@ -9,10 +9,10 @@ import {
 import { motion } from "motion/react";
 import { type PointerEvent as ReactPointerEvent, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Checkbox } from "@apcode/ui/motion/checkbox";
-import { EASE_OUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { TOUCH_GESTURE_CLASS } from "@apcode/ui/lib/touch";
-import { cn } from "@apcode/ui/lib/utils";
+import { Checkbox } from "@masscode/ui/motion/checkbox";
+import { EASE_OUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { TOUCH_GESTURE_CLASS } from "@masscode/ui/lib/touch";
+import { cn } from "@masscode/ui/lib/utils";
 import { TableMenu } from "./table-menu";
 import type { HeaderCellRefs, InsertPosition, SortState, TableColumn } from "./types";
 import { alignFlex, alignText, COLUMN_ACTIVE_SHADOW } from "./utils";

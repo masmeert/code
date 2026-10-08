@@ -11,7 +11,7 @@ import {
   type ProviderStatus,
   type Settings,
   type ThreadInfo,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -41,7 +41,7 @@ export const FAKE_CLI = join(import.meta.dir, "fake-cli");
 const replaying = (kind: ProviderKind) => ({
   defaultModel: null,
   binaryPath: FAKE_CLI,
-  env: { APCODE_REPLAY: `replay-${kind}.json` },
+  env: { MASSCODE_REPLAY: `replay-${kind}.json` },
 });
 
 /** Each harness runs the peer; `harness` swaps in other settings for it, like recording. */
@@ -91,7 +91,7 @@ const layer = SessionManagerLive.layer.pipe(
 
 /** A project folder whose threads replay these fixtures. */
 export function project(fixtures: Partial<Record<ProviderKind, Fixture>>) {
-  const folder = mkdtempSync(join(tmpdir(), "apcode-project-"));
+  const folder = mkdtempSync(join(tmpdir(), "masscode-project-"));
   for (const [kind, fixture] of Object.entries(fixtures))
     writeFileSync(join(folder, `replay-${kind}.json`), JSON.stringify(fixture));
   return folder;
@@ -260,10 +260,13 @@ export async function startDaemon(harness: Partial<Settings["providers"]> = {}) 
      */
     async agentTools(token: string) {
       const client = new Client({ name: "replay-test", version: "1.0.0" });
-      const transport = new StreamableHTTPClientTransport(new URL("http://127.0.0.1/mcp/apcode"), {
-        fetch: (url, init) => manager.mcp.handle(new Request(url, init)),
-        requestInit: { headers: { authorization: `Bearer ${token}` } },
-      });
+      const transport = new StreamableHTTPClientTransport(
+        new URL("http://127.0.0.1/mcp/masscode"),
+        {
+          fetch: (url, init) => manager.mcp.handle(new Request(url, init)),
+          requestInit: { headers: { authorization: `Bearer ${token}` } },
+        },
+      );
       // SAFETY: the SDK's own transport; its `sessionId?: string` only clashes with exactOptionalPropertyTypes.
       await client.connect(transport as Transport);
       return {

@@ -1,6 +1,6 @@
 import { useReducedMotion } from "motion/react";
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
-import { useHoverCapable } from "@apcode/ui/hooks/use-hover-capable";
+import { useHoverCapable } from "@masscode/ui/hooks/use-hover-capable";
 import type { HeatCalendarCell, HeatCalendarProps, HeatCalendarSelection } from "./types";
 import {
   addDays,

@@ -10,7 +10,7 @@ import {
   ProviderKind,
   ProviderStatus,
   type UsageLimit,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import { openJsonFile } from "../storage/jsonFile.ts";
 import { SettingsStore } from "../storage/SettingsStore.ts";
 import * as Schema from "effect/Schema";
@@ -337,7 +337,7 @@ export class ProviderRegistry extends Context.Service<
     }>;
     readonly setListener: (listener: ProviderListener) => void;
   }
->()("apcode/ProviderRegistry") {}
+>()("masscode/ProviderRegistry") {}
 
 const make = Effect.gen(function* () {
   const settingsStore = yield* SettingsStore;

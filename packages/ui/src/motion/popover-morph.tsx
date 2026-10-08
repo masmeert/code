@@ -17,9 +17,9 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { usePopoverPortalPosition } from "@apcode/ui/lib/popover-position";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_PANEL } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { usePopoverPortalPosition } from "@masscode/ui/lib/popover-position";
+import { EASE_OUT, SPRING_LAYOUT, SPRING_PANEL } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 /** "right" opens a flyout beside its trigger (a row in another panel), or on its left without room. */
 type Side = "top" | "bottom" | "right";

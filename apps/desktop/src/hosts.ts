@@ -1,4 +1,4 @@
-import { browserPartition, HostStatus, type RemoteHost } from "@apcode/contracts";
+import { browserPartition, HostStatus, type RemoteHost } from "@masscode/contracts";
 import { type ChildProcess, spawn } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
@@ -53,15 +53,15 @@ const VERSION_PATTERN = /^[\w.-]+$/;
 
 /**
  * Run on the host with `sh -s -- <version> <start|restart|stop>`. Starts the daemon under a
- * supervisor loop that restarts it, on whatever version `bin/apcode-daemon` points to by then,
+ * supervisor loop that restarts it, on whatever version `bin/masscode-daemon` points to by then,
  * so an update only has to repoint it and ask the running daemon to exit once it's idle.
  */
 const REMOTE_SCRIPT = String.raw`
 set -eu
 version="$1"
-dir="$HOME/.apcode/remote"
+dir="$HOME/.masscode/remote"
 mkdir -p "$dir/bin"
-chmod 700 "$HOME/.apcode" "$dir"
+chmod 700 "$HOME/.masscode" "$dir"
 alive() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null; }
 supervisor=$(cat "$dir/supervisor.pid" 2>/dev/null || true)
 daemon=$(cat "$dir/daemon.pid" 2>/dev/null || true)
@@ -71,11 +71,11 @@ if [ "$2" = stop ]; then
   exit 0
 fi
 if [ "$(uname -s)" != Linux ]; then echo "state=unsupported"; echo "os=$(uname -s)"; exit 0; fi
-if [ ! -x "$dir/bin/apcode-daemon-$version" ]; then echo "state=missing"; echo "arch=$(uname -m)"; exit 0; fi
+if [ ! -x "$dir/bin/masscode-daemon-$version" ]; then echo "state=missing"; echo "arch=$(uname -m)"; exit 0; fi
 if [ ! -s "$dir/token" ]; then (umask 077; od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > "$dir/token"); fi
-ln -sfn "apcode-daemon-$version" "$dir/bin/apcode-daemon"
+ln -sfn "masscode-daemon-$version" "$dir/bin/masscode-daemon"
 if alive "$supervisor"; then
-  if [ "$(cat "$dir/running" 2>/dev/null || true)" != "apcode-daemon-$version" ]; then
+  if [ "$(cat "$dir/running" 2>/dev/null || true)" != "masscode-daemon-$version" ]; then
     if [ "$2" != restart ]; then
       if alive "$daemon"; then kill -USR2 "$daemon"; fi
       echo "state=updating"
@@ -86,13 +86,13 @@ if alive "$supervisor"; then
 else
   detach=""
   if command -v setsid >/dev/null 2>&1; then detach=setsid; fi
-  APCODE_REMOTE_DIR="$dir" nohup $detach sh -c '
-    dir="$APCODE_REMOTE_DIR"
+  MASSCODE_REMOTE_DIR="$dir" nohup $detach sh -c '
+    dir="$MASSCODE_REMOTE_DIR"
     while :; do
       if [ "$(wc -c < "$dir/daemon.log")" -gt 10000000 ]; then : > "$dir/daemon.log"; fi
       rm -f "$dir/port"
-      readlink "$dir/bin/apcode-daemon" > "$dir/running"
-      APCODE_TOKEN="$(cat "$dir/token")" APCODE_PORT=0 APCODE_PORT_FILE="$dir/port" APCODE_DETACHED=1 "$dir/bin/apcode-daemon" &
+      readlink "$dir/bin/masscode-daemon" > "$dir/running"
+      MASSCODE_TOKEN="$(cat "$dir/token")" MASSCODE_PORT=0 MASSCODE_PORT_FILE="$dir/port" MASSCODE_DETACHED=1 "$dir/bin/masscode-daemon" &
       echo $! > "$dir/daemon.pid"
       wait $! || true
       sleep 1
@@ -100,7 +100,7 @@ else
   echo $! > "$dir/supervisor.pid"
 fi
 tries=0
-while [ "$(cat "$dir/running" 2>/dev/null || true)" != "apcode-daemon-$version" ] || [ ! -s "$dir/port" ]; do
+while [ "$(cat "$dir/running" 2>/dev/null || true)" != "masscode-daemon-$version" ] || [ ! -s "$dir/port" ]; do
   tries=$((tries + 1))
   if [ "$tries" -gt 150 ]; then
     echo "state=failed"
@@ -109,8 +109,8 @@ while [ "$(cat "$dir/running" 2>/dev/null || true)" != "apcode-daemon-$version" 
   fi
   sleep 0.2
 done
-for file in "$dir"/bin/apcode-daemon-*; do
-  case "$(basename "$file")" in "apcode-daemon-$version") ;; *) rm -f "$file" ;; esac
+for file in "$dir"/bin/masscode-daemon-*; do
+  case "$(basename "$file")" in "masscode-daemon-$version") ;; *) rm -f "$file" ;; esac
 done
 echo "state=running"
 echo "port=$(cat "$dir/port")"
@@ -131,7 +131,7 @@ function setStatus(host: Host, status: HostStatus) {
 /** What went wrong in words that say how to fix it, from ssh's stderr. */
 function sshError(alias: string, stderr: string) {
   if (/permission denied/i.test(stderr))
-    return `Couldn't sign in to ${alias}. APCode signs in with your SSH keys or agent, not a password: run ssh-copy-id ${alias} in a terminal, then retry.`;
+    return `Couldn't sign in to ${alias}. MassCode signs in with your SSH keys or agent, not a password: run ssh-copy-id ${alias} in a terminal, then retry.`;
   if (/host key verification failed/i.test(stderr))
     return `${alias}'s host key isn't trusted yet. Run ssh ${alias} in a terminal once to accept it, then retry.`;
   if (/could not resolve hostname/i.test(stderr))
@@ -188,7 +188,7 @@ function progress(total: number, report: (percent: number) => void) {
 
 /**
  * The version hosts should run. In dev it's the Linux build next to this checkout,
- * versioned by when it was built (`pnpm --filter @apcode/daemon build:linux`).
+ * versioned by when it was built (`pnpm --filter @masscode/daemon build:linux`).
  */
 async function wantedVersion() {
   if (app.isPackaged) return app.getVersion();
@@ -197,19 +197,23 @@ async function wantedVersion() {
 }
 
 function devArchive(arch: string) {
-  return join(app.getAppPath(), "..", "daemon", "dist", `apcode-daemon-linux-${arch}.gz`);
+  return join(app.getAppPath(), "..", "daemon", "dist", `masscode-daemon-linux-${arch}.gz`);
 }
 
 /** The gzipped daemon for `arch`, downloaded from this version's release the first time. */
 async function daemonArchive(host: Host, arch: string, version: string) {
   if (!app.isPackaged) return devArchive(arch);
-  const path = join(app.getPath("userData"), "remote", `apcode-daemon-${version}-linux-${arch}.gz`);
+  const path = join(
+    app.getPath("userData"),
+    "remote",
+    `masscode-daemon-${version}-linux-${arch}.gz`,
+  );
   if (await stat(path).catch(() => null)) return path;
-  const url = `https://github.com/masmeert/code/releases/download/v${version}/apcode-daemon-linux-${arch}.gz`;
+  const url = `https://github.com/masmeert/code/releases/download/v${version}/masscode-daemon-linux-${arch}.gz`;
   const response = await net.fetch(url);
   if (!response.ok || !response.body)
     throw new Error(
-      `Couldn't download APCode for ${host.alias} (${response.status} from GitHub). Check this Mac's connection, then retry.`,
+      `Couldn't download MassCode for ${host.alias} (${response.status} from GitHub). Check this Mac's connection, then retry.`,
     );
   await mkdir(join(path, ".."), { recursive: true });
   await pipeline(
@@ -218,7 +222,7 @@ async function daemonArchive(host: Host, arch: string, version: string) {
     progress(Number(response.headers.get("content-length")), (percent) =>
       setStatus(
         host,
-        HostStatus.cases.connecting.make({ step: `Downloading APCode (${percent}%)` }),
+        HostStatus.cases.connecting.make({ step: `Downloading MassCode (${percent}%)` }),
       ),
     ),
     createWriteStream(`${path}.part`),
@@ -230,15 +234,15 @@ async function daemonArchive(host: Host, arch: string, version: string) {
 async function upload(host: Host, arch: string, version: string) {
   const archive = await daemonArchive(host, arch, version);
   const { size } = await stat(archive);
-  const target = `apcode-daemon-${version}`;
+  const target = `masscode-daemon-${version}`;
   await ssh(
     host.alias,
-    `sh -c 'd="$HOME/.apcode/remote/bin"; mkdir -p "$d" && gzip -dc > "$d/.upload" && chmod +x "$d/.upload" && mv "$d/.upload" "$d/${target}"'`,
+    `sh -c 'd="$HOME/.masscode/remote/bin"; mkdir -p "$d" && gzip -dc > "$d/.upload" && chmod +x "$d/.upload" && mv "$d/.upload" "$d/${target}"'`,
     createReadStream(archive).pipe(
       progress(size, (percent) =>
         setStatus(
           host,
-          HostStatus.cases.connecting.make({ step: `Installing APCode (${percent}%)` }),
+          HostStatus.cases.connecting.make({ step: `Installing MassCode (${percent}%)` }),
         ),
       ),
     ),
@@ -339,16 +343,16 @@ async function connectHost(host: Host, mode: "start" | "restart"): Promise<Daemo
       const arch = linuxArch(values.get("arch") ?? "");
       if (!arch)
         throw new Error(
-          `APCode runs on x64 and arm64 Linux hosts; ${host.alias} is ${values.get("arch")}.`,
+          `MassCode runs on x64 and arm64 Linux hosts; ${host.alias} is ${values.get("arch")}.`,
         );
       await upload(host, arch, version);
-      setStatus(host, HostStatus.cases.connecting.make({ step: "Starting APCode" }));
+      setStatus(host, HostStatus.cases.connecting.make({ step: "Starting MassCode" }));
       ({ values, log } = await runScript(host.alias, version, mode));
     }
     const state = values.get("state");
     if (state === "unsupported")
       throw new Error(
-        `APCode runs on Linux hosts for now; ${host.alias} runs ${values.get("os")}.`,
+        `MassCode runs on Linux hosts for now; ${host.alias} runs ${values.get("os")}.`,
       );
     if (state === "updating") {
       setStatus(host, HostStatus.cases.updating.make({}));
@@ -358,7 +362,7 @@ async function connectHost(host: Host, mode: "start" | "restart"): Promise<Daemo
     const token = values.get("token");
     if (state !== "running" || !port || !token)
       throw new Error(
-        `APCode didn't start on ${host.alias}${log.length ? `: ${log.join(" ")}` : "."}`,
+        `MassCode didn't start on ${host.alias}${log.length ? `: ${log.join(" ")}` : "."}`,
       );
     const daemon =
       host.tunnel?.remotePort === port && host.tunnel.process.exitCode === null

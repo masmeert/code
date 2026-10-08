@@ -12,8 +12,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { cn } from "@apcode/ui/lib/utils";
-import { useActiveOption } from "@apcode/ui/hooks/use-active-option";
+import { cn } from "@masscode/ui/lib/utils";
+import { useActiveOption } from "@masscode/ui/hooks/use-active-option";
 
 export type RegisteredItem = {
   value: string;

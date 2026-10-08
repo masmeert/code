@@ -1,5 +1,5 @@
-import { PreviewRail, type PreviewRailItem } from "@apcode/ui/motion/preview-rail";
-import { cn } from "@apcode/ui/lib/utils";
+import { PreviewRail, type PreviewRailItem } from "@masscode/ui/motion/preview-rail";
+import { cn } from "@masscode/ui/lib/utils";
 import { useReducedMotion } from "motion/react";
 import {
   type ComponentPropsWithRef,

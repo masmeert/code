@@ -1,7 +1,7 @@
 import { motion, type Transition, useInView, useReducedMotion } from "motion/react";
 import { useRef, type ElementType, type ReactNode } from "react";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 type SplitMode = "word" | "char";
 

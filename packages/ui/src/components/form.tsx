@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 import type { Label as LabelPrimitive } from "radix-ui";
 import { Slot } from "radix-ui";
 import {
@@ -12,7 +12,7 @@ import {
   type FieldValues,
 } from "react-hook-form";
 
-import { Label } from "@apcode/ui/components/label";
+import { Label } from "@masscode/ui/components/label";
 
 const Form = FormProvider;
 

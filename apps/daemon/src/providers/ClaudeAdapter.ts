@@ -23,7 +23,7 @@ import {
   type Effort,
   type PermissionLevel,
   type UserQuestion,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
@@ -281,7 +281,7 @@ const start = ({
           // many SSH hosts sign in; IS_SANDBOX is its opt-out.
           ...(process.getuid?.() === 0 && { IS_SANDBOX: "1" }),
           ...launch.env,
-          ...(mcpServer && { APCODE_MCP_TOKEN: mcpServer.token }),
+          ...(mcpServer && { MASSCODE_MCP_TOKEN: mcpServer.token }),
           CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
         },
         mcpServers: mcpServer
@@ -289,18 +289,18 @@ const start = ({
               browser: {
                 type: "http",
                 url: mcpServer.url,
-                headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
+                headers: { Authorization: "Bearer ${MASSCODE_MCP_TOKEN}" },
               },
-              apcode: {
+              masscode: {
                 type: "http",
-                url: `${mcpServer.url}/apcode`,
-                headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
+                url: `${mcpServer.url}/masscode`,
+                headers: { Authorization: "Bearer ${MASSCODE_MCP_TOKEN}" },
               },
               ...(DEVICES_SUPPORTED && {
                 device: {
                   type: "http",
                   url: `${mcpServer.url}/device`,
-                  headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
+                  headers: { Authorization: "Bearer ${MASSCODE_MCP_TOKEN}" },
                 },
               }),
             }
@@ -309,9 +309,9 @@ const start = ({
           "mcp__browser__snapshot",
           "mcp__browser__console",
           "mcp__device__device_screenshot",
-          "mcp__apcode__list_threads",
-          "mcp__apcode__read_thread",
-          "mcp__apcode__wait_for_thread",
+          "mcp__masscode__list_threads",
+          "mcp__masscode__read_thread",
+          "mcp__masscode__wait_for_thread",
         ],
         hooks: {
           PostToolUse: [

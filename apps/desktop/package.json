@@ -1,5 +1,5 @@
 {
-  "name": "@apcode/desktop",
+  "name": "@masscode/desktop",
   "version": "0.1.3",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
     "typecheck": "tsc -p ."
   },
   "devDependencies": {
-    "@apcode/contracts": "workspace:*",
+    "@masscode/contracts": "workspace:*",
     "@types/node": "^24.0.0",
     "effect": "catalog:",
     "electron": "^44.4.5",
@@ -20,5 +20,5 @@
     "electron-updater": "^6.8.9",
     "typescript": "catalog:"
   },
-  "productName": "APCode"
+  "productName": "MassCode"
 }

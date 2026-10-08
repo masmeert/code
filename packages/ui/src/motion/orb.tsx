@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 
 /**
  * A WebGL2 orb: a lit sphere with colour marbling inside it. Ported from SmoothUI's Orb

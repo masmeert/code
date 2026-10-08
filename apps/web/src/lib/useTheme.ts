@@ -1,4 +1,4 @@
-import type { Theme } from "@apcode/contracts";
+import type { Theme } from "@masscode/contracts";
 import { useEffect } from "react";
 
 /**
@@ -19,7 +19,7 @@ const applyDark = (dark: boolean) => {
 export const useTheme = (theme: Theme) => {
   useEffect(() => {
     try {
-      localStorage.setItem("apcode.theme", theme);
+      localStorage.setItem("masscode.theme", theme);
     } catch {}
     void window.desktop?.setTheme(theme).catch(() => {});
 

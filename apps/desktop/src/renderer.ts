@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { app, net, protocol, session } from "electron";
 
-export const APP_URL = app.isPackaged ? "app://apcode/" : "http://localhost:1420/";
+export const APP_URL = app.isPackaged ? "app://masscode/" : "http://localhost:1420/";
 
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",

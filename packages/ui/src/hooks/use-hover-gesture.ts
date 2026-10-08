@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import { isHoveringPointer } from "@apcode/ui/lib/touch";
+import { isHoveringPointer } from "@masscode/ui/lib/touch";
 
 interface BoundaryEvent {
   pointerId: number;

@@ -46,7 +46,7 @@ export function createWindow(url: string, bounds = restoredBounds()) {
     ...bounds,
     minWidth: 720,
     minHeight: 480,
-    title: "APCode",
+    title: "MassCode",
     titleBarStyle: "hidden",
     trafficLightPosition: { x: 16, y: 11 },
     backgroundColor: backgroundColor(),

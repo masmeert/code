@@ -1,115 +1,103 @@
 # Changelog
 
-Release notes for the APCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
+Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
 ## [0.1.3](https://github.com/masmeert/code/compare/v0.1.2...v0.1.3) (2026-10-08)
 
-
 ### Added
 
-* add native light/dark app icon ([432c660](https://github.com/masmeert/code/commit/432c660e5bffd0af206c7a0e8b1aee1579201833))
-* drop the dock badge ([22fdf13](https://github.com/masmeert/code/commit/22fdf13e00504ba9e367f3c9c9c03d0ec8318043))
-* give the app icon macOS's native background ([c1275aa](https://github.com/masmeert/code/commit/c1275aa60516ccc166c84761bb0ca04e403d27b0))
-* scramble through whimsical phrases while thinking, and title finished thoughts with one ([05d2f1b](https://github.com/masmeert/code/commit/05d2f1b9cdcf45b6f571cd90f820777d5d1a6108))
-* show a lone tool call as one row instead of a group ([e9fb074](https://github.com/masmeert/code/commit/e9fb074f227a64c0b8f4de37e8c3049fa9603cbc))
-* show local images in agent replies through signed daemon URLs ([e242c82](https://github.com/masmeert/code/commit/e242c82dfa640082dff64886ee07377774f1e3bc))
-* show sent image attachments as thumbnails that open full size ([49eb541](https://github.com/masmeert/code/commit/49eb5418a104e13baf7cd927c212e767c020d459))
-
+- add native light/dark app icon ([432c660](https://github.com/masmeert/code/commit/432c660e5bffd0af206c7a0e8b1aee1579201833))
+- drop the dock badge ([22fdf13](https://github.com/masmeert/code/commit/22fdf13e00504ba9e367f3c9c9c03d0ec8318043))
+- give the app icon macOS's native background ([c1275aa](https://github.com/masmeert/code/commit/c1275aa60516ccc166c84761bb0ca04e403d27b0))
+- scramble through whimsical phrases while thinking, and title finished thoughts with one ([05d2f1b](https://github.com/masmeert/code/commit/05d2f1b9cdcf45b6f571cd90f820777d5d1a6108))
+- show a lone tool call as one row instead of a group ([e9fb074](https://github.com/masmeert/code/commit/e9fb074f227a64c0b8f4de37e8c3049fa9603cbc))
+- show local images in agent replies through signed daemon URLs ([e242c82](https://github.com/masmeert/code/commit/e242c82dfa640082dff64886ee07377774f1e3bc))
+- show sent image attachments as thumbnails that open full size ([49eb541](https://github.com/masmeert/code/commit/49eb5418a104e13baf7cd927c212e767c020d459))
 
 ### Fixed
 
-* close modals on Escape even when the terminal had focus ([cdeff4d](https://github.com/masmeert/code/commit/cdeff4d091f8702f5a924f02c74a14615bb50d59))
-* rewind and fork Codex threads with thread/revert ([557e9c5](https://github.com/masmeert/code/commit/557e9c51fa3ddb6a04f90a97c050068af971f0c8))
+- close modals on Escape even when the terminal had focus ([cdeff4d](https://github.com/masmeert/code/commit/cdeff4d091f8702f5a924f02c74a14615bb50d59))
+- rewind and fork Codex threads with thread/revert ([557e9c5](https://github.com/masmeert/code/commit/557e9c51fa3ddb6a04f90a97c050068af971f0c8))
 
 ## [0.1.2](https://github.com/masmeert/code/compare/v0.1.1...v0.1.2) (2026-10-08)
 
-
 ### Added
 
-* a new app icon ([7a2ade8](https://github.com/masmeert/code/commit/7a2ade83a5ad2897352fcccf8764a98f102518fa))
-* an orb face on the newest reply that shows what the agent is doing ([a68dfe6](https://github.com/masmeert/code/commit/a68dfe6702a3b4137bb28fd2e3f5719671661307))
-* pick settings models from the composer's tabbed, searchable list ([7d2301e](https://github.com/masmeert/code/commit/7d2301e4d6be1d5a7f49a67e7a94a0a76e4a25c7))
-
+- a new app icon ([7a2ade8](https://github.com/masmeert/code/commit/7a2ade83a5ad2897352fcccf8764a98f102518fa))
+- an orb face on the newest reply that shows what the agent is doing ([a68dfe6](https://github.com/masmeert/code/commit/a68dfe6702a3b4137bb28fd2e3f5719671661307))
+- pick settings models from the composer's tabbed, searchable list ([7d2301e](https://github.com/masmeert/code/commit/7d2301e4d6be1d5a7f49a67e7a94a0a76e4a25c7))
 
 ### Fixed
 
-* draw the orb shader after a remount on the same canvas ([046b8fa](https://github.com/masmeert/code/commit/046b8fa1422b2f87510495404479dcb8c4a5afc9))
+- draw the orb shader after a remount on the same canvas ([046b8fa](https://github.com/masmeert/code/commit/046b8fa1422b2f87510495404479dcb8c4a5afc9))
 
 ## [0.1.1](https://github.com/masmeert/code/compare/v0.1.0...v0.1.1) (2026-10-08)
 
-
 ### Added
 
-* find in a thread with ⌘F, and an outline of its prompts ([27bd1d3](https://github.com/masmeert/code/commit/27bd1d36b38aa5f66281b34e5cdb40d2ca40a706))
-* fold the steps before an answer into one thinking row ([2b52b95](https://github.com/masmeert/code/commit/2b52b95c3c5b790b1a650c603762141c1f472b92))
+- find in a thread with ⌘F, and an outline of its prompts ([27bd1d3](https://github.com/masmeert/code/commit/27bd1d36b38aa5f66281b34e5cdb40d2ca40a706))
+- fold the steps before an answer into one thinking row ([2b52b95](https://github.com/masmeert/code/commit/2b52b95c3c5b790b1a650c603762141c1f472b92))
 
 ## [0.1.0](https://github.com/masmeert/code/compare/v0.0.18...v0.1.0) (2026-10-07)
 
-
 ### ⚠ BREAKING CHANGES
 
-* remove peer review
+- remove peer review
 
 ### Added
 
-* add Cursor as a harness over the Agent Client Protocol ([858c89d](https://github.com/masmeert/code/commit/858c89d0e6481011e78d38e99710e7a726867816))
-* ask read-only side questions about a reply with BTW or /btw ([a1eaacf](https://github.com/masmeert/code/commit/a1eaacf9ad9cc382673e44bfaa10fe9227793501))
-* collapse composer pickers to icons in narrow panes ([c529133](https://github.com/masmeert/code/commit/c5291338da2cafaa63aba1d359c63f4930b649be))
-* one model menu with effort, fast mode and a harness rail ([c5f26c6](https://github.com/masmeert/code/commit/c5f26c6d6d5028d9adb9ad2a4459774ed7ea07b6))
-* pause on usage limits, and resume or hand off from a notice ([ab8a8e2](https://github.com/masmeert/code/commit/ab8a8e2e4f108710a0a7a6216bd7fc9d7dd89db6))
-* recover from dead agents, queue in the daemon, let agents run threads, switch harness ([aa38a5a](https://github.com/masmeert/code/commit/aa38a5a1abf52d2e14a67820096922157edef769))
-* remove peer review ([eb2f207](https://github.com/masmeert/code/commit/eb2f207026d4be5b93dbf5ff05f9d04c3ee15dc1))
-* show agents' thinking, and Cursor's skills under $ ([4344c6d](https://github.com/masmeert/code/commit/4344c6d7e73da2e2bd2e344bbba98af51e002ebe))
+- add Cursor as a harness over the Agent Client Protocol ([858c89d](https://github.com/masmeert/code/commit/858c89d0e6481011e78d38e99710e7a726867816))
+- ask read-only side questions about a reply with BTW or /btw ([a1eaacf](https://github.com/masmeert/code/commit/a1eaacf9ad9cc382673e44bfaa10fe9227793501))
+- collapse composer pickers to icons in narrow panes ([c529133](https://github.com/masmeert/code/commit/c5291338da2cafaa63aba1d359c63f4930b649be))
+- one model menu with effort, fast mode and a harness rail ([c5f26c6](https://github.com/masmeert/code/commit/c5f26c6d6d5028d9adb9ad2a4459774ed7ea07b6))
+- pause on usage limits, and resume or hand off from a notice ([ab8a8e2](https://github.com/masmeert/code/commit/ab8a8e2e4f108710a0a7a6216bd7fc9d7dd89db6))
+- recover from dead agents, queue in the daemon, let agents run threads, switch harness ([aa38a5a](https://github.com/masmeert/code/commit/aa38a5a1abf52d2e14a67820096922157edef769))
+- remove peer review ([eb2f207](https://github.com/masmeert/code/commit/eb2f207026d4be5b93dbf5ff05f9d04c3ee15dc1))
+- show agents' thinking, and Cursor's skills under $ ([4344c6d](https://github.com/masmeert/code/commit/4344c6d7e73da2e2bd2e344bbba98af51e002ebe))
 
 ## [0.0.18](https://github.com/masmeert/code/compare/v0.0.17...v0.0.18) (2026-10-07)
 
-
 ### Added
 
-* borrow Vesper's orange for "needs you" ([c967574](https://github.com/masmeert/code/commit/c967574c1ab38bd2c4e18095770a6b30601704d1))
-* give light mode its own Vesper, with peach keys and copper accents ([1c9e20f](https://github.com/masmeert/code/commit/1c9e20f098e4926757b79a13a989bf5a40d570a9))
-* give status colours one meaning each, with mint for success ([a5b4c81](https://github.com/masmeert/code/commit/a5b4c81a946ccbd2952bbb33adcd254053b6e8a6))
-* mark links, inline code and finished threads with brand ([2337df3](https://github.com/masmeert/code/commit/2337df3fb6b723797742ed3bd8b44e5e624463b0))
-* name threads with the writer model and let you rename them ([e9f7389](https://github.com/masmeert/code/commit/e9f7389165f970996462a1555b423781b66da262))
-* tighten the peer review dialog ([534ed5b](https://github.com/masmeert/code/commit/534ed5b941bc959c468a43a63e1b1a9d96096be5))
-
+- borrow Vesper's orange for "needs you" ([c967574](https://github.com/masmeert/code/commit/c967574c1ab38bd2c4e18095770a6b30601704d1))
+- give light mode its own Vesper, with peach keys and copper accents ([1c9e20f](https://github.com/masmeert/code/commit/1c9e20f098e4926757b79a13a989bf5a40d570a9))
+- give status colours one meaning each, with mint for success ([a5b4c81](https://github.com/masmeert/code/commit/a5b4c81a946ccbd2952bbb33adcd254053b6e8a6))
+- mark links, inline code and finished threads with brand ([2337df3](https://github.com/masmeert/code/commit/2337df3fb6b723797742ed3bd8b44e5e624463b0))
+- name threads with the writer model and let you rename them ([e9f7389](https://github.com/masmeert/code/commit/e9f7389165f970996462a1555b423781b66da262))
+- tighten the peer review dialog ([534ed5b](https://github.com/masmeert/code/commit/534ed5b941bc959c468a43a63e1b1a9d96096be5))
 
 ### Fixed
 
-* wrap long unbroken text inside message bubbles ([d8ccf3b](https://github.com/masmeert/code/commit/d8ccf3bacb0495c9b970a2c85d03e4e3d569822c))
+- wrap long unbroken text inside message bubbles ([d8ccf3b](https://github.com/masmeert/code/commit/d8ccf3bacb0495c9b970a2c85d03e4e3d569822c))
 
 ## [0.0.17](https://github.com/masmeert/code/compare/v0.0.16...v0.0.17) (2026-09-29)
 
-
 ### Added
 
-* ask the other agent to peer review a thread's work ([b3bf34c](https://github.com/masmeert/code/commit/b3bf34c60bd0f122f0934e3999cd67594024e083))
-* comment on lines in the diff and send the comments with your next message ([e27e874](https://github.com/masmeert/code/commit/e27e874f804988adc19a49b10be64d013fafdbde))
-* dress dark mode in Vesper, with a peach accent in light ([1daf51f](https://github.com/masmeert/code/commit/1daf51fd13315f93aedddfb268fdbac1a9fe3f20))
-* merge a worktree thread's branch into its base from the git menu ([9f92b73](https://github.com/masmeert/code/commit/9f92b739d33deb850fa14cc722f8a3e0ffd088d3))
-* run shell commands from agent replies ([1f98ad9](https://github.com/masmeert/code/commit/1f98ad98e1daa1b6ee651273fa0d0dd3d41278b7))
-* run skills with $name from the composer ([e160eaa](https://github.com/masmeert/code/commit/e160eaa803e8fd954a530285f1db059cbf9936ef))
-
+- ask the other agent to peer review a thread's work ([b3bf34c](https://github.com/masmeert/code/commit/b3bf34c60bd0f122f0934e3999cd67594024e083))
+- comment on lines in the diff and send the comments with your next message ([e27e874](https://github.com/masmeert/code/commit/e27e874f804988adc19a49b10be64d013fafdbde))
+- dress dark mode in Vesper, with a peach accent in light ([1daf51f](https://github.com/masmeert/code/commit/1daf51fd13315f93aedddfb268fdbac1a9fe3f20))
+- merge a worktree thread's branch into its base from the git menu ([9f92b73](https://github.com/masmeert/code/commit/9f92b739d33deb850fa14cc722f8a3e0ffd088d3))
+- run shell commands from agent replies ([1f98ad9](https://github.com/masmeert/code/commit/1f98ad98e1daa1b6ee651273fa0d0dd3d41278b7))
+- run skills with $name from the composer ([e160eaa](https://github.com/masmeert/code/commit/e160eaa803e8fd954a530285f1db059cbf9936ef))
 
 ### Fixed
 
-* follow the agent into a worktree it switches to mid-thread ([9960006](https://github.com/masmeert/code/commit/9960006996c0db6b44e73f634054bdc1bca0352e))
-* only restore files in a worktree no other thread shares ([2383ab2](https://github.com/masmeert/code/commit/2383ab265bc225b19875f2cfb84d5b8fc2f8bf66))
+- follow the agent into a worktree it switches to mid-thread ([9960006](https://github.com/masmeert/code/commit/9960006996c0db6b44e73f634054bdc1bca0352e))
+- only restore files in a worktree no other thread shares ([2383ab2](https://github.com/masmeert/code/commit/2383ab265bc225b19875f2cfb84d5b8fc2f8bf66))
 
 ## [0.0.16](https://github.com/masmeert/code/compare/v0.0.15...v0.0.16) (2026-09-29)
 
-
 ### Fixed
 
-* darken and blur the backdrop behind every modal ([9bc21d0](https://github.com/masmeert/code/commit/9bc21d0bca3414247233e7c0aee743b96e33a5fd))
-* run Claude on hosts signed in as root, asking once before Full access there ([bb971be](https://github.com/masmeert/code/commit/bb971be9bc635a8e8ed48eba43919372c74b218b))
+- darken and blur the backdrop behind every modal ([9bc21d0](https://github.com/masmeert/code/commit/9bc21d0bca3414247233e7c0aee743b96e33a5fd))
+- run Claude on hosts signed in as root, asking once before Full access there ([bb971be](https://github.com/masmeert/code/commit/bb971be9bc635a8e8ed48eba43919372c74b218b))
 
 ## [0.0.15](https://github.com/masmeert/code/compare/v0.0.14...v0.0.15) (2026-09-29)
 
-
 ### Fixed
 
-* stop showing a toast when shelving or unshelving a thread ([8689f19](https://github.com/masmeert/code/commit/8689f191bb1bd33299de248ca055ec5a7342ee19))
+- stop showing a toast when shelving or unshelving a thread ([8689f19](https://github.com/masmeert/code/commit/8689f191bb1bd33299de248ca055ec5a7342ee19))
 
 ## 0.0.14 - 2026-09-29
 
@@ -126,7 +114,7 @@ Release notes for the APCode desktop app. release-please writes each section fro
 - New thread moved to the sidebar header, the view menu sits inside the search field, and the machines row is gone (Settings → Connections shows the same).
 - A new thread lists your projects under a search field, most recently used first, with their paths and machines and Add project at the end. Arrow keys and Enter pick one and put you back in the prompt.
 - Model and branch pickers find options by the name and description they show, not only their internal value.
-- APCode asks before downloading an update instead of fetching it on its own.
+- MassCode asks before downloading an update instead of fetching it on its own.
 - A subagent's run time ticks every second, and its progress stays in its own row instead of repeating in the chat.
 - Every clickable button, link, menu item and row shows a pointer cursor.
 
@@ -166,7 +154,7 @@ Release notes for the APCode desktop app. release-please writes each section fro
 
 ### Added
 
-- Remote hosts: add a Linux machine from your ~/.ssh/config in Settings → Connections, and APCode installs itself there and connects over SSH with your keys. Its agents keep working while this Mac sleeps or goes offline, and its threads sit in the sidebar with yours.
+- Remote hosts: add a Linux machine from your ~/.ssh/config in Settings → Connections, and MassCode installs itself there and connects over SSH with your keys. Its agents keep working while this Mac sleeps or goes offline, and its threads sit in the sidebar with yours.
 - A new thread picks the machine it runs on, next to Local checkout (⌘⇧H). When the project isn't on that machine yet, one click clones it there.
 - The same repo on several machines is one project in the sidebar and the project menu.
 - Add project can browse a host's folders, or clone a repository on this Mac or a host.
@@ -178,7 +166,7 @@ Release notes for the APCode desktop app. release-please writes each section fro
 ### Changed
 
 - Threads settle once they've been idle for a set number of days (7 by default), read or not. Settle and Unsettle from the thread menu hold until the thread's next turn starts. Settings has one "Settle idle threads" option in place of the settle delay and auto-settle switch.
-- Which threads are settled or unread is kept by APCode itself, so every window shows the same lists. Existing threads start out read.
+- Which threads are settled or unread is kept by MassCode itself, so every window shows the same lists. Existing threads start out read.
 
 ### Fixed
 

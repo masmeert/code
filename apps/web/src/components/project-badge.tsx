@@ -1,6 +1,6 @@
-import type { Project } from "@apcode/contracts";
+import type { Project } from "@masscode/contracts";
 import { projectKey } from "../lib/projects.ts";
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 
 const TINTS = [
   "bg-blue-500/15 text-blue-600 dark:text-blue-400",

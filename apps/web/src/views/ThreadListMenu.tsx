@@ -10,11 +10,11 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@apcode/ui/components/dropdown-menu";
-import { Button } from "@apcode/ui/motion/button";
-import { cn } from "@apcode/ui/lib/utils";
+} from "@masscode/ui/components/dropdown-menu";
+import { Button } from "@masscode/ui/motion/button";
+import { cn } from "@masscode/ui/lib/utils";
 import { ProjectBadge, projectLabel } from "@/components/project-badge";
-import type { Project } from "@apcode/contracts";
+import type { Project } from "@masscode/contracts";
 import * as Match from "effect/Match";
 import { SlidersHorizontal } from "lucide-react";
 import type { ReactNode } from "react";

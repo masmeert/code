@@ -6,7 +6,7 @@ interface ThreadSimulator {
   readonly deviceId: string | null;
 }
 
-const STORAGE_KEY = "apcode.simulator";
+const STORAGE_KEY = "masscode.simulator";
 const CLOSED: ThreadSimulator = { open: false, deviceId: null };
 
 function readThreads(): Record<string, ThreadSimulator> {

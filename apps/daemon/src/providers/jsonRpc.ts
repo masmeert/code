@@ -78,7 +78,7 @@ export function connectJsonRpc(
     const { id, method, params } = message;
     if (method !== undefined && id !== undefined && id !== null) {
       if (!(handlers.onRequest?.(id, method, params) ?? false))
-        write({ id, error: { code: -32601, message: `APCode does not handle ${method}` } });
+        write({ id, error: { code: -32601, message: `MassCode does not handle ${method}` } });
       return;
     }
     if (method !== undefined) {

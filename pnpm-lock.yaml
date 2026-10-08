@@ -38,7 +38,7 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.3.281
         version: 0.3.281(@anthropic-ai/sdk@0.128.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.31.0(supports-color@7.2.0)(zod@4.6.5))(zod@4.6.5)
-      '@apcode/contracts':
+      '@masscode/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@effect/platform-bun':
@@ -72,7 +72,7 @@ importers:
 
   apps/desktop:
     devDependencies:
-      '@apcode/contracts':
+      '@masscode/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@types/node':
@@ -96,10 +96,10 @@ importers:
 
   apps/web:
     dependencies:
-      '@apcode/contracts':
+      '@masscode/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@apcode/ui':
+      '@masscode/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@pierre/diffs':

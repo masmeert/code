@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION } from "@apcode/contracts";
+import { PROTOCOL_VERSION } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import { afterEach, expect, test } from "bun:test";
 import { startDaemon, type Daemon } from "./replay/daemon.ts";

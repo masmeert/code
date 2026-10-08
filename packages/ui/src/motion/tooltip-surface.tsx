@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from "motion/react";
 import type { ComponentProps, ReactNode, Ref } from "react";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 /** The shared visual surface for trigger tooltips and chart readouts. Positioning belongs to the caller. */
 export function TooltipSurface({

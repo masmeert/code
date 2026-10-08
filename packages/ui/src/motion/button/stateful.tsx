@@ -1,7 +1,7 @@
 import { Check, Loader2, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
 import { forwardRef, type ReactNode, useLayoutEffect, useRef, useState } from "react";
-import { EASE_OUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
+import { EASE_OUT, SPRING_SWAP } from "@masscode/ui/lib/ease";
 import { Button, type ButtonProps } from "./base";
 
 export type ButtonState = "idle" | "loading" | "success" | "error";

@@ -1,4 +1,4 @@
-import type { HarnessColor, ProviderKind, Settings } from "@apcode/contracts";
+import type { HarnessColor, ProviderKind, Settings } from "@masscode/contracts";
 import type { ComponentPropsWithRef } from "react";
 
 type LogoProps = ComponentPropsWithRef<"svg">;

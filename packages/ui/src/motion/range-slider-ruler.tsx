@@ -7,9 +7,9 @@ import {
 } from "motion/react";
 import { type KeyboardEvent, useEffect, useRef } from "react";
 
-import { type SliderOptions, snapSliderValue, useSlider } from "@apcode/ui/hooks/use-slider";
-import { TOUCH_GESTURE_CLASS } from "@apcode/ui/lib/touch";
-import { cn } from "@apcode/ui/lib/utils";
+import { type SliderOptions, snapSliderValue, useSlider } from "@masscode/ui/hooks/use-slider";
+import { TOUCH_GESTURE_CLASS } from "@masscode/ui/lib/touch";
+import { cn } from "@masscode/ui/lib/utils";
 
 // Settle spring for the snap after a flick — quick, no overshoot past the tick.
 const SPRING_SNAP = { type: "spring", stiffness: 500, damping: 40, mass: 0.6 } as const;

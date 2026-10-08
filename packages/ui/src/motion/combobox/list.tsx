@@ -1,8 +1,8 @@
 import { Check } from "lucide-react";
 import { motion } from "motion/react";
 import { type ReactNode, useContext, useId, useLayoutEffect, useMemo, useRef } from "react";
-import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT, SPRING_LAYOUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 import { ComboboxGroupContext, useComboboxContext } from "./context";
 
 export interface ComboboxListProps {

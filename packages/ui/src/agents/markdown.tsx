@@ -9,9 +9,9 @@ import {
 } from "react";
 import ReactMarkdown, { type Components, defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { CodeBlock } from "@apcode/ui/agents/code-block";
-import { CommandBlock } from "@apcode/ui/agents/command-block";
-import { cn } from "@apcode/ui/lib/utils";
+import { CodeBlock } from "@masscode/ui/agents/code-block";
+import { CommandBlock } from "@masscode/ui/agents/command-block";
+import { cn } from "@masscode/ui/lib/utils";
 
 export interface MarkdownProps {
   children: string;

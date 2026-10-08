@@ -1,7 +1,7 @@
 import { motion, useAnimationControls, useReducedMotion, useSpring } from "motion/react";
 import { useCallback, useEffect, useRef } from "react";
-import { cn } from "@apcode/ui/lib/utils";
-import { Orb } from "@apcode/ui/motion/orb";
+import { cn } from "@masscode/ui/lib/utils";
+import { Orb } from "@masscode/ui/motion/orb";
 
 /**
  * A little character whose expression carries the agent's state: it looks away while it thinks,

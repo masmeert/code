@@ -10,11 +10,11 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
-import { type CitationItem, CitationList, CitationStack } from "@apcode/ui/agents/citations";
-import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
-import { ActionSwapRollIcon } from "@apcode/ui/motion/action-swap-roll";
-import { EASE_OUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { type CitationItem, CitationList, CitationStack } from "@masscode/ui/agents/citations";
+import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
+import { ActionSwapRollIcon } from "@masscode/ui/motion/action-swap-roll";
+import { EASE_OUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type StreamingResponseStatus = "streaming" | "complete" | "error";
 export type StreamingResponseFeedback = "up" | "down" | null;

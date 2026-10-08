@@ -21,11 +21,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { AgentCode, type AgentCodeLanguage } from "@apcode/ui/agents/agent-code";
-import { ActionSwapRollIcon, ActionSwapRollText } from "@apcode/ui/motion/action-swap-roll";
-import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
-import { SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { AgentCode, type AgentCodeLanguage } from "@masscode/ui/agents/agent-code";
+import { ActionSwapRollIcon, ActionSwapRollText } from "@masscode/ui/motion/action-swap-roll";
+import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
+import { SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type ToolResultStatus = "running" | "success" | "error" | "cancelled";
 export type ToolResultKind = "terminal" | "request" | "custom";

@@ -2,9 +2,9 @@ import {
   MorphPopover,
   MorphPopoverContent,
   MorphPopoverMenu,
-} from "@apcode/ui/motion/popover-morph";
-import { cn } from "@apcode/ui/lib/utils";
-import { ClientCommand, MergeMethod, type GitAction } from "@apcode/contracts";
+} from "@masscode/ui/motion/popover-morph";
+import { cn } from "@masscode/ui/lib/utils";
+import { ClientCommand, MergeMethod, type GitAction } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import {
   ArrowUp,
@@ -37,7 +37,7 @@ const MERGE_LABEL: Record<MergeMethod, string> = {
 };
 
 /** "Last selected" in Settings means the method last picked here, on this device. */
-const LAST_MERGE_METHOD_KEY = "apcode.git.lastMergeMethod";
+const LAST_MERGE_METHOD_KEY = "masscode.git.lastMergeMethod";
 
 function readLastMergeMethod(): MergeMethod {
   try {

@@ -1,7 +1,7 @@
 import { motion, useTransform } from "motion/react";
 import type { ReactNode } from "react";
-import { Tooltip } from "@apcode/ui/motion/tooltip";
-import { EASE_OUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
+import { Tooltip } from "@masscode/ui/motion/tooltip";
+import { EASE_OUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
 import { useBumpChart } from "./context";
 import { PLOT } from "./model";
 import type { BumpPosition } from "./use-geometry";

@@ -1,8 +1,8 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Checkbox } from "@apcode/ui/motion/checkbox";
-import { cn } from "@apcode/ui/lib/utils";
+import { Checkbox } from "@masscode/ui/motion/checkbox";
+import { cn } from "@masscode/ui/lib/utils";
 import { EditableCell } from "./table/editable-cell";
 import { RowHandle } from "./table/row-handle";
 import { SkeletonRows } from "./table/skeleton-rows";

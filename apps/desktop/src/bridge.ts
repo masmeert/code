@@ -1,4 +1,4 @@
-import { AttachmentInput, BrowserAction, Theme } from "@apcode/contracts";
+import { AttachmentInput, BrowserAction, Theme } from "@masscode/contracts";
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification } from "electron";
 import * as Schema from "effect/Schema";
 import { readFile } from "node:fs/promises";
@@ -17,7 +17,7 @@ function handle<S extends Schema.ConstraintDecoder<unknown>, Result>(
   ipcMain.handle(channel, (event, arg) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (!window || !event.senderFrame?.url.startsWith(APP_URL))
-      throw new Error(`${channel} is only available to APCode windows`);
+      throw new Error(`${channel} is only available to MassCode windows`);
     return listener(window, Schema.decodeUnknownSync(schema)(arg));
   });
 }

@@ -6,17 +6,17 @@ import {
   MessageContent,
   MessageGroup,
   MessageScroller,
-} from "@apcode/ui/agents/message";
-import { Markdown } from "@apcode/ui/agents/markdown";
-import { Reasoning, thoughtTitle } from "@apcode/ui/agents/reasoning";
+} from "@masscode/ui/agents/message";
+import { Markdown } from "@masscode/ui/agents/markdown";
+import { Reasoning, thoughtTitle } from "@masscode/ui/agents/reasoning";
 import * as Match from "effect/Match";
-import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
-import { OrbFace } from "@apcode/ui/agents/orb-face";
-import { PromptInputTray, PromptSelect } from "@apcode/ui/agents/prompt-input";
-import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
-import { Fold } from "@apcode/ui/motion/fold";
-import { StreamingResponse } from "@apcode/ui/agents/streaming-response";
-import { ApprovalCard } from "@apcode/ui/agents/approval-card";
+import { ThinkingShimmer } from "@masscode/ui/agents/loading-states/thinking-shimmer";
+import { OrbFace } from "@masscode/ui/agents/orb-face";
+import { PromptInputTray, PromptSelect } from "@masscode/ui/agents/prompt-input";
+import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
+import { Fold } from "@masscode/ui/motion/fold";
+import { StreamingResponse } from "@masscode/ui/agents/streaming-response";
+import { ApprovalCard } from "@masscode/ui/agents/approval-card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,9 +24,9 @@ import {
   AlertDialogContent,
   AlertDialogFooter,
   AlertDialogTitle,
-} from "@apcode/ui/components/alert-dialog";
-import { ScrollArea } from "@apcode/ui/components/scroll-area";
-import { ToolApproval, ToolApprovalCode } from "@apcode/ui/agents/tool-approval";
+} from "@masscode/ui/components/alert-dialog";
+import { ScrollArea } from "@masscode/ui/components/scroll-area";
+import { ToolApproval, ToolApprovalCode } from "@masscode/ui/agents/tool-approval";
 import {
   categoryOf,
   livePhrase,
@@ -35,21 +35,21 @@ import {
   ToolGroup,
   type ToolCall,
   type ToolReveal,
-} from "@apcode/ui/agents/tool-group";
+} from "@masscode/ui/agents/tool-group";
 import { ProjectBadge, projectLabel } from "@/components/project-badge";
 import { addProject, projectKey } from "../lib/projects.ts";
-import { Button } from "@apcode/ui/motion/button/base";
-import { Drawer } from "@apcode/ui/motion/drawer";
-import { MorphingModal } from "@apcode/ui/motion/morphing-modal";
-import { Textarea } from "@apcode/ui/components/textarea";
-import { cn } from "@apcode/ui/lib/utils";
+import { Button } from "@masscode/ui/motion/button/base";
+import { Drawer } from "@masscode/ui/motion/drawer";
+import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
+import { Textarea } from "@masscode/ui/components/textarea";
+import { cn } from "@masscode/ui/lib/utils";
 import { PROVIDER_LOGO } from "@/components/provider-logo";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@apcode/ui/components/dropdown-menu";
+} from "@masscode/ui/components/dropdown-menu";
 import {
   type Attachment,
   ClientCommand,
@@ -63,8 +63,8 @@ import {
   repositoryOf,
   type Settings,
   type TurnOptions,
-} from "@apcode/contracts";
-import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@apcode/ui/motion/animated-sidebar";
+} from "@masscode/contracts";
+import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@masscode/ui/motion/animated-sidebar";
 import {
   ArrowLeftRight,
   Check,
@@ -172,7 +172,7 @@ import {
   useTranscript,
   type TranscriptItem,
 } from "../lib/store.ts";
-import { readWidth } from "@apcode/ui/hooks/use-resizable";
+import { readWidth } from "@masscode/ui/hooks/use-resizable";
 import { BrowserPanel } from "./BrowserPanel.tsx";
 import { SimulatorPanel } from "./SimulatorPanel.tsx";
 import { Composer, RootFullAccessDialog } from "./Composer.tsx";
@@ -180,7 +180,7 @@ import { GitMenu } from "./GitMenu.tsx";
 import { hasTrafficLights } from "./Sidebar.tsx";
 
 /** Same key the panel saves its dragged width under. */
-const PANEL_WIDTH_KEY = "apcode.diffPanelWidth";
+const PANEL_WIDTH_KEY = "masscode.diffPanelWidth";
 
 // Loaded on first open, keeping the diff renderer out of startup.
 const DiffPanel = lazy(() => import("./DiffPanel.tsx").then((m) => ({ default: m.DiffPanel })));

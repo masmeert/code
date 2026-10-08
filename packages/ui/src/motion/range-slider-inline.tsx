@@ -9,10 +9,10 @@ import {
   useState,
 } from "react";
 
-import { SPRING_GLIDE } from "@apcode/ui/lib/ease";
-import { type SliderOptions, snapSliderValue, useSlider } from "@apcode/ui/hooks/use-slider";
-import { capturePointer, releasePointer, TOUCH_GESTURE_CLASS } from "@apcode/ui/lib/touch";
-import { cn } from "@apcode/ui/lib/utils";
+import { SPRING_GLIDE } from "@masscode/ui/lib/ease";
+import { type SliderOptions, snapSliderValue, useSlider } from "@masscode/ui/hooks/use-slider";
+import { capturePointer, releasePointer, TOUCH_GESTURE_CLASS } from "@masscode/ui/lib/touch";
+import { cn } from "@masscode/ui/lib/utils";
 
 const STOP_COUNT = 10;
 const HANDLE_START = 8;

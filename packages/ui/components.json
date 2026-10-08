@@ -11,10 +11,10 @@
   },
   "iconLibrary": "lucide",
   "aliases": {
-    "components": "@apcode/ui/components",
-    "ui": "@apcode/ui/components",
-    "utils": "@apcode/ui/lib/utils",
-    "lib": "@apcode/ui/lib",
-    "hooks": "@apcode/ui/hooks"
+    "components": "@masscode/ui/components",
+    "ui": "@masscode/ui/components",
+    "utils": "@masscode/ui/lib/utils",
+    "lib": "@masscode/ui/lib",
+    "hooks": "@masscode/ui/hooks"
   }
 }

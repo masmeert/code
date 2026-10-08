@@ -1,4 +1,4 @@
-import { Project } from "@apcode/contracts";
+import { Project } from "@masscode/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -24,7 +24,7 @@ export class ProjectsStore extends Context.Service<
     ) => Effect.Effect<{ readonly project: Project; readonly created: boolean }, ProjectNotFound>;
     readonly remove: (projectId: string) => Effect.Effect<boolean>;
   }
->()("apcode/ProjectsStore") {}
+>()("masscode/ProjectsStore") {}
 
 const make = Effect.gen(function* () {
   const file = yield* openJsonFile("projects.json", Schema.Array(Project), []);

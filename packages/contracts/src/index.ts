@@ -66,7 +66,7 @@ export type UserAnswers = typeof UserAnswers.Type;
 export const Theme = Schema.Literals(["system", "light", "dark"]);
 export type Theme = typeof Theme.Type;
 
-export const BROWSER_PARTITION = "persist:apcode-browser";
+export const BROWSER_PARTITION = "persist:masscode-browser";
 
 /** Each remote host browses through its own SSH tunnel, so its `localhost` is the host's. */
 export const browserPartition = (host: string | null) =>
@@ -131,10 +131,10 @@ export type UpdateStatus = typeof UpdateStatus.Type;
 
 /** Where the app is with a remote host, an SSH alias like one from ~/.ssh/config. */
 export const HostStatus = Schema.TaggedUnion({
-  /** `step` says what's happening, e.g. "Uploading APCode (40%)". */
+  /** `step` says what's happening, e.g. "Uploading MassCode (40%)". */
   connecting: { step: Schema.String },
   connected: {},
-  /** The host runs an older APCode, which restarts on this version once its running turns end. */
+  /** The host runs an older MassCode, which restarts on this version once its running turns end. */
   updating: {},
   failed: { message: Schema.String },
 });
@@ -152,7 +152,7 @@ export interface DesktopBridge {
   readonly hosts: () => Promise<ReadonlyArray<RemoteHost>>;
   readonly onHosts: (listener: (hosts: ReadonlyArray<RemoteHost>) => void) => () => void;
   readonly addHost: (alias: string) => Promise<void>;
-  /** Also stops APCode on the host, and the agents it runs. */
+  /** Also stops MassCode on the host, and the agents it runs. */
   readonly removeHost: (alias: string) => Promise<void>;
   /** Connects if needed; null while the host can't be reached or is updating (see its status). */
   readonly hostDaemon: (
@@ -181,7 +181,7 @@ export interface DesktopBridge {
   readonly checkForUpdates: () => Promise<void>;
   readonly downloadUpdate: () => Promise<void>;
   readonly installUpdate: () => Promise<void>;
-  /** A system notification about a thread, shown only while no APCode window is focused. */
+  /** A system notification about a thread, shown only while no MassCode window is focused. */
   readonly notify: (notification: {
     readonly threadId: string;
     readonly title: string;
@@ -325,7 +325,7 @@ export const Settings = Schema.Struct({
   writingInstructions: Schema.optional(Schema.String),
   /** Pull request bodies follow the repo's template when it has one. Absent counts as on. */
   followTemplates: Schema.optional(Schema.Boolean),
-  /** System notifications when a thread finishes or needs you, while APCode is in the background. Absent counts as on. */
+  /** System notifications when a thread finishes or needs you, while MassCode is in the background. Absent counts as on. */
   notifications: Schema.optional(Schema.Boolean),
 });
 export type Settings = typeof Settings.Type;
@@ -505,7 +505,7 @@ export const ThreadInfo = Schema.Struct({
   activity: Schema.optional(ThreadActivity),
   /** Live only, never stored: lets the thread list answer approvals without opening the thread. */
   request: Schema.optional(PendingRequest),
-  /** The thread whose agent started this one, through APCode's orchestration tools. */
+  /** The thread whose agent started this one, through MassCode's orchestration tools. */
   startedBy: Schema.optional(Schema.String),
   /** Messages waiting for the running turn; absent when none are. */
   queue: Schema.optional(Schema.Array(QueuedMessage)),

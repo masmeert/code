@@ -6,8 +6,8 @@ import {
   type GrammarState,
   type Highlighter,
 } from "shiki";
-import { cn } from "@apcode/ui/lib/utils";
-import { vesperLight } from "@apcode/ui/lib/vesper-light";
+import { cn } from "@masscode/ui/lib/utils";
+import { vesperLight } from "@masscode/ui/lib/vesper-light";
 
 /** Any Shiki language id or alias; unknown ones render as plain text. */
 export type AgentCodeLanguage =

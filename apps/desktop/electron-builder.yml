@@ -1,4 +1,4 @@
-appId: com.apkiosk.apcode
+appId: com.apkiosk.masscode
 directories:
   output: release
 files:
@@ -9,8 +9,8 @@ electronLanguages:
 extraResources:
   - from: ../web/dist
     to: renderer
-  - from: ../daemon/dist/apcode-daemon
-    to: apcode-daemon
+  - from: ../daemon/dist/masscode-daemon
+    to: masscode-daemon
 publish:
   provider: github
   owner: masmeert

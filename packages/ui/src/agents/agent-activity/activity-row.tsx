@@ -12,9 +12,9 @@ import {
   Wrench,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useArrivalOrder } from "@apcode/ui/hooks/use-arrival-order";
-import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { useArrivalOrder } from "@masscode/ui/hooks/use-arrival-order";
+import { EASE_OUT, SPRING_LAYOUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 import type {
   AgentActivityItem,
   AgentActivitySearch,

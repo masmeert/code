@@ -1,7 +1,7 @@
 import { type HTMLMotionProps, motion } from "motion/react";
 import type { ReactNode } from "react";
-import { SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 export function IconButton({
   onClick,

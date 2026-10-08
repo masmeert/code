@@ -1,4 +1,4 @@
-import { UpdateStatus } from "@apcode/contracts";
+import { UpdateStatus } from "@masscode/contracts";
 import { app, BrowserWindow } from "electron";
 import { autoUpdater } from "electron-updater";
 

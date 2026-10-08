@@ -1,10 +1,10 @@
-import { isTurnActive } from "@apcode/contracts";
+import { isTurnActive } from "@masscode/contracts";
 import { harnessLabel } from "./models.ts";
 import { watchState } from "./store.ts";
 
 /**
  * Tells you, through the OS, when a thread finishes, stops on an error or waits on an
- * approval. The desktop shell drops notifications while an APCode window is focused and
+ * approval. The desktop shell drops notifications while an MassCode window is focused and
  * merges every window's report of the same change.
  */
 watchState((prev, next) => {

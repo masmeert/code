@@ -1,11 +1,23 @@
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import { existsSync, renameSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-export const DATA_DIR = process.env.APCODE_DATA_DIR ?? join(homedir(), ".apcode");
+export const DATA_DIR = process.env.MASSCODE_DATA_DIR ?? join(homedir(), ".masscode");
+
+// The app was called APCode; carry its state over once so threads and settings survive the rename.
+const LEGACY_DATA_DIR = join(homedir(), ".apcode");
+if (!process.env.MASSCODE_DATA_DIR && !existsSync(DATA_DIR) && existsSync(LEGACY_DATA_DIR)) {
+  renameSync(LEGACY_DATA_DIR, DATA_DIR);
+  for (const suffix of ["", "-wal", "-shm"]) {
+    const legacyDatabase = join(DATA_DIR, `apcode.db${suffix}`);
+    if (existsSync(legacyDatabase))
+      renameSync(legacyDatabase, join(DATA_DIR, `masscode.db${suffix}`));
+  }
+}
 
 /**
  * A schema-validated JSON file held in memory and written through on every change.

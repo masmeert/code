@@ -1,4 +1,4 @@
-import type { SourceControlKind } from "@apcode/contracts";
+import type { SourceControlKind } from "@masscode/contracts";
 import type { ComponentPropsWithRef } from "react";
 
 type LogoProps = ComponentPropsWithRef<"svg">;

@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "@apcode/contracts";
+import type { DesktopBridge } from "@masscode/contracts";
 
 declare global {
   interface Window {

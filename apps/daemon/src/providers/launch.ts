@@ -1,5 +1,5 @@
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
-import type { ProviderKind, ProviderSettings } from "@apcode/contracts";
+import type { ProviderKind, ProviderSettings } from "@masscode/contracts";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { expandHome } from "../folders.ts";
@@ -17,13 +17,13 @@ const CLI: Record<
   ProviderKind,
   { name: string; pathEnv: string; configEnv: string; defaultConfigDir?: string }
 > = {
-  claude: { name: "claude", pathEnv: "APCODE_CLAUDE_PATH", configEnv: "CLAUDE_CONFIG_DIR" },
-  codex: { name: "codex", pathEnv: "APCODE_CODEX_PATH", configEnv: "CODEX_HOME" },
+  claude: { name: "claude", pathEnv: "MASSCODE_CLAUDE_PATH", configEnv: "CLAUDE_CONFIG_DIR" },
+  codex: { name: "codex", pathEnv: "MASSCODE_CODEX_PATH", configEnv: "CODEX_HOME" },
   cursor: {
     name: "cursor-agent",
-    pathEnv: "APCODE_CURSOR_PATH",
+    pathEnv: "MASSCODE_CURSOR_PATH",
     configEnv: "CURSOR_CONFIG_DIR",
-    // Picking a model saves it as the CLI's default, so APCode's picks would change the user's own
+    // Picking a model saves it as the CLI's default, so MassCode's picks would change the user's own
     // `cursor-agent`. The login lives in the keychain, so a separate config keeps it.
     defaultConfigDir: join(DATA_DIR, "cursor"),
   },

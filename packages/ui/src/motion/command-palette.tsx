@@ -2,13 +2,13 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Search, type LucideIcon } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
-import { useOnOpen } from "@apcode/ui/hooks/use-on-open";
-import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
-import { useTouchCapable } from "@apcode/ui/hooks/use-touch-capable";
-import { PresenceGate } from "@apcode/ui/motion/presence-gate";
-import { cn } from "@apcode/ui/lib/utils";
-import { searchCommands } from "@apcode/ui/lib/command-search";
+import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { useOnOpen } from "@masscode/ui/hooks/use-on-open";
+import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
+import { useTouchCapable } from "@masscode/ui/hooks/use-touch-capable";
+import { PresenceGate } from "@masscode/ui/motion/presence-gate";
+import { cn } from "@masscode/ui/lib/utils";
+import { searchCommands } from "@masscode/ui/lib/command-search";
 
 export type CommandItem = {
   id: string;

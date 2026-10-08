@@ -2,9 +2,9 @@ import { Moon, Sun } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { useEffect, type ComponentPropsWithoutRef } from "react";
 import { flushSync } from "react-dom";
-import { ActionSwapIcon } from "@apcode/ui/motion/action-swap";
-import { EASE_OUT_CSS } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { ActionSwapIcon } from "@masscode/ui/motion/action-swap";
+import { EASE_OUT_CSS } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type ThemeVariant = "rectangle" | "circle" | "circle-blur" | "blinds";
 

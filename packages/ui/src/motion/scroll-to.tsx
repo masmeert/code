@@ -4,8 +4,8 @@ import {
   type ScrollTarget,
   type ScrollToOptions,
   useSmoothScroll,
-} from "@apcode/ui/motion/smooth-scroll";
-import { cn } from "@apcode/ui/lib/utils";
+} from "@masscode/ui/motion/smooth-scroll";
+import { cn } from "@masscode/ui/lib/utils";
 
 export interface ScrollToProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "onClick"> {
   /** Where to scroll: px offset, selector string or element. */

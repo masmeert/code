@@ -1,5 +1,5 @@
-import { ChatApp } from "@apcode/ui/agents/chat-app";
-import { AnimatedSidebarInset } from "@apcode/ui/motion/animated-sidebar";
+import { ChatApp } from "@masscode/ui/agents/chat-app";
+import { AnimatedSidebarInset } from "@masscode/ui/motion/animated-sidebar";
 import {
   AppWindow,
   Globe,

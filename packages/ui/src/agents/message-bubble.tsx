@@ -14,9 +14,9 @@ import {
   useId,
   useState,
 } from "react";
-import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
-import { MessageSideContext } from "@apcode/ui/agents/message-context";
+import { EASE_OUT, SPRING_LAYOUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
+import { MessageSideContext } from "@masscode/ui/agents/message-context";
 
 export type MessageBubbleVariant = "solid" | "soft" | "tint" | "outline" | "ghost" | "danger";
 export type MessageBubbleAlign = "start" | "end";

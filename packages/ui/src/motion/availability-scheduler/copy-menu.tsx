@@ -1,10 +1,10 @@
 import { Check, Copy } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
-import { Checkbox } from "@apcode/ui/motion/checkbox";
-import { MorphPopover, MorphPopoverContent } from "@apcode/ui/motion/popover-morph";
-import { Tooltip } from "@apcode/ui/motion/tooltip";
-import { SPRING_PRESS } from "@apcode/ui/lib/ease";
+import { Checkbox } from "@masscode/ui/motion/checkbox";
+import { MorphPopover, MorphPopoverContent } from "@masscode/ui/motion/popover-morph";
+import { Tooltip } from "@masscode/ui/motion/tooltip";
+import { SPRING_PRESS } from "@masscode/ui/lib/ease";
 import { IconButton } from "./icon-button";
 import { type DayKey, WEEKDAYS } from "./types";
 

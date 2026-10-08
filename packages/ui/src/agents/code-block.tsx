@@ -13,10 +13,10 @@ import {
   type AgentCodeLanguage,
   AgentCodeLine,
   useAgentCodeTokens,
-} from "@apcode/ui/agents/agent-code";
-import { ActionSwapRollIcon } from "@apcode/ui/motion/action-swap-roll";
-import { SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+} from "@masscode/ui/agents/agent-code";
+import { ActionSwapRollIcon } from "@masscode/ui/motion/action-swap-roll";
+import { SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type CodeBlockStatus = "streaming" | "complete";
 

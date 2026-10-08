@@ -1,7 +1,7 @@
 import { animate, motion, useMotionValue, useReducedMotion, type PanInfo } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { TOUCH_GESTURE_CONTENT_CLASS } from "@apcode/ui/lib/touch";
-import { cn } from "@apcode/ui/lib/utils";
+import { TOUCH_GESTURE_CONTENT_CLASS } from "@masscode/ui/lib/touch";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type SwipeSide = "left" | "right";
 

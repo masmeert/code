@@ -22,9 +22,9 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
-import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
-import { EASE_DRAWER, EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { SharedLayoutBg } from "@masscode/ui/motion/shared-layout-bg";
+import { EASE_DRAWER, EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 type SidebarState = "expanded" | "collapsed";
 type SidebarSide = "left" | "right";

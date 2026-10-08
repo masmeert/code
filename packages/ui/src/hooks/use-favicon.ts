@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { getFaviconUrl } from "@apcode/ui/lib/favicon";
+import { getFaviconUrl } from "@masscode/ui/lib/favicon";
 
 /**
  * Resolves a site favicon and drops it once it is known to be unusable, so

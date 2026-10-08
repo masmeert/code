@@ -6,18 +6,18 @@ import {
   useContext,
   useState,
 } from "react";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
-import { MessageSideContext } from "@apcode/ui/agents/message-context";
+import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
+import { MessageSideContext } from "@masscode/ui/agents/message-context";
 
 export {
   MessageBubble,
   MessageBubbleCollapsible,
   MessageBubbleContent,
   MessageBubbleGroup,
-} from "@apcode/ui/agents/message-bubble";
-export { MessageScroller } from "@apcode/ui/agents/message-scroller";
-export type { MessageScrollerProps } from "@apcode/ui/agents/message-scroller";
+} from "@masscode/ui/agents/message-bubble";
+export { MessageScroller } from "@masscode/ui/agents/message-scroller";
+export type { MessageScrollerProps } from "@masscode/ui/agents/message-scroller";
 
 export type MessageFrom = "user" | "assistant";
 

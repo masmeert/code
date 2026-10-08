@@ -1,6 +1,6 @@
 /**
- * The Agent Client Protocol (agentclientprotocol.com) as APCode speaks it to an agent's stdio,
- * decoded down to the fields APCode reads.
+ * The Agent Client Protocol (agentclientprotocol.com) as MassCode speaks it to an agent's stdio,
+ * decoded down to the fields MassCode reads.
  */
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -48,7 +48,7 @@ const ToolFields = {
   locations: Schema.optional(Schema.NullOr(Schema.Array(Schema.Struct({ path: Schema.String })))),
 };
 
-/** The `session/update` kinds APCode acts on; others are dropped. */
+/** The `session/update` kinds MassCode acts on; others are dropped. */
 export const SessionUpdate = Schema.Union([
   Schema.Struct({ sessionUpdate: Schema.Literal("agent_message_chunk"), content: TextBlock }),
   Schema.Struct({ sessionUpdate: Schema.Literal("agent_thought_chunk"), content: TextBlock }),
@@ -90,7 +90,7 @@ export interface AcpHandlers {
 
 /**
  * Spawns an ACP agent and completes `initialize`. It reads and writes files and runs commands
- * itself: APCode offers neither its filesystem nor terminals.
+ * itself: MassCode offers neither its filesystem nor terminals.
  */
 export async function connectAcp(
   name: string,
@@ -125,7 +125,7 @@ export async function connectAcp(
         // Cursor: models come with their effort and fast settings as config options of their own.
         _meta: { parameterizedModelPicker: true },
       },
-      clientInfo: { name: "apcode", title: "APCode", version: "0.0.1" },
+      clientInfo: { name: "masscode", title: "MassCode", version: "0.0.1" },
     },
     Schema.Unknown,
   );

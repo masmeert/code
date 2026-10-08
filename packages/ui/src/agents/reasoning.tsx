@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from "react";
-import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
-import { ReasoningText } from "@apcode/ui/agents/loading-states/reasoning-text";
-import { Chevron, useRevealOpen, type ToolReveal } from "@apcode/ui/agents/tool-group";
+import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
+import { ReasoningText } from "@masscode/ui/agents/loading-states/reasoning-text";
+import { Chevron, useRevealOpen, type ToolReveal } from "@masscode/ui/agents/tool-group";
 
 const THOUGHT_TITLES = [
   "Schlepped",

@@ -9,12 +9,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { ActionSwapText } from "@apcode/ui/motion/action-swap";
-import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
-import { useDismiss } from "@apcode/ui/hooks/use-dismiss";
-import { useHoverGesture } from "@apcode/ui/hooks/use-hover-gesture";
-import { useTapGesture } from "@apcode/ui/hooks/use-tap-gesture";
-import { cn } from "@apcode/ui/lib/utils";
+import { ActionSwapText } from "@masscode/ui/motion/action-swap";
+import { EASE_OUT, SPRING_LAYOUT } from "@masscode/ui/lib/ease";
+import { useDismiss } from "@masscode/ui/hooks/use-dismiss";
+import { useHoverGesture } from "@masscode/ui/hooks/use-hover-gesture";
+import { useTapGesture } from "@masscode/ui/hooks/use-tap-gesture";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type NotificationStackItem = {
   id: string;

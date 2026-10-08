@@ -5,7 +5,7 @@ import type {
   ReactNode,
   Ref,
 } from "react";
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 import { mergeRefs, useComboboxContext } from "./context";
 
 export interface ComboboxTriggerProps {

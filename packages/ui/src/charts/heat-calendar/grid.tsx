@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import type { ReactNode } from "react";
-import { EASE_OUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 import { useHeatCalendar } from "./context";
 import { DAYS, fmtDay, GAP, LIFT, MONTH_ROW, PITCH } from "./utils";
 

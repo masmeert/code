@@ -2,9 +2,9 @@ import { Check, CircleAlert, RotateCcw } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useRef } from "react";
-import { EASE_OUT, SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { useHoverCapable } from "@apcode/ui/hooks/use-hover-capable";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { useHoverCapable } from "@masscode/ui/hooks/use-hover-capable";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type ImageGenerationStatus = "queued" | "generating" | "refining" | "complete" | "error";
 

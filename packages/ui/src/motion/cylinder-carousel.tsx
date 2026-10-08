@@ -17,8 +17,8 @@ import {
   useState,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import { capturePointer, releasePointer, TOUCH_GESTURE_CLASS } from "@apcode/ui/lib/touch";
-import { cn } from "@apcode/ui/lib/utils";
+import { capturePointer, releasePointer, TOUCH_GESTURE_CLASS } from "@masscode/ui/lib/touch";
+import { cn } from "@masscode/ui/lib/utils";
 
 // Carousel-specific: a soft spring that receives the release velocity, so a
 // flick keeps rolling freely, drifts past the snap point and eases back.

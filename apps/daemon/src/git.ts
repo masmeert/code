@@ -1,5 +1,5 @@
 import { execFile, type ExecFileException, type ExecFileOptions } from "node:child_process";
-import { repositoryOf } from "@apcode/contracts";
+import { repositoryOf } from "@masscode/contracts";
 import * as Predicate from "effect/Predicate";
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -535,13 +535,13 @@ export const pushBranch = async (cwd: string) => {
 // and undone. Written as commits under hidden refs, through a scratch copy of the
 // index: the user's staging, branch and history are never touched (t3code does the same).
 
-const CHECKPOINT_REFS = "refs/apcode/checkpoints";
+const CHECKPOINT_REFS = "refs/masscode/checkpoints";
 /** Snapshot commits need an author even where git has no identity configured. */
 const SNAPSHOT_IDENTITY = {
-  GIT_AUTHOR_NAME: "APCode",
-  GIT_AUTHOR_EMAIL: "apcode@localhost",
-  GIT_COMMITTER_NAME: "APCode",
-  GIT_COMMITTER_EMAIL: "apcode@localhost",
+  GIT_AUTHOR_NAME: "MassCode",
+  GIT_AUTHOR_EMAIL: "masscode@localhost",
+  GIT_COMMITTER_NAME: "MassCode",
+  GIT_COMMITTER_EMAIL: "masscode@localhost",
 };
 
 export const checkpointRef = (threadId: string, messageId: string, when: "start" | "end") =>
@@ -551,7 +551,7 @@ export const checkpointRef = (threadId: string, messageId: string, when: "start"
 const snapshot = async (cwd: string, message: string): Promise<string | null> => {
   const indexPath = await git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "index"]);
   if (!indexPath.ok) return null;
-  const scratch = join(tmpdir(), `apcode-index-${crypto.randomUUID()}`);
+  const scratch = join(tmpdir(), `masscode-index-${crypto.randomUUID()}`);
   try {
     // Starting from the real index lets `add` skip files whose stat info hasn't changed.
     await copyFile(indexPath.stdout, scratch).catch(() => undefined);
@@ -574,7 +574,7 @@ const snapshot = async (cwd: string, message: string): Promise<string | null> =>
 
 /** Snapshots the working tree under `ref`; false outside a repo or if it failed. */
 export const captureCheckpoint = async (cwd: string, ref: string) => {
-  const commit = await snapshot(cwd, `apcode checkpoint ${ref}`);
+  const commit = await snapshot(cwd, `masscode checkpoint ${ref}`);
   if (!commit) return false;
   return (await git(cwd, ["update-ref", ref, commit])).ok;
 };
@@ -592,7 +592,7 @@ const capPatch = (patch: string) => {
 /** The target to compare a turn's start against: its end snapshot, or the working tree if it has none yet. */
 const turnEnd = async (cwd: string, threadId: string, messageId: string) => {
   const end = checkpointRef(threadId, messageId, "end");
-  return (await refExists(cwd, end)) ? end : await snapshot(cwd, "apcode working tree");
+  return (await refExists(cwd, end)) ? end : await snapshot(cwd, "masscode working tree");
 };
 
 /** What one turn changed, as a unified patch. */
@@ -638,9 +638,9 @@ export const restoreCheckpoint = async (
 ): Promise<string | null> => {
   const start = checkpointRef(threadId, messageId, "start");
   if (!(await refExists(cwd, start))) return "There's no snapshot of the files from that point";
-  const current = await snapshot(cwd, "apcode backup before restore");
+  const current = await snapshot(cwd, "masscode backup before restore");
   if (!current) return "Couldn't snapshot the current files";
-  await git(cwd, ["update-ref", `refs/apcode/backups/${threadId}/${Date.now()}`, current]);
+  await git(cwd, ["update-ref", `refs/masscode/backups/${threadId}/${Date.now()}`, current]);
   const changed = await git(cwd, ["diff", "--name-only", "--no-renames", "-z", start, current]);
   if (!changed.ok) return firstLines(changed.stderr);
   const paths = changed.stdout.split("\0").filter(Boolean);
@@ -679,7 +679,7 @@ export const deleteThreadCheckpoints = async (cwd: string, threadId: string) => 
     "for-each-ref",
     "--format=%(refname)",
     `${CHECKPOINT_REFS}/${threadId}`,
-    `refs/apcode/backups/${threadId}`,
+    `refs/masscode/backups/${threadId}`,
   ]);
   if (!refs.ok || !refs.stdout) return;
   await updateRefs(

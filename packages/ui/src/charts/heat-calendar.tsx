@@ -1,4 +1,4 @@
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 import { HeatCalendarContext, useHeatCalendarModel } from "./heat-calendar/context";
 import { HeatCalendarGrid } from "./heat-calendar/grid";
 import { HeatCalendarLegend } from "./heat-calendar/legend";

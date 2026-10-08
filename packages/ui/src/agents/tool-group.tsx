@@ -1,10 +1,10 @@
 import { ChevronRight } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
-import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
-import { ToolResultOutput } from "@apcode/ui/agents/tool-result";
-import type { AgentCodeLanguage } from "@apcode/ui/agents/agent-code";
-import { cn } from "@apcode/ui/lib/utils";
+import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
+import { ThinkingShimmer } from "@masscode/ui/agents/loading-states/thinking-shimmer";
+import { ToolResultOutput } from "@masscode/ui/agents/tool-result";
+import type { AgentCodeLanguage } from "@masscode/ui/agents/agent-code";
+import { cn } from "@masscode/ui/lib/utils";
 
 export interface ToolCall {
   readonly id: string;

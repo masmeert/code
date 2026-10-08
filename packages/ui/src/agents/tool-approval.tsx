@@ -9,16 +9,16 @@ import {
 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
-import { AgentCode, type AgentCodeLanguage } from "@apcode/ui/agents/agent-code";
-import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
+import { AgentCode, type AgentCodeLanguage } from "@masscode/ui/agents/agent-code";
+import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@apcode/ui/components/dropdown-menu";
-import { SPRING_PRESS } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+} from "@masscode/ui/components/dropdown-menu";
+import { SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type ToolApprovalStatus =
   | "pending"

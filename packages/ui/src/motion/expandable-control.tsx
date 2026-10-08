@@ -7,7 +7,7 @@ import {
   type Variants,
 } from "motion/react";
 import { type MouseEvent, type ReactNode, useCallback, useRef, useState } from "react";
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 
 // Matches the Motion Patterns "Layout continuity" recipe so the surface
 // keeps its identity while its footprint changes.

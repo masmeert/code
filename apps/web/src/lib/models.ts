@@ -1,4 +1,4 @@
-import type { PromptOption } from "@apcode/ui/agents/prompt-input";
+import type { PromptOption } from "@masscode/ui/agents/prompt-input";
 import { PROVIDER_LOGO } from "@/components/provider-logo";
 import { Star } from "lucide-react";
 import { createElement } from "react";
@@ -9,7 +9,7 @@ import {
   type ProviderSettings,
   type ProviderStatus,
   type Settings,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 
 /** The harness's name as the user set it in Settings, else its own. */
 export const harnessLabel = (settings: Settings, provider: ProviderKind) =>

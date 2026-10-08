@@ -9,7 +9,7 @@ import {
   type StoredEvent,
   type ThreadInfo,
   ThreadUsage,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import { Database } from "bun:sqlite";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -150,7 +150,7 @@ export class ThreadStore extends Context.Service<
     readonly appendEvent: (threadId: string, event: RuntimeEvent) => number;
     readonly deleteThread: (threadId: string) => void;
   }
->()("apcode/ThreadStore") {}
+>()("masscode/ThreadStore") {}
 
 const decodeEvent = Schema.decodeUnknownOption(Schema.fromJsonString(RuntimeEvent));
 const decodeUsage = Schema.decodeUnknownOption(Schema.fromJsonString(ThreadUsage));
@@ -188,7 +188,7 @@ function legacyTokens(row: {
 const make = Effect.acquireRelease(
   Effect.sync(() => {
     mkdirSync(DATA_DIR, { recursive: true });
-    const db = new Database(join(DATA_DIR, "apcode.db"), { create: true, strict: true });
+    const db = new Database(join(DATA_DIR, "masscode.db"), { create: true, strict: true });
     db.run("PRAGMA journal_mode = WAL");
     // With WAL, NORMAL only fsyncs at checkpoints: still safe against corruption, much cheaper per append.
     db.run("PRAGMA synchronous = NORMAL");

@@ -1,4 +1,4 @@
-import { cn } from "@apcode/ui/lib/utils";
+import { cn } from "@masscode/ui/lib/utils";
 import { useBumpChart } from "./context";
 
 export function BumpChartLegend({ className }: { className?: string }) {

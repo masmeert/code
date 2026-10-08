@@ -7,7 +7,7 @@ import type {
   PullRequest,
   SourceControlKind,
   SourceControlStatus,
-} from "@apcode/contracts";
+} from "@masscode/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { execFile } from "node:child_process";

@@ -9,10 +9,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
-import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
-import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { ThinkingShimmer } from "@masscode/ui/agents/loading-states/thinking-shimmer";
+import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
+import { EASE_OUT, SPRING_LAYOUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 import { ActivityRow } from "./agent-activity/activity-row";
 import type {
   AgentActivityContentType,

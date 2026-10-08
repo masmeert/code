@@ -9,7 +9,7 @@
       },
       {
         "reply": {
-          "userAgent": "apcode/0.159.3 (Mac OS 27.0.1; arm64) unknown (apcode; 0.0.1)",
+          "userAgent": "masscode/0.159.3 (Mac OS 27.0.1; arm64) unknown (masscode; 0.0.1)",
           "codexHome": "/home/user/.codex",
           "platformFamily": "unix",
           "platformOs": "macos"
@@ -46,9 +46,9 @@
             "environments": [
               {
                 "environmentId": "local",
-                "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-J8bAZ4",
+                "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-J8bAZ4",
                 "runtimeWorkspaceRoots": [
-                  "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-J8bAZ4"
+                  "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-J8bAZ4"
                 ]
               }
             ],
@@ -72,9 +72,9 @@
               "type": "idle"
             },
             "path": "/home/user/.codex/sessions/2026/10/07/rollout-2026-10-07T14-49-11-01a11669-21f9-7e21-a0a4-d1186efe4e52.jsonl",
-            "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-J8bAZ4",
+            "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-J8bAZ4",
             "cliVersion": "0.159.3",
-            "originator": "apcode",
+            "originator": "masscode",
             "source": "vscode",
             "canAcceptDirectInput": true,
             "threadSource": null,
@@ -89,9 +89,9 @@
           "modelProvider": "openai",
           "serviceTier": "default",
           "disabledPluginIds": [],
-          "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-J8bAZ4",
+          "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-J8bAZ4",
           "runtimeWorkspaceRoots": [
-            "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-J8bAZ4"
+            "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-J8bAZ4"
           ],
           "instructionSources": ["/home/user/.codex/AGENTS.md"],
           "approvalPolicy": "untrusted",
@@ -118,9 +118,9 @@
               "environments": [
                 {
                   "environmentId": "local",
-                  "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-J8bAZ4",
+                  "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-J8bAZ4",
                   "runtimeWorkspaceRoots": [
-                    "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-J8bAZ4"
+                    "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-J8bAZ4"
                   ]
                 }
               ],
@@ -144,9 +144,9 @@
                 "type": "idle"
               },
               "path": "/home/user/.codex/sessions/2026/10/07/rollout-2026-10-07T14-49-11-01a11669-21f9-7e21-a0a4-d1186efe4e52.jsonl",
-              "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-J8bAZ4",
+              "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-J8bAZ4",
               "cliVersion": "0.159.3",
-              "originator": "apcode",
+              "originator": "masscode",
               "source": "vscode",
               "canAcceptDirectInput": true,
               "threadSource": null,
@@ -417,7 +417,7 @@
               "pluginId": null,
               "scriptPath": null,
               "command": "/bin/zsh -lc 'echo hi > hi.txt'",
-              "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-J8bAZ4",
+              "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-J8bAZ4",
               "processId": null,
               "source": "agent",
               "status": "inProgress",
@@ -450,7 +450,7 @@
             "startedAtMs": 1791377356636,
             "environmentId": "local",
             "command": "/bin/zsh -lc 'echo hi > hi.txt'",
-            "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-J8bAZ4",
+            "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-J8bAZ4",
             "commandActions": [
               {
                 "type": "unknown",
@@ -508,7 +508,7 @@
               "pluginId": null,
               "scriptPath": null,
               "command": "/bin/zsh -lc 'echo hi > hi.txt'",
-              "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/apcode-project-J8bAZ4",
+              "cwd": "/var/folders/c5/t_11ppm17kvfkwyk4rn7vtsh0000gp/T/masscode-project-J8bAZ4",
               "processId": "12679",
               "source": "unifiedExecStartup",
               "status": "completed",

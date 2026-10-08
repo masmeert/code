@@ -6,8 +6,8 @@ import {
   useReducedMotion,
 } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { EASE_IN_OUT, EASE_OUT } from "@apcode/ui/lib/ease";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_IN_OUT, EASE_OUT } from "@masscode/ui/lib/ease";
+import { cn } from "@masscode/ui/lib/utils";
 
 const CHROMATIC_PALETTE = ["#60a5fa", "#818cf8", "#c084fc", "#fb7185", "#fbbf24"];
 

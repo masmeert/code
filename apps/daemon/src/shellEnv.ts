@@ -8,13 +8,13 @@ import { execFileSync } from "node:child_process";
  *
  * Imported for its side effect as the daemon's first module, before anything reads process.env.
  */
-const MARKER = "__APCODE_SHELL_ENV__";
+const MARKER = "__MASSCODE_SHELL_ENV__";
 
 // Values that describe this process rather than the user's setup; keep ours.
 const SKIP = new Set(["_", "PWD", "OLDPWD", "SHLVL", "PPID"]);
 
 const loadShellEnv = (): Record<string, string> | null => {
-  if (process.platform === "win32" || process.env.APCODE_SKIP_SHELL_ENV) return null;
+  if (process.platform === "win32" || process.env.MASSCODE_SKIP_SHELL_ENV) return null;
   const shell = process.env.SHELL || "/bin/zsh";
   try {
     // Markers fence off anything the rc files print; NUL-separated so multi-line values survive.
@@ -45,7 +45,7 @@ const loadShellEnv = (): Record<string, string> | null => {
 const shellEnv = loadShellEnv();
 if (shellEnv) {
   for (const [key, value] of Object.entries(shellEnv)) {
-    // Explicit overrides passed to the daemon (APCODE_*, etc.) win over the shell's.
+    // Explicit overrides passed to the daemon (MASSCODE_*, etc.) win over the shell's.
     if (SKIP.has(key) || (key !== "PATH" && process.env[key] !== undefined)) continue;
     process.env[key] = value;
   }

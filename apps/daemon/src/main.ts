@@ -39,7 +39,7 @@ const MainLive = SessionManagerLive.layer.pipe(
 
 // A crashed or force-quit parent never kills us, and an orphan would keep running agents.
 // A remote host's daemon is detached on purpose: its agents work on with the laptop shut.
-if (!process.env.APCODE_DETACHED) {
+if (!process.env.MASSCODE_DETACHED) {
   const parentPid = process.ppid;
   const parentWatch = setInterval(() => {
     try {

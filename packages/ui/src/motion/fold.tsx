@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { ReactNode } from "react";
-import { FOLD } from "@apcode/ui/lib/ease";
+import { FOLD } from "@masscode/ui/lib/ease";
 
 /** Folds its content open and shut; clipped only while moving, so focus rings aren't cut once open. */
 export function Fold({ open, children }: { open: boolean; children: ReactNode }) {

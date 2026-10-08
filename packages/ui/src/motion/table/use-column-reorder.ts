@@ -1,5 +1,5 @@
 import { type PointerEvent as ReactPointerEvent, useCallback, useMemo, useState } from "react";
-import { capturePointer, releasePointer } from "@apcode/ui/lib/touch";
+import { capturePointer, releasePointer } from "@masscode/ui/lib/touch";
 import type { HeaderCellRefs, TableColumn } from "./types";
 
 export function useColumnReorder<T>({

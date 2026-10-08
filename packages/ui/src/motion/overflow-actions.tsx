@@ -7,9 +7,9 @@ import {
   type Variants,
 } from "motion/react";
 import { useCallback, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { EASE_OUT } from "@apcode/ui/lib/ease";
-import { useHoverCapable } from "@apcode/ui/hooks/use-hover-capable";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { useHoverCapable } from "@masscode/ui/hooks/use-hover-capable";
+import { cn } from "@masscode/ui/lib/utils";
 
 export type OverflowActionsSize = "sm" | "md";
 

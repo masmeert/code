@@ -17,10 +17,10 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { EASE_OUT, SPRING_LAYOUT } from "@apcode/ui/lib/ease";
-import { useOnOpen } from "@apcode/ui/hooks/use-on-open";
-import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
-import { cn } from "@apcode/ui/lib/utils";
+import { EASE_OUT, SPRING_LAYOUT } from "@masscode/ui/lib/ease";
+import { useOnOpen } from "@masscode/ui/hooks/use-on-open";
+import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
+import { cn } from "@masscode/ui/lib/utils";
 
 // Keeps the Wallet Card feel with a little more time to read the morph.
 const SEARCH_MORPH: Transition = {

@@ -1,5 +1,5 @@
 /**
- * What `codex app-server` says over its JSON-RPC, decoded down to the fields APCode reads.
+ * What `codex app-server` says over its JSON-RPC, decoded down to the fields MassCode reads.
  */
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -95,7 +95,7 @@ export const TokenUsage = Schema.Struct({
 });
 export type TokenUsage = typeof TokenUsage.Type;
 
-/** The notifications APCode acts on; others are dropped. */
+/** The notifications MassCode acts on; others are dropped. */
 export const CodexNotification = Schema.Union([
   Schema.Struct({
     method: Schema.Literal("turn/started"),
@@ -188,7 +188,7 @@ const ApprovalParams = Schema.Struct({
   reason: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
-/** The requests the server makes of us that APCode answers. */
+/** The requests the server makes of us that MassCode answers. */
 export const CodexServerRequest = Schema.Union([
   Schema.Struct({
     method: Schema.Literal("mcpServer/elicitation/request"),
@@ -248,7 +248,7 @@ export async function connectCodex(
   await rpc.request(
     "initialize",
     {
-      clientInfo: { name: "apcode", title: "APCode", version: "0.0.1" },
+      clientInfo: { name: "masscode", title: "MassCode", version: "0.0.1" },
       capabilities: null,
     },
     Schema.Unknown,

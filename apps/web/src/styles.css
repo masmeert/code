@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "@apcode/ui/globals.css";
+@import "@masscode/ui/globals.css";
 
 /* Theme switch: freeze every transition for one frame so colours swap at once instead of fading piecemeal (see useTheme). */
 html[data-theme-switching] *,
