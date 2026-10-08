@@ -10,6 +10,12 @@ import {
 import { Input } from "@apcode/ui/motion/input";
 import { SharedLayoutBg } from "@apcode/ui/motion/shared-layout-bg";
 import { Switch } from "@apcode/ui/motion/switch";
+import {
+  MorphPopover,
+  MorphPopoverContent,
+  MorphPopoverTrigger,
+} from "@apcode/ui/motion/popover-morph";
+import { ModelList } from "@apcode/ui/agents/prompt-input";
 import { Skeleton } from "@apcode/ui/components/skeleton";
 import { ScrollArea } from "@apcode/ui/components/scroll-area";
 import { Textarea } from "@apcode/ui/components/textarea";
@@ -40,6 +46,8 @@ import {
   ArrowDown,
   ArrowUp,
   Bot,
+  Check,
+  ChevronDown,
   Columns2,
   GitCommitHorizontal,
   Monitor,
@@ -63,14 +71,15 @@ import {
 import {
   decodeChoice,
   defaultModel,
-  encodeChoice,
+  favoriteChoices,
   harnessLabel,
+  modelChoices,
   orderedModels,
-  visibleModels,
 } from "../lib/models.ts";
 import {
   scanProjects,
   send,
+  toggleFavoriteModel,
   updateHarness,
   updateSettings,
   useProviders,
@@ -172,6 +181,73 @@ function SettingsSelect(props: {
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+/** Every linked harness's models behind the composer's favorites and harness tabs, under a row for `fallback` (saved as null). */
+function SettingsModelSelect(props: {
+  value: string | null | undefined;
+  onChange: (value: string | null) => void;
+  fallback: string;
+  className: string;
+}) {
+  const settings = useStore((s) => s.settings);
+  const providers = useStore((s) => s.providers);
+  const [open, setOpen] = useState(false);
+  const models = modelChoices(providers, settings);
+  const current = models.find((option) => option.value === props.value);
+
+  return (
+    <MorphPopover open={open} onOpenChange={setOpen} className={props.className}>
+      <MorphPopoverTrigger>
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 rounded-[12px] border border-border bg-background px-3 py-1.5 text-[13px] whitespace-nowrap text-foreground transition-colors outline-none hover:border-border-strong focus-visible:ring-4 focus-visible:ring-ring"
+        >
+          {current ? (
+            <span className="grid size-3.5 shrink-0 place-items-center [&_svg]:size-3.5">
+              {current.groupIcon}
+            </span>
+          ) : null}
+          <span className="min-w-0 flex-1 truncate text-left">
+            {current?.label ?? props.fallback}
+          </span>
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out",
+              open && "rotate-180",
+            )}
+          />
+        </button>
+      </MorphPopoverTrigger>
+      <MorphPopoverContent side="bottom" align="start" sideOffset={6} radius={12}>
+        <div className="border-b border-border p-1">
+          <button
+            type="button"
+            onClick={() => {
+              props.onChange(null);
+              setOpen(false);
+            }}
+            className={cn(
+              "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors outline-none hover:bg-muted focus-visible:bg-muted",
+              current ? "text-muted-foreground hover:text-foreground" : "text-foreground",
+            )}
+          >
+            <span className="flex-1">{props.fallback}</span>
+            {current ? null : <Check className="size-3.5 shrink-0" />}
+          </button>
+        </div>
+        <ModelList
+          models={models}
+          value={current?.value}
+          onChange={props.onChange}
+          onClose={() => setOpen(false)}
+          favorites={favoriteChoices(settings)}
+          onToggleFavorite={toggleFavoriteModel}
+        />
+      </MorphPopoverContent>
+    </MorphPopover>
   );
 }
 
@@ -294,19 +370,11 @@ function GeneralPage() {
   const settings = useStore((s) => s.settings);
   const providers = useStore((s) => s.providers);
   const linked = providers.filter((p) => p.linked && p.models.length);
-  const modelOptions = linked.flatMap((p) => {
-    const Logo = PROVIDER_LOGO[p.kind];
-    return visibleModels(p.models, settings.providers[p.kind]).map((m) => ({
-      value: encodeChoice(p.kind, m.id),
-      label: m.label,
-      icon: <Logo aria-label={harnessLabel(settings, p.kind)} className="size-3.5 shrink-0" />,
-    }));
-  });
   const savedModel = settings.newThreadModel;
-  const modelValue =
-    savedModel && modelOptions.some((o) => o.value === savedModel) ? savedModel : "last";
   const effortProvider =
-    modelValue === "last" ? settings.lastProvider : decodeChoice(modelValue).provider;
+    savedModel && modelChoices(providers, settings).some((o) => o.value === savedModel)
+      ? decodeChoice(savedModel).provider
+      : settings.lastProvider;
   const savedEffort = settings.newThreadEffort;
 
   return (
@@ -316,15 +384,11 @@ function GeneralPage() {
           <SettingsRow label="Default model">
             {linked.length ? (
               <div className="flex gap-2">
-                <SettingsSelect
-                  value={modelValue}
-                  onChange={(value) =>
-                    updateSettings({
-                      ...settings,
-                      newThreadModel: value === "last" ? null : value,
-                    })
-                  }
-                  options={[{ value: "last", label: "Last used" }, ...modelOptions]}
+                <SettingsModelSelect
+                  value={savedModel}
+                  onChange={(newThreadModel) => updateSettings({ ...settings, newThreadModel })}
+                  fallback="Last used"
+                  className="w-44"
                 />
                 <SettingsSelect
                   value={
@@ -812,33 +876,11 @@ function WriterModelSelect() {
     return <Skeleton className="h-7 w-52 rounded-lg" />;
   if (!linked.length)
     return <span className="text-[13px] text-muted-foreground">Link a harness first</span>;
-  const saved = settings.commitModel;
-  const listed =
-    saved &&
-    linked.some((p) =>
-      visibleModels(p.models, settings.providers[p.kind]).some(
-        (m) => encodeChoice(p.kind, m.id) === saved,
-      ),
-    );
   return (
-    <SettingsSelect
-      value={listed ? saved : "auto"}
-      onChange={(value) =>
-        updateSettings({ ...settings, commitModel: value === "auto" ? null : value })
-      }
-      options={[
-        { value: "auto", label: "Default model" },
-        ...linked.flatMap((p) => {
-          const Logo = PROVIDER_LOGO[p.kind];
-          return visibleModels(p.models, settings.providers[p.kind]).map((m) => ({
-            value: encodeChoice(p.kind, m.id),
-            label: m.label,
-            icon: (
-              <Logo aria-label={harnessLabel(settings, p.kind)} className="size-3.5 shrink-0" />
-            ),
-          }));
-        }),
-      ]}
+    <SettingsModelSelect
+      value={settings.commitModel}
+      onChange={(commitModel) => updateSettings({ ...settings, commitModel })}
+      fallback="Default model"
       className="w-52"
     />
   );

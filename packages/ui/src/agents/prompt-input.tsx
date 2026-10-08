@@ -1152,7 +1152,7 @@ function FlyoutRow({
  * Models beside a rail of Favorites and one tab per group (harness); typing searches every group.
  * Mounted only while the flyout is open.
  */
-function ModelList({
+export function ModelList({
   models,
   value,
   onChange,

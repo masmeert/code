@@ -63,7 +63,6 @@ import { restoreStash, setDraft, stashDraft, useDraft, useStashes } from "../lib
 import { describe, KEYBINDINGS, useKeybinding } from "../lib/keybindings.ts";
 import {
   catalogModel,
-  decodeChoice,
   favoriteChoices,
   type modelChoices,
   recommendedBadge,
@@ -71,7 +70,7 @@ import {
 import {
   send,
   skillsKey,
-  updateHarness,
+  toggleFavoriteModel,
   usePathHost,
   useProviders,
   useStore,
@@ -473,15 +472,7 @@ export const Composer = (props: ComposerProps) => {
               {...(props.extraModels ? { extraModels: props.extraModels } : {})}
               {...(props.onToggleModel ? { onToggleModel: props.onToggleModel } : {})}
               favorites={favoriteChoices(settings)}
-              onToggleFavorite={(value) => {
-                const { provider, model } = decodeChoice(value);
-                const starred = settings.providers[provider].favoriteModels ?? [];
-                updateHarness(provider, {
-                  favoriteModels: starred.includes(model)
-                    ? starred.filter((id) => id !== model)
-                    : [...starred, model],
-                });
-              }}
+              onToggleFavorite={toggleFavoriteModel}
               efforts={effortOptions}
               effort={effort ?? fallbackEffort}
               onEffortChange={(value) =>

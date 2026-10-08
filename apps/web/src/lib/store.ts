@@ -42,6 +42,7 @@ import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
 import { performBrowserAction } from "./browser.ts";
 import { loadShell, loadTranscript, removeTranscript, saveShell, saveTranscript } from "./cache.ts";
+import { decodeChoice } from "./models.ts";
 
 export type TranscriptItem =
   | {
@@ -1535,6 +1536,17 @@ export const updateHarness = (provider: ProviderKind, patch: Partial<ProviderSet
       [provider]: { ...state.settings.providers[provider], ...patch },
     },
   });
+
+/** Stars or unstars a `<harness>:<model>` choice. */
+export const toggleFavoriteModel = (choice: string) => {
+  const { provider, model } = decodeChoice(choice);
+  const starred = state.settings.providers[provider].favoriteModels ?? [];
+  updateHarness(provider, {
+    favoriteModels: starred.includes(model)
+      ? starred.filter((id) => id !== model)
+      : [...starred, model],
+  });
+};
 
 /**
  * Creates a thread from a draft by sending its first message. With `open`, this window
