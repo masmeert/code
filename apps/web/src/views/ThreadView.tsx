@@ -74,7 +74,7 @@ import {
   ChevronRight,
   Clock,
   CornerDownRight,
-  Ellipsis,
+  EllipsisVertical,
   FileDiff,
   FileText,
   GitFork,
@@ -1270,7 +1270,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                       aria-label="More panels"
                       className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-muted/60 data-[state=open]:text-foreground"
                     >
-                      <Ellipsis className="size-4" />
+                      <EllipsisVertical className="size-4" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" sideOffset={4} collisionPadding={8}>
                       <DropdownMenuCheckboxItem
