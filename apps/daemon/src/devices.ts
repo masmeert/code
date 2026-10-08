@@ -25,16 +25,22 @@ function toolDir(tool: Tool) {
 }
 
 function run(command: string, args: ReadonlyArray<string>, timeoutMs: number) {
-  return new Promise<void>((resolve, reject) =>
+  return new Promise<string>((resolve, reject) =>
     execFile(
       command,
       args,
       { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
-      (error, _, stderr) => {
-        if (!error) return resolve();
+      (error, stdout, stderr) => {
+        if (!error) return resolve(stdout);
         // SAFETY: execFile reports a missing binary as a system error with an errno code.
         if ((error as NodeJS.ErrnoException).code === "ENOENT")
-          return reject(new Error(NODE_MISSING));
+          return reject(
+            new Error(
+              command === "npm"
+                ? NODE_MISSING
+                : "The iOS Simulator panel needs Xcode. Install it from the App Store and try again.",
+            ),
+          );
         reject(new Error(stderr.trim().split("\n").slice(-5).join("\n") || error.message));
       },
     ),
@@ -163,36 +169,38 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
     return response;
   }
 
+  // The hub leaves out simulators that were never booted, so ask simctl.
   async function list(): Promise<ReadonlyArray<Device>> {
-    // SAFETY: the hub's /api/devices shape, as of the pinned version.
-    const listing = (await (await hubFetch("/api/devices")).json()) as {
-      simulators: ReadonlyArray<{
-        id: string;
-        name: string;
-        version: string;
-        platform: string;
-        booted: boolean;
-        physical: boolean;
-      }>;
-    };
-    return listing.simulators
-      .filter((simulator) => simulator.platform === "ios" && !simulator.physical)
-      .map(({ id, name, version, booted }) => ({ id, name, version, booted }));
+    // SAFETY: the shape of `simctl list --json`.
+    const listing = JSON.parse(
+      await run("xcrun", ["simctl", "list", "devices", "available", "--json"], 30_000),
+    ) as { devices: Record<string, ReadonlyArray<{ udid: string; name: string; state: string }>> };
+    return Object.entries(listing.devices)
+      .filter(([runtime]) => runtime.includes(".iOS-"))
+      .flatMap(([runtime, simulators]) =>
+        simulators.map((simulator) => ({
+          id: simulator.udid,
+          name: simulator.name,
+          // "com.apple.CoreSimulator.SimRuntime.iOS-27-0" reads "iOS 27.0".
+          version: runtime
+            .slice(runtime.lastIndexOf(".") + 1)
+            .replace("-", " ")
+            .replaceAll("-", "."),
+          booted: simulator.state === "Booted",
+        })),
+      );
   }
 
   async function attach(threadId: string, deviceId: string | null) {
     if (deviceId) {
-      const device = (await list()).find((candidate) => candidate.id === deviceId);
-      if (!device) throw new Error(`No simulator has the id ${deviceId}.`);
-      if (!device.booted)
-        await hubFetch("/api/devices/boot", {
-          method: "POST",
-          body: JSON.stringify({ platform: "ios", id: device.id, name: device.name }),
-        });
+      if (!(await list()).some((candidate) => candidate.id === deviceId))
+        throw new Error(`No simulator has the id ${deviceId}.`);
+      // Boots it if needed, and returns once it's up.
+      await run("xcrun", ["simctl", "bootstatus", deviceId, "-b"], 3 * 60_000);
       // Booting doesn't start the stream; a simulator booted elsewhere has none either.
       await hubFetch("/vendor/serve-sim/grid/api/start", {
         method: "POST",
-        body: JSON.stringify({ udid: device.id }),
+        body: JSON.stringify({ udid: deviceId }),
       });
       attached.set(threadId, deviceId);
     } else attached.delete(threadId);
