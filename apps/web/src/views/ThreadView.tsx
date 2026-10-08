@@ -8,7 +8,7 @@ import {
   MessageScroller,
 } from "@apcode/ui/agents/message";
 import { Markdown } from "@apcode/ui/agents/markdown";
-import { Reasoning } from "@apcode/ui/agents/reasoning";
+import { Reasoning, thoughtTitle } from "@apcode/ui/agents/reasoning";
 import * as Match from "effect/Match";
 import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
 import { OrbFace } from "@apcode/ui/agents/orb-face";
@@ -2089,20 +2089,9 @@ function WorkBlock({
   const calls = items.filter((item) => item.kind === "tool");
   return (
     <Reasoning
-      text={
-        !streaming
-          ? calls.length
-            ? summarize(calls)
-            : "Thought"
-          : newest?.kind === "tool"
-            ? newest.output === null
-              ? livePhrase(newest)
-              : "Thinking"
-            : newest?.kind === "reasoning" || newest?.kind === "assistant"
-              ? newest.text
-              : "Thinking"
-      }
+      label={calls.length ? summarize(calls) : thoughtTitle(items[0]?.id ?? "")}
       streaming={streaming}
+      live={newest?.kind === "tool" && newest.output === null ? livePhrase(newest) : undefined}
       reveal={calls.some((call) => call.id === reveal?.toolId) ? reveal : null}
     >
       <div className="flex flex-col gap-1">
@@ -2193,7 +2182,7 @@ const AgentBlockContent = ({
       );
     case "reasoning":
       return (
-        <Reasoning text={item.text} streaming={streaming}>
+        <Reasoning label={thoughtTitle(item.id)} streaming={streaming}>
           <Markdown streaming={streaming} className="selectable leading-relaxed">
             {item.text}
           </Markdown>
