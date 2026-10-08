@@ -7,7 +7,7 @@
           "name": "Orb",
           "image-name": "orb.png",
           "glass": false,
-          "position": { "scale": 0.6, "translation-in-points": [0, 0] }
+          "position": { "scale": 0.66, "translation-in-points": [0, 0] }
         }
       ],
       "shadow": { "kind": "neutral", "opacity": 0.5 },
