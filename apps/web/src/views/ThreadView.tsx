@@ -25,6 +25,7 @@ import {
   AlertDialogFooter,
   AlertDialogTitle,
 } from "@apcode/ui/components/alert-dialog";
+import { ScrollArea } from "@apcode/ui/components/scroll-area";
 import { ToolApproval, ToolApprovalCode } from "@apcode/ui/agents/tool-approval";
 import {
   categoryOf,
@@ -2312,9 +2313,10 @@ const AgentBlockContent = ({
               onApprove={() => approvePlan(threadId, item.id, "auto-edit")}
               onDeny={() => respondApproval(threadId, item.id, "deny")}
             >
-              <div className="max-h-96 overflow-y-auto">
-                <Markdown className="selectable leading-relaxed">{item.detail}</Markdown>
-              </div>
+              {/* Radix wraps content in display:table, which lets wide code blocks stretch past the card. */}
+              <ScrollArea className="[&>[data-slot=scroll-area-viewport]]:max-h-96 [&>[data-slot=scroll-area-viewport]>div]:!block">
+                <Markdown className="selectable pr-3 leading-relaxed">{item.detail}</Markdown>
+              </ScrollArea>
             </ToolApproval>
             {confirmingRoot && host ? (
               <RootFullAccessDialog
