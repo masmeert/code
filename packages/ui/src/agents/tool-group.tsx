@@ -136,7 +136,7 @@ export interface ToolReveal {
 }
 
 /** Opens on a new `reveal`, during render rather than in an effect, so a group and its row open together and the row can be scrolled to. */
-function useRevealOpen(reveal: ToolReveal | null) {
+export function useRevealOpen(reveal: ToolReveal | null) {
   const [open, setOpen] = useState(false);
   const [seen, setSeen] = useState(reveal);
   if (reveal !== seen) {

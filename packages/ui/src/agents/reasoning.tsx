@@ -1,7 +1,7 @@
-import { useId, useState, type ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { AgentDisclosure } from "@apcode/ui/agents/agent-disclosure";
 import { ReasoningText } from "@apcode/ui/agents/loading-states/reasoning-text";
-import { Chevron } from "@apcode/ui/agents/tool-group";
+import { Chevron, useRevealOpen, type ToolReveal } from "@apcode/ui/agents/tool-group";
 
 /**
  * The agent's thinking, folded to one line so a long think doesn't read as a stall: its latest
@@ -11,13 +11,16 @@ import { Chevron } from "@apcode/ui/agents/tool-group";
 export function Reasoning({
   text,
   streaming,
+  reveal = null,
   children,
 }: {
   text: string;
   streaming: boolean;
+  /** Opens it, for a tool call folded inside. */
+  reveal?: ToolReveal | null;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useRevealOpen(reveal);
   const contentId = useId();
   // Harnesses often open with a bold heading; the line shows it as plain text.
   const lines = text

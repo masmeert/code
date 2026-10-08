@@ -224,12 +224,16 @@ const toTurns = (items: ReadonlyArray<TranscriptItem>): Array<Turn> => {
 
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
 
-/** Within a turn, consecutive tool calls collapse into one group row. */
+/**
+ * Within a turn, consecutive tool calls collapse into one group row, and the thinking, tool
+ * calls and messages on the way to the answer fold into one work row.
+ */
 type Block =
   | { readonly kind: "tools"; readonly id: string; readonly calls: Array<ToolItem> }
+  | { readonly kind: "work"; readonly id: string; readonly items: Array<TranscriptItem> }
   | Exclude<TranscriptItem, ToolItem>;
 
-const toBlocks = (items: ReadonlyArray<TranscriptItem>): Array<Block> => {
+function toToolGroups(items: ReadonlyArray<TranscriptItem>): Array<Block> {
   const blocks: Array<Block> = [];
   for (const item of items) {
     if (item.kind !== "tool") {
@@ -241,7 +245,47 @@ const toBlocks = (items: ReadonlyArray<TranscriptItem>): Array<Block> => {
     else blocks.push({ kind: "tools", id: item.id, calls: [item] });
   }
   return blocks;
-};
+}
+
+/** Approvals granted along the way render nothing, so they shouldn't split the work row. */
+function isWork(item: TranscriptItem) {
+  return (
+    item.kind === "reasoning" ||
+    item.kind === "tool" ||
+    item.kind === "assistant" ||
+    (item.kind === "approval" &&
+      item.resolved &&
+      item.decision !== "deny" &&
+      !item.questions &&
+      item.title !== "ExitPlanMode")
+  );
+}
+
+function toBlocks(items: ReadonlyArray<TranscriptItem>): Array<Block> {
+  const lastWork = items.findLast(isWork);
+  const answer = lastWork?.kind === "assistant" ? lastWork : undefined;
+  const blocks: Array<Block> = [];
+  for (const item of items) {
+    if (item.kind !== "tool" && (item === answer || !isWork(item))) {
+      blocks.push(item);
+      continue;
+    }
+    const last = blocks.at(-1);
+    if (last?.kind === "work") last.items.push(item);
+    else blocks.push({ kind: "work", id: item.id, items: [item] });
+  }
+  // A lone thinking block or tool group already folds to one row.
+  return blocks.flatMap((block) => {
+    if (block.kind !== "work") return [block];
+    const inner = toToolGroups(block.items);
+    return inner.length === 1 ? inner : [block];
+  });
+}
+
+/** Whether `item`, the newest one, is in `block`. */
+function holdsNewest(block: Block, item: TranscriptItem | undefined) {
+  return block.kind === "work" ? block.items.at(-1) === item : block === item;
+}
 
 /** Top bar: project / title breadcrumb. Leaves room for the traffic lights when the sidebar is folded away. */
 const Header = ({
@@ -1738,7 +1782,7 @@ function SideChatDrawer({ threadId, provider }: { threadId: string; provider: Pr
                     block={block}
                     threadId={sideChat.id}
                     live={running}
-                    streaming={running && block === lastItem}
+                    streaming={running && holdsNewest(block, lastItem)}
                     showActions={false}
                   />
                 ),
@@ -1994,7 +2038,7 @@ const AssistantTurn = memo(
               block={block}
               threadId={threadId}
               live={busy}
-              streaming={busy && last && block === lastItem}
+              streaming={busy && last && holdsNewest(block, lastItem)}
               showActions={block.id === finalTextId && !(busy && last)}
             />
           ))}
@@ -2010,6 +2054,56 @@ const AssistantTurn = memo(
     a.last === b.last &&
     sameItems(a.items, b.items),
 );
+
+/** The way to the answer, folded like thinking: what it's doing now while it streams, what it did once done. */
+function WorkBlock({
+  items,
+  threadId,
+  live,
+  streaming,
+}: {
+  items: ReadonlyArray<TranscriptItem>;
+  threadId: string;
+  live: boolean;
+  streaming: boolean;
+}) {
+  const reveal = use(RevealContext);
+  const blocks = useMemo(() => toToolGroups(items), [items]);
+  const newest = items.at(-1);
+  const calls = items.filter((item) => item.kind === "tool");
+  return (
+    <Reasoning
+      text={
+        !streaming
+          ? calls.length
+            ? summarize(calls)
+            : "Thought"
+          : newest?.kind === "tool"
+            ? newest.output === null
+              ? livePhrase(newest)
+              : "Thinking"
+            : newest?.kind === "reasoning" || newest?.kind === "assistant"
+              ? newest.text
+              : "Thinking"
+      }
+      streaming={streaming}
+      reveal={calls.some((call) => call.id === reveal?.toolId) ? reveal : null}
+    >
+      <div className="flex flex-col gap-1">
+        {blocks.map((block) => (
+          <AgentBlock
+            key={block.id}
+            block={block}
+            threadId={threadId}
+            live={live}
+            streaming={streaming && block === newest}
+            showActions={false}
+          />
+        ))}
+      </div>
+    </Reasoning>
+  );
+}
 
 interface AgentBlockProps {
   block: Block;
@@ -2031,7 +2125,10 @@ const AgentBlock = memo(
     (a.block === b.block ||
       (a.block.kind === "tools" &&
         b.block.kind === "tools" &&
-        sameItems(a.block.calls, b.block.calls))),
+        sameItems(a.block.calls, b.block.calls)) ||
+      (a.block.kind === "work" &&
+        b.block.kind === "work" &&
+        sameItems(a.block.items, b.block.items))),
 );
 
 const AgentBlockContent = ({
@@ -2086,6 +2183,8 @@ const AgentBlockContent = ({
           </Markdown>
         </Reasoning>
       );
+    case "work":
+      return <WorkBlock items={item.items} threadId={threadId} live={live} streaming={streaming} />;
     case "tools":
       return (
         <ToolGroup
