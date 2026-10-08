@@ -65,7 +65,6 @@ contextBridge.exposeInMainWorld("desktop", {
   downloadUpdate: () => ipcRenderer.invoke("download-update"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
   notify: (notification) => ipcRenderer.invoke("notify", notification),
-  setBadgeCount: (count) => ipcRenderer.invoke("set-badge-count", count),
   onOpenThread: (listener) => {
     function forward(_event: IpcRendererEvent, threadId: string) {
       listener(threadId);

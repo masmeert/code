@@ -1,14 +1,12 @@
-import { isAwaitingUser, isTurnActive } from "@apcode/contracts";
+import { isTurnActive } from "@apcode/contracts";
 import { harnessLabel } from "./models.ts";
-import { isSeen, watchState } from "./store.ts";
+import { watchState } from "./store.ts";
 
 /**
  * Tells you, through the OS, when a thread finishes, stops on an error or waits on an
- * approval, and keeps the dock badge at the number of threads needing you. The desktop
- * shell drops notifications while an APCode window is focused and merges every window's
- * report of the same change.
+ * approval. The desktop shell drops notifications while an APCode window is focused and
+ * merges every window's report of the same change.
  */
-let badge = 0;
 watchState((prev, next) => {
   const desktop = window.desktop;
   if (!desktop || next.threads === prev.threads) return;
@@ -35,18 +33,4 @@ watchState((prev, next) => {
           body: `${harnessLabel(next.settings, info.provider)} ${body}`,
         });
     }
-});
-
-watchState((prev, next) => {
-  if (!window.desktop || next.threads === prev.threads) return;
-  const needingYou = next.order.filter((id) => {
-    const info = next.threads[id]!;
-    return (
-      info.archivedAt === null &&
-      (isAwaitingUser(info.status) || (info.status !== "running" && !isSeen(info)))
-    );
-  }).length;
-  if (needingYou === badge) return;
-  badge = needingYou;
-  void window.desktop.setBadgeCount(needingYou);
 });

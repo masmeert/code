@@ -115,7 +115,4 @@ export function registerBridge(daemon: () => Promise<{ port: number; token: stri
       notification.show();
     },
   );
-  handle("set-badge-count", Schema.Number, (_window, count) => {
-    app.setBadgeCount(count);
-  });
 }

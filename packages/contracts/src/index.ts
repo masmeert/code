@@ -173,8 +173,6 @@ export interface DesktopBridge {
     readonly title: string;
     readonly body: string;
   }) => Promise<void>;
-  /** The number on the dock icon; 0 clears it. */
-  readonly setBadgeCount: (count: number) => Promise<void>;
   /** A notification about the thread was clicked in this window. */
   readonly onOpenThread: (listener: (threadId: string) => void) => () => void;
 }
