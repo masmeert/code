@@ -306,12 +306,13 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
   async function attach(threadId: string, deviceId: string | null) {
     const previous = attached.get(threadId);
     if (deviceId) {
+      // Before any waiting, so an idle shutdown can't fire while this attach boots it.
+      const idle = bootedHere.get(deviceId);
+      if (idle?.idle) clearTimeout(idle.idle);
+      if (idle) idle.idle = null;
       const found = (await list()).find((candidate) => candidate.id === deviceId);
       if (!found) throw new Error(`No simulator or emulator has the id ${deviceId}.`);
       const device = await boot(found);
-      const booted = bootedHere.get(device.id);
-      if (booted?.idle) clearTimeout(booted.idle);
-      if (booted) booted.idle = null;
       if (!found.booted) bootedHere.set(device.id, { device, idle: null });
       attached.set(threadId, device);
     } else attached.delete(threadId);
