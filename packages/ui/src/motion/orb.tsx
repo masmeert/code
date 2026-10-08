@@ -353,11 +353,13 @@ function startOrb(
     const rect = canvas.getBoundingClientRect();
     const width = Math.max(1, box?.inlineSize ?? Math.round(rect.width * devicePixelRatio));
     const height = Math.max(1, box?.blockSize ?? Math.round(rect.height * devicePixelRatio));
+    // Set even when the canvas is already this size: a remount (StrictMode, or new colours) reuses
+    // the canvas with a fresh program whose resolution is still 0, which draws nothing.
+    gl.viewport(0, 0, width, height);
+    gl.uniform2f(resolutionUniform, width, height);
     if (canvas.width === width && canvas.height === height) return false;
     canvas.width = width;
     canvas.height = height;
-    gl.viewport(0, 0, width, height);
-    gl.uniform2f(resolutionUniform, width, height);
     return true;
   }
 
