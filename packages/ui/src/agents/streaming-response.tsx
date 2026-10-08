@@ -181,7 +181,8 @@ export function StreamingResponse({
             transition={{ duration: reduce ? 0.12 : 0.22, ease: EASE_OUT }}
             className="mt-3"
           >
-            <div className={cn("flex items-center gap-0.5", actionsClassName)}>
+            {/* Pulled left by the buttons' inset, so the first icon lines up with the text. */}
+            <div className={cn("-ml-1.75 flex items-center gap-0.5", actionsClassName)}>
               {canCopy ? (
                 <ResponseAction label={copied ? "Copied" : "Copy response"} onClick={handleCopy}>
                   <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">

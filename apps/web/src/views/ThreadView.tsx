@@ -5,13 +5,13 @@ import {
   MessageBubbleContent,
   MessageContent,
   MessageGroup,
-  MessageHeader,
   MessageScroller,
 } from "@apcode/ui/agents/message";
 import { Markdown } from "@apcode/ui/agents/markdown";
 import { Reasoning } from "@apcode/ui/agents/reasoning";
 import * as Match from "effect/Match";
 import { ThinkingShimmer } from "@apcode/ui/agents/loading-states/thinking-shimmer";
+import { OrbFace } from "@apcode/ui/agents/orb-face";
 import { PromptInputTray, PromptSelect } from "@apcode/ui/agents/prompt-input";
 import { useRowCursor } from "@apcode/ui/hooks/use-row-cursor";
 import { Fold } from "@apcode/ui/motion/fold";
@@ -41,7 +41,7 @@ import { Button } from "@apcode/ui/motion/button/base";
 import { Drawer } from "@apcode/ui/motion/drawer";
 import { Textarea } from "@apcode/ui/components/textarea";
 import { cn } from "@apcode/ui/lib/utils";
-import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
+import { PROVIDER_LOGO } from "@/components/provider-logo";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -197,17 +197,13 @@ type Turn =
       readonly from: "assistant";
       readonly id: string;
       readonly items: Array<TranscriptItem>;
-      /** Who answered: the harness the message before went to, when it says. */
-      readonly provider: ProviderKind | null;
     }
   | { readonly from: "marker"; readonly id: string; readonly item: MarkerItem };
 
 const toTurns = (items: ReadonlyArray<TranscriptItem>): Array<Turn> => {
   const turns: Array<Turn> = [];
-  let answering: ProviderKind | null = null;
   for (const item of items) {
     if (item.kind === "user") {
-      answering = item.provider ?? answering;
       turns.push({ from: "user", id: item.id, item });
       continue;
     }
@@ -217,7 +213,7 @@ const toTurns = (items: ReadonlyArray<TranscriptItem>): Array<Turn> => {
     }
     const last = turns.at(-1);
     if (last?.from === "assistant") last.items.push(item);
-    else turns.push({ from: "assistant", id: item.id, items: [item], provider: answering });
+    else turns.push({ from: "assistant", id: item.id, items: [item] });
   }
   return turns;
 };
@@ -630,7 +626,10 @@ export const DraftView = ({
             }}
           />
         ) : choices.length ? (
-          <ProjectList cwd={path} onPick={onPickProject} focusSignal={projectSignal} />
+          <div className="flex w-full flex-col items-center gap-6">
+            <OrbFace className="size-20" />
+            <ProjectList cwd={path} onPick={onPickProject} focusSignal={projectSignal} />
+          </div>
         ) : providers.some((p) => p.checking) ? (
           "Checking Claude and Codex…"
         ) : host ? (
@@ -1203,7 +1202,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
             navigation="rail"
             viewportRef={transcriptViewport}
             className="min-h-0 flex-1"
-            viewportClassName="px-3 py-5 sm:px-5 [&_*::highlight(find)]:bg-amber-300/40 [&_*::highlight(find-active)]:bg-amber-400 [&_*::highlight(find-active)]:text-black"
+            viewportClassName="@container px-3 py-5 sm:px-5 [&_*::highlight(find)]:bg-amber-300/40 [&_*::highlight(find-active)]:bg-amber-400 [&_*::highlight(find-active)]:text-black"
             contentClassName="mx-auto min-h-full w-full max-w-3xl"
           >
             <MessageGroup spacing="default">
@@ -1220,7 +1219,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
               <TurnDiffContext value={openTurnDiff}>
                 <RevealContext value={reveal}>
                   <RunCommandContext value={runReplyCommand}>
-                    <TurnList items={items} provider={provider} threadId={threadId} busy={busy} />
+                    <TurnList items={items} threadId={threadId} busy={busy} />
                   </RunCommandContext>
                   {runs.map((run) => (
                     <RunningCommandWindow key={run.terminalId} threadId={threadId} run={run} />
@@ -1232,8 +1231,20 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
               lastItem?.kind !== "assistant" &&
               lastItem?.kind !== "reasoning" &&
               !(lastItem?.kind === "tool" && lastItem.output === null) ? (
-                <Message from="assistant" animateIn>
-                  <MessageAvatar placeholder />
+                <Message
+                  from="assistant"
+                  animateIn
+                  className="@min-[800px]:-ml-9 @min-[800px]:w-auto"
+                >
+                  {lastItem === undefined ||
+                  lastItem.kind === "user" ||
+                  lastItem.kind === "forked" ||
+                  lastItem.kind === "startedBy" ? (
+                    <OrbFace state="thinking" className="size-7 shrink-0" />
+                  ) : (
+                    // The turn above already shows the thinking face.
+                    <MessageAvatar placeholder />
+                  )}
                   <MessageContent>
                     <span role="status">
                       <ThinkingShimmer />
@@ -1380,12 +1391,10 @@ const sameItems = (a: ReadonlyArray<unknown>, b: ReadonlyArray<unknown>) =>
  */
 export const TurnList = ({
   items,
-  provider,
   threadId,
   busy,
 }: {
   items: ReadonlyArray<TranscriptItem>;
-  provider: ProviderKind;
   threadId: string;
   busy: boolean;
 }) => {
@@ -1423,7 +1432,6 @@ export const TurnList = ({
           <AssistantTurn
             key={turn.id}
             items={turn.items}
-            provider={turn.provider ?? provider}
             threadId={threadId}
             busy={busy}
             last={index === turns.length - 1}
@@ -2007,7 +2015,6 @@ const CheckpointChip = ({ item }: { item: Extract<TranscriptItem, { kind: "check
 
 interface AssistantTurnProps {
   items: ReadonlyArray<TranscriptItem>;
-  provider: ProviderKind;
   threadId: string;
   busy: boolean;
   /** The newest turn: its last block is the one streaming. */
@@ -2015,23 +2022,33 @@ interface AssistantTurnProps {
 }
 
 const AssistantTurn = memo(
-  ({ items, provider, threadId, busy, last }: AssistantTurnProps) => {
-    const ProviderLogo = PROVIDER_LOGO[provider];
-    // Strings, so any other settings change leaves every turn alone.
-    const avatarTint = useStore((s) => harnessTint(s.settings, provider).avatar);
-    const label = useStore((s) => harnessLabel(s.settings, provider));
+  ({ items, threadId, busy, last }: AssistantTurnProps) => {
     const blocks = useMemo(() => toBlocks(items), [items]);
     const lastItem = items.at(-1);
     const finalTextId = blocks.findLast((block) => block.kind === "assistant")?.id;
+    const live = busy && last;
     return (
-      <Message from="assistant">
-        <MessageAvatar className={avatarTint}>
-          <ProviderLogo />
-        </MessageAvatar>
+      // The face hangs in the margin once there's room, so replies share the composer's left edge.
+      // The row widens rather than the face overflowing it: older turns clip to their box.
+      <Message from="assistant" className="@min-[800px]:-ml-9 @min-[800px]:w-auto">
+        {/* One face, on the newest reply: repeated down the thread it reads as wallpaper. */}
+        {last ? (
+          <OrbFace
+            state={
+              live
+                ? lastItem?.kind === "assistant"
+                  ? "streaming"
+                  : "thinking"
+                : lastItem?.kind === "error"
+                  ? "error"
+                  : "done"
+            }
+            className="size-7 shrink-0"
+          />
+        ) : (
+          <MessageAvatar placeholder />
+        )}
         <MessageContent className="gap-3">
-          <MessageHeader>
-            <span>{label}</span>
-          </MessageHeader>
           {blocks.map((block) => (
             <AgentBlock
               key={block.id}
@@ -2048,7 +2065,6 @@ const AssistantTurn = memo(
   },
   // `toTurns` rebuilds the turn arrays each time; the items inside keep their identity.
   (a, b) =>
-    a.provider === b.provider &&
     a.threadId === b.threadId &&
     a.busy === b.busy &&
     a.last === b.last &&
