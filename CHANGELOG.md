@@ -2,6 +2,20 @@
 
 Release notes for the APCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.2](https://github.com/masmeert/code/compare/v0.1.1...v0.1.2) (2026-10-08)
+
+
+### Added
+
+* a new app icon ([7a2ade8](https://github.com/masmeert/code/commit/7a2ade83a5ad2897352fcccf8764a98f102518fa))
+* an orb face on the newest reply that shows what the agent is doing ([a68dfe6](https://github.com/masmeert/code/commit/a68dfe6702a3b4137bb28fd2e3f5719671661307))
+* pick settings models from the composer's tabbed, searchable list ([7d2301e](https://github.com/masmeert/code/commit/7d2301e4d6be1d5a7f49a67e7a94a0a76e4a25c7))
+
+
+### Fixed
+
+* draw the orb shader after a remount on the same canvas ([046b8fa](https://github.com/masmeert/code/commit/046b8fa1422b2f87510495404479dcb8c4a5afc9))
+
 ## [0.1.1](https://github.com/masmeert/code/compare/v0.1.0...v0.1.1) (2026-10-08)
 
 
