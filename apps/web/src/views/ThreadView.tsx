@@ -46,8 +46,10 @@ import { cn } from "@masscode/ui/lib/utils";
 import { PROVIDER_LOGO } from "@/components/provider-logo";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@masscode/ui/components/dropdown-menu";
 import {
@@ -72,6 +74,7 @@ import {
   ChevronRight,
   Clock,
   CornerDownRight,
+  Ellipsis,
   FileDiff,
   FileText,
   GitFork,
@@ -1250,16 +1253,6 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                 <span className="flex items-center gap-0.5">
                   <button
                     type="button"
-                    title={`${activeTerminal ? "Hide" : "Show"} terminal (${describe("terminal.toggle")})`}
-                    aria-label={activeTerminal ? "Hide terminal" : "Show terminal"}
-                    aria-pressed={activeTerminal !== undefined}
-                    onClick={() => toggleTerminalPanel(threadId)}
-                    className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${activeTerminal ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
-                  >
-                    <SquareTerminal className="size-4" />
-                  </button>
-                  <button
-                    type="button"
                     title={diffOpen ? "Hide changes" : "Show changes"}
                     aria-label={diffOpen ? "Hide changes" : "Show changes"}
                     aria-pressed={diffOpen}
@@ -1271,30 +1264,47 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                   >
                     <FileDiff className="size-4" />
                   </button>
-                  {window.desktop ? (
-                    <button
-                      type="button"
-                      title={`${browserOpen ? "Hide" : "Show"} browser (${describe("browser.toggle")})`}
-                      aria-label={browserOpen ? "Hide browser" : "Show browser"}
-                      aria-pressed={browserOpen}
-                      onClick={() => toggleBrowser(threadId)}
-                      className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${browserOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      title="More panels"
+                      aria-label="More panels"
+                      className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-muted/60 data-[state=open]:text-foreground"
                     >
-                      <Globe className="size-4" />
-                    </button>
-                  ) : null}
-                  {simulatorAvailable ? (
-                    <button
-                      type="button"
-                      title={`${simulatorOpen ? "Hide" : "Show"} simulator (${describe("simulator.toggle")})`}
-                      aria-label={simulatorOpen ? "Hide simulator" : "Show simulator"}
-                      aria-pressed={simulatorOpen}
-                      onClick={() => toggleSimulator(threadId)}
-                      className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${simulatorOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
-                    >
-                      <Smartphone className="size-4" />
-                    </button>
-                  ) : null}
+                      <Ellipsis className="size-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" sideOffset={4} collisionPadding={8}>
+                      <DropdownMenuCheckboxItem
+                        checked={activeTerminal !== undefined}
+                        onCheckedChange={() => toggleTerminalPanel(threadId)}
+                      >
+                        <SquareTerminal />
+                        Terminal
+                        <DropdownMenuShortcut>{describe("terminal.toggle")}</DropdownMenuShortcut>
+                      </DropdownMenuCheckboxItem>
+                      {window.desktop ? (
+                        <DropdownMenuCheckboxItem
+                          checked={browserOpen}
+                          onCheckedChange={() => toggleBrowser(threadId)}
+                        >
+                          <Globe />
+                          Browser
+                          <DropdownMenuShortcut>{describe("browser.toggle")}</DropdownMenuShortcut>
+                        </DropdownMenuCheckboxItem>
+                      ) : null}
+                      {simulatorAvailable ? (
+                        <DropdownMenuCheckboxItem
+                          checked={simulatorOpen}
+                          onCheckedChange={() => toggleSimulator(threadId)}
+                        >
+                          <Smartphone />
+                          Simulator
+                          <DropdownMenuShortcut>
+                            {describe("simulator.toggle")}
+                          </DropdownMenuShortcut>
+                        </DropdownMenuCheckboxItem>
+                      ) : null}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </span>
               </>
             }
