@@ -1,5 +1,13 @@
-import { createContext, isValidElement, memo, type ReactElement, use } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import {
+  createContext,
+  isValidElement,
+  memo,
+  type ReactElement,
+  use,
+  useEffect,
+  useState,
+} from "react";
+import ReactMarkdown, { type Components, defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "@apcode/ui/agents/code-block";
 import { CommandBlock } from "@apcode/ui/agents/command-block";
@@ -11,6 +19,8 @@ export interface MarkdownProps {
   streaming?: boolean;
   /** Shows shell blocks as commands with a Run button that hands the command to this. */
   onRunCommand?: (command: string) => void;
+  /** Turns an image source that isn't a web URL (a file path) into one `<img>` can load; null when it can't. */
+  resolveImage?: (src: string) => Promise<string | null>;
   className?: string;
 }
 
@@ -26,6 +36,8 @@ const SourceContext = createContext<{ readonly text: string; readonly streaming:
 });
 
 const RunCommandContext = createContext<((command: string) => void) | undefined>(undefined);
+
+const ResolveImageContext = createContext<MarkdownProps["resolveImage"]>(undefined);
 
 /**
  * Module-level, so element types stay the same between renders: a new object each
@@ -76,6 +88,39 @@ const components: Components = {
       {children}
     </a>
   ),
+  img: function MarkdownImage({ src, alt }) {
+    const resolveImage = use(ResolveImageContext);
+    const local = typeof src === "string" && !/^(https?|data|blob):/i.test(src);
+    // Undefined while resolving, null once it can't be shown.
+    const [resolved, setResolved] = useState<string | null | undefined>(
+      local ? undefined : (src ?? null),
+    );
+    useEffect(() => {
+      if (!local || !src) return;
+      if (!resolveImage) return setResolved(null);
+      let current = true;
+      void resolveImage(src).then((url) => current && setResolved(url));
+      return () => {
+        current = false;
+      };
+    }, [local, src, resolveImage]);
+    if (resolved === undefined)
+      return <span className="my-3 block h-40 w-64 animate-pulse rounded-xl bg-muted" />;
+    if (resolved === null)
+      return (
+        <span className="text-muted-foreground" title={src}>
+          [Image not found: {src}]
+        </span>
+      );
+    return (
+      <img
+        src={resolved}
+        alt={alt ?? ""}
+        onError={() => setResolved(null)}
+        className="my-3 block max-h-96 max-w-full rounded-xl border border-border"
+      />
+    );
+  },
   h1: ({ children }) => <h1 className="mt-5 mb-2 text-lg font-semibold first:mt-0">{children}</h1>,
   h2: ({ children }) => (
     <h2 className="mt-5 mb-2 text-base font-semibold first:mt-0">{children}</h2>
@@ -104,6 +149,11 @@ const components: Components = {
 };
 
 const plugins = [remarkGfm];
+
+/** The default drops `file:` URLs; images keep them for `resolveImage`. */
+function keepFileImages(url: string, key: string) {
+  return key === "src" && url.startsWith("file://") ? url : defaultUrlTransform(url);
+}
 
 const FENCE = /^(`{3,}|~{3,})/;
 /** Link reference definitions apply across the whole text, so text using them can't be split. */
@@ -153,7 +203,7 @@ const MarkdownPart = memo(function MarkdownPart({
 }) {
   return (
     <SourceContext value={{ text, streaming }}>
-      <ReactMarkdown remarkPlugins={plugins} components={components}>
+      <ReactMarkdown remarkPlugins={plugins} components={components} urlTransform={keepFileImages}>
         {text}
       </ReactMarkdown>
     </SourceContext>
@@ -168,16 +218,19 @@ export const Markdown = memo(function Markdown({
   children,
   streaming = false,
   onRunCommand,
+  resolveImage,
   className,
 }: MarkdownProps) {
   const cut = stableEnd(children);
   return (
     <div className={cn("min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}>
       <RunCommandContext value={onRunCommand}>
-        {cut > 0 ? <MarkdownPart text={children.slice(0, cut)} streaming={false} /> : null}
-        {cut < children.length ? (
-          <MarkdownPart text={children.slice(cut)} streaming={streaming} />
-        ) : null}
+        <ResolveImageContext value={resolveImage}>
+          {cut > 0 ? <MarkdownPart text={children.slice(0, cut)} streaming={false} /> : null}
+          {cut < children.length ? (
+            <MarkdownPart text={children.slice(cut)} streaming={streaming} />
+          ) : null}
+        </ResolveImageContext>
       </RunCommandContext>
     </div>
   );

@@ -13,6 +13,7 @@ import type { ServerWebSocket } from "bun";
 import { timingSafeEqual } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { ASSET_ROUTE_PREFIX, serveAsset, signImage } from "./assets.ts";
 import { listFolders } from "./folders.ts";
 import { cloneRepository } from "./git.ts";
 import { setPort } from "./port.ts";
@@ -144,6 +145,16 @@ export const serve = (port: number) =>
                   }),
                 ),
               ),
+            "image.sign": ({ path, cwd, requestId }) =>
+              Effect.promise(async () =>
+                send(
+                  ws,
+                  ServerFrame.cases["image.signed"].make({
+                    requestId,
+                    url: await signImage(path, cwd),
+                  }),
+                ),
+              ),
             "project.clone": ({ url, parent, folder, name, requestId }) =>
               Effect.gen(function* () {
                 const { path: parentPath } = yield* Effect.promise(() => listFolders(parent));
@@ -242,6 +253,8 @@ export const serve = (port: number) =>
           fetch(req, server) {
             const { pathname, searchParams } = new URL(req.url);
             if (pathname === "/mcp" || pathname === "/mcp/apcode") return manager.mcp.handle(req);
+            if (pathname.startsWith(ASSET_ROUTE_PREFIX))
+              return serveAsset(pathname.slice(ASSET_ROUTE_PREFIX.length));
             const origin = req.headers.get("origin");
             if (!origin || !ALLOWED_ORIGINS.has(origin))
               return new Response("Forbidden origin", { status: 403 });

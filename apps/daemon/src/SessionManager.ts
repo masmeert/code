@@ -2124,6 +2124,7 @@ const make = Effect.gen(function* () {
       "thread.loadOlder": () => Effect.void,
       search: () => Effect.void,
       "folder.list": () => Effect.void,
+      "image.sign": () => Effect.void,
       "project.clone": () => Effect.void,
       "terminal.open": () => Effect.void,
       "terminal.detach": () => Effect.void,

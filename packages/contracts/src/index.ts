@@ -962,6 +962,12 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("project.scan", { path: Schema.String }),
   /** Answered with a `folder.entries` frame. `~` is the daemon's home. */
   Schema.TaggedStruct("folder.list", { path: Schema.String, requestId: Schema.String }),
+  /** Answered with an `image.signed` frame. `path` is relative to `cwd`; `~` is the daemon's home. */
+  Schema.TaggedStruct("image.sign", {
+    path: Schema.String,
+    cwd: Schema.String,
+    requestId: Schema.String,
+  }),
   /** Clones into a new folder under `parent` and adds it as a project; answered with a `project.cloned` frame. */
   Schema.TaggedStruct("project.clone", {
     url: Schema.String,
@@ -1207,6 +1213,11 @@ export const ServerFrame = Schema.Union([
     path: Schema.String,
     folders: Schema.Array(Schema.String),
     error: Schema.NullOr(Schema.String),
+  }),
+  /** Answers `image.sign`: a URL path on the daemon serving the image for an hour; null when it isn't an image file. */
+  Schema.TaggedStruct("image.signed", {
+    requestId: Schema.String,
+    url: Schema.NullOr(Schema.String),
   }),
   Schema.TaggedStruct("project.cloned", {
     requestId: Schema.String,

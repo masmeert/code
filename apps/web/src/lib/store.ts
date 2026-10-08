@@ -1093,6 +1093,7 @@ const onFrame = (connection: Connection, frame: ServerFrame) =>
     },
     "search.results": answer,
     "folder.entries": answer,
+    "image.signed": answer,
     "project.cloned": answer,
     "terminal.snapshot": ({ threadId, terminalId, data }) =>
       screens.get(screenKey(threadId, terminalId))?.reset(data),
@@ -1458,6 +1459,42 @@ export const listFolders = (host: string | null, path: string) =>
     ClientCommand.cases["folder.list"].make({ path, requestId: crypto.randomUUID() }),
     10_000,
   );
+
+/** Signed URLs by thread and source, renewed before the daemon's hour runs out. */
+const signedImages = new Map<
+  string,
+  { readonly url: Promise<string | null>; readonly signedAtMs: number }
+>();
+
+/** A URL `<img>` can load for an image file on the thread's host; null when there's no such image. */
+export function imageUrl(threadId: string, src: string) {
+  const key = `${threadId}\n${src}`;
+  const cached = signedImages.get(key);
+  if (cached && Date.now() - cached.signedAtMs < 50 * 60 * 1000) return cached.url;
+  const thread = state.threads[threadId];
+  const host = threadHost(state, threadId);
+  const url = thread
+    ? request<Extract<ServerFrame, { _tag: "image.signed" }>>(
+        host,
+        ClientCommand.cases["image.sign"].make({
+          path: decodeURI(src.replace(/^file:\/\//, "")),
+          cwd: thread.cwd,
+          requestId: crypto.randomUUID(),
+        }),
+        10_000,
+      ).then((signed) => {
+        const socket = openSocket(host);
+        if (!signed?.url || !socket) {
+          signedImages.delete(key);
+          return null;
+        }
+        // Remote hosts are reached through a tunnel on this Mac, so the socket's address serves both.
+        return new URL(signed.url, socket.url.replace(/^ws/, "http")).href;
+      })
+    : Promise.resolve(null);
+  signedImages.set(key, { url, signedAtMs: Date.now() });
+  return url;
+}
 
 /** Clones a repository into a new folder under `parent` on `host` and adds it as a project. */
 export async function cloneProject(
