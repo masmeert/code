@@ -872,6 +872,7 @@ const make = Effect.gen(function* () {
       if (!entry) return;
       threads.delete(threadId);
       terminals.closeThread(threadId);
+      devices.release(threadId);
       mcp.revoke(threadId);
       yield* dropSession(entry, null);
       store.deleteThread(threadId);
@@ -903,6 +904,7 @@ const make = Effect.gen(function* () {
       store.setArchived(entry.info.id, archivedAt);
       publish(RuntimeEvent.cases["thread.archived"].make({ threadId: entry.info.id, archivedAt }));
       if (archived) terminals.closeThread(entry.info.id);
+      if (archived) devices.release(entry.info.id);
       if (archived) mcp.revoke(entry.info.id);
       // An archived thread shouldn't keep an agent process around; the next message resumes it.
       if (archived) yield* dropSession(entry, "Archiving the thread stopped its agent.");
@@ -2233,7 +2235,10 @@ const make = Effect.gen(function* () {
       flushDeltas();
       terminals.closeAll();
       return Effect.andThen(
-        Effect.forEach([...sideChats.keys()], closeSideChat, { discard: true }),
+        Effect.andThen(
+          Effect.promise(() => devices.close()),
+          Effect.forEach([...sideChats.keys()], closeSideChat, { discard: true }),
+        ),
         Effect.forEach(
           [...threads.values()],
           (entry) =>

@@ -96,13 +96,20 @@ export const BrowserResult = Schema.Struct({
 });
 export type BrowserResult = typeof BrowserResult.Type;
 
-/** An iOS simulator on this Mac. */
+export const DevicePlatform = Schema.Literals(["ios", "android"]);
+export type DevicePlatform = typeof DevicePlatform.Type;
+
+/** An iOS simulator or Android emulator on this Mac. */
 export const Device = Schema.Struct({
+  /** A simulator's UDID, or an emulator's AVD name. */
   id: Schema.String,
+  platform: DevicePlatform,
   name: Schema.String,
-  /** Like "iOS 27.0". */
+  /** Like "iOS 27.0" or "Android". */
   version: Schema.String,
   booted: Schema.Boolean,
+  /** What the hub streams it by: the UDID, or a running emulator's serial; null while an emulator is off. */
+  streamId: Schema.NullOr(Schema.String),
 });
 export type Device = typeof Device.Type;
 

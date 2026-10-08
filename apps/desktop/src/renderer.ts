@@ -10,8 +10,9 @@ const CONTENT_SECURITY_POLICY = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' blob: data: http: https:",
   "frame-src http: https:",
-  // Any port: remote hosts' daemons are reached through SSH tunnels on ports picked at connect.
-  `connect-src 'self' ws://127.0.0.1:*${app.isPackaged ? "" : " ws://localhost:1420"}`,
+  // Any port: remote hosts' daemons are reached through SSH tunnels on ports picked at connect,
+  // and the device hub streams simulators over HTTP on a port it picks.
+  `connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:*${app.isPackaged ? "" : " ws://localhost:1420"}`,
 ].join("; ");
 
 export function registerRendererScheme() {

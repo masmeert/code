@@ -176,7 +176,7 @@ export const App = () => {
                 ? [
                     {
                       id: "simulator.toggle",
-                      label: "Toggle iOS Simulator",
+                      label: "Toggle simulator",
                       hint: describe("simulator.toggle"),
                       icon: <Smartphone />,
                       run: () => toggleSimulator(view.id),

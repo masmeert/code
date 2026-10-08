@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import {
   BrowserAction,
+  DevicePlatform,
   PermissionLevel,
   ProviderKind,
   type BrowserResult,
@@ -300,38 +301,48 @@ function deviceServer(threadId: string, devices: Devices) {
     { name: "device", version: "1.0.0" },
     {
       instructions:
-        "An iOS Simulator the user watches in MassCode's Simulator panel next to this thread. Call device_open to show one and learn how to drive it, before simctl or computer use.",
+        "An iOS simulator or Android emulator the user watches in MassCode's Simulator panel next to this thread. Call device_open to show one and learn how to drive it, before simctl, adb or computer use.",
     },
   );
   server.registerTool(
     "device_open",
     {
       description:
-        "Boots an iOS simulator if needed, shows it in the Simulator panel, and returns how to drive it with the agent-device CLI. Opens the thread's simulator, or a booted iPhone, unless deviceId names another. The first call can take minutes while the tools install.",
+        "Boots an iOS simulator or Android emulator if needed, shows it in the Simulator panel, and returns how to drive it with the agent-device CLI. Opens the thread's device, or a booted phone of the platform, unless deviceId names another. The first call can take minutes while the tools install.",
       inputSchema: {
         deviceId: z
           .string()
           .optional()
-          .describe("A simulator UDID, from `xcrun simctl list devices`."),
+          .describe(
+            "A simulator UDID (`xcrun simctl list devices`) or an emulator's AVD name (`emulator -list-avds`).",
+          ),
+        platform: z
+          .enum(DevicePlatform.literals)
+          .optional()
+          .describe("Which kind of phone to open when deviceId is left out."),
       },
     },
-    ({ deviceId }) =>
+    ({ deviceId, platform }) =>
       run(async () => {
-        const { device, cli } = await devices.open(threadId, deviceId ?? null);
-        const target = `--platform ios --udid ${device.id} --session masscode-${threadId}`;
+        const { device, cli } = await devices.open(threadId, deviceId ?? null, platform ?? null);
+        const target = `${device.platform === "ios" ? `--platform ios --udid ${device.id}` : `--platform android --serial ${device.streamId}`} --session masscode-${threadId}`;
+        const app = device.platform === "ios" ? "<bundle-id>" : "<package>";
         return [
           {
             type: "text",
             text: [
-              `The user is watching ${device.name} (${device.version}, UDID ${device.id}) in the Simulator panel and can tap along.`,
+              `The user is watching ${device.name} (${device.version}, ${device.platform === "ios" ? "UDID" : "serial"} ${device.streamId}) in the Simulator panel and can tap along.`,
               `Drive it with ${cli}; use that exact path and always pass ${target}. Typical loop:`,
-              `  ${cli} open <bundle-id> --foreground ${target}   # launch an app; prints a snapshot with @refs`,
+              `  ${cli} open ${app} --foreground ${target}   # launch an app; prints a snapshot with @refs`,
               `  ${cli} snapshot -i ${target}   # accessibility tree with @eN refs`,
               `  ${cli} press @e3 --settle ${target}`,
               `  ${cli} fill @e5 "text" --settle ${target}`,
-              `  ${cli} install <bundle-id> <path-to-.app> ${target}`,
-              `Build for it with xcodebuild -destination 'id=${device.id}'. Prefer refs over coordinates. Call device_screenshot to see the screen. Run \`${cli} help workflow\` for more.`,
-              "The first command builds an XCTest runner and can take a couple of minutes; later ones are fast.",
+              `  ${cli} install ${app} ${device.platform === "ios" ? "<path-to-.app>" : "<path-to-.apk>"} ${target}`,
+              device.platform === "ios"
+                ? `Build for it with xcodebuild -destination 'id=${device.id}'.`
+                : `Install builds with adb -s ${device.streamId} install, or the install command above.`,
+              `Prefer refs over coordinates. Call device_screenshot to see the screen. Run \`${cli} help workflow\` for more.`,
+              "The first command on a device sets up its automation runner and can take a couple of minutes; later ones are fast.",
             ].join("\n"),
           },
         ];
@@ -340,7 +351,7 @@ function deviceServer(threadId: string, devices: Devices) {
   server.registerTool(
     "device_screenshot",
     {
-      description: "See the screen of the simulator open in this thread's Simulator panel.",
+      description: "See the screen of the device open in this thread's Simulator panel.",
       annotations: { readOnlyHint: true },
     },
     () =>

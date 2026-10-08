@@ -1286,8 +1286,8 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                   {simulatorAvailable ? (
                     <button
                       type="button"
-                      title={`${simulatorOpen ? "Hide" : "Show"} iOS Simulator (${describe("simulator.toggle")})`}
-                      aria-label={simulatorOpen ? "Hide iOS Simulator" : "Show iOS Simulator"}
+                      title={`${simulatorOpen ? "Hide" : "Show"} simulator (${describe("simulator.toggle")})`}
+                      aria-label={simulatorOpen ? "Hide simulator" : "Show simulator"}
                       aria-pressed={simulatorOpen}
                       onClick={() => toggleSimulator(threadId)}
                       className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${simulatorOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}

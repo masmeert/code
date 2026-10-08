@@ -8,12 +8,14 @@ import {
 } from "@masscode/ui/components/dropdown-menu";
 import { ResizeHandle } from "@masscode/ui/components/resize-handle";
 import { useResizable } from "@masscode/ui/hooks/use-resizable";
-import { ChevronDown, House, LoaderCircle, X } from "lucide-react";
+import { cn } from "@masscode/ui/lib/utils";
+import { ArrowLeft, ChevronDown, House, LoaderCircle, RotateCw, Unplug, X } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { IconButton } from "../components/icon-button.tsx";
-import { Message } from "./BrowserPanel.tsx";
+import { connectDeviceStream, type DeviceStream } from "../lib/deviceStream.ts";
 import { toggleSimulator, useSimulator } from "../lib/simulator.ts";
-import { attachDevice, listDevices } from "../lib/store.ts";
+import { attachDevice, listDevices, useStore } from "../lib/store.ts";
+import { Message } from "./BrowserPanel.tsx";
 
 type Setup =
   | { readonly status: "loading" }
@@ -21,58 +23,6 @@ type Setup =
   | { readonly status: "installing" }
   | { readonly status: "failed"; readonly message: string }
   | { readonly status: "ready"; readonly hub: DeviceHub; readonly devices: ReadonlyArray<Device> };
-
-/** serve-sim's input socket: one tag byte, then JSON. Tags and HID usages ported from t3code (MIT). */
-const TOUCH = 0x03;
-const BUTTON = 0x04;
-const KEY = 0x06;
-
-type Input =
-  | {
-      readonly tag: typeof TOUCH;
-      readonly type: "begin" | "move" | "end";
-      readonly x: number;
-      readonly y: number;
-    }
-  | { readonly tag: typeof BUTTON; readonly button: "home" }
-  | { readonly tag: typeof KEY; readonly type: "down" | "up"; readonly usage: number };
-
-const HID_USAGE_BY_CODE = new Map([
-  ["Enter", 0x28],
-  ["Escape", 0x29],
-  ["Backspace", 0x2a],
-  ["Tab", 0x2b],
-  ["Space", 0x2c],
-  ["Minus", 0x2d],
-  ["Equal", 0x2e],
-  ["BracketLeft", 0x2f],
-  ["BracketRight", 0x30],
-  ["Backslash", 0x31],
-  ["Semicolon", 0x33],
-  ["Quote", 0x34],
-  ["Backquote", 0x35],
-  ["Comma", 0x36],
-  ["Period", 0x37],
-  ["Slash", 0x38],
-  ["Delete", 0x4c],
-  ["ArrowRight", 0x4f],
-  ["ArrowLeft", 0x50],
-  ["ArrowDown", 0x51],
-  ["ArrowUp", 0x52],
-  ["ControlLeft", 0xe0],
-  ["ShiftLeft", 0xe1],
-  ["AltLeft", 0xe2],
-  ["ControlRight", 0xe4],
-  ["ShiftRight", 0xe5],
-  ["AltRight", 0xe6],
-]);
-
-function hidUsage(code: string): number | null {
-  if (/^Key[A-Z]$/.test(code)) return 0x04 + code.charCodeAt(3) - 65;
-  if (/^Digit[1-9]$/.test(code)) return 0x1e + code.charCodeAt(5) - 49;
-  if (code === "Digit0") return 0x27;
-  return HID_USAGE_BY_CODE.get(code) ?? null;
-}
 
 export function SimulatorPanel({ threadId }: { threadId: string }) {
   const { deviceId } = useSimulator(threadId);
@@ -91,36 +41,52 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
   const [booting, setBooting] = useState<string | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
 
+  /** Lists the devices again; false when that failed. */
+  async function refresh(install: boolean) {
+    const listed = await listDevices(install);
+    if (!listed) setSetup({ status: "failed", message: "MassCode didn't answer. Try again." });
+    else if (listed.error) setSetup({ status: "failed", message: listed.error });
+    else if (!listed.hub) setSetup({ status: "missing" });
+    else setSetup({ status: "ready", hub: listed.hub, devices: listed.devices });
+    return Boolean(listed?.hub && !listed.error);
+  }
+
   async function load(install: boolean) {
     setSetup({ status: install ? "installing" : "loading" });
-    const listed = await listDevices(install);
-    if (!listed)
-      return setSetup({ status: "failed", message: "MassCode didn't answer. Try again." });
-    if (listed.error) return setSetup({ status: "failed", message: listed.error });
-    if (!listed.hub) return setSetup({ status: "missing" });
-    setSetup({ status: "ready", hub: listed.hub, devices: listed.devices });
-    // The hub forgets its streams when it restarts, so reattach the thread's simulator.
-    if (deviceId) void boot(deviceId);
+    // The hub forgets its streams when it restarts, so reattach the thread's device.
+    if ((await refresh(install)) && deviceId) await boot(deviceId);
   }
 
   async function boot(id: string) {
     setBooting(id);
     setBootError(null);
     const error = await attachDevice(threadId, id);
+    // A booted emulator has a serial to stream by now.
+    if (!error) await refresh(false);
     setBooting(null);
     setBootError(error);
   }
 
-  const loadOnOpen = useEffectEvent(() => void load(false));
-  useEffect(() => loadOnOpen(), []);
+  // Loads once the daemon answers, and again after it restarts, which also restarts the hub.
+  const connected = useStore((state) => state.connected);
+  const loadOnConnect = useEffectEvent(() => void load(false));
+  useEffect(() => {
+    if (connected) loadOnConnect();
+  }, [connected]);
 
   const devices = setup.status === "ready" ? setup.devices : [];
   const device = devices.find((candidate) => candidate.id === deviceId);
 
+  // An agent may attach a device this list hasn't seen started.
+  const refreshForDevice = useEffectEvent(() => {
+    if (setup.status === "ready" && deviceId && !device?.streamId && !booting) void refresh(false);
+  });
+  useEffect(() => refreshForDevice(), [deviceId]);
+
   return (
     <aside
       ref={aside}
-      aria-label="iOS Simulator"
+      aria-label="Simulator"
       style={{ width: panel.width }}
       className="relative flex min-h-0 min-w-70 shrink flex-col border-l border-border bg-background"
     >
@@ -137,7 +103,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
             disabled={setup.status !== "ready"}
             className="flex h-7 min-w-0 items-center gap-1 rounded-lg px-2 text-xs text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
           >
-            <span className="truncate">{device?.name ?? "Choose a simulator"}</span>
+            <span className="truncate">{device?.name ?? "Choose a device"}</span>
             {device ? <span className="text-muted-foreground">{device.version}</span> : null}
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           </DropdownMenuTrigger>
@@ -152,7 +118,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
                   <span className="truncate">{candidate.name}</span>
                   <span className="ml-auto pl-4 text-muted-foreground">
                     {candidate.version}
-                    {candidate.booted ? " · Booted" : ""}
+                    {candidate.booted ? " · Running" : ""}
                   </span>
                 </DropdownMenuRadioItem>
               ))}
@@ -160,30 +126,34 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
           </DropdownMenuContent>
         </DropdownMenu>
         <IconButton
-          label="Hide simulator"
+          label="Detach device; it shuts down after 10 idle minutes if started here"
           className="ml-auto"
-          onClick={() => toggleSimulator(threadId)}
+          disabled={!deviceId}
+          onClick={() => void attachDevice(threadId, null)}
         >
+          <Unplug className="size-3.5" />
+        </IconButton>
+        <IconButton label="Hide simulator" onClick={() => toggleSimulator(threadId)}>
           <X className="size-3.5" />
         </IconButton>
       </div>
       {setup.status === "loading" ? (
         <Message>
           <LoaderCircle className="size-4 animate-spin" />
-          Starting the simulator hub…
+          Starting the device hub…
         </Message>
       ) : setup.status === "missing" ? (
         <Message>
           <span>
-            Run iOS simulators here, for you and the agent. This installs expo-device-hub and
-            agent-device from npm into ~/.masscode/tools.
+            Run iOS simulators and Android emulators here, for you and the agent. This installs
+            expo-device-hub and agent-device from npm into ~/.masscode/tools.
           </span>
           <ActionButton onClick={() => void load(true)}>Set up</ActionButton>
         </Message>
       ) : setup.status === "installing" ? (
         <Message>
           <LoaderCircle className="size-4 animate-spin" />
-          Installing the simulator tools. This can take a minute…
+          Installing the device tools. This can take a minute…
         </Message>
       ) : setup.status === "failed" ? (
         <Message>
@@ -193,7 +163,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
       ) : booting ? (
         <Message>
           <LoaderCircle className="size-4 animate-spin" />
-          Starting {devices.find((candidate) => candidate.id === booting)?.name ?? "the simulator"}…
+          Starting {devices.find((candidate) => candidate.id === booting)?.name ?? "the device"}…
         </Message>
       ) : bootError ? (
         <Message>
@@ -202,16 +172,27 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
             <ActionButton onClick={() => void boot(deviceId)}>Try again</ActionButton>
           ) : null}
         </Message>
+      ) : device?.streamId ? (
+        <DeviceScreen
+          key={`${device.id}:${device.streamId}`}
+          hub={setup.hub}
+          device={device}
+          streamId={device.streamId}
+        />
       ) : deviceId ? (
-        <DeviceScreen key={deviceId} hub={setup.hub} deviceId={deviceId} />
+        <Message>
+          <LoaderCircle className="size-4 animate-spin" />
+          Starting the device…
+        </Message>
       ) : devices.length === 0 ? (
         <Message>
-          This Mac has no iOS simulators. Add one in Xcode → Settings → Components, then try again.
+          This Mac has no iOS simulators or Android emulators. Add a simulator in Xcode → Settings →
+          Components, or an emulator in Android Studio's Device Manager, then try again.
           <ActionButton onClick={() => void load(false)}>Try again</ActionButton>
         </Message>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
-          <p className="px-2 py-1.5 text-xs text-muted-foreground">Choose a simulator to start</p>
+          <p className="px-2 py-1.5 text-xs text-muted-foreground">Choose a device to start</p>
           {devices.map((candidate) => (
             <button
               key={candidate.id}
@@ -222,7 +203,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
               <span className="truncate">{candidate.name}</span>
               <span className="ml-auto shrink-0 text-xs text-muted-foreground">
                 {candidate.version}
-                {candidate.booted ? " · Booted" : ""}
+                {candidate.booted ? " · Running" : ""}
               </span>
             </button>
           ))}
@@ -232,128 +213,142 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
   );
 }
 
-/** The live screen: an MJPEG stream, with touches and keys sent back over the hub's socket. */
-function DeviceScreen({ hub, deviceId }: { hub: DeviceHub; deviceId: string }) {
-  const socket = useRef<WebSocket | null>(null);
+/** The live screen, with touches, keys and hardware buttons sent back to the device. */
+function DeviceScreen({
+  hub,
+  device,
+  streamId,
+}: {
+  hub: DeviceHub;
+  device: Device;
+  streamId: string;
+}) {
+  const canvas = useRef<HTMLCanvasElement>(null);
   const surface = useRef<HTMLDivElement>(null);
-  const screen = useRef<HTMLImageElement>(null);
+  const fallback = useRef<HTMLImageElement>(null);
+  const stream = useRef<DeviceStream | null>(null);
   const touching = useRef(false);
-  const [live, setLive] = useState(false);
-  const [attempt, setAttempt] = useState(0);
+  const [streaming, setStreaming] = useState(false);
+  const [mjpegUrl, setMjpegUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    let closed = false;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-    function connect() {
-      const ws = new WebSocket(
-        `${hub.origin.replace(/^http/, "ws")}/vendor/serve-sim/helper/ws?device=${deviceId}`,
-        // The hub takes its token as a subprotocol, since a browser can't set WebSocket headers.
-        [`serve-sim.token.${hub.token}`],
-      );
-      ws.binaryType = "arraybuffer";
-      ws.onclose = () => {
-        if (!closed) retry = setTimeout(connect, 1000);
-      };
-      socket.current = ws;
-    }
-    connect();
-    return () => {
-      closed = true;
-      clearTimeout(retry);
-      socket.current?.close();
-    };
-  }, [hub, deviceId]);
+    const connected = connectDeviceStream(hub, device.platform, streamId, canvas.current!, {
+      onStatus: (status) => setStreaming(status === "streaming"),
+      onMjpeg: setMjpegUrl,
+    });
+    stream.current = connected;
+    return () => connected.stop();
+  }, [hub, device.platform, streamId]);
 
   // A multipart image may never fire `load`, so watch for its first frame instead.
   useEffect(() => {
-    setLive(false);
+    if (!mjpegUrl) return;
     const poll = setInterval(() => {
-      if (!screen.current?.naturalWidth) return;
-      setLive(true);
+      if (!fallback.current?.naturalWidth) return;
+      setStreaming(true);
       clearInterval(poll);
     }, 250);
     return () => clearInterval(poll);
-  }, [attempt]);
+  }, [mjpegUrl]);
 
-  function send({ tag, ...payload }: Input) {
-    if (socket.current?.readyState !== WebSocket.OPEN) return;
-    const json = new TextEncoder().encode(JSON.stringify(payload));
-    const message = new Uint8Array(1 + json.length);
-    message[0] = tag;
-    message.set(json, 1);
-    socket.current.send(message);
-  }
-
-  function touch(type: "begin" | "move" | "end", event: React.PointerEvent<HTMLImageElement>) {
+  function touch(type: "begin" | "move" | "end", event: React.PointerEvent<HTMLElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
-    send({
-      tag: TOUCH,
+    stream.current?.touch(
       type,
-      x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
-      y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
-    });
+      Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+      Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+    );
   }
 
-  function key(type: "down" | "up", event: React.KeyboardEvent) {
+  const pointerHandlers = {
+    onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      surface.current?.focus();
+      touching.current = true;
+      touch("begin", event);
+    },
+    onPointerMove: (event: React.PointerEvent<HTMLElement>) => {
+      if (touching.current) touch("move", event);
+    },
+    onPointerUp: (event: React.PointerEvent<HTMLElement>) => {
+      touching.current = false;
+      touch("end", event);
+    },
+    onPointerCancel: (event: React.PointerEvent<HTMLElement>) => {
+      touching.current = false;
+      touch("end", event);
+    },
+  };
+
+  function key(phase: "down" | "up", event: React.KeyboardEvent) {
     if (event.metaKey) {
-      if (type === "down" && event.shiftKey && event.code === "KeyH") {
-        event.preventDefault();
-        send({ tag: BUTTON, button: "home" });
-      }
+      // Apple's Simulator shortcuts: ⌘⇧H for Home, ⌘→ to rotate.
+      if (phase !== "down") return;
+      if (event.shiftKey && event.code === "KeyH") stream.current?.press("home");
+      else if (event.code === "ArrowRight") stream.current?.rotate();
+      else return;
+      event.preventDefault();
       return;
     }
-    const usage = hidUsage(event.code);
-    if (usage === null) return;
+    // Tab still moves focus out, so the screen never traps the keyboard.
+    if (event.key === "Tab") return;
     event.preventDefault();
-    send({ tag: KEY, type, usage });
+    stream.current?.key(event.nativeEvent, phase);
   }
 
   return (
     <div
       ref={surface}
       tabIndex={0}
-      aria-label="Simulator screen. Click to focus, then type to send keys."
+      aria-label="Device screen. Click to focus, then type to send keys."
       onKeyDown={(event) => key("down", event)}
       onKeyUp={(event) => key("up", event)}
       className="flex min-h-0 flex-1 flex-col items-center gap-3 p-4 outline-none"
     >
       <div className="relative flex min-h-0 w-full flex-1 items-center justify-center">
-        <img
-          key={attempt}
-          ref={screen}
-          src={`${hub.origin}/vendor/serve-sim/helper/${deviceId}/stream.mjpeg?token=${hub.token}&attempt=${attempt}`}
-          alt=""
-          draggable={false}
-          onError={() => setTimeout(() => setAttempt((current) => current + 1), 1000)}
-          onPointerDown={(event) => {
-            event.currentTarget.setPointerCapture(event.pointerId);
-            surface.current?.focus();
-            touching.current = true;
-            touch("begin", event);
-          }}
-          onPointerMove={(event) => {
-            if (touching.current) touch("move", event);
-          }}
-          onPointerUp={(event) => {
-            touching.current = false;
-            touch("end", event);
-          }}
-          onPointerCancel={(event) => {
-            touching.current = false;
-            touch("end", event);
-          }}
-          className="max-h-full max-w-full touch-none rounded-[2rem] select-none"
+        <canvas
+          ref={canvas}
+          {...pointerHandlers}
+          className={cn(
+            "max-h-full max-w-full touch-none rounded-[2rem] select-none",
+            mjpegUrl && "hidden",
+          )}
         />
-        {live ? null : (
+        {mjpegUrl ? (
+          <img
+            ref={fallback}
+            src={mjpegUrl}
+            alt=""
+            draggable={false}
+            {...pointerHandlers}
+            className="max-h-full max-w-full touch-none rounded-[2rem] select-none"
+          />
+        ) : null}
+        {streaming ? null : (
           <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <LoaderCircle className="size-4 animate-spin" />
             Connecting…
           </div>
         )}
       </div>
-      <IconButton label="Home (⌘⇧H)" onClick={() => send({ tag: BUTTON, button: "home" })}>
-        <House className="size-3.5" />
-      </IconButton>
+      <div className="flex items-center gap-1">
+        {device.platform === "android" ? (
+          <IconButton label="Back (Esc)" onClick={() => stream.current?.press("back")}>
+            <ArrowLeft className="size-3.5" />
+          </IconButton>
+        ) : null}
+        <IconButton
+          label={device.platform === "ios" ? "Home (⌘⇧H)" : "Home"}
+          onClick={() => stream.current?.press("home")}
+        >
+          <House className="size-3.5" />
+        </IconButton>
+        {device.platform === "ios" ? (
+          <IconButton label="Rotate (⌘→)" onClick={() => stream.current?.rotate()}>
+            <RotateCw className="size-3.5" />
+          </IconButton>
+        ) : null}
+      </div>
     </div>
   );
 }
