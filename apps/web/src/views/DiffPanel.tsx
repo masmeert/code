@@ -33,6 +33,8 @@ const MIN_CHAT = 380;
 const MIN_PANEL = 360;
 const MIN_TREE = 160;
 const MIN_DIFF = 320;
+/** Below this, each side of a split diff is too narrow to read a line of code. */
+const MIN_SPLIT_DIFF = 720;
 
 const TREE_KEY = "apcode.diffTree";
 
@@ -153,7 +155,7 @@ export const DiffPanel = ({
     [cwd, turnThreadId, turnMessageId],
   );
   const workersReady = useDiffWorkersReady();
-  const style = useStore((s) => s.settings.diffLayout ?? "unified");
+  const preferredStyle = useStore((s) => s.settings.diffLayout ?? "unified");
   const [showTree, setShowTree] = useState(readTree);
   const viewer = useRef<CodeViewHandle<CommentSlot, undefined>>(null);
   const comments = useReviewComments(threadId);
@@ -176,6 +178,16 @@ export const DiffPanel = ({
     side: "end",
     clamp: (w) => Math.max(MIN_TREE, Math.min(w, (aside.current?.clientWidth ?? 720) - MIN_DIFF)),
   });
+  const [asideWidth, setAsideWidth] = useState(Number.POSITIVE_INFINITY);
+  useEffect(() => {
+    const element = aside.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => setAsideWidth(element.clientWidth));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const splitFits = asideWidth - (showTree ? tree.width : 0) >= MIN_SPLIT_DIFF;
+  const style = splitFits ? preferredStyle : "unified";
   const jumpTo = useCallback(
     (path: string) =>
       viewer.current?.scrollTo({ type: "item", id: path, align: "start", behavior: "instant" }),
@@ -332,7 +344,7 @@ export const DiffPanel = ({
       aria-label="Changes"
       // Never wider than the room left for the chat, even if the window shrank since the last drag.
       style={{ width: panel.width, maxWidth: `calc(100% - ${MIN_CHAT}px)` }}
-      className="relative flex min-h-0 min-w-80 shrink flex-col border-l border-border bg-background"
+      className="@container relative flex min-h-0 min-w-80 shrink flex-col border-l border-border bg-background"
     >
       <ResizeHandle
         side="start"
@@ -356,7 +368,7 @@ export const DiffPanel = ({
           {turn ? "Turn changes" : "Changes"}
         </span>
         {files.length ? (
-          <span className="flex items-center gap-2 font-mono text-xs tabular-nums">
+          <span className="flex items-center gap-2 font-mono text-xs tabular-nums @max-[400px]:hidden">
             <span className="text-muted-foreground">
               {files.length} {files.length === 1 ? "file" : "files"}
             </span>
@@ -365,7 +377,12 @@ export const DiffPanel = ({
           </span>
         ) : null}
         <span className="ml-auto flex items-center gap-0.5">
-          <IconButton label="File tree" active={showTree} onClick={toggleTree}>
+          <IconButton
+            label="File tree"
+            active={showTree}
+            onClick={toggleTree}
+            className="@max-[480px]:hidden"
+          >
             <ListTree className="size-3.5" />
           </IconButton>
           <IconButton
@@ -376,8 +393,9 @@ export const DiffPanel = ({
             <Rows2 className="size-3.5" />
           </IconButton>
           <IconButton
-            label="Split"
+            label={splitFits ? "Split" : "Split (widen the panel to use it)"}
             active={style === "split"}
+            disabled={!splitFits}
             onClick={() => updateSettings({ ...getSettings(), diffLayout: "split" })}
           >
             <Columns2 className="size-3.5" />
@@ -403,7 +421,8 @@ export const DiffPanel = ({
             {showTree ? (
               <div
                 style={{ width: tree.width, maxWidth: `calc(100% - ${MIN_DIFF}px)` }}
-                className="relative shrink-0 border-r border-border"
+                // Below MIN_TREE + MIN_DIFF the tree would be squeezed to icons; give the diff the room instead.
+                className="relative shrink-0 border-r border-border @max-[480px]:hidden"
               >
                 {fileTree}
                 <ResizeHandle
