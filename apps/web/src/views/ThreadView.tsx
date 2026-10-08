@@ -286,6 +286,17 @@ function holdsNewest(block: Block, item: TranscriptItem | undefined) {
   return block.kind === "work" ? block.items.at(-1) === item : block === item;
 }
 
+/** Whether the newest row already shows the agent at work, so a "Thinking…" placeholder would repeat it. */
+function showsWorking(items: ReadonlyArray<TranscriptItem>) {
+  const turnStart =
+    items.findLastIndex(
+      (item) => item.kind === "user" || item.kind === "forked" || item.kind === "startedBy",
+    ) + 1;
+  const newest = toBlocks(items.slice(turnStart)).at(-1);
+  if (newest?.kind === "tools") return newest.calls.at(-1)?.output === null;
+  return newest?.kind === "work" || newest?.kind === "assistant" || newest?.kind === "reasoning";
+}
+
 /** Top bar: project / title breadcrumb. Leaves room for the traffic lights when the sidebar is folded away. */
 const Header = ({
   project,
@@ -1299,10 +1310,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                 </RevealContext>
               </TurnDiffContext>
 
-              {status === "running" &&
-              lastItem?.kind !== "assistant" &&
-              lastItem?.kind !== "reasoning" &&
-              !(lastItem?.kind === "tool" && lastItem.output === null) ? (
+              {status === "running" && !showsWorking(items) ? (
                 <Message
                   from="assistant"
                   animateIn
@@ -1870,7 +1878,7 @@ function SideChatDrawer({ threadId, provider }: { threadId: string; provider: Pr
                 ),
               )
             : null}
-          {running && lastItem?.kind !== "assistant" && lastItem?.kind !== "reasoning" ? (
+          {running && !showsWorking(items) ? (
             <span role="status">
               <ThinkingShimmer />
             </span>

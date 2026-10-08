@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { TextScramble } from "@apcode/ui/motion/text-scramble";
-import { EASE_OUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
+import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@apcode/ui/lib/ease";
 import {
   TEXT_SHIMMER_CLASS_NAME,
   TEXT_SHIMMER_KEYFRAMES,
@@ -297,10 +297,17 @@ export function ReasoningText({
   const statusId = useId();
   const safePhrases = phrases.length > 0 ? phrases : DEFAULT_PHRASES;
   const phrase = safePhrases[index % safePhrases.length];
-  const longestPhrase = safePhrases.reduce((longest, current) =>
-    current.length > longest.length ? current : longest,
-  );
   const phraseProps = { phrase, reduce, shimmerDuration };
+  const phraseRef = useRef<HTMLSpanElement>(null);
+  const [phraseWidthPx, setPhraseWidthPx] = useState<number>();
+
+  useLayoutEffect(() => {
+    const node = phraseRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver(() => setPhraseWidthPx(node.offsetWidth));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (safePhrases.length < 2) return;
@@ -331,18 +338,24 @@ export function ReasoningText({
           className,
         )}
       >
-        <span aria-hidden="true" className="grid overflow-hidden text-left">
-          <span className="invisible col-start-1 row-start-1 whitespace-nowrap">
-            {longestPhrase}…
+        {/* Glides to each phrase's width so whatever follows, like a chevron, moves with the text. */}
+        <motion.span
+          aria-hidden="true"
+          className="max-w-full overflow-hidden"
+          initial={false}
+          animate={phraseWidthPx === undefined ? undefined : { width: phraseWidthPx }}
+          transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
+        >
+          <span ref={phraseRef} className="grid w-max text-left">
+            {variant === "cascade" ? (
+              <CascadePhrase {...phraseProps} />
+            ) : variant === "scramble" ? (
+              <ScramblePhrase {...phraseProps} />
+            ) : (
+              <SwapPhrase {...phraseProps} />
+            )}
           </span>
-          {variant === "cascade" ? (
-            <CascadePhrase {...phraseProps} />
-          ) : variant === "scramble" ? (
-            <ScramblePhrase {...phraseProps} />
-          ) : (
-            <SwapPhrase {...phraseProps} />
-          )}
-        </span>
+        </motion.span>
 
         <span id={statusId} className="sr-only">
           {phrase}
