@@ -2,6 +2,25 @@
 
 Release notes for the APCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.3](https://github.com/masmeert/code/compare/v0.1.2...v0.1.3) (2026-10-08)
+
+
+### Added
+
+* add native light/dark app icon ([432c660](https://github.com/masmeert/code/commit/432c660e5bffd0af206c7a0e8b1aee1579201833))
+* drop the dock badge ([22fdf13](https://github.com/masmeert/code/commit/22fdf13e00504ba9e367f3c9c9c03d0ec8318043))
+* give the app icon macOS's native background ([c1275aa](https://github.com/masmeert/code/commit/c1275aa60516ccc166c84761bb0ca04e403d27b0))
+* scramble through whimsical phrases while thinking, and title finished thoughts with one ([05d2f1b](https://github.com/masmeert/code/commit/05d2f1b9cdcf45b6f571cd90f820777d5d1a6108))
+* show a lone tool call as one row instead of a group ([e9fb074](https://github.com/masmeert/code/commit/e9fb074f227a64c0b8f4de37e8c3049fa9603cbc))
+* show local images in agent replies through signed daemon URLs ([e242c82](https://github.com/masmeert/code/commit/e242c82dfa640082dff64886ee07377774f1e3bc))
+* show sent image attachments as thumbnails that open full size ([49eb541](https://github.com/masmeert/code/commit/49eb5418a104e13baf7cd927c212e767c020d459))
+
+
+### Fixed
+
+* close modals on Escape even when the terminal had focus ([cdeff4d](https://github.com/masmeert/code/commit/cdeff4d091f8702f5a924f02c74a14615bb50d59))
+* rewind and fork Codex threads with thread/revert ([557e9c5](https://github.com/masmeert/code/commit/557e9c51fa3ddb6a04f90a97c050068af971f0c8))
+
 ## [0.1.2](https://github.com/masmeert/code/compare/v0.1.1...v0.1.2) (2026-10-08)
 
 
