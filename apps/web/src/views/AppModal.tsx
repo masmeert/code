@@ -95,13 +95,6 @@ export const AppModal = (props: {
   onView: (view: ModalView | null) => void;
 }) => {
   const { view, onView } = props;
-  useEffect(() => {
-    if (!view) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onView(null);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [view, onView]);
-
   return (
     <MorphingModal
       viewId={view}

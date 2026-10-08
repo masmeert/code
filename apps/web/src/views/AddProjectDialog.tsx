@@ -14,12 +14,6 @@ const THIS_MAC = "\u0000this-mac";
 /** Where a new project lives once there are remote hosts: this Mac, or a folder on one of them. */
 export function AddProjectDialog() {
   const open = useAddProjectOpen();
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && finishAddProject(null);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
   return (
     <MorphingModal
       viewId={open ? "add-project" : null}

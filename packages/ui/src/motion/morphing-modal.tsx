@@ -1,11 +1,11 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { EASE_OUT, SPRING_PANEL } from "@apcode/ui/lib/ease";
 import { PresenceGate } from "@apcode/ui/motion/presence-gate";
 import { cn } from "@apcode/ui/lib/utils";
 
 export interface MorphingModalProps {
-  /** Which view is currently shown. `null` closes the modal. */
+  /** Which view is currently shown. `null` closes the modal. Escape and the backdrop call `onClose`. */
   viewId: string | null;
   onClose: () => void;
   children: ReactNode;
@@ -25,6 +25,24 @@ export function MorphingModal({
   const reduce = useReducedMotion();
   const enterY = reduce ? 0 : placement === "bottom" ? 40 : 20;
   const enterScale = reduce ? 1 : 0.97;
+
+  const panel = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+
+  useEffect(() => {
+    if (!open) return;
+    // Focus left behind the modal keeps getting keys, and a terminal there swallows Escape.
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const takeFocus = !panel.current?.contains(previous);
+    if (takeFocus) panel.current?.focus({ preventScroll: true });
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && close.current();
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      if (takeFocus) previous?.focus({ preventScroll: true });
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -78,6 +96,8 @@ export function MorphingModal({
             >
               <motion.div
                 key="panel"
+                ref={panel}
+                tabIndex={-1}
                 layout={!reduce}
                 initial={{ opacity: 0, y: enterY, scale: enterScale }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -90,7 +110,7 @@ export function MorphingModal({
                 transition={SPRING_PANEL}
                 {...gate}
                 className={cn(
-                  "pointer-events-auto relative w-full max-w-sm overflow-hidden rounded-2xl border border-border bg-background shadow-panel will-change-transform",
+                  "pointer-events-auto relative w-full max-w-sm overflow-hidden rounded-2xl border border-border bg-background shadow-panel will-change-transform outline-none",
                   className,
                 )}
               >
