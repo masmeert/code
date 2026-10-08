@@ -4,6 +4,7 @@ import {
   AppWindow,
   Globe,
   Settings as SettingsIcon,
+  Smartphone,
   SquarePen,
   SquareTerminal,
 } from "lucide-react";
@@ -12,7 +13,8 @@ import { useEffect, useState } from "react";
 import { toggleBrowser } from "./lib/browser.ts";
 import { describe, useKeybinding } from "./lib/keybindings.ts";
 import "./lib/notifications.ts";
-import { toggleTerminalPanel, useStore } from "./lib/store.ts";
+import { toggleSimulator } from "./lib/simulator.ts";
+import { toggleTerminalPanel, useStore, useThreadHost } from "./lib/store.ts";
 import { useShortcut } from "./lib/useShortcut.ts";
 import { useTheme } from "./lib/useTheme.ts";
 import { openWindow } from "./lib/windows.ts";
@@ -75,6 +77,12 @@ export const App = () => {
   useEffect(() => {
     if (switchTo) setView({ kind: "thread", id: switchTo.threadId });
   }, [switchTo]);
+
+  // Simulators run on this Mac only; a remote thread's agent couldn't reach them.
+  const simulatorAvailable =
+    useThreadHost(view.kind === "thread" ? view.id : "") === null &&
+    window.desktop !== undefined &&
+    navigator.userAgent.includes("Mac");
 
   const draft = (path: string | null) => setView({ kind: "draft", path });
   const projectPath = (threadId: string | undefined) =>
@@ -161,6 +169,17 @@ export const App = () => {
                       hint: describe("browser.toggle"),
                       icon: <Globe />,
                       run: () => toggleBrowser(view.id),
+                    },
+                  ]
+                : []),
+              ...(view.kind === "thread" && simulatorAvailable
+                ? [
+                    {
+                      id: "simulator.toggle",
+                      label: "Toggle iOS Simulator",
+                      hint: describe("simulator.toggle"),
+                      icon: <Smartphone />,
+                      run: () => toggleSimulator(view.id),
                     },
                   ]
                 : []),

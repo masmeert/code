@@ -96,6 +96,20 @@ export const BrowserResult = Schema.Struct({
 });
 export type BrowserResult = typeof BrowserResult.Type;
 
+/** An iOS simulator on this Mac. */
+export const Device = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  /** Like "iOS 27.0". */
+  version: Schema.String,
+  booted: Schema.Boolean,
+});
+export type Device = typeof Device.Type;
+
+/** Where this Mac's device hub serves simulator streams and input; the token gates all of it. */
+export const DeviceHub = Schema.Struct({ origin: Schema.String, token: Schema.String });
+export type DeviceHub = typeof DeviceHub.Type;
+
 export const DesktopBrowserEvent = Schema.TaggedUnion({
   "open-tab": { webContentsId: Schema.Number, url: Schema.String },
   "new-tab": { webContentsId: Schema.Number },
@@ -845,6 +859,11 @@ export const RuntimeEvent = Schema.Union([
     command: Schema.optionalKey(Schema.String),
   }),
   Schema.TaggedStruct("terminal.closed", { threadId: Schema.String, terminalId: Schema.String }),
+  /** The simulator the thread's Simulator panel shows; null when it shows none. */
+  Schema.TaggedStruct("thread.device", {
+    threadId: Schema.String,
+    deviceId: Schema.NullOr(Schema.String),
+  }),
 ]).pipe(Schema.toTaggedUnion("_tag"));
 export type RuntimeEvent = typeof RuntimeEvent.Type;
 
@@ -938,6 +957,27 @@ const BranchCommand = Schema.Union([
   Schema.TaggedStruct("sideChat.close", { threadId: Schema.String, sideChatId: Schema.String }),
 ]);
 
+/** The Browser and Simulator panels; a union of their own for the same reason as `GitCommand`. */
+const PanelCommand = Schema.Union([
+  Schema.TaggedStruct("browser.host", {}),
+  Schema.TaggedStruct("browser.respond", {
+    requestId: Schema.String,
+    result: Schema.NullOr(BrowserResult),
+    error: Schema.NullOr(Schema.String),
+  }),
+  /** Answered with a `device.listed` frame. `install` first sets up the simulator tools when they're missing. */
+  Schema.TaggedStruct("device.list", { requestId: Schema.String, install: Schema.Boolean }),
+  /** Boots the simulator if needed and shows it in the thread's panel; null shows none. Answered with `device.attached`. */
+  Schema.TaggedStruct("device.attach", {
+    requestId: Schema.String,
+    threadId: Schema.String,
+    deviceId: Schema.NullOr(Schema.String),
+  }),
+]);
+
+/** Unions nested a level deeper: `ClientCommand` hits TypeScript's type depth limit with them at the top. */
+const NestedCommand = Schema.Union([LimitStopCommand, BranchCommand, PanelCommand]);
+
 export const ClientCommand = Schema.Union([
   /** Creates a thread and sends its first message (drafts only exist client-side until then). */
   Schema.TaggedStruct("thread.create", {
@@ -1008,8 +1048,7 @@ export const ClientCommand = Schema.Union([
   /** Full-text search over messages; answered with a `search.results` frame. */
   Schema.TaggedStruct("search", { query: Schema.String, requestId: Schema.String }),
   GitCommand,
-  LimitStopCommand,
-  BranchCommand,
+  NestedCommand,
   Schema.TaggedStruct("thread.interrupt", { threadId: Schema.String }),
   /** Stops one subagent, the one started by tool call `toolId`; the turn carries on without it. */
   Schema.TaggedStruct("thread.stopAgent", { threadId: Schema.String, toolId: Schema.String }),
@@ -1094,12 +1133,6 @@ export const ClientCommand = Schema.Union([
     characters: Schema.Number,
   }),
   Schema.TaggedStruct("terminal.close", { threadId: Schema.String, terminalId: Schema.String }),
-  Schema.TaggedStruct("browser.host", {}),
-  Schema.TaggedStruct("browser.respond", {
-    requestId: Schema.String,
-    result: Schema.NullOr(BrowserResult),
-    error: Schema.NullOr(Schema.String),
-  }),
 ]).pipe(Schema.toTaggedUnion("_tag"));
 export type ClientCommand = typeof ClientCommand.Type;
 
@@ -1245,6 +1278,18 @@ export const ServerFrame = Schema.Union([
     requestId: Schema.String,
     threadId: Schema.String,
     action: BrowserAction,
+  }),
+  /** Answers `device.list`; `installed` is false until the simulator tools are set up, and `hub` null until then. */
+  Schema.TaggedStruct("device.listed", {
+    requestId: Schema.String,
+    installed: Schema.Boolean,
+    hub: Schema.NullOr(DeviceHub),
+    devices: Schema.Array(Device),
+    error: Schema.NullOr(Schema.String),
+  }),
+  Schema.TaggedStruct("device.attached", {
+    requestId: Schema.String,
+    error: Schema.NullOr(Schema.String),
   }),
 ]).pipe(Schema.toTaggedUnion("_tag"));
 export type ServerFrame = typeof ServerFrame.Type;

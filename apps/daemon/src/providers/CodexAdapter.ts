@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { DEVICES_SUPPORTED } from "../devices.ts";
 import {
   CodexNotification,
   CodexServerRequest,
@@ -543,6 +544,17 @@ const start = ({
                     // Waiting on another thread's agent takes minutes; Codex gives up on a tool after 60 s by default.
                     "-c",
                     "mcp_servers.apcode.tool_timeout_sec=1800",
+                    ...(DEVICES_SUPPORTED
+                      ? [
+                          "-c",
+                          `mcp_servers.device.url="${mcpServer.url}/device"`,
+                          "-c",
+                          'mcp_servers.device.bearer_token_env_var="APCODE_MCP_TOKEN"',
+                          // The first device_open installs the tools and boots a simulator.
+                          "-c",
+                          "mcp_servers.device.tool_timeout_sec=900",
+                        ]
+                      : []),
                   ]
                 : []),
               // Codex leaves its thinking out of the transcript unless asked for summaries.

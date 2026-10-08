@@ -38,6 +38,7 @@ import {
   type StartSessionInput,
   type TurnInput,
 } from "./ProviderAdapter.ts";
+import { DEVICES_SUPPORTED } from "../devices.ts";
 import { skillMentions } from "../skills.ts";
 
 const fail = (message: string) => new ProviderError({ provider: "cursor", message });
@@ -228,6 +229,7 @@ const start = ({
       ? [
           { name: "browser", url: mcpServer.url },
           { name: "apcode", url: `${mcpServer.url}/apcode` },
+          ...(DEVICES_SUPPORTED ? [{ name: "device", url: `${mcpServer.url}/device` }] : []),
         ].map((server) => ({
           type: "http",
           ...server,

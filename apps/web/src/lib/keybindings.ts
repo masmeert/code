@@ -20,6 +20,7 @@ export const KEYBINDINGS = {
   "picker.branch": "mod+shift+g",
   "terminal.toggle": "mod+j",
   "browser.toggle": "mod+shift+b",
+  "simulator.toggle": "mod+shift+i",
   "usage.toggle": "mod+shift+u",
   "diff.saveComment": "mod+enter",
   "thread.find": "mod+f",

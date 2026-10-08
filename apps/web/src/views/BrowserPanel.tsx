@@ -292,7 +292,7 @@ function BrowserSurface({ threadId }: { threadId: string }) {
   return <div ref={slot} className="min-h-0 flex-1" />;
 }
 
-function Message({ children }: { children: React.ReactNode }) {
+export function Message({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
       {children}

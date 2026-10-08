@@ -41,6 +41,7 @@ import * as Match from "effect/Match";
 import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
 import { performBrowserAction } from "./browser.ts";
+import { showDevice } from "./simulator.ts";
 import { loadShell, loadTranscript, removeTranscript, saveShell, saveTranscript } from "./cache.ts";
 import { decodeChoice } from "./models.ts";
 
@@ -1095,6 +1096,8 @@ const onFrame = (connection: Connection, frame: ServerFrame) =>
     "folder.entries": answer,
     "image.signed": answer,
     "project.cloned": answer,
+    "device.listed": answer,
+    "device.attached": answer,
     "terminal.snapshot": ({ threadId, terminalId, data }) =>
       screens.get(screenKey(threadId, terminalId))?.reset(data),
     "terminal.output": ({ threadId, terminalId, data }) =>
@@ -1134,6 +1137,8 @@ const onFrame = (connection: Connection, frame: ServerFrame) =>
         event.threadId === state.forking.threadId
       )
         setState({ ...state, forking: { ...state.forking, error: event.message } });
+      if (RuntimeEvent.guards["thread.device"](event))
+        return showDevice(event.threadId, event.deviceId);
       if (!isTranscriptEvent(event)) return applyShellEvent(connection.host, event);
       const transcript = state.transcripts[event.threadId];
       // Not following this thread, or already have it (a replay can overlap live events).
@@ -1459,6 +1464,29 @@ export const listFolders = (host: string | null, path: string) =>
     ClientCommand.cases["folder.list"].make({ path, requestId: crypto.randomUUID() }),
     10_000,
   );
+
+/** This Mac's simulators and its device hub, setting the tools up first with `install`; null when the daemon doesn't answer. */
+export const listDevices = (install: boolean) =>
+  request<Extract<ServerFrame, { _tag: "device.listed" }>>(
+    null,
+    ClientCommand.cases["device.list"].make({ install, requestId: crypto.randomUUID() }),
+    // Setting up installs two npm packages.
+    install ? 10 * 60_000 : 60_000,
+  );
+
+/** Boots a simulator if needed and shows it in the thread's panel; resolves to an error message, or null. */
+export const attachDevice = async (threadId: string, deviceId: string | null) => {
+  const attached = await request<Extract<ServerFrame, { _tag: "device.attached" }>>(
+    null,
+    ClientCommand.cases["device.attach"].make({
+      threadId,
+      deviceId,
+      requestId: crypto.randomUUID(),
+    }),
+    3 * 60_000,
+  );
+  return attached ? attached.error : "APCode didn't answer in time. Try again.";
+};
 
 /** Signed URLs by thread and source, renewed before the daemon's hour runs out. */
 const signedImages = new Map<

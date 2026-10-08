@@ -88,6 +88,7 @@ import {
   Pencil,
   Quote,
   Server,
+  Smartphone,
   Square,
   SquareTerminal,
   Undo2,
@@ -111,6 +112,7 @@ import {
   useState,
 } from "react";
 import { toggleBrowser, useBrowser } from "../lib/browser.ts";
+import { toggleSimulator, useSimulator } from "../lib/simulator.ts";
 import {
   approvePlan,
   BUILD_WITH_LABEL,
@@ -172,6 +174,7 @@ import {
 } from "../lib/store.ts";
 import { readWidth } from "@apcode/ui/hooks/use-resizable";
 import { BrowserPanel } from "./BrowserPanel.tsx";
+import { SimulatorPanel } from "./SimulatorPanel.tsx";
 import { Composer, RootFullAccessDialog } from "./Composer.tsx";
 import { GitMenu } from "./GitMenu.tsx";
 import { hasTrafficLights } from "./Sidebar.tsx";
@@ -1199,6 +1202,13 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
   });
   const browserOpen = useBrowser((state) => state.threads[threadId]?.open ?? false);
   useKeybinding(window.desktop ? "browser.toggle" : undefined, () => toggleBrowser(threadId));
+  // Simulators run on this Mac only; a remote thread's agent couldn't reach them.
+  const simulatorAvailable =
+    window.desktop !== undefined && host === null && navigator.userAgent.includes("Mac");
+  const simulatorOpen = useSimulator(threadId).open;
+  useKeybinding(simulatorAvailable ? "simulator.toggle" : undefined, () =>
+    toggleSimulator(threadId),
+  );
 
   // Looking at a thread marks whatever it did since you last saw it as seen.
   const { updatedAt } = info;
@@ -1271,6 +1281,18 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                       className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${browserOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
                     >
                       <Globe className="size-4" />
+                    </button>
+                  ) : null}
+                  {simulatorAvailable ? (
+                    <button
+                      type="button"
+                      title={`${simulatorOpen ? "Hide" : "Show"} iOS Simulator (${describe("simulator.toggle")})`}
+                      aria-label={simulatorOpen ? "Hide iOS Simulator" : "Show iOS Simulator"}
+                      aria-pressed={simulatorOpen}
+                      onClick={() => toggleSimulator(threadId)}
+                      className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${simulatorOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+                    >
+                      <Smartphone className="size-4" />
                     </button>
                   ) : null}
                 </span>
@@ -1451,6 +1473,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
           </Suspense>
         ) : null}
         {browserOpen && window.desktop ? <BrowserPanel threadId={threadId} /> : null}
+        {simulatorOpen && simulatorAvailable ? <SimulatorPanel threadId={threadId} /> : null}
       </div>
       {activeTerminal ? (
         <Suspense fallback={null}>

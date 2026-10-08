@@ -100,6 +100,7 @@ import {
   ThreadStore,
 } from "./storage/ThreadStore.ts";
 import { type Browsers, createBrowsers } from "./browsers.ts";
+import { createDevices, type Devices } from "./devices.ts";
 import { createMcp, type Mcp, type SendMessageInput, type StartThreadInput } from "./mcp.ts";
 import { createTerminals, type Terminals } from "./terminals.ts";
 import { createSkillCatalog } from "./skills.ts";
@@ -293,6 +294,7 @@ export class SessionManager extends Context.Service<
     >;
     readonly terminals: Terminals;
     readonly browsers: Browsers;
+    readonly devices: Devices;
     readonly mcp: Mcp;
     /**
      * A thread's transcript: what was missed since `after`, or the latest `turnLimit` turns.
@@ -625,6 +627,9 @@ const make = Effect.gen(function* () {
     closed: (terminal) => publish(RuntimeEvent.cases["terminal.closed"].make(terminal)),
   });
   const browsers = createBrowsers();
+  const devices = createDevices((threadId, deviceId) =>
+    publish(RuntimeEvent.cases["thread.device"].make({ threadId, deviceId })),
+  );
   const skills = createSkillCatalog({
     read: (provider, cwd) =>
       Effect.flatMap(settingsStore.get, (settings) =>
@@ -1822,7 +1827,11 @@ const make = Effect.gen(function* () {
     stopThread: (_callerId: string, threadId: string) =>
       Effect.flatMap(agentEntry(threadId), (entry) => Effect.as(interrupt(entry), summary(entry))),
   };
-  const mcp = createMcp((threadId, action) => browsers.request(threadId, action), orchestration);
+  const mcp = createMcp(
+    (threadId, action) => browsers.request(threadId, action),
+    orchestration,
+    devices,
+  );
 
   /**
    * Moves the thread to another harness for its next turns. Nothing is handed over yet: the
@@ -2131,6 +2140,8 @@ const make = Effect.gen(function* () {
       "terminal.acknowledge": () => Effect.void,
       "browser.host": () => Effect.void,
       "browser.respond": () => Effect.void,
+      "device.list": () => Effect.void,
+      "device.attach": () => Effect.void,
       "settings.update": (command) =>
         Effect.gen(function* () {
           const before = yield* settingsStore.get;
@@ -2177,6 +2188,7 @@ const make = Effect.gen(function* () {
     ),
     terminals,
     browsers,
+    devices,
     mcp,
     readThread: (threadId, after, turnLimit) => {
       if (!threads.has(threadId)) return null;

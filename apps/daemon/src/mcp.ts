@@ -7,14 +7,17 @@ import {
   ProviderKind,
   type BrowserResult,
 } from "@apcode/contracts";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as Effect from "effect/Effect";
+import * as Match from "effect/Match";
 import { z } from "zod";
+import type { Devices } from "./devices.ts";
 import { PORT } from "./port.ts";
 
 export type Mcp = ReturnType<typeof createMcp>;
 
 export interface McpServerAccess {
-  /** The browser tools; the orchestration tools are at `${url}/apcode`. */
+  /** The browser tools; the orchestration tools are at `${url}/apcode`, the simulator's at `${url}/device`. */
   readonly url: string;
   readonly token: string;
 }
@@ -281,9 +284,77 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
   return server;
 }
 
+function deviceServer(threadId: string, devices: Devices) {
+  async function run(content: () => Promise<CallToolResult["content"]>): Promise<CallToolResult> {
+    try {
+      return { content: await content() };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+        isError: true,
+      };
+    }
+  }
+
+  const server = new McpServer(
+    { name: "device", version: "1.0.0" },
+    {
+      instructions:
+        "An iOS Simulator the user watches in APCode's Simulator panel next to this thread. Call device_open to show one and learn how to drive it, before simctl or computer use.",
+    },
+  );
+  server.registerTool(
+    "device_open",
+    {
+      description:
+        "Boots an iOS simulator if needed, shows it in the Simulator panel, and returns how to drive it with the agent-device CLI. Opens the thread's simulator, or a booted iPhone, unless deviceId names another. The first call can take minutes while the tools install.",
+      inputSchema: {
+        deviceId: z
+          .string()
+          .optional()
+          .describe("A simulator UDID, from `xcrun simctl list devices`."),
+      },
+    },
+    ({ deviceId }) =>
+      run(async () => {
+        const { device, cli } = await devices.open(threadId, deviceId ?? null);
+        const target = `--platform ios --udid ${device.id} --session apcode-${threadId}`;
+        return [
+          {
+            type: "text",
+            text: [
+              `The user is watching ${device.name} (${device.version}, UDID ${device.id}) in the Simulator panel and can tap along.`,
+              `Drive it with ${cli}; use that exact path and always pass ${target}. Typical loop:`,
+              `  ${cli} open <bundle-id> --foreground ${target}   # launch an app; prints a snapshot with @refs`,
+              `  ${cli} snapshot -i ${target}   # accessibility tree with @eN refs`,
+              `  ${cli} press @e3 --settle ${target}`,
+              `  ${cli} fill @e5 "text" --settle ${target}`,
+              `  ${cli} install <bundle-id> <path-to-.app> ${target}`,
+              `Build for it with xcodebuild -destination 'id=${device.id}'. Prefer refs over coordinates. Call device_screenshot to see the screen. Run \`${cli} help workflow\` for more.`,
+              "The first command builds an XCTest runner and can take a couple of minutes; later ones are fast.",
+            ].join("\n"),
+          },
+        ];
+      }),
+  );
+  server.registerTool(
+    "device_screenshot",
+    {
+      description: "See the screen of the simulator open in this thread's Simulator panel.",
+      annotations: { readOnlyHint: true },
+    },
+    () =>
+      run(async () => [
+        { type: "image", data: await devices.screenshot(threadId), mimeType: "image/png" },
+      ]),
+  );
+  return server;
+}
+
 export function createMcp(
   browser: (threadId: string, action: BrowserAction) => Promise<BrowserResult>,
   orchestration: Orchestration,
+  devices: Devices,
 ) {
   const threadByTokenHash = new Map<string, string>();
   const tokenHashByThread = new Map<string, string>();
@@ -314,11 +385,13 @@ export function createMcp(
           headers: { "www-authenticate": "Bearer" },
         });
       const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
-      await (
-        new URL(request.url).pathname === "/mcp/apcode"
-          ? orchestrationServer(threadId, orchestration)
-          : browserServer((action) => browser(threadId, action))
-      ).connect(transport);
+      await Match.value(new URL(request.url).pathname)
+        .pipe(
+          Match.when("/mcp/apcode", () => orchestrationServer(threadId, orchestration)),
+          Match.when("/mcp/device", () => deviceServer(threadId, devices)),
+          Match.orElse(() => browserServer((action) => browser(threadId, action))),
+        )
+        .connect(transport);
       return transport.handleRequest(request);
     },
   };

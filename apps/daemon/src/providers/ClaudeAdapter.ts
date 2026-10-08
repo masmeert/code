@@ -43,6 +43,7 @@ import {
   type TurnInput,
 } from "./ProviderAdapter.ts";
 import { claudeExtraArgs, harnessLaunch, promptlessQuery } from "./launch.ts";
+import { DEVICES_SUPPORTED } from "../devices.ts";
 import { skillMentions } from "../skills.ts";
 
 /** Minimal push-based async iterable used as the SDK's streaming prompt input. */
@@ -295,11 +296,19 @@ const start = ({
                 url: `${mcpServer.url}/apcode`,
                 headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
               },
+              ...(DEVICES_SUPPORTED && {
+                device: {
+                  type: "http",
+                  url: `${mcpServer.url}/device`,
+                  headers: { Authorization: "Bearer ${APCODE_MCP_TOKEN}" },
+                },
+              }),
             }
           : {},
         allowedTools: [
           "mcp__browser__snapshot",
           "mcp__browser__console",
+          "mcp__device__device_screenshot",
           "mcp__apcode__list_threads",
           "mcp__apcode__read_thread",
           "mcp__apcode__wait_for_thread",

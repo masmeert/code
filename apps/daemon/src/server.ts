@@ -230,6 +230,27 @@ export const serve = (port: number) =>
               }
               return Effect.void;
             },
+            "device.list": ({ requestId, install }) =>
+              Effect.promise(async () => {
+                const listed = await manager.devices.list(install).then(
+                  (listing) => ({ ...listing, error: null }),
+                  (error: Error) => ({
+                    installed: false,
+                    hub: null,
+                    devices: [],
+                    error: error.message,
+                  }),
+                );
+                send(ws, ServerFrame.cases["device.listed"].make({ requestId, ...listed }));
+              }),
+            "device.attach": ({ requestId, threadId, deviceId }) =>
+              Effect.promise(async () => {
+                const error = await manager.devices.attach(threadId, deviceId).then(
+                  () => null,
+                  (error: Error) => error.message,
+                );
+                send(ws, ServerFrame.cases["device.attached"].make({ requestId, error }));
+              }),
             "browser.respond": (command) => {
               if (ws.data.browserHost)
                 manager.browsers.respond(
@@ -252,7 +273,7 @@ export const serve = (port: number) =>
           port,
           fetch(req, server) {
             const { pathname, searchParams } = new URL(req.url);
-            if (pathname === "/mcp" || pathname === "/mcp/apcode") return manager.mcp.handle(req);
+            if (pathname === "/mcp" || pathname.startsWith("/mcp/")) return manager.mcp.handle(req);
             if (pathname.startsWith(ASSET_ROUTE_PREFIX))
               return serveAsset(pathname.slice(ASSET_ROUTE_PREFIX.length));
             const origin = req.headers.get("origin");
