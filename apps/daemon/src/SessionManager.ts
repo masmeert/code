@@ -16,32 +16,32 @@ import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { checkoutBranch, createBranch, listFiles, readCheckpointDiff } from "./git.ts";
+import { type Browsers, createBrowsers } from "./browsers.ts";
+import { coalesceLoads } from "./coalesceLoads.ts";
+import { createDevices, type Devices } from "./devices.ts";
+import { CommandError } from "./errors.ts";
 import { expandHome, listFolders } from "./folders.ts";
+import { checkoutBranch, createBranch, listFiles, readCheckpointDiff } from "./git.ts";
+import { ADAPTERS } from "./harnesses.ts";
+import { createMcp, type Mcp } from "./mcp.ts";
 import { ProviderError } from "./providers/ProviderAdapter.ts";
 import { ProviderRegistry } from "./providers/ProviderRegistry.ts";
-import * as ProjectsStoreLive from "./storage/ProjectsStore.ts";
-import * as SettingsStoreLive from "./storage/SettingsStore.ts";
-import * as ThreadStoreLive from "./storage/ThreadStore.ts";
-import { type ProjectNotFound, ProjectsStore } from "./storage/ProjectsStore.ts";
-import { SettingsStore } from "./storage/SettingsStore.ts";
-import { ThreadStore } from "./storage/ThreadStore.ts";
-import { type Browsers, createBrowsers } from "./browsers.ts";
-import { createDevices, type Devices } from "./devices.ts";
-import { createMcp, type Mcp } from "./mcp.ts";
-import { createTerminals, type Terminals } from "./terminals.ts";
-import { createSkillCatalog } from "./skills.ts";
 import { createRepoPanel } from "./repoPanel.ts";
+import { createSkillCatalog } from "./skills.ts";
+import * as ProjectsStoreLive from "./storage/ProjectsStore.ts";
+import { type ProjectNotFound, ProjectsStore } from "./storage/ProjectsStore.ts";
+import * as SettingsStoreLive from "./storage/SettingsStore.ts";
+import { SettingsStore } from "./storage/SettingsStore.ts";
+import * as ThreadStoreLive from "./storage/ThreadStore.ts";
+import { ThreadStore } from "./storage/ThreadStore.ts";
+import { createTerminals, type Terminals } from "./terminals.ts";
 import { createAgents, formatCommandRun } from "./threads/agents.ts";
+import { deriveTitle, isBusy } from "./threads/entry.ts";
 import { createHistory } from "./threads/history.ts";
-import { createSideChats } from "./threads/sideChats.ts";
 import { createThreadOpener } from "./threads/opening.ts";
 import { createOrchestration } from "./threads/orchestration.ts";
 import { createThreadRegistry, type SequencedEvent, type ThreadRead } from "./threads/registry.ts";
-import { CommandError } from "./errors.ts";
-import { coalesceLoads } from "./coalesceLoads.ts";
-import { ADAPTERS } from "./harnesses.ts";
-import { deriveTitle, isBusy } from "./threads/entry.ts";
+import { createSideChats } from "./threads/sideChats.ts";
 
 /** Harnesses can still refuse right at the reset (MonoCode waits this long too). */
 const LIMIT_RESET_GRACE_MS = 30_000;
@@ -122,6 +122,7 @@ const make = Effect.gen(function* () {
   } = yield* createThreadRegistry({
     store,
     settingsStore,
+    // Terminals and agents publish through the registry, so they come after it: bound late.
     onShelve: (entry) => {
       terminals.closeIdle(entry.info.id);
       // Shelved threads never have a turn going; like the idle reaper, the next message resumes from the token.
@@ -222,33 +223,6 @@ const make = Effect.gen(function* () {
     ensureHarnessReady,
   });
 
-  // Idle threads shelve with time alone; the threshold is in days, so a check a minute is plenty.
-  // Resuming at a usage limit's reset rides along: a minute late is fine, and it survives sleep.
-  yield* Effect.forkScoped(
-    Effect.schedule(
-      Effect.sync(() => {
-        for (const entry of threads.values()) {
-          refreshShelved(entry);
-          const stop = entry.info.limitStop;
-          if (
-            stop?.resumeAtReset &&
-            stop.resetsAt !== null &&
-            Date.now() >= stop.resetsAt + LIMIT_RESET_GRACE_MS
-          )
-            runFork(
-              resumeAfterLimit(entry, stop.resumeAtReset).pipe(
-                reportErrorsIn(entry.info.id),
-                Effect.ignore,
-              ),
-            );
-        }
-      }),
-      Schedule.spaced("1 minute"),
-    ),
-  );
-
-  yield* Effect.forkScoped(Effect.schedule(reapIdleSessions, Schedule.spaced(REAP_INTERVAL_MS)));
-
   const repoPanel = yield* createRepoPanel({ settingsStore, publish, threads, refreshMeta });
 
   const readLimits = yield* coalesceLoads(
@@ -294,6 +268,33 @@ const make = Effect.gen(function* () {
     orchestration,
     devices,
   );
+
+  // Idle threads shelve with time alone; the threshold is in days, so a check a minute is plenty.
+  // Resuming at a usage limit's reset rides along: a minute late is fine, and it survives sleep.
+  yield* Effect.forkScoped(
+    Effect.schedule(
+      Effect.sync(() => {
+        for (const entry of threads.values()) {
+          refreshShelved(entry);
+          const stop = entry.info.limitStop;
+          if (
+            stop?.resumeAtReset &&
+            stop.resetsAt !== null &&
+            Date.now() >= stop.resetsAt + LIMIT_RESET_GRACE_MS
+          )
+            runFork(
+              resumeAfterLimit(entry, stop.resumeAtReset).pipe(
+                reportErrorsIn(entry.info.id),
+                Effect.ignore,
+              ),
+            );
+        }
+      }),
+      Schedule.spaced("1 minute"),
+    ),
+  );
+
+  yield* Effect.forkScoped(Effect.schedule(reapIdleSessions, Schedule.spaced(REAP_INTERVAL_MS)));
 
   function dispatch(command: ClientCommand) {
     return ClientCommand.match<Effect.Effect<void, CommandError | ProviderError | ProjectNotFound>>(
