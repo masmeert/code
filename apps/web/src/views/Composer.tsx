@@ -54,6 +54,7 @@ import {
   PERMISSION_DESCRIPTION,
   PERMISSION_LABEL,
   PERMISSIONS,
+  fitToModel,
   toTurnOptions,
   useAttachments,
   useNeedsRootConsent,
@@ -191,9 +192,7 @@ export function Composer(props: ComposerProps) {
   // No pick means the model's own default, which the menu stars; picking the starred level keeps following it.
   const fallbackEffort = catalog?.defaultEffort;
   const efforts = catalog?.efforts ?? EFFORTS[props.provider];
-  // A pick this model can't take (kept from another model) falls back to its default.
-  const effort = prefs.effort && efforts.includes(prefs.effort) ? prefs.effort : null;
-  const fast = prefs.fast && catalog?.fast === true;
+  const { effort, fast } = fitToModel(prefs, catalog);
   const effortOptions = efforts.map((level) => ({
     value: level,
     label: EFFORT_LABEL[level],
@@ -446,7 +445,7 @@ export function Composer(props: ComposerProps) {
       return;
     }
 
-    const options = toTurnOptions({ ...prefs, effort, fast }, files.take());
+    const options = toTurnOptions(prefs, catalog, files.take());
     setDraft(prefsKey, { text: "", attachments: [] });
     props.onSubmit(text, options, how);
   }

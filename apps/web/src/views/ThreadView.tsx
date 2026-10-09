@@ -143,6 +143,7 @@ import {
 import { useNow } from "../lib/time.ts";
 import { resetLabel } from "./UsageMeter.tsx";
 import {
+  catalogModel,
   decodeChoice,
   defaultModel,
   encodeChoice,
@@ -1260,6 +1261,8 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   // Another harness's model switches the thread to it, which waits for the turn to end.
   const choices = modelChoices(providers, settings, busy ? provider : undefined);
   const current = info.model ?? defaultModel(providers, settings, provider);
+  const modelChoice = current ? encodeChoice(provider, current) : undefined;
+  const catalog = catalogModel(providers, modelChoice);
   const lastItem = items.at(-1);
 
   // `/btw` asks about the newest reply whose turn is over.
@@ -1309,8 +1312,8 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   // The turn its output starts runs at the composer's effort and permission level.
   const runReplyCommand = useCallback(
     (command: string) =>
-      runCommand(threadId, command, toTurnOptions({ effort, fast, permission }, [])),
-    [threadId, effort, fast, permission],
+      runCommand(threadId, command, toTurnOptions({ effort, fast, permission }, catalog, [])),
+    [threadId, effort, fast, permission, catalog],
   );
 
   const runs = useStore((state) => state.runs[threadId]) ?? NO_RUNS;
@@ -1598,7 +1601,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                       provider={provider}
                       providers={providers}
                       settings={settings}
-                      options={toTurnOptions({ effort, fast, permission }, [])}
+                      options={toTurnOptions({ effort, fast, permission }, catalog, [])}
                     />
                   ) : null}
                 </PromptInputTray>
@@ -1626,7 +1629,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
               </>
             }
             models={choices}
-            model={current ? encodeChoice(provider, current) : undefined}
+            model={modelChoice}
             onModelChange={(value) =>
               send(
                 ClientCommand.cases["thread.setModel"].make({ threadId, ...decodeChoice(value) }),

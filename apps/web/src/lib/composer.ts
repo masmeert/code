@@ -2,6 +2,7 @@ import {
   type Attachment,
   AttachmentInput,
   type Effort,
+  type ModelOption,
   type PermissionLevel,
   type ProviderKind,
   type TurnOptions,
@@ -315,14 +316,19 @@ export function useAttachments({
   return { attachments, add, pick, addFiles, remove, take };
 }
 
+/** Drops an effort or fast mode `model` can't take (a pick kept from another model), leaving its default. */
+export function fitToModel(prefs: TurnPrefs, model: ModelOption | undefined): TurnPrefs {
+  return {
+    effort: prefs.effort && (model?.efforts?.includes(prefs.effort) ?? true) ? prefs.effort : null,
+    fast: prefs.fast && model?.fast === true,
+    permission: prefs.permission,
+  };
+}
+
 export function toTurnOptions(
   prefs: TurnPrefs,
+  model: ModelOption | undefined,
   attachments: ReadonlyArray<AttachmentInput>,
 ): TurnOptions {
-  return {
-    effort: prefs.effort,
-    fast: prefs.fast,
-    permission: prefs.permission,
-    attachments,
-  };
+  return { ...fitToModel(prefs, model), attachments };
 }
