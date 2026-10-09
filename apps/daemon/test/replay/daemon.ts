@@ -275,7 +275,7 @@ export async function startDaemon(harness: Partial<Settings["providers"]> = {}) 
       const transport = new StreamableHTTPClientTransport(
         new URL("http://127.0.0.1/mcp/masscode"),
         {
-          fetch: (url, init) => manager.mcp.handle(new Request(url, init)),
+          fetch: (url, init) => manager.mcp.handleRequest(new Request(url, init)),
           requestInit: { headers: { authorization: `Bearer ${token}` } },
         },
       );

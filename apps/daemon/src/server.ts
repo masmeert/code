@@ -38,7 +38,7 @@ delete process.env.MASSCODE_TOKEN;
 const TOKEN_PROTOCOL_PREFIX = "masscode.";
 
 /** The subprotocol carrying the right token, if the request offers one. */
-function tokenProtocol(request: Request) {
+function findTokenProtocol(request: Request) {
   if (!TOKEN) return null;
 
   const expected = Buffer.from(TOKEN_PROTOCOL_PREFIX + TOKEN);
@@ -89,7 +89,7 @@ export function serve(port: number) {
         socket.close(4000, "Too far behind; resume from your cursor");
     }
 
-    function connection(socket: ServerWebSocket<ConnectionData>) {
+    function streamToClient(socket: ServerWebSocket<ConnectionData>) {
       return Effect.scoped(
         Effect.gen(function* () {
           const { dataId, settings, projects, providers, threads, terminals, live } =
@@ -121,7 +121,7 @@ export function serve(port: number) {
     }
 
     /** Transcript subscriptions are per connection, so they're handled here rather than by the manager. */
-    function handle(socket: ServerWebSocket<ConnectionData>, command: ClientCommand) {
+    function handleCommand(socket: ServerWebSocket<ConnectionData>, command: ClientCommand) {
       return Effect.suspend(() =>
         ClientCommand.matchOrElse(
           command,
@@ -258,7 +258,7 @@ export function serve(port: number) {
               if (!socket.data.browserHost) {
                 socket.data.browserHost = {
                   send: (frame) => send(socket, frame),
-                  shows: (threadId) => socket.data.threads.has(threadId),
+                  isShowing: (threadId) => socket.data.threads.has(threadId),
                 };
                 manager.browsers.attach(socket.data.browserHost);
               }
@@ -309,7 +309,7 @@ export function serve(port: number) {
           fetch(request, server) {
             const { pathname, searchParams } = new URL(request.url);
             if (pathname === "/mcp" || pathname.startsWith("/mcp/"))
-              return manager.mcp.handle(request);
+              return manager.mcp.handleRequest(request);
             if (pathname.startsWith(ASSET_ROUTE_PREFIX))
               return serveAsset(pathname.slice(ASSET_ROUTE_PREFIX.length));
 
@@ -317,7 +317,7 @@ export function serve(port: number) {
             if (!origin || !ALLOWED_ORIGINS.has(origin))
               return new Response("Forbidden origin", { status: 403 });
 
-            const protocol = tokenProtocol(request);
+            const protocol = findTokenProtocol(request);
             if (TOKEN && !protocol) return new Response("Unauthorized", { status: 401 });
 
             const data: ConnectionData = {
@@ -342,14 +342,14 @@ export function serve(port: number) {
                 );
 
               socket.data.viewer = { send: (frame) => send(socket, frame) };
-              socket.data.fiber = Effect.runFork(connection(socket));
+              socket.data.fiber = Effect.runFork(streamToClient(socket));
             },
             message(socket, raw) {
               if (socket.data.protocol !== String(PROTOCOL_VERSION)) return;
 
               Effect.runFork(
                 decodeCommand(raw.toString()).pipe(
-                  Effect.flatMap((command) => handle(socket, command)),
+                  Effect.flatMap((command) => handleCommand(socket, command)),
                   Effect.catch((error) => Effect.logWarning("command failed", error)),
                 ),
               );

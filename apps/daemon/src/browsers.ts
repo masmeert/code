@@ -2,7 +2,7 @@ import { ServerFrame, type BrowserAction, type BrowserResult } from "@masscode/c
 
 export interface BrowserHost {
   send(frame: ServerFrame): void;
-  shows(threadId: string): boolean;
+  isShowing(threadId: string): boolean;
 }
 
 interface PendingRequest {
@@ -18,7 +18,7 @@ export function createBrowsers() {
   const hosts = new Set<BrowserHost>();
   const pending = new Map<string, PendingRequest>();
 
-  function take(requestId: string) {
+  function takePendingRequest(requestId: string) {
     const request = pending.get(requestId);
     if (!request) return null;
 
@@ -35,7 +35,9 @@ export function createBrowsers() {
       hosts.delete(host);
       for (const [requestId, request] of pending) {
         if (request.host === host)
-          take(requestId)?.reject(new Error("The MassCode window running the browser closed"));
+          takePendingRequest(requestId)?.reject(
+            new Error("The MassCode window running the browser closed"),
+          );
       }
     },
     respond(
@@ -47,21 +49,22 @@ export function createBrowsers() {
       const request = pending.get(requestId);
       if (request?.host !== host) return;
 
-      take(requestId);
+      takePendingRequest(requestId);
       if (result) request.resolve(result);
       else request.reject(new Error(error ?? "The browser action failed"));
     },
     request(threadId: string, action: BrowserAction) {
       const candidates = [...hosts];
       const host =
-        candidates.findLast((candidate) => candidate.shows(threadId)) ?? candidates.at(-1);
+        candidates.findLast((candidate) => candidate.isShowing(threadId)) ?? candidates.at(-1);
       if (!host)
         return Promise.reject(new Error("The browser needs the MassCode desktop app to be open"));
 
       const requestId = crypto.randomUUID();
       return new Promise<BrowserResult>((resolve, reject) => {
         const timer = setTimeout(
-          () => take(requestId)?.reject(new Error("The browser didn't answer in time")),
+          () =>
+            takePendingRequest(requestId)?.reject(new Error("The browser didn't answer in time")),
           60_000,
         );
         pending.set(requestId, { host, resolve, reject, timer });

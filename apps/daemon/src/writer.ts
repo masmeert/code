@@ -18,7 +18,7 @@ const MAX_PROMPT_PATCH = 60_000;
 const TIMEOUT_MS = 120_000;
 
 /** The writing style's rules for commits and pull requests, from Settings (wording follows t3code). */
-function styleRules(settings: Settings, recent: ReadonlyArray<string>) {
+function getStyleRules(settings: Settings, recent: ReadonlyArray<string>) {
   const history = recent.length
     ? `Recent commit subjects from this repository:\n${recent.map((subject) => `- ${subject}`).join("\n")}`
     : null;
@@ -53,14 +53,14 @@ const COMMIT_INSTRUCTIONS = `You write git commit messages. Reply with the commi
 Subject line: imperative mood, at most 72 characters, no trailing period. If the change needs explaining, add a blank line and a short body wrapped at 72 characters.`;
 
 /** Models like to wrap the answer anyway; keep just the message. */
-function clean(text: string) {
+function stripCodeFences(text: string) {
   return text
     .trim()
     .replace(/^```[a-z]*\n?|\n?```$/g, "")
     .trim();
 }
 
-async function withClaude(
+async function writeWithClaude(
   cwd: string,
   harness: ProviderSettings,
   model: string | undefined,
@@ -96,7 +96,7 @@ async function withClaude(
   }
 }
 
-async function withCodex(
+async function writeWithCodex(
   cwd: string,
   harness: ProviderSettings,
   model: string | undefined,
@@ -167,7 +167,7 @@ async function withCodex(
 }
 
 /** Cursor's print mode, read-only ("ask"); `--trust` skips the prompt for a folder it hasn't seen. */
-async function withCursor(
+async function writeWithCursor(
   cwd: string,
   harness: ProviderSettings,
   model: string | undefined,
@@ -193,10 +193,10 @@ async function withCursor(
   return stdout;
 }
 
-const WRITE: Record<ProviderKind, typeof withCursor> = {
-  claude: withClaude,
-  codex: withCodex,
-  cursor: withCursor,
+const WRITE: Record<ProviderKind, typeof writeWithCursor> = {
+  claude: writeWithClaude,
+  codex: writeWithCodex,
+  cursor: writeWithCursor,
 };
 
 interface WriterInput {
@@ -208,7 +208,7 @@ interface WriterInput {
   readonly recent: ReadonlyArray<string>;
 }
 
-async function write(input: WriterInput, prompt: string) {
+async function writeWithHarness(input: WriterInput, prompt: string) {
   const run = WRITE[input.provider];
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -222,7 +222,7 @@ async function write(input: WriterInput, prompt: string) {
   );
 
   try {
-    return clean(
+    return stripCodeFences(
       await Promise.race([
         run(input.cwd, input.harness, input.model, prompt, controller.signal),
         timeout,
@@ -235,9 +235,9 @@ async function write(input: WriterInput, prompt: string) {
 
 /** Resolves to the message, or rejects with why it couldn't be written. */
 export async function generateCommitMessage(input: WriterInput & { readonly patch: string }) {
-  const style = styleRules(input.settings, input.recent);
+  const style = getStyleRules(input.settings, input.recent);
   const truncated = input.patch.length > MAX_PROMPT_PATCH;
-  const message = await write(
+  const message = await writeWithHarness(
     input,
     [
       COMMIT_INSTRUCTIONS,
@@ -256,7 +256,7 @@ export async function generateCommitMessage(input: WriterInput & { readonly patc
 /** Resolves to a short title summarizing a thread's first message, or rejects with why it couldn't be written. */
 export async function generateThreadTitle(input: WriterInput & { readonly text: string }) {
   return (
-    await write(
+    await writeWithHarness(
       input,
       `You name chat threads with a coding agent. Reply with a title of at most 6 words summarizing what the user asks for: no preamble, no quotes, no trailing period.\n\nThe user's first message:\n${input.text.slice(0, 4_000)}`,
     )
@@ -279,7 +279,7 @@ export async function generatePullRequest(
     readonly template: string | null;
   },
 ) {
-  const style = styleRules(input.settings, input.recent);
+  const style = getStyleRules(input.settings, input.recent);
   const bodyRules = input.template
     ? [
         "- body must be markdown and follow the repository pull request template structure",
@@ -293,7 +293,7 @@ export async function generatePullRequest(
         "- under Testing, include bullet points with concrete checks or 'Not run' where appropriate",
       ];
 
-  const text = await write(
+  const text = await writeWithHarness(
     input,
     [
       [

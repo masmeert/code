@@ -27,7 +27,7 @@ export type ShelveOverride = "shelved" | "active" | null;
 export interface ThreadHome {
   readonly path: string;
   /** A worktree made for the thread, removed with it when it has no changes. */
-  readonly worktree: boolean;
+  readonly isWorktree: boolean;
 }
 
 /** Per harness, the conversation id to resume it from. */
@@ -98,16 +98,16 @@ export class ThreadStore extends Context.Service<
     /** All threads, oldest first. Transcripts stay on disk until a client asks for one. */
     readonly load: Effect.Effect<ReadonlyArray<StoredThread>>;
     /** Approvals requested but never resolved, as `[requestId, threadId]`. */
-    readonly unresolvedApprovals: () => ReadonlyArray<readonly [string, string]>;
+    readonly listUnresolvedApprovals: () => ReadonlyArray<readonly [string, string]>;
     /** Turns that started and never ended (the daemon died during them), by the message that started each. */
-    readonly unfinishedTurns: () => ReadonlyArray<{
+    readonly listUnfinishedTurns: () => ReadonlyArray<{
       readonly threadId: string;
       readonly messageId: string;
     }>;
     readonly hasMessage: (threadId: string, messageId: string) => boolean;
-    readonly firstUserMessage: (threadId: string) => string | null;
+    readonly readFirstUserMessage: (threadId: string) => string | null;
     /** Newest stored event id of a thread; 0 if none. */
-    readonly cursor: (threadId: string) => number;
+    readonly readCursor: (threadId: string) => number;
     /** How many events come after id `after`, and their encoded size, without reading them. */
     readonly measureAfter: (
       threadId: string,
@@ -189,7 +189,7 @@ const decodeTokens = Schema.decodeUnknownOption(Schema.fromJsonString(ResumeToke
 const decodeCoverage = Schema.decodeUnknownOption(Schema.fromJsonString(Coverage));
 
 /** Per-harness tokens, with the one stored before there were several counted for the thread's harness. */
-function legacyTokens(
+function parseResumeTokens(
   row: Pick<ThreadRow, "provider" | "resume_token" | "resume_tokens">,
 ): ResumeTokens {
   const tokens: ResumeTokens =
@@ -399,7 +399,7 @@ const make = Effect.acquireRelease(
       .query<{ value: string }, []>("SELECT value FROM meta WHERE key = 'data_id'")
       .get()!.value;
 
-    function toStored(rows: ReadonlyArray<EventRow>): Array<StoredEvent> {
+    function toStoredEvents(rows: ReadonlyArray<EventRow>): Array<StoredEvent> {
       return rows.flatMap((row) =>
         Option.match(decodeEvent(row.json), {
           onNone: () => [],
@@ -408,8 +408,8 @@ const make = Effect.acquireRelease(
       );
     }
 
-    function userMessages(threadId: string) {
-      return toStored(selectUserMessages.all({ threadId })).flatMap(({ id, event }) =>
+    function readUserMessages(threadId: string) {
+      return toStoredEvents(selectUserMessages.all({ threadId })).flatMap(({ id, event }) =>
         RuntimeEvent.guards["user.message"](event) ? [{ seq: id, event }] : [],
       );
     }
@@ -478,8 +478,8 @@ const make = Effect.acquireRelease(
                   ? undefined
                   : Option.getOrUndefined(decodeLimitStop(row.limit_stop)),
             },
-            home: { path: row.cwd, worktree: row.worktree === 1 },
-            resumeTokens: legacyTokens(row),
+            home: { path: row.cwd, isWorktree: row.worktree === 1 },
+            resumeTokens: parseResumeTokens(row),
             coverage:
               row.coverage === null
                 ? {}
@@ -488,7 +488,7 @@ const make = Effect.acquireRelease(
             queue: row.queue === null ? [] : Option.getOrElse(decodeQueue(row.queue), () => []),
           })),
       ),
-      unresolvedApprovals: () => {
+      listUnresolvedApprovals: () => {
         const pending = new Map<string, string>();
         for (const row of selectApprovals.all()) {
           const requestId = Option.getOrUndefined(
@@ -503,12 +503,12 @@ const make = Effect.acquireRelease(
         }
         return [...pending];
       },
-      unfinishedTurns: () =>
+      listUnfinishedTurns: () =>
         selectUnfinished
           .all()
           .map((row) => ({ threadId: row.thread_id, messageId: row.message_id })),
       hasMessage: (threadId, messageId) => selectMessageSeq.get({ threadId, messageId }) !== null,
-      firstUserMessage: (threadId) => {
+      readFirstUserMessage: (threadId) => {
         const row = selectFirstUser.get({ threadId });
         if (!row) return null;
 
@@ -520,16 +520,16 @@ const make = Effect.acquireRelease(
           )?.text ?? null
         );
       },
-      cursor: (threadId) => selectCursor.get({ threadId })?.seq ?? 0,
+      readCursor: (threadId) => selectCursor.get({ threadId })?.seq ?? 0,
       measureAfter: (threadId, after) => {
         const row = selectMeasure.get({ threadId, after });
         return { count: row?.count ?? 0, bytes: row?.bytes ?? 0 };
       },
-      readAfter: (threadId, after) => toStored(selectAfter.all({ threadId, after })),
+      readAfter: (threadId, after) => toStoredEvents(selectAfter.all({ threadId, after })),
       readTurns: (threadId, turnLimit, before = Number.MAX_SAFE_INTEGER) => {
         const start = selectTurnStart.get({ threadId, before, offset: Math.max(0, turnLimit - 1) });
         const from = start?.seq ?? 0;
-        const events = toStored(selectRange.all({ threadId, from, before }));
+        const events = toStoredEvents(selectRange.all({ threadId, from, before }));
         if (events.length === 0) return { events, page: null };
 
         const hasMore = start !== null && selectOlder.get({ threadId, before: from }) !== null;
@@ -546,7 +546,7 @@ const make = Effect.acquireRelease(
           title: info.title,
           createdAt: info.createdAt,
           updatedAt: info.updatedAt,
-          worktree: home.worktree ? 1 : 0,
+          worktree: home.isWorktree ? 1 : 0,
           startedBy: info.startedBy ?? null,
         });
       },
@@ -602,7 +602,7 @@ const make = Effect.acquireRelease(
         return seq;
       },
       findUserMessage: (threadId, messageId) => {
-        const messages = userMessages(threadId);
+        const messages = readUserMessages(threadId);
         const index = messages.findIndex((message) => message.event.messageId === messageId);
         const found = messages[index];
         if (!found) return null;
@@ -618,7 +618,7 @@ const make = Effect.acquireRelease(
         const after = selectMessageSeq.get({ threadId, messageId });
         if (!after) return null;
 
-        const messages = userMessages(threadId);
+        const messages = readUserMessages(threadId);
         const index = messages.findIndex(
           (message) => message.seq > after.seq && !message.event.steer,
         );

@@ -45,7 +45,7 @@ import {
 } from "./ProviderAdapter.ts";
 import { toClaudeExtraArgs, resolveHarnessLaunch, startPromptlessQuery } from "./launch.ts";
 import { DEVICES_SUPPORTED } from "../devices.ts";
-import { skillMentions } from "../skills.ts";
+import { findSkillMentions } from "../skills.ts";
 
 /** Minimal push-based async iterable used as the SDK's streaming prompt input. */
 function createInbox<A>() {
@@ -152,7 +152,7 @@ const decodeToolInput = Schema.decodeUnknownOption(Schema.Json);
  * asking it to start them itself.
  */
 function splitSkillBlocks(text: string, skills: ReadonlyArray<ProviderSkill>): Array<string> {
-  const mentions = skillMentions(text, skills);
+  const mentions = findSkillMentions(text, skills);
   const last = mentions.at(-1);
   if (!last) return text ? [text] : [];
 

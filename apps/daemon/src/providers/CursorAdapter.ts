@@ -39,7 +39,7 @@ import {
   type TurnInput,
 } from "./ProviderAdapter.ts";
 import { DEVICES_SUPPORTED } from "../devices.ts";
-import { skillMentions } from "../skills.ts";
+import { findSkillMentions } from "../skills.ts";
 
 function createError(message: string) {
   return new ProviderError({ provider: "cursor", message });
@@ -550,7 +550,7 @@ function start({
 
       const written = formatTextWithFiles(turn);
       // Cursor takes a `/name` anywhere in the message as the skill to load.
-      const text = skillMentions(written, turn.skills).reduce(
+      const text = findSkillMentions(written, turn.skills).reduce(
         (result, mention) => `${result.slice(0, mention.start)}/${result.slice(mention.start + 1)}`,
         written,
       );

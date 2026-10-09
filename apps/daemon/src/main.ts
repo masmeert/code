@@ -18,11 +18,11 @@ const program = Effect.gen(function* () {
 
   // An update on a remote host waits for running turns: the app asks with SIGUSR2, and the
   // host's supervisor loop starts the new version once we're gone.
-  let draining = false;
+  let isDraining = false;
   process.on("SIGUSR2", () => {
-    if (draining) return;
+    if (isDraining) return;
 
-    draining = true;
+    isDraining = true;
     const drain = setInterval(() => {
       if (manager.busy()) return;
       clearInterval(drain);

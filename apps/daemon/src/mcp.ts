@@ -98,8 +98,8 @@ interface Orchestration {
 
 const WAIT_MS = 600_000;
 
-function orchestrationServer(caller: string, orchestration: Orchestration) {
-  function run(effect: Effect.Effect<unknown, Error>) {
+function createOrchestrationServer(caller: string, orchestration: Orchestration) {
+  function runToolEffect(effect: Effect.Effect<unknown, Error>) {
     return Effect.runPromise(
       Effect.match(effect, {
         onSuccess: (result) => ({
@@ -129,7 +129,7 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
       description: "Threads in your project, newest first: id, title, harness and status.",
       annotations: readOnly,
     },
-    () => run(orchestration.listThreads(caller)),
+    () => runToolEffect(orchestration.listThreads(caller)),
   );
 
   server.registerTool(
@@ -140,7 +140,7 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
       inputSchema: { threadId: z.string(), after: z.number().int().optional() },
       annotations: readOnly,
     },
-    ({ threadId, after }) => run(orchestration.readThread(caller, threadId, after)),
+    ({ threadId, after }) => runToolEffect(orchestration.readThread(caller, threadId, after)),
   );
 
   server.registerTool(
@@ -150,7 +150,7 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
         "Starts an agent on a task in a new thread in your project. Returns its id; with `wait`, also its answer.",
       inputSchema: StartThreadInput,
     },
-    (input) => run(orchestration.startThread(caller, input)),
+    (input) => runToolEffect(orchestration.startThread(caller, input)),
   );
 
   server.registerTool(
@@ -159,7 +159,7 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
       description: "Sends a message to a thread: it starts a turn, or joins the one running.",
       inputSchema: SendMessageInput,
     },
-    (input) => run(orchestration.sendMessage(caller, input)),
+    (input) => runToolEffect(orchestration.sendMessage(caller, input)),
   );
 
   server.registerTool(
@@ -171,7 +171,9 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
       annotations: readOnly,
     },
     ({ threadId, timeoutSeconds }) =>
-      run(orchestration.waitForThread(caller, threadId, (timeoutSeconds ?? WAIT_MS / 1000) * 1000)),
+      runToolEffect(
+        orchestration.waitForThread(caller, threadId, (timeoutSeconds ?? WAIT_MS / 1000) * 1000),
+      ),
   );
 
   server.registerTool(
@@ -180,20 +182,22 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
       description: "Stops a thread's running turn, and the threads its agent started.",
       inputSchema: { threadId: z.string() },
     },
-    ({ threadId }) => run(orchestration.stopThread(caller, threadId)),
+    ({ threadId }) => runToolEffect(orchestration.stopThread(caller, threadId)),
   );
 
   return server;
 }
 
-function hashOf(token: string) {
+function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult>) {
-  async function run(action: BrowserAction) {
+function createBrowserServer(
+  requestBrowserAction: (action: BrowserAction) => Promise<BrowserResult>,
+) {
+  async function runBrowserAction(action: BrowserAction) {
     try {
-      const result = await browser(action);
+      const result = await requestBrowserAction(action);
       return {
         content: [
           {
@@ -233,7 +237,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       inputSchema: { url: z.string() },
       _meta: alwaysLoad,
     },
-    ({ url }) => run(BrowserAction.cases.navigate.make({ url })),
+    ({ url }) => runBrowserAction(BrowserAction.cases.navigate.make({ url })),
   );
 
   server.registerTool(
@@ -244,7 +248,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       annotations: { readOnlyHint: true },
       _meta: alwaysLoad,
     },
-    () => run(BrowserAction.cases.snapshot.make({})),
+    () => runBrowserAction(BrowserAction.cases.snapshot.make({})),
   );
 
   server.registerTool(
@@ -255,7 +259,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       inputSchema: { target: z.string() },
       _meta: alwaysLoad,
     },
-    ({ target }) => run(BrowserAction.cases.click.make({ target })),
+    ({ target }) => runBrowserAction(BrowserAction.cases.click.make({ target })),
   );
 
   server.registerTool(
@@ -267,7 +271,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       _meta: alwaysLoad,
     },
     ({ target, text, submit }) =>
-      run(BrowserAction.cases.type.make({ target, text, submit: submit ?? false })),
+      runBrowserAction(BrowserAction.cases.type.make({ target, text, submit: submit ?? false })),
   );
 
   server.registerTool(
@@ -277,7 +281,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       inputSchema: { key: z.string() },
       _meta: alwaysLoad,
     },
-    ({ key }) => run(BrowserAction.cases.press.make({ key })),
+    ({ key }) => runBrowserAction(BrowserAction.cases.press.make({ key })),
   );
 
   server.registerTool(
@@ -287,7 +291,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       inputSchema: { expression: z.string() },
       _meta: alwaysLoad,
     },
-    ({ expression }) => run(BrowserAction.cases.evaluate.make({ expression })),
+    ({ expression }) => runBrowserAction(BrowserAction.cases.evaluate.make({ expression })),
   );
 
   server.registerTool(
@@ -297,14 +301,16 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       annotations: { readOnlyHint: true },
       _meta: alwaysLoad,
     },
-    () => run(BrowserAction.cases.console.make({})),
+    () => runBrowserAction(BrowserAction.cases.console.make({})),
   );
 
   return server;
 }
 
-function deviceServer(threadId: string, devices: Devices) {
-  async function run(content: () => Promise<CallToolResult["content"]>): Promise<CallToolResult> {
+function createDeviceServer(threadId: string, devices: Devices) {
+  async function runDeviceTool(
+    content: () => Promise<CallToolResult["content"]>,
+  ): Promise<CallToolResult> {
     try {
       return { content: await content() };
     } catch (error) {
@@ -342,7 +348,7 @@ function deviceServer(threadId: string, devices: Devices) {
       },
     },
     ({ deviceId, platform }) =>
-      run(async () => {
+      runDeviceTool(async () => {
         const { device, cli } = await devices.open(threadId, deviceId ?? null, platform ?? null);
         const target = `${device.platform === "ios" ? `--platform ios --udid ${device.id}` : `--platform android --serial ${device.streamId}`} --session masscode-${threadId}`;
         const app = device.platform === "ios" ? "<bundle-id>" : "<package>";
@@ -375,8 +381,8 @@ function deviceServer(threadId: string, devices: Devices) {
       annotations: { readOnlyHint: true },
     },
     () =>
-      run(async () => [
-        { type: "image", data: await devices.screenshot(threadId), mimeType: "image/png" },
+      runDeviceTool(async () => [
+        { type: "image", data: await devices.takeScreenshot(threadId), mimeType: "image/png" },
       ]),
   );
 
@@ -384,7 +390,7 @@ function deviceServer(threadId: string, devices: Devices) {
 }
 
 export function createMcp(
-  browser: (threadId: string, action: BrowserAction) => Promise<BrowserResult>,
+  requestBrowserAction: (threadId: string, action: BrowserAction) => Promise<BrowserResult>,
   orchestration: Orchestration,
   devices: Devices,
 ) {
@@ -404,15 +410,15 @@ export function createMcp(
       revoke(threadId);
 
       const token = randomBytes(32).toString("base64url");
-      const tokenHash = hashOf(token);
+      const tokenHash = hashToken(token);
       threadByTokenHash.set(tokenHash, threadId);
       tokenHashByThread.set(threadId, tokenHash);
       return { url: `http://127.0.0.1:${PORT}/mcp`, token };
     },
     revoke,
-    async handle(request: Request) {
+    async handleRequest(request: Request) {
       const token = request.headers.get("authorization")?.match(/^Bearer\s+(\S+)$/)?.[1];
-      const threadId = token ? threadByTokenHash.get(hashOf(token)) : undefined;
+      const threadId = token ? threadByTokenHash.get(hashToken(token)) : undefined;
       if (threadId === undefined)
         return new Response("A valid bearer token is required", {
           status: 401,
@@ -422,9 +428,11 @@ export function createMcp(
       const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
       await Match.value(new URL(request.url).pathname)
         .pipe(
-          Match.when("/mcp/masscode", () => orchestrationServer(threadId, orchestration)),
-          Match.when("/mcp/device", () => deviceServer(threadId, devices)),
-          Match.orElse(() => browserServer((action) => browser(threadId, action))),
+          Match.when("/mcp/masscode", () => createOrchestrationServer(threadId, orchestration)),
+          Match.when("/mcp/device", () => createDeviceServer(threadId, devices)),
+          Match.orElse(() =>
+            createBrowserServer((action) => requestBrowserAction(threadId, action)),
+          ),
         )
         .connect(transport);
       return transport.handleRequest(request);

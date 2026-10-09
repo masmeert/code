@@ -36,11 +36,11 @@ const ADB = join(ANDROID_SDK, "platform-tools/adb");
 
 const HUB_PID_FILE = join(DATA_DIR, "tools", "hub.pid");
 
-function toolDirectory(tool: Tool) {
+function getToolDirectory(tool: Tool) {
   return join(DATA_DIR, "tools", tool, TOOLS[tool]);
 }
 
-function run(command: string, args: ReadonlyArray<string>, timeoutMs: number) {
+function runCommand(command: string, args: ReadonlyArray<string>, timeoutMs: number) {
   return new Promise<string>((resolve, reject) =>
     execFile(
       command,
@@ -63,21 +63,21 @@ function run(command: string, args: ReadonlyArray<string>, timeoutMs: number) {
 
 async function isInstalled(tool: Tool) {
   return (
-    (await readFile(join(toolDirectory(tool), ".installed"), "utf8").catch(() => "")) ===
+    (await readFile(join(getToolDirectory(tool), ".installed"), "utf8").catch(() => "")) ===
     TOOLS[tool]
   );
 }
 
-async function install(tool: Tool) {
+async function installTool(tool: Tool) {
   if (await isInstalled(tool)) return;
 
-  const directory = toolDirectory(tool);
+  const directory = getToolDirectory(tool);
   const staging = `${directory}.staging`;
   await rm(staging, { recursive: true, force: true });
   await mkdir(staging, { recursive: true });
 
   // No install scripts: both packages ship prebuilt, and we don't run code we didn't need to.
-  await run(
+  await runCommand(
     "npm",
     [
       "install",
@@ -101,7 +101,9 @@ async function reapOrphanHub() {
   const pid = Number(await readFile(HUB_PID_FILE, "utf8").catch(() => ""));
   if (!pid) return;
 
-  const command = await run("ps", ["-o", "command=", "-p", String(pid)], 5000).catch(() => "");
+  const command = await runCommand("ps", ["-o", "command=", "-p", String(pid)], 5000).catch(
+    () => "",
+  );
   if (command.includes("expo-device-hub")) process.kill(pid, "SIGTERM");
 }
 
@@ -109,7 +111,7 @@ async function reapOrphanHub() {
 async function listSimulators(): Promise<ReadonlyArray<Device>> {
   // SAFETY: the shape of `simctl list --json`.
   const listing = JSON.parse(
-    await run("xcrun", ["simctl", "list", "devices", "available", "--json"], 30_000),
+    await runCommand("xcrun", ["simctl", "list", "devices", "available", "--json"], 30_000),
   ) as { devices: Record<string, ReadonlyArray<{ udid: string; name: string; state: string }>> };
 
   return Object.entries(listing.devices)
@@ -133,10 +135,10 @@ async function listSimulators(): Promise<ReadonlyArray<Device>> {
 // The hub lists emulators through avdmanager, which skips AVDs whose device profile the SDK
 // no longer ships; the emulator itself still runs them.
 async function listEmulators(): Promise<ReadonlyArray<Device>> {
-  const avds = (await run(join(ANDROID_SDK, "emulator/emulator"), ["-list-avds"], 30_000))
+  const avds = (await runCommand(join(ANDROID_SDK, "emulator/emulator"), ["-list-avds"], 30_000))
     .split("\n")
     .filter((line) => /^[\w.-]+$/.test(line));
-  const serials = (await run(ADB, ["devices"], 10_000))
+  const serials = (await runCommand(ADB, ["devices"], 10_000))
     .split("\n")
     .map((line) => line.split("\t")[0]!)
     .filter((serial) => serial.startsWith("emulator-"));
@@ -145,7 +147,9 @@ async function listEmulators(): Promise<ReadonlyArray<Device>> {
       serials.map(
         async (serial) =>
           [
-            (await run(ADB, ["-s", serial, "emu", "avd", "name"], 10_000)).split(/\r?\n/)[0]!,
+            (await runCommand(ADB, ["-s", serial, "emu", "avd", "name"], 10_000)).split(
+              /\r?\n/,
+            )[0]!,
             serial,
           ] as const,
       ),
@@ -178,8 +182,8 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
 
   process.once("exit", () => hubProcess?.kill());
 
-  function setUp() {
-    installing ??= Promise.all([install("expo-device-hub"), install("agent-device")]).then(
+  function installTools() {
+    installing ??= Promise.all([installTool("expo-device-hub"), installTool("agent-device")]).then(
       () => undefined,
       (error) => {
         installing = null;
@@ -197,7 +201,7 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
         "node",
         [
           join(
-            toolDirectory("expo-device-hub"),
+            getToolDirectory("expo-device-hub"),
             "node_modules/expo-device-hub/dist/server/cli.mjs",
           ),
           "--host",
@@ -250,7 +254,7 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
   }
 
   function startHub() {
-    hub ??= setUp()
+    hub ??= installTools()
       .then(launchHub)
       .catch((error) => {
         hub = null;
@@ -259,7 +263,7 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
     return hub;
   }
 
-  async function hubFetch(path: string, init?: RequestInit) {
+  async function fetchFromHub(path: string, init?: RequestInit) {
     const { origin, token } = await startHub();
     const response = await fetch(`${origin}${path}`, {
       ...init,
@@ -272,7 +276,7 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
   }
 
   /** Simulators, then emulators; a Mac with only one of Xcode and the Android SDK lists that one. */
-  async function list(): Promise<ReadonlyArray<Device>> {
+  async function listDevices(): Promise<ReadonlyArray<Device>> {
     const listings = await Promise.allSettled([listSimulators(), listEmulators()]);
     const devices = listings.flatMap((listing) =>
       listing.status === "fulfilled" ? listing.value : [],
@@ -287,13 +291,13 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
     bootedHere.delete(device.id);
     return (
       device.platform === "ios"
-        ? run("xcrun", ["simctl", "shutdown", device.id], 60_000)
-        : run(ADB, ["-s", device.streamId ?? "", "emu", "kill"], 30_000)
+        ? runCommand("xcrun", ["simctl", "shutdown", device.id], 60_000)
+        : runCommand(ADB, ["-s", device.streamId ?? "", "emu", "kill"], 30_000)
     ).catch(() => {});
   }
 
   /** Shuts a device down once idle, if it was booted here and no thread shows it any more. */
-  function release(device: Device) {
+  function scheduleIdleShutdown(device: Device) {
     const booted = bootedHere.get(device.id);
     if (!booted || [...attached.values()].some((other) => other.id === device.id)) return;
 
@@ -301,12 +305,12 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
     booted.idle = setTimeout(() => void shutDown(booted.device), IDLE_SHUTDOWN_MS);
   }
 
-  async function boot(device: Device): Promise<Device> {
+  async function bootDevice(device: Device): Promise<Device> {
     if (device.platform === "ios") {
       // Boots it if needed, and returns once it's up.
-      await run("xcrun", ["simctl", "bootstatus", device.id, "-b"], 3 * 60_000);
+      await runCommand("xcrun", ["simctl", "bootstatus", device.id, "-b"], 3 * 60_000);
       // Booting doesn't start the stream; a simulator booted elsewhere has none either.
-      await hubFetch("/vendor/serve-sim/grid/api/start", {
+      await fetchFromHub("/vendor/serve-sim/grid/api/start", {
         method: "POST",
         body: JSON.stringify({ udid: device.id }),
       });
@@ -317,7 +321,7 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
 
     // SAFETY: the hub's boot answer, as of the pinned version.
     const booted = (await (
-      await hubFetch("/api/devices/boot", {
+      await fetchFromHub("/api/devices/boot", {
         method: "POST",
         body: JSON.stringify({ platform: "android", id: device.id, name: device.id }),
       })
@@ -337,21 +341,21 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
       if (booted) booted.idle = null;
 
       try {
-        const found = (await list()).find((candidate) => candidate.id === deviceId);
+        const found = (await listDevices()).find((candidate) => candidate.id === deviceId);
         if (!found) throw new Error(`No simulator or emulator has the id ${deviceId}.`);
 
-        const device = await boot(found);
+        const device = await bootDevice(found);
         if (!found.booted) bootedHere.set(device.id, { device, idle: null });
         attached.set(threadId, device);
       } catch (error) {
-        if (booted) release(booted.device);
+        if (booted) scheduleIdleShutdown(booted.device);
         throw error;
       }
     } else {
       attached.delete(threadId);
     }
 
-    if (previous && previous.id !== deviceId) release(previous);
+    if (previous && previous.id !== deviceId) scheduleIdleShutdown(previous);
     onAttach(threadId, deviceId);
   }
 
@@ -361,7 +365,7 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
         (await isInstalled("expo-device-hub")) && (await isInstalled("agent-device"));
       if (!installed && !installIfMissing) return { installed, hub: null, devices: [] };
 
-      return { installed: true, devices: await list(), hub: await startHub() };
+      return { installed: true, devices: await listDevices(), hub: await startHub() };
     },
     attach,
     /** The thread is gone or archived: its device shuts down once idle, if booted for it. */
@@ -370,11 +374,11 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
       if (!device) return;
 
       attached.delete(threadId);
-      release(device);
+      scheduleIdleShutdown(device);
     },
     /** Shows a device in the thread's panel for its agent: the one asked for, the thread's, or a booted phone. */
     async open(threadId: string, deviceId: string | null, platform: DevicePlatform | null) {
-      const devices = await list();
+      const devices = await listDevices();
       const phones = devices.filter(
         (device) =>
           (platform === null || device.platform === platform) &&
@@ -395,10 +399,10 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
       return {
         // SAFETY: attach just set it.
         device: attached.get(threadId)!,
-        cli: join(toolDirectory("agent-device"), "node_modules/.bin/agent-device"),
+        cli: join(getToolDirectory("agent-device"), "node_modules/.bin/agent-device"),
       };
     },
-    async screenshot(threadId: string) {
+    async takeScreenshot(threadId: string) {
       const device = attached.get(threadId);
       if (!device?.streamId)
         throw new Error("No device is open in this thread. Call device_open first.");
@@ -413,7 +417,7 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
           ),
         );
 
-      const response = await hubFetch(`/vendor/serve-sim/api/screenshot?device=${device.id}`, {
+      const response = await fetchFromHub(`/vendor/serve-sim/api/screenshot?device=${device.id}`, {
         method: "POST",
       });
       return Buffer.from(await response.arrayBuffer()).toString("base64");

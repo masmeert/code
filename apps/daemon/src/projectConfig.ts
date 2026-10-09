@@ -44,7 +44,7 @@ export async function writeProjectConfig(projectPath: string, config: ProjectCon
 function toToml({ worktree, scripts = [] }: ProjectConfig) {
   const worktreeLines = [
     worktree?.default === undefined ? [] : [`default = ${worktree.default}`],
-    worktree?.setup === undefined ? [] : [`setup = ${tomlString(worktree.setup)}`],
+    worktree?.setup === undefined ? [] : [`setup = ${formatTomlString(worktree.setup)}`],
     worktree?.wait_for_setup === undefined ? [] : [`wait_for_setup = ${worktree.wait_for_setup}`],
   ].flat();
 
@@ -52,11 +52,11 @@ function toToml({ worktree, scripts = [] }: ProjectConfig) {
     ...(worktreeLines.length ? [["[worktree]", ...worktreeLines]] : []),
     ...scripts.map((script) => [
       "[[scripts]]",
-      `name = ${tomlString(script.name)}`,
-      `command = ${tomlString(script.command)}`,
+      `name = ${formatTomlString(script.name)}`,
+      `command = ${formatTomlString(script.command)}`,
       ...(script.preview_url === undefined
         ? []
-        : [`preview_url = ${tomlString(script.preview_url)}`]),
+        : [`preview_url = ${formatTomlString(script.preview_url)}`]),
     ]),
   ];
 
@@ -64,7 +64,7 @@ function toToml({ worktree, scripts = [] }: ProjectConfig) {
 }
 
 /** Multi-line text as a literal block, so a script reads as written; JSON's escapes are valid TOML ones. */
-function tomlString(value: string) {
+function formatTomlString(value: string) {
   return value.includes("\n") && !value.includes("'''")
     ? `'''\n${value.endsWith("\n") ? value : `${value}\n`}'''`
     : JSON.stringify(value);

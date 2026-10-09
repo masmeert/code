@@ -28,7 +28,7 @@ interface AssetClaims {
   readonly expiresAt: number;
 }
 
-function signature(payload: string) {
+function computeSignature(payload: string) {
   return createHmac("sha256", SIGNING_KEY).update(payload).digest("base64url");
 }
 
@@ -49,13 +49,13 @@ export async function signImage(path: string, cwd: string) {
     } satisfies AssetClaims),
   ).toString("base64url");
 
-  return `${ASSET_ROUTE_PREFIX}${payload}.${signature(payload)}`;
+  return `${ASSET_ROUTE_PREFIX}${payload}.${computeSignature(payload)}`;
 }
 
 /** Serves a URL from `signImage`; the token is the only credential, so it skips the origin and daemon-token checks. */
 export async function serveAsset(token: string) {
   const [payload = "", given = ""] = token.split(".");
-  const expected = Buffer.from(signature(payload));
+  const expected = Buffer.from(computeSignature(payload));
   if (given.length !== expected.length || !timingSafeEqual(Buffer.from(given), expected))
     return new Response("Not found", { status: 404 });
 

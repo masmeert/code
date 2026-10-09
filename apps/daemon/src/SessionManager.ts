@@ -43,10 +43,10 @@ import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
 import {
   addWorktree,
-  autoPull,
+  fastForwardDefaultBranch,
   captureCheckpoint,
   checkoutBranch,
-  checkpointRef,
+  getCheckpointRef,
   commitAll,
   copyCheckpoints,
   createBranch,
@@ -66,11 +66,11 @@ import {
   readRemoteUrl,
   readStatus,
   removeWorktreeIfClean,
-  repoRoot,
+  readRepoRoot,
   restoreCheckpoint,
 } from "./git.ts";
 import { expandHome, listFolders } from "./folders.ts";
-import { handoffText } from "./handoff.ts";
+import { buildHandoff } from "./handoff.ts";
 import { ClaudeAdapter } from "./providers/ClaudeAdapter.ts";
 import {
   detectSourceControl,
@@ -434,7 +434,7 @@ const make = Effect.gen(function* () {
   yield* Effect.addFinalizer(() => Effect.sync(() => void (stopped = true)));
 
   // Approvals pending when the daemon stopped died with their agent process.
-  for (const [requestId, threadId] of store.unresolvedApprovals()) {
+  for (const [requestId, threadId] of store.listUnresolvedApprovals()) {
     store.appendEvent(
       threadId,
       RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }),
@@ -445,7 +445,7 @@ const make = Effect.gen(function* () {
   for (const entry of threads.values()) {
     if (entry.info.title !== basename(entry.info.cwd)) continue;
 
-    const text = store.firstUserMessage(entry.info.id);
+    const text = store.readFirstUserMessage(entry.info.id);
     if (text === null) continue;
 
     entry.info = { ...entry.info, title: titleFrom(text, entry.info.title) };
@@ -497,7 +497,7 @@ const make = Effect.gen(function* () {
 
     // The turn's start snapshot is of the folder it left, so there's nothing to compare its end with.
     entry.currentTurn = null;
-    entry.info = { ...entry.info, cwd, worktree: entry.home.worktree || cwd !== entry.home.path };
+    entry.info = { ...entry.info, cwd, worktree: entry.home.isWorktree || cwd !== entry.home.path };
     store.setAgentCwd(entry.info.id, cwd === entry.home.path ? null : cwd);
     refreshMeta(entry);
   }
@@ -673,16 +673,16 @@ const make = Effect.gen(function* () {
   for (const entry of threads.values()) refreshMeta(entry);
 
   const terminals = createTerminals({
-    folderOf: (threadId) => threads.get(threadId)?.info.cwd ?? null,
-    opened: (terminal) => publish(RuntimeEvent.cases["terminal.opened"].make(terminal)),
-    closed: (terminal) => publish(RuntimeEvent.cases["terminal.closed"].make(terminal)),
+    findFolder: (threadId) => threads.get(threadId)?.info.cwd ?? null,
+    onOpened: (terminal) => publish(RuntimeEvent.cases["terminal.opened"].make(terminal)),
+    onClosed: (terminal) => publish(RuntimeEvent.cases["terminal.closed"].make(terminal)),
   });
   const browsers = createBrowsers();
   const devices = createDevices((threadId, deviceId) =>
     publish(RuntimeEvent.cases["thread.device"].make({ threadId, deviceId })),
   );
   const skills = createSkillCatalog({
-    read: (provider, cwd) =>
+    readSkills: (provider, cwd) =>
       Effect.flatMap(settingsStore.get, (settings) =>
         ADAPTERS[provider].listSkills({ cwd, harness: settings.providers[provider] }),
       ),
@@ -794,7 +794,7 @@ const make = Effect.gen(function* () {
 
     const { id: threadId, cwd } = entry.info;
     void (async () => {
-      if (!(await captureCheckpoint(cwd, checkpointRef(threadId, messageId, "end")))) return;
+      if (!(await captureCheckpoint(cwd, getCheckpointRef(threadId, messageId, "end")))) return;
       const stats = await readCheckpointStats(cwd, threadId, messageId);
       if (!stats || stats.files === 0 || threads.get(threadId) !== entry) return;
       publish(RuntimeEvent.cases["turn.checkpoint"].make({ threadId, messageId, ...stats }));
@@ -833,7 +833,7 @@ const make = Effect.gen(function* () {
   }
 
   // Turns going when the daemon died: nothing else will end them.
-  for (const { threadId, messageId } of store.unfinishedTurns()) {
+  for (const { threadId, messageId } of store.listUnfinishedTurns()) {
     const entry = threads.get(threadId);
     if (!entry) continue;
 
@@ -957,10 +957,10 @@ const make = Effect.gen(function* () {
         // A worktree with work left in it stays for the user to deal with; its branch stays until merged.
         // A fork shares its thread's worktree, so the last one out removes it.
         if (
-          home.worktree &&
+          home.isWorktree &&
           ![...threads.values()].some((other) => other.home.path === home.path)
         ) {
-          const root = await repoRoot(home.path);
+          const root = await readRepoRoot(home.path);
           if (root) await removeWorktreeIfClean(root);
         }
       })();
@@ -1011,7 +1011,7 @@ const make = Effect.gen(function* () {
           fast,
           permission,
           skills: yield* Effect.promise(() =>
-            skills.mentionedIn(entry.info.provider, entry.info.cwd, text),
+            skills.findMentionedSkills(entry.info.provider, entry.info.cwd, text),
           ),
           handoff: null,
         };
@@ -1022,10 +1022,10 @@ const make = Effect.gen(function* () {
         const handoff =
           since === undefined
             ? null
-            : handoffText({
+            : buildHandoff({
                 events: store.readAfter(threadId, since).map((stored) => stored.event),
-                fresh: entry.resumeTokens[provider] === undefined,
-                names: (kind) => harnessName(settings, kind),
+                isFresh: entry.resumeTokens[provider] === undefined,
+                getHarnessName: (kind) => harnessName(settings, kind),
               });
         const event = RuntimeEvent.cases["user.message"].make({
           threadId,
@@ -1052,7 +1052,7 @@ const make = Effect.gen(function* () {
         // Snapshot the folder before the agent touches it, so the turn's changes can be shown and undone.
         entry.currentTurn = message.id;
         yield* Effect.promise(() =>
-          captureCheckpoint(entry.info.cwd, checkpointRef(threadId, message.id, "start")),
+          captureCheckpoint(entry.info.cwd, getCheckpointRef(threadId, message.id, "start")),
         );
         const session = yield* ensureSession(entry, { effort, permission, attachments: [] }).pipe(
           Effect.tap((session) => session.send({ ...turn, handoff: handoff?.text ?? null })),
@@ -1318,13 +1318,13 @@ const make = Effect.gen(function* () {
           : null;
       const handoff = resumeToken
         ? null
-        : handoffText({
+        : buildHandoff({
             events: store
               .readAfter(threadId, 0)
               .filter((stored) => cut.seq === null || stored.id < cut.seq)
               .map((stored) => stored.event),
-            fresh: true,
-            names: (kind) => harnessName(settings, kind),
+            isFresh: true,
+            getHarnessName: (kind) => harnessName(settings, kind),
           });
 
       const chat: SideChat = { session: null };
@@ -1480,7 +1480,7 @@ const make = Effect.gen(function* () {
 
       // Claude reports its skills as commands too; they're offered under `$` instead.
       const skillNames = yield* Effect.promise(() =>
-        skills.names(entry.info.provider, entry.info.cwd),
+        skills.loadSkillNames(entry.info.provider, entry.info.cwd),
       );
       publish(
         RuntimeEvent.cases["thread.commands"].make({
@@ -1573,7 +1573,7 @@ const make = Effect.gen(function* () {
     const { autoPull: enabled } = await Effect.runPromise(settingsStore.get);
     if (enabled && Date.now() - (pulledAt.get(path) ?? 0) > AUTO_PULL_INTERVAL_MS) {
       pulledAt.set(path, Date.now());
-      await autoPull(path);
+      await fastForwardDefaultBranch(path);
     }
 
     const status = await readRepo(path);
@@ -1684,7 +1684,7 @@ const make = Effect.gen(function* () {
       Effect.runPromise(settingsStore.get),
       readPullRequestRange(path, status.branch),
       readRecentSubjects(path, 20),
-      repoRoot(path),
+      readRepoRoot(path),
     ]);
     if (!range) return "Couldn't find the branch to open the pull request against";
     if (!range.commits) return `This branch has no commits that ${range.base} doesn't have`;
@@ -1734,7 +1734,7 @@ const make = Effect.gen(function* () {
    */
   function makeWorktree(projectPath: string, title: string, threadId: string) {
     return Effect.gen(function* () {
-      const root = yield* Effect.promise(() => repoRoot(projectPath));
+      const root = yield* Effect.promise(() => readRepoRoot(projectPath));
       if (!root) return yield* Effect.fail(fail("New worktrees need the project to be a git repo"));
 
       const slug = `${
@@ -1780,7 +1780,7 @@ const make = Effect.gen(function* () {
         command,
         120,
         30,
-        ({ exitCode, output, stopped }) => {
+        ({ exitCode, output, wasStopped: stopped }) => {
           if (threads.get(threadId) !== entry) return;
 
           publish(
@@ -1836,10 +1836,10 @@ const make = Effect.gen(function* () {
 
   function create(command: Extract<ClientCommand, { _tag: "thread.create" }>) {
     return Effect.gen(function* () {
-      const { project, created } = yield* projectsStore
+      const { project, isNew } = yield* projectsStore
         .ensure(command.path)
         .pipe(Effect.mapError((error) => fail(error.message)));
-      if (created) publish(RuntimeEvent.cases["project.added"].make({ project }));
+      if (isNew) publish(RuntimeEvent.cases["project.added"].make({ project }));
 
       const now = Date.now();
       const id = crypto.randomUUID();
@@ -1866,7 +1866,7 @@ const make = Effect.gen(function* () {
           seenRev: 0,
           shelved: false,
         },
-        { path: cwd, worktree: command.workspace === "worktree" },
+        { path: cwd, isWorktree: command.workspace === "worktree" },
         command.text,
         command.requestId,
       );
@@ -1981,10 +1981,10 @@ const make = Effect.gen(function* () {
           },
           // Same folder as the caller, which keeps it if it's a worktree made for the caller.
           input.worktree
-            ? { path: cwd, worktree: true }
+            ? { path: cwd, isWorktree: true }
             : cwd === caller.home.path
               ? caller.home
-              : { path: cwd, worktree: false },
+              : { path: cwd, isWorktree: false },
           input.prompt,
           null,
         );
@@ -2105,7 +2105,7 @@ const make = Effect.gen(function* () {
       setCoverage(entry, {
         ...entry.coverage,
         // The harness left has everything so far, unless it hadn't caught up yet itself.
-        [from]: entry.coverage[from] ?? store.cursor(threadId),
+        [from]: entry.coverage[from] ?? store.readCursor(threadId),
         // One with no conversation of its own gets all of it.
         ...(entry.resumeTokens[provider] === undefined && { [provider]: 0 }),
       });
@@ -2175,7 +2175,8 @@ const make = Effect.gen(function* () {
       "sideChat.close": ({ sideChatId }) => closeSideChat(sideChatId),
       "thread.compact": (command) => compact(command.threadId),
       "thread.listCommands": (command) => listCommands(command.threadId),
-      "skills.list": (command) => Effect.sync(() => skills.request(command.provider, command.path)),
+      "skills.list": (command) =>
+        Effect.sync(() => skills.requestListing(command.provider, command.path)),
       "thread.readUsage": (command) => Effect.promise(() => readUsage(command.threadId)),
       "checkpoint.diff": (command) =>
         Effect.gen(function* () {
@@ -2296,8 +2297,8 @@ const make = Effect.gen(function* () {
       "project.add": (command) =>
         projectsStore.ensure(command.path).pipe(
           Effect.mapError((error) => fail(error.message)),
-          Effect.map(({ project, created }) =>
-            created ? publish(RuntimeEvent.cases["project.added"].make({ project })) : undefined,
+          Effect.map(({ project, isNew }) =>
+            isNew ? publish(RuntimeEvent.cases["project.added"].make({ project })) : undefined,
           ),
         ),
       "project.scan": (command) =>
@@ -2316,10 +2317,8 @@ const make = Effect.gen(function* () {
           const repos = yield* Effect.promise(() => reposIn(resolve(expandHome(command.path)), 3));
           yield* Effect.forEach(repos, (folder) =>
             projectsStore.ensure(folder).pipe(
-              Effect.map(({ project, created }) =>
-                created
-                  ? publish(RuntimeEvent.cases["project.added"].make({ project }))
-                  : undefined,
+              Effect.map(({ project, isNew }) =>
+                isNew ? publish(RuntimeEvent.cases["project.added"].make({ project })) : undefined,
               ),
               Effect.ignore,
             ),
@@ -2383,7 +2382,7 @@ const make = Effect.gen(function* () {
       "terminal.run": ({ threadId, terminalId, command, columns, rows, options }) =>
         Effect.flatMap(getEntry(threadId), (entry) => {
           const failed = terminals.run(threadId, terminalId, command, columns, rows, (exit) => {
-            if (exit.stopped) return;
+            if (exit.wasStopped) return;
             const run = { command, exitCode: exit.exitCode, output: exit.output };
             Effect.runFork(
               send(entry, describeRun(run), options, { run }).pipe(
@@ -2471,7 +2470,7 @@ const make = Effect.gen(function* () {
       if (!threads.has(threadId)) return null;
 
       const live = [...streaming.values()].filter((delta) => delta.threadId === threadId);
-      const cursor = store.cursor(threadId);
+      const cursor = store.readCursor(threadId);
       // A cursor past the end means the cache is from another database: start over.
       // Sized before anything is decoded, so a huge gap never gets read.
       if (after !== null && after <= cursor) {

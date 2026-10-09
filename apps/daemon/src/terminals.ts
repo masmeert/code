@@ -18,22 +18,22 @@ interface Attachment {
   inFlightCharacters: number;
   queued: Array<string>;
   queuedCharacters: number;
-  waitingForSnapshot: boolean;
-  stale: boolean;
+  isWaitingForSnapshot: boolean;
+  isStale: boolean;
 }
 
 interface RunExit {
   readonly exitCode: number;
   readonly output: string;
   /** Closed by the user, the thread archiving or removal, rather than ending on its own. */
-  readonly stopped: boolean;
+  readonly wasStopped: boolean;
 }
 
 interface TerminalSession extends TerminalInfo {
   readonly shell: Bun.Subprocess;
   /** Set on a run; left out, or once the daemon shuts down, its exit goes unreported. */
   onExit: ((exit: RunExit) => void) | null;
-  stopped: boolean;
+  isStopped: boolean;
   readonly screen: HeadlessTerminal;
   readonly serializer: SerializeAddon;
   readonly viewers: Map<TerminalViewer, Attachment>;
@@ -46,20 +46,20 @@ interface TerminalSession extends TerminalInfo {
 export type Terminals = ReturnType<typeof createTerminals>;
 
 export function createTerminals(options: {
-  folderOf(threadId: string): string | null;
-  opened(terminal: TerminalInfo): void;
-  closed(terminal: TerminalInfo): void;
+  findFolder(threadId: string): string | null;
+  onOpened(terminal: TerminalInfo): void;
+  onClosed(terminal: TerminalInfo): void;
 }) {
   const sessions = new Map<string, TerminalSession>();
 
   // Every run's key, kept after it exits: a viewer attaching late must not start a shell in its place.
   const runs = new Set<string>();
 
-  function keyOf(threadId: string, terminalId: string) {
+  function getTerminalKey(threadId: string, terminalId: string) {
     return `${threadId}\u0000${terminalId}`;
   }
 
-  function start(
+  function startShell(
     threadId: string,
     terminalId: string,
     columns: number,
@@ -70,7 +70,7 @@ export function createTerminals(options: {
       readonly env?: Record<string, string>;
     },
   ): TerminalSession | Error {
-    const folder = options.folderOf(threadId);
+    const folder = options.findFolder(threadId);
     if (folder === null) return new Error("This thread is gone.");
     if (!existsSync(folder)) return new Error(`The thread's folder is gone: ${folder}`);
 
@@ -103,7 +103,7 @@ export function createTerminals(options: {
         terminalId,
         ...(run && { command: run.command }),
         onExit: run?.onExit ?? null,
-        stopped: false,
+        isStopped: false,
         shell: Bun.spawn(
           [
             shellPath,
@@ -138,7 +138,7 @@ export function createTerminals(options: {
               cols: columns,
               rows,
               name: "xterm-256color",
-              data: (_terminal, bytes) => receive(session, bytes),
+              data: (_terminal, bytes) => bufferOutput(session, bytes),
             },
           },
         ),
@@ -151,10 +151,10 @@ export function createTerminals(options: {
         flushTimer: null,
       };
 
-      sessions.set(keyOf(threadId, terminalId), session);
-      if (run) runs.add(keyOf(threadId, terminalId));
-      void session.shell.exited.then((exitCode) => finish(session, exitCode));
-      options.opened({ threadId, terminalId, ...(run && { command: run.command }) });
+      sessions.set(getTerminalKey(threadId, terminalId), session);
+      if (run) runs.add(getTerminalKey(threadId, terminalId));
+      void session.shell.exited.then((exitCode) => handleShellExit(session, exitCode));
+      options.onOpened({ threadId, terminalId, ...(run && { command: run.command }) });
       return session;
     } catch (error) {
       screen.dispose();
@@ -164,12 +164,12 @@ export function createTerminals(options: {
     }
   }
 
-  function receive(session: TerminalSession, bytes: Uint8Array) {
+  function bufferOutput(session: TerminalSession, bytes: Uint8Array) {
     session.pendingOutput += session.decoder.decode(bytes, { stream: true });
-    session.flushTimer ??= setTimeout(() => flush(session), 4);
+    session.flushTimer ??= setTimeout(() => flushOutput(session), 4);
   }
 
-  function flush(session: TerminalSession) {
+  function flushOutput(session: TerminalSession) {
     if (session.flushTimer) clearTimeout(session.flushTimer);
     session.flushTimer = null;
 
@@ -184,19 +184,20 @@ export function createTerminals(options: {
       });
     }
 
-    for (const [viewer, attachment] of session.viewers) deliver(session, viewer, attachment, data);
+    for (const [viewer, attachment] of session.viewers)
+      deliverOutput(session, viewer, attachment, data);
   }
 
-  function deliver(
+  function deliverOutput(
     session: TerminalSession,
     viewer: TerminalViewer,
     attachment: Attachment,
     data: string,
   ) {
-    if (attachment.stale) return;
+    if (attachment.isStale) return;
 
     if (
-      !attachment.waitingForSnapshot &&
+      !attachment.isWaitingForSnapshot &&
       attachment.queued.length === 0 &&
       attachment.inFlightCharacters < IN_FLIGHT_CHARACTER_LIMIT
     ) {
@@ -214,13 +215,13 @@ export function createTerminals(options: {
     attachment.queued.push(data);
     attachment.queuedCharacters += data.length;
     if (attachment.queuedCharacters > 1024 * 1024)
-      Object.assign(attachment, { queued: [], queuedCharacters: 0, stale: true });
+      Object.assign(attachment, { queued: [], queuedCharacters: 0, isStale: true });
   }
 
   function sendSnapshot(session: TerminalSession, viewer: TerminalViewer, attachment: Attachment) {
     Object.assign(attachment, {
-      waitingForSnapshot: true,
-      stale: false,
+      isWaitingForSnapshot: true,
+      isStale: false,
       queued: [],
       queuedCharacters: 0,
     });
@@ -229,7 +230,7 @@ export function createTerminals(options: {
       if (session.viewers.get(viewer) !== attachment) return;
 
       const data = session.serializer.serialize();
-      Object.assign(attachment, { waitingForSnapshot: false, inFlightCharacters: data.length });
+      Object.assign(attachment, { isWaitingForSnapshot: false, inFlightCharacters: data.length });
       viewer.send(
         ServerFrame.cases["terminal.snapshot"].make({
           threadId: session.threadId,
@@ -245,34 +246,35 @@ export function createTerminals(options: {
     session.screen.resize(columns, rows);
   }
 
-  function finish(session: TerminalSession, exitCode: number) {
-    flush(session);
+  function handleShellExit(session: TerminalSession, exitCode: number) {
+    flushOutput(session);
     session.shell.terminal?.close();
     // The screen parses writes asynchronously; an empty write's callback runs once it has caught up.
     session.screen.write("", () => {
       session.onExit?.({
         exitCode,
-        output: printedText(session.screen),
-        stopped: session.stopped,
+        output: getPrintedText(session.screen),
+        wasStopped: session.isStopped,
       });
       session.screen.dispose();
 
-      const key = keyOf(session.threadId, session.terminalId);
+      const key = getTerminalKey(session.threadId, session.terminalId);
       if (sessions.get(key) !== session) return;
 
       sessions.delete(key);
-      options.closed({ threadId: session.threadId, terminalId: session.terminalId });
+      options.onClosed({ threadId: session.threadId, terminalId: session.terminalId });
     });
   }
 
   function close(threadId: string, terminalId: string) {
-    const session = sessions.get(keyOf(threadId, terminalId));
+    const session = sessions.get(getTerminalKey(threadId, terminalId));
     if (!session) return;
 
-    session.stopped = true;
+    session.isStopped = true;
     session.shell.kill("SIGHUP");
     setTimeout(() => {
-      if (sessions.get(keyOf(threadId, terminalId)) === session) session.shell.kill("SIGKILL");
+      if (sessions.get(getTerminalKey(threadId, terminalId)) === session)
+        session.shell.kill("SIGKILL");
     }, 1000);
   }
 
@@ -294,10 +296,13 @@ export function createTerminals(options: {
       onExit: (exit: RunExit) => void,
       env?: Record<string, string>,
     ): Error | null {
-      if (sessions.has(keyOf(threadId, terminalId)) || runs.has(keyOf(threadId, terminalId)))
+      if (
+        sessions.has(getTerminalKey(threadId, terminalId)) ||
+        runs.has(getTerminalKey(threadId, terminalId))
+      )
         return new Error("That command is already running.");
 
-      const session = start(threadId, terminalId, columns, rows, {
+      const session = startShell(threadId, terminalId, columns, rows, {
         command,
         onExit,
         ...(env && { env }),
@@ -312,14 +317,14 @@ export function createTerminals(options: {
       viewer: TerminalViewer,
       input?: string,
     ) {
-      const existing = sessions.get(keyOf(threadId, terminalId));
+      const existing = sessions.get(getTerminalKey(threadId, terminalId));
       if (existing) resize(existing, columns, rows);
 
       const session =
         existing ??
-        (runs.has(keyOf(threadId, terminalId))
+        (runs.has(getTerminalKey(threadId, terminalId))
           ? new Error("This command already finished.")
-          : start(threadId, terminalId, columns, rows));
+          : startShell(threadId, terminalId, columns, rows));
       // The pty holds it until the shell reads its first line.
       if (!existing && input && !(session instanceof Error))
         session.shell.terminal?.write(`${input}\r`);
@@ -333,36 +338,36 @@ export function createTerminals(options: {
           }),
         );
 
-      flush(session);
+      flushOutput(session);
       const attachment: Attachment = {
         inFlightCharacters: 0,
         queued: [],
         queuedCharacters: 0,
-        waitingForSnapshot: false,
-        stale: false,
+        isWaitingForSnapshot: false,
+        isStale: false,
       };
       session.viewers.set(viewer, attachment);
       sendSnapshot(session, viewer, attachment);
     },
     detach(threadId: string, terminalId: string, viewer: TerminalViewer) {
-      sessions.get(keyOf(threadId, terminalId))?.viewers.delete(viewer);
+      sessions.get(getTerminalKey(threadId, terminalId))?.viewers.delete(viewer);
     },
     detachViewer(viewer: TerminalViewer) {
       for (const session of sessions.values()) session.viewers.delete(viewer);
     },
     acknowledge(threadId: string, terminalId: string, viewer: TerminalViewer, characters: number) {
-      const session = sessions.get(keyOf(threadId, terminalId));
+      const session = sessions.get(getTerminalKey(threadId, terminalId));
       const attachment = session?.viewers.get(viewer);
       if (!session || !attachment) return;
 
       attachment.inFlightCharacters = Math.max(0, attachment.inFlightCharacters - characters);
-      if (attachment.stale) {
+      if (attachment.isStale) {
         if (attachment.inFlightCharacters === 0) sendSnapshot(session, viewer, attachment);
         return;
       }
 
       if (
-        attachment.waitingForSnapshot ||
+        attachment.isWaitingForSnapshot ||
         attachment.queued.length === 0 ||
         attachment.inFlightCharacters >= IN_FLIGHT_CHARACTER_LIMIT
       )
@@ -377,10 +382,10 @@ export function createTerminals(options: {
       viewer.send(ServerFrame.cases["terminal.output"].make({ threadId, terminalId, data }));
     },
     write(threadId: string, terminalId: string, data: string) {
-      sessions.get(keyOf(threadId, terminalId))?.shell.terminal?.write(data);
+      sessions.get(getTerminalKey(threadId, terminalId))?.shell.terminal?.write(data);
     },
     resize(threadId: string, terminalId: string, columns: number, rows: number) {
-      const session = sessions.get(keyOf(threadId, terminalId));
+      const session = sessions.get(getTerminalKey(threadId, terminalId));
       if (session) resize(session, columns, rows);
     },
     close,
@@ -419,7 +424,7 @@ export function createTerminals(options: {
 }
 
 /** The screen as plain text, wrapped lines joined back up; cut to its end when long. */
-function printedText(screen: HeadlessTerminal) {
+function getPrintedText(screen: HeadlessTerminal) {
   const buffer = screen.buffer.active;
   const lines: Array<string> = [];
   for (let index = 0; index < buffer.length; index++) {

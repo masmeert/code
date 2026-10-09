@@ -21,7 +21,7 @@ interface SkillMention {
   readonly end: number;
 }
 
-export function skillMentions(
+export function findSkillMentions(
   text: string,
   skills: ReadonlyArray<ProviderSkill>,
 ): Array<SkillMention> {
@@ -41,7 +41,7 @@ interface SkillListing {
 }
 
 export function createSkillCatalog(options: {
-  readonly read: (
+  readonly readSkills: (
     provider: ProviderKind,
     cwd: string,
   ) => Effect.Effect<ReadonlyArray<ProviderSkill>, ProviderError>;
@@ -51,13 +51,13 @@ export function createSkillCatalog(options: {
   const listings = new Map<string, SkillListing>();
   const reading = new Map<string, Promise<SkillListing>>();
 
-  function refresh(provider: ProviderKind, cwd: string) {
+  function refreshListing(provider: ProviderKind, cwd: string) {
     const key = `${provider}:${cwd}`;
     const inFlight = reading.get(key);
     if (inFlight) return inFlight;
 
     const next = Effect.runPromise(
-      options.read(provider, cwd).pipe(
+      options.readSkills(provider, cwd).pipe(
         // A defect would reject, leaving the key's in-flight read stuck on it.
         Effect.matchCause({
           onSuccess: (skills) => ({ skills, error: null }),
@@ -91,27 +91,28 @@ export function createSkillCatalog(options: {
   }
 
   /** The last listing, or a first one read now. */
-  async function latest(provider: ProviderKind, cwd: string) {
-    return listings.get(`${provider}:${cwd}`) ?? (await refresh(provider, cwd));
+  async function loadListing(provider: ProviderKind, cwd: string) {
+    return listings.get(`${provider}:${cwd}`) ?? (await refreshListing(provider, cwd));
   }
 
   return {
     /** Answers from the last listing at once, then refreshes it if it's old; a new listing is announced when it differs. */
-    request(provider: ProviderKind, cwd: string) {
+    requestListing(provider: ProviderKind, cwd: string) {
       const listing = listings.get(`${provider}:${cwd}`);
       if (listing) options.onListed(provider, cwd, listing);
-      if (!listing || Date.now() - listing.listedAtMs > FRESH_MS) void refresh(provider, cwd);
+      if (!listing || Date.now() - listing.listedAtMs > FRESH_MS)
+        void refreshListing(provider, cwd);
     },
     /** The skills `text` mentions, from the listing the menu showed. */
-    async mentionedIn(provider: ProviderKind, cwd: string, text: string) {
+    async findMentionedSkills(provider: ProviderKind, cwd: string, text: string) {
       if (!/\$[A-Za-z0-9]/.test(text)) return [];
 
-      const { skills } = await latest(provider, cwd);
-      return [...new Set(skillMentions(text, skills).map((mention) => mention.skill))];
+      const { skills } = await loadListing(provider, cwd);
+      return [...new Set(findSkillMentions(text, skills).map((mention) => mention.skill))];
     },
     /** Names of the skills the menu shows, for keeping them out of the command menu. */
-    async names(provider: ProviderKind, cwd: string) {
-      const { skills } = await latest(provider, cwd);
+    async loadSkillNames(provider: ProviderKind, cwd: string) {
+      const { skills } = await loadListing(provider, cwd);
       return new Set(skills.map((skill) => skill.name));
     },
   };

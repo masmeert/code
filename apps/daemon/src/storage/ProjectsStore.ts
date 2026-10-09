@@ -21,7 +21,7 @@ export class ProjectsStore extends Context.Service<
     /** Returns the existing project for `path`, or registers a new one. */
     readonly ensure: (
       path: string,
-    ) => Effect.Effect<{ readonly project: Project; readonly created: boolean }, ProjectNotFound>;
+    ) => Effect.Effect<{ readonly project: Project; readonly isNew: boolean }, ProjectNotFound>;
     readonly remove: (projectId: string) => Effect.Effect<boolean>;
   }
 >()("masscode/ProjectsStore") {}
@@ -51,7 +51,7 @@ const make = Effect.gen(function* () {
       const path = resolve(expandHome(rawPath));
       const projects = yield* file.get;
       const existing = projects.find((project) => project.path === path);
-      if (existing) return { project: existing, created: false };
+      if (existing) return { project: existing, isNew: false };
 
       const isFolder = yield* Effect.tryPromise(() => stat(path)).pipe(
         Effect.map((stats) => stats.isDirectory()),
@@ -69,7 +69,7 @@ const make = Effect.gen(function* () {
         folder: yield* Effect.promise(() => readRepoFolder(path)),
       };
       yield* file.set([...projects, project]);
-      return { project, created: true };
+      return { project, isNew: true };
     });
   }
 

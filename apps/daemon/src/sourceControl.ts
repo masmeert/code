@@ -31,7 +31,7 @@ interface CliResult {
   readonly stderr: string;
 }
 
-function run(
+function runCli(
   kind: SourceControlKind,
   args: ReadonlyArray<string>,
   cwd?: string,
@@ -58,7 +58,7 @@ function run(
   );
 }
 
-function firstLine(text: string) {
+function getFirstLine(text: string) {
   return text.split("\n").find(Boolean) ?? "";
 }
 
@@ -76,9 +76,9 @@ const GitHubAuth = Schema.Struct({
   ),
 });
 
-async function probeOne(kind: SourceControlKind): Promise<SourceControlStatus> {
+async function probeCli(kind: SourceControlKind): Promise<SourceControlStatus> {
   const { label, install, bin } = CLI[kind];
-  const version = await run(kind, ["--version"], undefined, 5000);
+  const version = await runCli(kind, ["--version"], undefined, 5000);
   if (!version.ok) {
     return {
       kind,
@@ -90,11 +90,11 @@ async function probeOne(kind: SourceControlKind): Promise<SourceControlStatus> {
     };
   }
 
-  const base = { kind, installed: true, version: firstLine(version.stdout || version.stderr) };
+  const base = { kind, installed: true, version: getFirstLine(version.stdout || version.stderr) };
   const signIn = `Run \`${bin} auth login\` in a terminal to sign in.`;
 
   if (kind === "github") {
-    const auth = await run(kind, ["auth", "status", "--json", "hosts"], undefined, 10_000);
+    const auth = await runCli(kind, ["auth", "status", "--json", "hosts"], undefined, 10_000);
     const parsed = Schema.decodeUnknownOption(Schema.fromJsonString(GitHubAuth))(auth.stdout);
     if (Option.isNone(parsed)) {
       return {
@@ -122,8 +122,8 @@ async function probeOne(kind: SourceControlKind): Promise<SourceControlStatus> {
         };
   }
 
-  const auth = await run(kind, ["auth", "status"], undefined, 10_000);
-  const account = gitLabAccounts(`${auth.stdout}\n${auth.stderr}`)[0]?.account ?? null;
+  const auth = await runCli(kind, ["auth", "status"], undefined, 10_000);
+  const account = parseGitLabAccounts(`${auth.stdout}\n${auth.stderr}`)[0]?.account ?? null;
   return account
     ? { ...base, authenticated: true, account, detail: null }
     : {
@@ -135,7 +135,7 @@ async function probeOne(kind: SourceControlKind): Promise<SourceControlStatus> {
 }
 
 /** Hosts `glab auth status` reports as signed in, with their account. */
-function gitLabAccounts(output: string) {
+function parseGitLabAccounts(output: string) {
   const found: Array<{ host: string; account: string }> = [];
   let host = "";
   for (const line of output.split("\n")) {
@@ -148,10 +148,10 @@ function gitLabAccounts(output: string) {
 }
 
 export function probeSourceControl() {
-  return Promise.all([probeOne("github"), probeOne("gitlab")]);
+  return Promise.all([probeCli("github"), probeCli("gitlab")]);
 }
 
-function remoteHost(url: string) {
+function parseRemoteHost(url: string) {
   const scp = url.match(/^[^@/]+@([^:]+):/);
   if (scp) return scp[1]!.toLowerCase();
 
@@ -164,15 +164,15 @@ function remoteHost(url: string) {
 
 /** Which host a remote URL is on; self-hosted GitLab counts when glab is signed in to it. */
 export async function detectSourceControl(url: string | null): Promise<SourceControlKind | null> {
-  const host = url ? remoteHost(url) : null;
+  const host = url ? parseRemoteHost(url) : null;
   if (!host) return null;
 
   const labels = host.split(".");
   if (host === "github.com" || labels.includes("github")) return "github";
   if (host === "gitlab.com" || labels.includes("gitlab")) return "gitlab";
 
-  const auth = await run("gitlab", ["auth", "status"], undefined, 5000);
-  return gitLabAccounts(`${auth.stdout}\n${auth.stderr}`).some((entry) => entry.host === host)
+  const auth = await runCli("gitlab", ["auth", "status"], undefined, 5000);
+  return parseGitLabAccounts(`${auth.stdout}\n${auth.stderr}`).some((entry) => entry.host === host)
     ? "gitlab"
     : null;
 }
@@ -217,7 +217,7 @@ export async function readPullRequest(
   branch: string,
 ): Promise<PullRequest | null> {
   if (kind === "github") {
-    const listed = await run(
+    const listed = await runCli(
       kind,
       [
         "pr",
@@ -252,7 +252,7 @@ export async function readPullRequest(
     };
   }
 
-  const listed = await run(
+  const listed = await runCli(
     kind,
     ["mr", "list", "--source-branch", branch, "--all", "--per-page", "20", "--output", "json"],
     cwd,
@@ -283,7 +283,7 @@ export async function openPullRequest(
 ) {
   const result =
     kind === "github"
-      ? await run(
+      ? await runCli(
           kind,
           [
             "pr",
@@ -300,7 +300,7 @@ export async function openPullRequest(
           cwd,
           60_000,
         )
-      : await run(
+      : await runCli(
           kind,
           [
             "mr",
@@ -321,7 +321,7 @@ export async function openPullRequest(
 
   return result.ok
     ? null
-    : firstLine(result.stderr || result.stdout) || "Couldn't open the pull request";
+    : getFirstLine(result.stderr || result.stdout) || "Couldn't open the pull request";
 }
 
 const MERGE_FLAG: Record<MergeMethod, string> = {
@@ -339,8 +339,8 @@ export async function mergePullRequest(
 ) {
   const result =
     kind === "github"
-      ? await run(kind, ["pr", "merge", String(number), MERGE_FLAG[method]], cwd, 60_000)
-      : await run(
+      ? await runCli(kind, ["pr", "merge", String(number), MERGE_FLAG[method]], cwd, 60_000)
+      : await runCli(
           kind,
           [
             "mr",
@@ -356,7 +356,7 @@ export async function mergePullRequest(
 
   return result.ok
     ? null
-    : firstLine(result.stderr || result.stdout) || "Couldn't merge the pull request";
+    : getFirstLine(result.stderr || result.stdout) || "Couldn't merge the pull request";
 }
 
 const TEMPLATE_FILES = [
