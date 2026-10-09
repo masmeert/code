@@ -359,7 +359,7 @@ export function RunningAgents({
                     onClick={() => onReveal(agent.id)}
                     className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <span className="shrink-0 text-[13px] text-foreground/80">{name}</span>
+                    <span className="truncate text-[13px] text-foreground/80">{name}</span>
                     <span className="truncate">{describeAgentActivity(agent)}</span>
                   </button>
                   {agent.tokens === undefined ? null : (
