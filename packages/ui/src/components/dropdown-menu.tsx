@@ -268,13 +268,26 @@ function DropdownMenuSeparator({
   );
 }
 
-function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<"span">) {
+function DropdownMenuShortcut({ className, children, ...props }: React.ComponentProps<"span">) {
+  // Like macOS menus, the key sits in a fixed-width column so modifiers line up across items
+  // whatever the key glyph's width. The `.*` makes the match infallible.
+  const [, modifiers, key] =
+    typeof children === "string" ? /^((?:Ctrl\+|[⌘⇧⌥⌃])*)(.*)$/.exec(children)! : [];
   return (
     <span
       data-slot="dropdown-menu-shortcut"
       className={cn("ml-auto text-xs tracking-widest text-muted-foreground", className)}
       {...props}
-    />
+    >
+      {key === undefined ? (
+        children
+      ) : (
+        <>
+          {modifiers}
+          <span className="inline-block min-w-[1.25em]">{key}</span>
+        </>
+      )}
+    </span>
   );
 }
 
