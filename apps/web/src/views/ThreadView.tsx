@@ -10,7 +10,7 @@ import {
 import { Markdown } from "@masscode/ui/agents/markdown";
 import { Reasoning, thoughtTitle } from "@masscode/ui/agents/reasoning";
 import * as Match from "effect/Match";
-import { ThinkingShimmer } from "@masscode/ui/agents/loading-states/thinking-shimmer";
+import { ReasoningText } from "@masscode/ui/agents/loading-states/reasoning-text";
 import { OrbFace } from "@masscode/ui/agents/orb-face";
 import { PromptInputTray, PromptSelect } from "@masscode/ui/agents/prompt-input";
 import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
@@ -1359,9 +1359,10 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                     <MessageAvatar placeholder />
                   )}
                   <MessageContent>
-                    <span role="status">
-                      <ThinkingShimmer />
-                    </span>
+                    {/* Styled like a streaming work row, which takes its place once the agent's first output arrives. */}
+                    <div className="flex h-7 items-center text-sm">
+                      <ReasoningText variant="scramble" className="min-w-0 font-mono font-normal" />
+                    </div>
                   </MessageContent>
                 </Message>
               ) : null}
@@ -1913,9 +1914,9 @@ function SideChatDrawer({ threadId, provider }: { threadId: string; provider: Pr
               )
             : null}
           {running && !showsWorking(items) ? (
-            <span role="status">
-              <ThinkingShimmer />
-            </span>
+            <div className="flex h-7 items-center text-sm">
+              <ReasoningText variant="scramble" className="min-w-0 font-mono font-normal" />
+            </div>
           ) : null}
         </MessageGroup>
       </MessageScroller>
