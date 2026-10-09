@@ -571,7 +571,7 @@ function start({
           (error) => {
             finishText();
             // A process that exited has said so already.
-            if (launched === generation && !getErrorMessage(error).startsWith("Cursor exited")) {
+            if (launched === generation && !Predicate.isTagged(error, "RpcExited")) {
               emit(RuntimeEvent.cases.error.make({ threadId, message: getErrorMessage(error) }));
             }
           },

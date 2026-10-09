@@ -10,6 +10,16 @@ import type { HarnessLaunch } from "./launch.ts";
 
 export type RpcId = number | string;
 
+/** The child exited, so the request goes unanswered. */
+export class RpcExited extends Schema.TaggedError<RpcExited>()("RpcExited", {
+  message: Schema.String,
+}) {}
+
+/** The child answered the request with an error. */
+export class RpcFailed extends Schema.TaggedError<RpcFailed>()("RpcFailed", {
+  message: Schema.String,
+}) {}
+
 const RpcMessage = Schema.Struct({
   id: Schema.optional(Schema.NullOr(Schema.Union([Schema.Number, Schema.String]))),
   method: Schema.optional(Schema.String),
@@ -121,7 +131,11 @@ export function connectJsonRpc(
   child.stdin.on("error", () => {});
 
   child.on("exit", (code) => {
-    failRequests(new Error(`${name} exited (code ${code}): ${stderrTail.trim() || "no output"}`));
+    failRequests(
+      new RpcExited({
+        message: `${name} exited (code ${code}): ${stderrTail.trim() || "no output"}`,
+      }),
+    );
     handlers.onExit?.(code, stderrTail);
   });
 
@@ -135,7 +149,9 @@ export function connectJsonRpc(
         writeMessage({ id, method, params });
       }).then((reply) =>
         reply.error
-          ? Promise.reject(new Error(reply.error.data?.message ?? reply.error.message))
+          ? Promise.reject(
+              new RpcFailed({ message: reply.error.data?.message ?? reply.error.message }),
+            )
           : Schema.decodeUnknownPromise(response)(reply.result),
       ),
     notify: (method, params) =>
