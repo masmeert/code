@@ -40,6 +40,7 @@ import {
   isTurnActive,
 } from "@masscode/contracts";
 import type { ToolCall } from "@masscode/ui/agents/tool-group";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
 import { normalizeUrl, openPreview, performBrowserAction } from "./browser.ts";
@@ -875,8 +876,7 @@ function hasShell(host: string | null) {
 /** Asks for a thread's transcript: a replay after the cursor when we have one, else the latest turns. */
 function subscribeToTranscript(threadId: string) {
   const host = getThreadHost(state, threadId);
-  const socket = findOpenSocket(host);
-  if (!socket || !hasShell(host) || readingCache.has(threadId)) return;
+  if (!findOpenSocket(host) || !hasShell(host) || readingCache.has(threadId)) return;
 
   const transcript = state.transcripts[threadId];
   if (transcript) {
@@ -895,10 +895,9 @@ function subscribeToTranscript(threadId: string) {
   }
 
   const after = transcript && transcript.items.length > 0 ? transcript.cursor : null;
-  socket.send(
-    JSON.stringify(
-      ClientCommand.cases["thread.subscribe"].make({ threadId, after, turnLimit: TURN_LIMIT }),
-    ),
+  send(
+    ClientCommand.cases["thread.subscribe"].make({ threadId, after, turnLimit: TURN_LIMIT }),
+    host,
   );
 }
 
@@ -1077,18 +1076,23 @@ function resolveReply(frame: Extract<ServerFrame, { requestId: string }>) {
   replies.delete(frame.requestId);
 }
 
-/** Sends a command answered by a frame of its own; null when the host is down or never answers. */
-function sendRequest<Frame extends ServerFrame>(
+/**
+ * Sends a command the daemon answers with a `replyTag` frame carrying the same id; null when the
+ * host is down or never answers.
+ */
+function sendRequest<const ReplyTag extends Extract<ServerFrame, { requestId: string }>["_tag"]>(
   host: string | null,
   command: Extract<ClientCommand, { requestId: string }>,
+  replyTag: ReplyTag,
   timeoutMs: number,
 ) {
-  return new Promise<Frame | null>((resolve) => {
+  return new Promise<Extract<ServerFrame, { _tag: ReplyTag }> | null>((resolve) => {
     const socket = findOpenSocket(host);
     if (!socket) return resolve(null);
 
-    // SAFETY: a daemon answers each request with its own kind of frame, carrying the same id.
-    replies.set(command.requestId, (frame) => resolve(frame as Frame));
+    replies.set(command.requestId, (frame) =>
+      resolve(ServerFrame.isAnyOf([replyTag])(frame) ? frame : null),
+    );
     socket.send(JSON.stringify(command));
     setTimeout(() => {
       if (replies.delete(command.requestId)) resolve(null);
@@ -1276,6 +1280,8 @@ function scheduleReconnect(connection: Connection) {
   );
 }
 
+const decodeServerFrame = Schema.decodeUnknownResult(Schema.fromJsonString(ServerFrame));
+
 async function connect(connection: Connection) {
   const { host } = connection;
   // Asked on every attempt: a daemon that restarts (or updates, on a remote host) comes back on a new port.
@@ -1292,11 +1298,18 @@ async function connect(connection: Connection) {
   );
   connection.socket = socket;
   socket.onopen = () => {
-    if (window.desktop) socket.send(JSON.stringify(ClientCommand.cases["browser.host"].make({})));
-    for (const command of connection.queued.splice(0)) socket.send(JSON.stringify(command));
+    if (window.desktop) send(ClientCommand.cases["browser.host"].make({}), host);
+    for (const command of connection.queued.splice(0)) send(command, host);
   };
-  socket.onmessage = (message) =>
-    onFrame(connection, Schema.decodeUnknownSync(Schema.fromJsonString(ServerFrame))(message.data));
+  socket.onmessage = (message) => {
+    const decoded = decodeServerFrame(message.data);
+    if (Result.isSuccess(decoded)) onFrame(connection, decoded.success);
+    else
+      console.error(
+        "Dropped a frame from the daemon that this window can't read:",
+        decoded.failure,
+      );
+  };
   socket.onclose = (event) => {
     if (connection.socket !== socket) return;
 
@@ -1431,9 +1444,7 @@ function closeThread(threadId: string) {
   }
 
   wanted.delete(threadId);
-  findOpenSocket(getThreadHost(state, threadId))?.send(
-    JSON.stringify(ClientCommand.cases["thread.unsubscribe"].make({ threadId })),
-  );
+  sendIfConnected(ClientCommand.cases["thread.unsubscribe"].make({ threadId }));
   // Kept a few minutes for quick back-and-forth (t3code keeps 5); after that, reopening reads
   // the IndexedDB cache and replays only what it missed.
   evictions.set(
@@ -1470,18 +1481,20 @@ export function useTranscript(threadId: string): Transcript | null {
 /** Fetches the turns before what's loaded. */
 export function loadOlder(threadId: string) {
   const transcript = state.transcripts[threadId];
-  const socket = findOpenSocket(getThreadHost(state, threadId));
-  if (!transcript?.page?.hasMore || transcript.loadingOlder || !socket) return;
+  if (
+    !transcript?.page?.hasMore ||
+    transcript.loadingOlder ||
+    !findOpenSocket(getThreadHost(state, threadId))
+  )
+    return;
 
   setState(setTranscript(state, threadId, { ...transcript, loadingOlder: true }));
-  socket.send(
-    JSON.stringify(
-      ClientCommand.cases["thread.loadOlder"].make({
-        threadId,
-        before: transcript.page.before,
-        turnLimit: TURN_LIMIT,
-      }),
-    ),
+  sendIfConnected(
+    ClientCommand.cases["thread.loadOlder"].make({
+      threadId,
+      before: transcript.page.before,
+      turnLimit: TURN_LIMIT,
+    }),
   );
 }
 
@@ -1577,18 +1590,20 @@ export function scanProjects(host: string) {
 
 /** The folders in `path` on `host`, `path` made absolute; null when the host doesn't answer. */
 export function listFolders(host: string | null, path: string) {
-  return sendRequest<Extract<ServerFrame, { _tag: "folder.entries" }>>(
+  return sendRequest(
     host,
     ClientCommand.cases["folder.list"].make({ path, requestId: crypto.randomUUID() }),
+    "folder.entries",
     10_000,
   );
 }
 
 /** This Mac's simulators and its device hub, setting the tools up first with `install`; null when the daemon doesn't answer. */
 export function listDevices(install: boolean) {
-  return sendRequest<Extract<ServerFrame, { _tag: "device.listed" }>>(
+  return sendRequest(
     null,
     ClientCommand.cases["device.list"].make({ install, requestId: crypto.randomUUID() }),
+    "device.listed",
     // Setting up installs two npm packages.
     install ? 10 * 60_000 : 60_000,
   );
@@ -1596,13 +1611,14 @@ export function listDevices(install: boolean) {
 
 /** Boots a simulator if needed and shows it in the thread's panel; resolves to an error message, or null. */
 export async function attachDevice(threadId: string, deviceId: string | null) {
-  const attached = await sendRequest<Extract<ServerFrame, { _tag: "device.attached" }>>(
+  const attached = await sendRequest(
     null,
     ClientCommand.cases["device.attach"].make({
       threadId,
       deviceId,
       requestId: crypto.randomUUID(),
     }),
+    "device.attached",
     3 * 60_000,
   );
   return attached ? attached.error : "MassCode didn't answer in time. Try again.";
@@ -1623,13 +1639,14 @@ export function fetchImageUrl(threadId: string, src: string) {
   const thread = state.threads[threadId];
   const host = getThreadHost(state, threadId);
   const url = thread
-    ? sendRequest<Extract<ServerFrame, { _tag: "image.signed" }>>(
+    ? sendRequest(
         host,
         ClientCommand.cases["image.sign"].make({
           path: decodeURI(src.replace(/^file:\/\//, "")),
           cwd: thread.cwd,
           requestId: crypto.randomUUID(),
         }),
+        "image.signed",
         10_000,
       ).then((signed) => {
         const socket = findOpenSocket(host);
@@ -1654,7 +1671,7 @@ export async function cloneProject(
   folder?: string,
   name?: string,
 ) {
-  const cloned = await sendRequest<Extract<ServerFrame, { _tag: "project.cloned" }>>(
+  const cloned = await sendRequest(
     host,
     ClientCommand.cases["project.clone"].make({
       url,
@@ -1663,6 +1680,7 @@ export async function cloneProject(
       name,
       requestId: crypto.randomUUID(),
     }),
+    "project.cloned",
     // Big repositories take a while; the daemon gives up at 10 minutes.
     11 * 60_000,
   );
@@ -1855,9 +1873,10 @@ export function takeQueued(threadId: string, messageId?: string): ReadonlyArray<
 export async function searchMessages(query: string): Promise<ReadonlyArray<SearchHit>> {
   const answers = await Promise.all(
     [...connections.keys()].map((host) =>
-      sendRequest<Extract<ServerFrame, { _tag: "search.results" }>>(
+      sendRequest(
         host,
         ClientCommand.cases.search.make({ query, requestId: crypto.randomUUID() }),
+        "search.results",
         // An answer that never comes (the connection dropped) shouldn't hold a caller forever.
         5000,
       ),
@@ -1990,9 +2009,10 @@ export function runScript(threadId: string, script: ProjectScript) {
 
 /** The project's `masscode.toml` on `host`; null when the host doesn't answer. */
 export function readProjectConfig(host: string | null, path: string) {
-  return sendRequest<Extract<ServerFrame, { _tag: "project.config" }>>(
+  return sendRequest(
     host,
     ClientCommand.cases["project.config"].make({ path, requestId: crypto.randomUUID() }),
+    "project.config",
     10_000,
   );
 }
@@ -2009,13 +2029,14 @@ export async function updateProjectConfig(
   const current = await readProjectConfig(host, path);
   const saved =
     current &&
-    (await sendRequest<Extract<ServerFrame, { _tag: "project.configSaved" }>>(
+    (await sendRequest(
       host,
       ClientCommand.cases["project.saveConfig"].make({
         path,
         config: change(current.config),
         requestId: crypto.randomUUID(),
       }),
+      "project.configSaved",
       10_000,
     ));
   return saved
