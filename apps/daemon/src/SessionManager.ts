@@ -1692,21 +1692,22 @@ const make = Effect.gen(function* () {
         ? await readPullRequestTemplate(root)
         : null;
 
+    let text: { title: string; body: string };
     try {
-      const text = await generatePullRequest({
+      text = await generatePullRequest({
         ...writerFor(path, settings, recent),
         ...range,
         head: status.branch,
         template,
       });
-      return await openPullRequest(path, status.sourceControl, {
-        base: range.base,
-        head: status.branch,
-        ...text,
-      });
     } catch (error) {
       return `Couldn't write the pull request: ${error instanceof Error ? error.message : String(error)}`;
     }
+    return openPullRequest(path, status.sourceControl, {
+      base: range.base,
+      head: status.branch,
+      ...text,
+    });
   }
 
   /** Commits and pushes on one repo run one at a time. */
