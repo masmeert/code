@@ -13,18 +13,14 @@ import {
   type Attachment,
   type GitAction,
   type LimitStop,
-  type PageInfo,
+  type MergeMethod,
   type QueuedMessage,
   type PullRequest,
   type RepoStatus,
   type SourceControlKind,
-  type Project,
-  type ProviderStatus,
   type SearchHit,
   type Settings,
-  type StoredEvent,
   type CommandRun,
-  type TerminalInfo,
   type ThreadInfo,
   type TurnOptions,
   WORKTREE_SETUP_TERMINAL_ID,
@@ -193,8 +189,6 @@ interface ThreadEntry {
   readonly lock: Semaphore.Semaphore;
   /** Goes up whenever the session is dropped or replaced: what an older one sends after is ignored. */
   generation: number;
-  /** Messages waiting for the running turn, as `info.queue` shows them. */
-  queue: ReadonlyArray<QueuedMessage>;
   /**
    * Stop was pressed during the turn: the queue waits for the user instead of starting the next
    * message, and a turn still starting is interrupted as soon as it has.
@@ -232,7 +226,6 @@ function createEntry(
     currentTurn: null,
     lock: Semaphore.makeUnsafe(1),
     generation: 0,
-    queue: info.queue ?? [],
     isStopRequested: false,
     subagentTools: new Set(),
     permission: null,
@@ -252,6 +245,45 @@ function deriveRequestUuid(caller: string, requestId: string) {
   const hex = createHash("sha256").update(`${caller}\0${requestId}`).digest("hex");
 
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+/** A thread just made: idle, with nothing to read yet. */
+function buildThreadInfo(
+  fields: Pick<
+    ThreadInfo,
+    | "id"
+    | "projectId"
+    | "provider"
+    | "model"
+    | "cwd"
+    | "title"
+    | "branch"
+    | "worktree"
+    | "startedBy"
+  >,
+): ThreadInfo {
+  const now = Date.now();
+  return {
+    ...fields,
+    status: "idle",
+    createdAt: now,
+    updatedAt: now,
+    archivedAt: null,
+    seenRev: 0,
+    shelved: false,
+  };
+}
+
+/** Where a harness's conversation is cut: at the first of `from`, the user messages to drop. */
+function getForkPoint(cut: {
+  readonly before: number;
+  readonly from: ReadonlyArray<Extract<RuntimeEvent, { _tag: "user.message" }>>;
+}) {
+  return {
+    messageId: cut.from[0]?.messageId ?? null,
+    keep: cut.before,
+    dropTurns: cut.from.filter((message) => !message.steer).length,
+  };
 }
 
 const AGENT_GONE =
@@ -300,13 +332,7 @@ export class SessionManager extends Context.Service<
     ) => Effect.Effect<void, CommandError | ProviderError | ProjectNotFound>;
     /** Subscribes, then snapshots the shell synchronously, so the stream continues exactly where it ends. */
     readonly subscribe: Effect.Effect<
-      {
-        readonly dataId: string;
-        readonly settings: Settings;
-        readonly projects: ReadonlyArray<Project>;
-        readonly providers: ReadonlyArray<ProviderStatus>;
-        readonly threads: ReadonlyArray<ThreadInfo>;
-        readonly terminals: ReadonlyArray<TerminalInfo>;
+      Omit<Extract<ServerFrame, { _tag: "shell" }>, "_tag" | "root" | "protocol"> & {
         readonly live: Stream.Stream<SequencedEvent>;
       },
       never,
@@ -329,7 +355,7 @@ export class SessionManager extends Context.Service<
       threadId: string,
       before: number,
       turnLimit: number,
-    ) => { readonly events: ReadonlyArray<StoredEvent>; readonly page: PageInfo } | null;
+    ) => Omit<Extract<ServerFrame, { _tag: "thread.page" }>, "_tag" | "threadId"> | null;
     /** Messages matching `query`, newest first, in threads that still exist. */
     readonly search: (query: string) => ReadonlyArray<SearchHit>;
     readonly shutdown: Effect.Effect<void>;
@@ -561,45 +587,35 @@ const make = Effect.gen(function* () {
       id = store.appendEvent(event.threadId, event);
     }
 
-    if (RuntimeEvent.guards["thread.status"](event)) {
-      const entry = threads.get(event.threadId);
-      if (entry) entry.info = { ...entry.info, status: event.status };
-      if (entry && isTurnActive(event.status) && entry.shelveOverride !== null)
-        setShelveOverride(entry, null);
-    }
-
-    if (RuntimeEvent.guards["thread.usage"](event) && event.usage) {
-      const entry = threads.get(event.threadId);
-      if (entry) {
-        entry.info = { ...entry.info, usage: event.usage };
-        store.setUsage(event.threadId, event.usage);
+    const entry = "threadId" in event && event.threadId ? threads.get(event.threadId) : undefined;
+    if (entry) {
+      if (RuntimeEvent.guards["thread.status"](event)) {
+        entry.info = { ...entry.info, status: event.status };
+        if (isTurnActive(event.status) && entry.shelveOverride !== null)
+          setShelveOverride(entry, null);
       }
-    }
 
-    if ("threadId" in event && event.threadId) {
-      const entry = threads.get(event.threadId);
-      if (entry) entry.activeAt = Date.now();
+      if (RuntimeEvent.guards["thread.usage"](event) && event.usage) {
+        entry.info = { ...entry.info, usage: event.usage };
+        store.setUsage(entry.info.id, event.usage);
+      }
+
+      entry.activeAt = Date.now();
     }
 
     PubSub.publishUnsafe(pubsub, { seq: ++seq, id, event });
 
-    if ("threadId" in event && event.threadId) {
-      const entry = threads.get(event.threadId);
-      if (entry) trackLiveState(entry, event);
-    }
+    if (entry) trackLiveState(entry, event);
 
     if (RuntimeEvent.isAnyOf(["user.message", "turn.completed"])(event))
       markUpdated(event.threadId);
 
     if (RuntimeEvent.guards["settings.updated"](event)) {
       latestSettings = event.settings;
-      for (const entry of threads.values()) refreshShelved(entry);
+      for (const other of threads.values()) refreshShelved(other);
     }
 
-    if ("threadId" in event && event.threadId) {
-      const entry = threads.get(event.threadId);
-      if (entry) refreshShelved(entry);
-    }
+    if (entry) refreshShelved(entry);
   }
 
   /** Keeps the thread's in-flight tool call and pending request current, announcing each change. */
@@ -670,7 +686,10 @@ const make = Effect.gen(function* () {
         Date.now() >= stop.resetsAt + LIMIT_RESET_GRACE_MS
       )
         runFork(
-          resumeAfterLimit(entry, stop.resumeAtReset).pipe(reportErrorsOn(entry), Effect.ignore),
+          resumeAfterLimit(entry, stop.resumeAtReset).pipe(
+            reportErrorsIn(entry.info.id),
+            Effect.ignore,
+          ),
         );
     }
   });
@@ -733,6 +752,34 @@ const make = Effect.gen(function* () {
     );
   }
 
+  /** Takes in what a thread's agent reports, unless it's from a session since dropped. */
+  function receiveAgentEvent(entry: ThreadEntry, generation: number, event: RuntimeEvent) {
+    if (entry.generation !== generation || threads.get(entry.info.id) !== entry) return;
+
+    // The agent process ending isn't the thread ending: drop the session so the next message
+    // resumes it. A crash has already said what happened.
+    if (
+      RuntimeEvent.guards["thread.status"](event) &&
+      (event.status === "closed" || event.status === "error")
+    ) {
+      runFork(
+        event.status === "closed"
+          ? dropSession(entry, AGENT_GONE)
+          : dropSession(entry, null, "error"),
+      );
+      return;
+    }
+
+    if (RuntimeEvent.guards["thread.limitStop"](event)) {
+      if (event.limitStop) stopForLimit(entry, event.limitStop);
+      return;
+    }
+
+    publish(event);
+    if (RuntimeEvent.guards["turn.completed"](event)) endTurn(entry);
+    sendQueuedOnCue(entry, event);
+  }
+
   /** Starts (or resumes) the agent process for a thread if it isn't running. Call it holding `entry.lock`. */
   const ensureSession = Effect.fn("ensureSession")(function* (
     entry: ThreadEntry,
@@ -754,32 +801,7 @@ const make = Effect.gen(function* () {
       onResumeToken: (token) =>
         setResumeTokens(entry, { ...entry.resumeTokens, [entry.info.provider]: token }),
       onCwd: (cwd) => void followAgentCwd(entry, cwd),
-      emit: (event) => {
-        if (entry.generation !== generation || threads.get(threadId) !== entry) return;
-
-        // The agent process ending isn't the thread ending: drop the session so the next message
-        // resumes it. A crash has already said what happened.
-        if (
-          RuntimeEvent.guards["thread.status"](event) &&
-          (event.status === "closed" || event.status === "error")
-        ) {
-          runFork(
-            event.status === "closed"
-              ? dropSession(entry, AGENT_GONE)
-              : dropSession(entry, null, "error"),
-          );
-          return;
-        }
-
-        if (RuntimeEvent.guards["thread.limitStop"](event)) {
-          if (event.limitStop) stopForLimit(entry, event.limitStop);
-          return;
-        }
-
-        publish(event);
-        if (RuntimeEvent.guards["turn.completed"](event)) endTurn(entry);
-        sendQueuedOnCue(entry, event);
-      },
+      emit: (event) => receiveAgentEvent(entry, generation, event),
       mcpServer: mcp.issue(threadId),
     });
     if (entry.generation !== generation) {
@@ -858,7 +880,6 @@ const make = Effect.gen(function* () {
   }
 
   function setQueue(entry: ThreadEntry, queue: ReadonlyArray<QueuedMessage>) {
-    entry.queue = queue;
     const { queue: _queue, ...info } = entry.info;
     entry.info = queue.length > 0 ? { ...info, queue } : info;
     store.setQueue(entry.info.id, queue);
@@ -895,19 +916,9 @@ const make = Effect.gen(function* () {
   function sendQueued(entry: ThreadEntry, message: QueuedMessage) {
     setQueue(
       entry,
-      entry.queue.filter((queued) => queued.id !== message.id),
+      (entry.info.queue ?? []).filter((queued) => queued.id !== message.id),
     );
-    runFork(
-      deliverMessage(entry, message).pipe(
-        Effect.catch((error) =>
-          Effect.sync(() =>
-            publish(
-              RuntimeEvent.cases.error.make({ threadId: entry.info.id, message: error.message }),
-            ),
-          ),
-        ),
-      ),
-    );
+    runFork(deliverMessage(entry, message).pipe(reportErrorsIn(entry.info.id), Effect.ignore));
   }
 
   /**
@@ -923,7 +934,7 @@ const make = Effect.gen(function* () {
       !entry.subagentTools.delete(event.toolId) &&
       isTurnActive(entry.info.status);
     const hasTurnEnded = RuntimeEvent.guards["thread.status"](event) && event.status === "idle";
-    const [next] = entry.queue;
+    const [next] = entry.info.queue ?? [];
     if (next && !entry.isStopRequested && !entry.info.limitStop && (hasToolEnded || hasTurnEnded))
       sendQueued(entry, next);
   }
@@ -1078,16 +1089,14 @@ const make = Effect.gen(function* () {
   );
 
   /**
-   * Reports a failure on the thread itself. For commands that start a thread, whose failure
-   * would otherwise go to no thread, since the command names none.
+   * Reports a failure in a thread's transcript (in none when null), then passes it on: for
+   * failures nobody waits on, and commands that start a thread, which name none themselves.
    */
-  function reportErrorsOn(entry: ThreadEntry) {
+  function reportErrorsIn(threadId: string | null, announce = publish) {
     return <A, E extends { readonly message: string }, R>(effect: Effect.Effect<A, E, R>) =>
       Effect.tapError(effect, (error) =>
         Effect.sync(() =>
-          publish(
-            RuntimeEvent.cases.error.make({ threadId: entry.info.id, message: error.message }),
-          ),
+          announce(RuntimeEvent.cases.error.make({ threadId, message: error.message })),
         ),
       );
   }
@@ -1110,7 +1119,7 @@ const make = Effect.gen(function* () {
       return yield* new CommandError({ message: `Message ids must be UUIDs, not "${messageId}"` });
     if (
       store.hasMessage(entry.info.id, messageId) ||
-      entry.queue.some((queued) => queued.id === messageId)
+      (entry.info.queue ?? []).some((queued) => queued.id === messageId)
     )
       return;
 
@@ -1123,7 +1132,7 @@ const make = Effect.gen(function* () {
       permission: options.permission,
     };
     if ((queue && isTurnActive(entry.info.status)) || entry.isSettingUp)
-      return setQueue(entry, [...entry.queue, message]);
+      return setQueue(entry, [...(entry.info.queue ?? []), message]);
 
     yield* deliverMessage(entry, message, run);
   });
@@ -1175,9 +1184,8 @@ const make = Effect.gen(function* () {
         cwd: entry.home.path,
         harness: (yield* settingsStore.get).providers[provider],
         resumeToken,
+        ...getForkPoint(found),
         messageId: command.messageId,
-        keep: found.before,
-        dropTurns: found.from.filter((message) => !message.steer).length,
       });
       setResumeTokens(entry, token ? { [provider]: token } : {});
     }
@@ -1223,14 +1231,11 @@ const make = Effect.gen(function* () {
             cwd: source.home.path,
             harness: (yield* settingsStore.get).providers[provider],
             resumeToken: sourceToken,
-            messageId: cut.from[0]?.messageId ?? null,
-            keep: cut.before,
-            dropTurns: cut.from.filter((message) => !message.steer).length,
+            ...getForkPoint(cut),
           })
         : null;
 
-    const now = Date.now();
-    const info: ThreadInfo = {
+    const info = buildThreadInfo({
       id: crypto.randomUUID(),
       projectId: source.info.projectId,
       provider,
@@ -1239,15 +1244,9 @@ const make = Effect.gen(function* () {
       title: source.info.title.startsWith("Fork of ")
         ? source.info.title
         : deriveTitle(`Fork of ${source.info.title}`, source.info.title),
-      status: "idle",
-      createdAt: now,
-      updatedAt: now,
       branch: source.info.branch,
-      archivedAt: null,
       worktree: source.info.worktree,
-      seenRev: 0,
-      shelved: false,
-    };
+    });
 
     const coverage: Coverage = hasSwitchedHarness(source) ? { [provider]: 0 } : {};
     threads.set(
@@ -1318,9 +1317,7 @@ const make = Effect.gen(function* () {
               cwd: source.home.path,
               harness,
               resumeToken: sourceToken,
-              messageId: cut.from[0]?.messageId ?? null,
-              keep: cut.before,
-              dropTurns: cut.from.filter((message) => !message.steer).length,
+              ...getForkPoint(cut),
             })
             .pipe(Effect.orElseSucceed(() => null))
         : null;
@@ -1424,15 +1421,15 @@ const make = Effect.gen(function* () {
       });
     },
     (effect, { sideChatId }) =>
-      Effect.tapError(effect, (error) =>
-        Effect.sync(() => {
-          publishSideChat(
-            RuntimeEvent.cases.error.make({ threadId: sideChatId, message: error.message }),
-          );
-          publishSideChat(
-            RuntimeEvent.cases["thread.status"].make({ threadId: sideChatId, status: "idle" }),
-          );
-        }),
+      effect.pipe(
+        reportErrorsIn(sideChatId, publishSideChat),
+        Effect.tapError(() =>
+          Effect.sync(() =>
+            publishSideChat(
+              RuntimeEvent.cases["thread.status"].make({ threadId: sideChatId, status: "idle" }),
+            ),
+          ),
+        ),
       ),
   );
 
@@ -1710,20 +1707,42 @@ const make = Effect.gen(function* () {
     });
   }
 
+  /** Merges the branch's open pull request on its host. Resolves to an error message on failure. */
+  async function mergeOpenPullRequest(path: string, method: MergeMethod) {
+    const status = await readRepo(path);
+    const sourceControl = status?.sourceControl;
+    const pullRequest = status?.pullRequest;
+    if (
+      !sourceControl ||
+      !pullRequest ||
+      (pullRequest.state !== "open" && pullRequest.state !== "draft")
+    )
+      return "This branch has no open pull request";
+
+    return mergePullRequest(path, sourceControl, pullRequest.number, method);
+  }
+
   /** Commits and pushes on one repo run one at a time. */
   const gitLocks = new Map<string, Semaphore.Semaphore>();
 
-  function runWithRepoLock<A, E>(path: string, effect: Effect.Effect<A, E>) {
-    return Effect.gen(function* () {
-      let lock = gitLocks.get(path);
-      if (!lock) {
-        lock = yield* Semaphore.make(1);
-        gitLocks.set(path, lock);
-      }
+  function withRepoLock<A, E>(path: string, effect: Effect.Effect<A, E>) {
+    let lock = gitLocks.get(path);
+    if (!lock) {
+      lock = Semaphore.makeUnsafe(1);
+      gitLocks.set(path, lock);
+    }
 
-      return yield* lock.withPermit(effect);
-    });
+    return lock.withPermit(effect);
   }
+
+  /** Runs a git action on the repo at `path`, one at a time, and announces the repo state after it. */
+  const runGitAction = Effect.fn("runGitAction")(
+    function* (path: string, action: GitAction, run: () => Promise<string | null>) {
+      const error = yield* Effect.promise(run);
+      yield* publishStatus(path, action, error);
+    },
+    (effect, path) => withRepoLock(path, effect),
+  );
 
   /**
    * A worktree of the project's repo on a new branch named after the thread, under the
@@ -1797,7 +1816,7 @@ const make = Effect.gen(function* () {
         if (!entry.isSettingUp) return;
 
         entry.isSettingUp = false;
-        const [next] = entry.queue;
+        const [next] = entry.info.queue ?? [];
         if (next && entry.info.archivedAt === null) sendQueued(entry, next);
       },
       { MASSCODE_PROJECT_ROOT: projectPath },
@@ -1849,7 +1868,6 @@ const make = Effect.gen(function* () {
     const { project, isNew } = yield* projectsStore.ensure(command.path);
     if (isNew) publish(RuntimeEvent.cases["project.added"].make({ project }));
 
-    const now = Date.now();
     const id = crypto.randomUUID();
     const title = deriveTitle(command.text, project.name);
     const cwd =
@@ -1858,22 +1876,16 @@ const make = Effect.gen(function* () {
         : project.path;
 
     const entry = yield* openThread(
-      {
+      buildThreadInfo({
         id,
         projectId: project.id,
         provider: command.provider,
         model: command.model,
         cwd,
         title,
-        status: "idle",
-        createdAt: now,
-        updatedAt: now,
         branch: yield* Effect.promise(() => readBranch(cwd)),
-        archivedAt: null,
         worktree: command.workspace === "worktree",
-        seenRev: 0,
-        shelved: false,
-      },
+      }),
       { path: cwd, isWorktree: command.workspace === "worktree" },
       command.text,
       command.requestId,
@@ -1887,7 +1899,10 @@ const make = Effect.gen(function* () {
       publish(RuntimeEvent.cases["settings.updated"].make({ settings: next }));
     }
 
-    yield* send(entry, command.text, command.options).pipe(reportErrorsOn(entry), Effect.ignore);
+    yield* send(entry, command.text, command.options).pipe(
+      reportErrorsIn(entry.info.id),
+      Effect.ignore,
+    );
   });
 
   // --- orchestration: what agents do through MassCode's MCP tools -------------------------
@@ -1971,25 +1986,18 @@ const make = Effect.gen(function* () {
       const cwd = input.worktree
         ? yield* createWorktree(project?.path ?? caller.info.cwd, title, id)
         : caller.info.cwd;
-      const now = Date.now();
       entry = yield* openThread(
-        {
+        buildThreadInfo({
           id,
           projectId: caller.info.projectId,
           provider,
           model: input.model ?? (provider === caller.info.provider ? caller.info.model : null),
           cwd,
           title,
-          status: "idle",
-          createdAt: now,
-          updatedAt: now,
           branch: yield* Effect.promise(() => readBranch(cwd)),
-          archivedAt: null,
           worktree: input.worktree === true || caller.info.worktree,
-          seenRev: 0,
-          shelved: false,
           startedBy: callerId,
-        },
+        }),
         // Same folder as the caller, which keeps it if it's a worktree made for the caller.
         input.worktree
           ? { path: cwd, isWorktree: true }
@@ -2009,7 +2017,7 @@ const make = Effect.gen(function* () {
         }),
       );
       yield* send(entry, input.prompt, { effort: null, permission, attachments: [] }).pipe(
-        reportErrorsOn(entry),
+        reportErrorsIn(entry.info.id),
       );
     }
 
@@ -2143,7 +2151,7 @@ const make = Effect.gen(function* () {
     if (provider && provider !== entry.info.provider) yield* switchHarness(entry, provider, null);
     setLimitStop(entry, null);
 
-    const [next] = entry.queue;
+    const [next] = entry.info.queue ?? [];
     if (next) return sendQueued(entry, next);
 
     yield* send(entry, "Continue where you left off.", options);
@@ -2170,14 +2178,14 @@ const make = Effect.gen(function* () {
         ),
       "thread.sendQueued": ({ threadId, messageId }) =>
         Effect.map(getEntry(threadId), (entry) => {
-          const message = entry.queue.find((queued) => queued.id === messageId);
+          const message = (entry.info.queue ?? []).find((queued) => queued.id === messageId);
           if (message) sendQueued(entry, message);
         }),
       "thread.unqueue": ({ threadId, messageIds }) =>
         Effect.map(getEntry(threadId), (entry) =>
           setQueue(
             entry,
-            entry.queue.filter((queued) => !messageIds.includes(queued.id)),
+            (entry.info.queue ?? []).filter((queued) => !messageIds.includes(queued.id)),
           ),
         ),
       "thread.resumeAfterLimit": ({ threadId, options, provider }) =>
@@ -2227,7 +2235,7 @@ const make = Effect.gen(function* () {
       "git.commit": (command) => {
         const { path } = command;
         const action: GitAction = command.push ? "commit-push" : "commit";
-        return runWithRepoLock(
+        return withRepoLock(
           path,
           Effect.gen(function* () {
             const written = command.message.trim()
@@ -2246,50 +2254,17 @@ const make = Effect.gen(function* () {
           }),
         );
       },
-      "git.push": ({ path }) =>
-        runWithRepoLock(
-          path,
-          Effect.gen(function* () {
-            const error = yield* Effect.promise(() => pushBranch(path));
-            yield* publishStatus(path, "push", error);
-          }),
-        ),
+      "git.push": ({ path }) => runGitAction(path, "push", () => pushBranch(path)),
       "git.createPullRequest": ({ path }) =>
-        runWithRepoLock(
-          path,
-          Effect.gen(function* () {
-            const error = yield* Effect.promise(() => createPullRequest(path));
-            forgetPullRequest(path);
-            yield* publishStatus(path, "pull-request", error);
-          }),
+        runGitAction(path, "pull-request", () =>
+          createPullRequest(path).finally(() => forgetPullRequest(path)),
         ),
       "git.mergePullRequest": ({ path, method }) =>
-        runWithRepoLock(
-          path,
-          Effect.gen(function* () {
-            const status = yield* Effect.promise(() => readRepo(path));
-            const sourceControl = status?.sourceControl;
-            const pullRequest = status?.pullRequest;
-            const error =
-              !sourceControl ||
-              !pullRequest ||
-              (pullRequest.state !== "open" && pullRequest.state !== "draft")
-                ? "This branch has no open pull request"
-                : yield* Effect.promise(() =>
-                    mergePullRequest(path, sourceControl, pullRequest.number, method),
-                  );
-            forgetPullRequest(path);
-            yield* publishStatus(path, "merge", error);
-          }),
+        runGitAction(path, "merge", () =>
+          mergeOpenPullRequest(path, method).finally(() => forgetPullRequest(path)),
         ),
       "git.mergeIntoBase": ({ path }) =>
-        runWithRepoLock(
-          path,
-          Effect.gen(function* () {
-            const error = yield* Effect.promise(() => mergeIntoBase(path));
-            yield* publishStatus(path, "merge-into-base", error);
-          }),
-        ),
+        runGitAction(path, "merge-into-base", () => mergeIntoBase(path)),
       "sourceControl.refresh": () =>
         Effect.promise(async () => {
           hosts.clear();
@@ -2411,11 +2386,8 @@ const make = Effect.gen(function* () {
             const run = { command, exitCode: exit.exitCode, output: exit.output };
             runFork(
               send(entry, formatCommandRun(run), options, { run }).pipe(
-                Effect.catch((error) =>
-                  Effect.sync(() =>
-                    publish(RuntimeEvent.cases.error.make({ threadId, message: error.message })),
-                  ),
-                ),
+                reportErrorsIn(threadId),
+                Effect.ignore,
               ),
             );
           });
@@ -2466,30 +2438,20 @@ const make = Effect.gen(function* () {
 
   return SessionManager.of({
     dispatch: (command) =>
-      dispatch(command).pipe(
-        Effect.tapError((error) =>
-          Effect.sync(() =>
-            publish(
-              RuntimeEvent.cases.error.make({
-                threadId: "threadId" in command ? command.threadId : null,
-                message: error.message,
-              }),
-            ),
-          ),
-        ),
-      ),
-    subscribe: Effect.map(
-      Effect.all([PubSub.subscribe(pubsub), settingsStore.get, projectsStore.list, registry.list]),
-      ([subscription, settings, projects, providers]) => ({
+      dispatch(command).pipe(reportErrorsIn("threadId" in command ? command.threadId : null)),
+    subscribe: Effect.gen(function* () {
+      const subscription = yield* PubSub.subscribe(pubsub);
+
+      return {
         dataId: store.dataId,
-        settings,
-        projects,
-        providers,
+        settings: yield* settingsStore.get,
+        projects: yield* projectsStore.list,
+        providers: yield* registry.list,
         threads: [...threads.values()].map((entry) => entry.info),
         terminals: terminals.list(),
         live: Stream.fromSubscription(subscription),
-      }),
-    ),
+      };
+    }),
     terminals,
     browsers,
     devices,
