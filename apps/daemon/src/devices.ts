@@ -336,12 +336,17 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
       if (booted?.idle) clearTimeout(booted.idle);
       if (booted) booted.idle = null;
 
-      const found = (await list()).find((candidate) => candidate.id === deviceId);
-      if (!found) throw new Error(`No simulator or emulator has the id ${deviceId}.`);
+      try {
+        const found = (await list()).find((candidate) => candidate.id === deviceId);
+        if (!found) throw new Error(`No simulator or emulator has the id ${deviceId}.`);
 
-      const device = await boot(found);
-      if (!found.booted) bootedHere.set(device.id, { device, idle: null });
-      attached.set(threadId, device);
+        const device = await boot(found);
+        if (!found.booted) bootedHere.set(device.id, { device, idle: null });
+        attached.set(threadId, device);
+      } catch (error) {
+        if (booted) release(booted.device);
+        throw error;
+      }
     } else {
       attached.delete(threadId);
     }
