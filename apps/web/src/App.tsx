@@ -25,7 +25,8 @@ import { BrowserHost } from "./views/BrowserHost.tsx";
 import { CommandPalette } from "./views/CommandPalette.tsx";
 import { DiffWorkers } from "./views/DiffWorkers.tsx";
 import { Sidebar } from "./views/Sidebar.tsx";
-import { DraftView, ThreadView } from "./views/ThreadView.tsx";
+import { DraftView } from "./views/DraftView.tsx";
+import { ThreadView } from "./views/ThreadView.tsx";
 
 /**
  * What this window shows. Each window keeps its own. A draft with a null path is a new
