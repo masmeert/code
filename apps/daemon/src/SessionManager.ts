@@ -709,12 +709,12 @@ const make = Effect.gen(function* () {
       ),
   });
 
-  function getEntry(threadId: string) {
-    return Effect.suspend(() => {
-      const entry = threads.get(threadId);
-      return entry ? Effect.succeed(entry) : Effect.fail(createError(`No thread ${threadId}`));
-    });
-  }
+  const getEntry = Effect.fn("getEntry")(function* (threadId: string) {
+    const entry = threads.get(threadId);
+    if (!entry) return yield* Effect.fail(createError(`No thread ${threadId}`));
+
+    return entry;
+  });
 
   function setResumeTokens(entry: ThreadEntry, tokens: ResumeTokens) {
     entry.resumeTokens = tokens;
@@ -735,65 +735,64 @@ const make = Effect.gen(function* () {
   }
 
   /** Starts (or resumes) the agent process for a thread if it isn't running. Call it holding `entry.lock`. */
-  function ensureSession(entry: ThreadEntry, options: TurnOptions) {
-    return Effect.suspend(() => {
-      if (entry.session) return Effect.succeed(entry.session);
+  const ensureSession = Effect.fn("ensureSession")(function* (
+    entry: ThreadEntry,
+    options: TurnOptions,
+  ) {
+    if (entry.session) return entry.session;
 
-      const threadId = entry.info.id;
-      const generation = ++entry.generation;
-      return Effect.flatMap(settingsStore.get, (settings) =>
-        ADAPTERS[entry.info.provider].start({
-          threadId,
-          cwd: entry.home.path,
-          harness: settings.providers[entry.info.provider],
-          model:
-            entry.info.model ?? settings.providers[entry.info.provider].defaultModel ?? undefined,
-          resumeToken: entry.resumeTokens[entry.info.provider],
-          effort: options.effort,
-          permission: options.permission,
-          onResumeToken: (token) =>
-            setResumeTokens(entry, { ...entry.resumeTokens, [entry.info.provider]: token }),
-          onCwd: (cwd) => void followAgentCwd(entry, cwd),
-          emit: (event) => {
-            if (entry.generation !== generation || threads.get(threadId) !== entry) return;
+    const threadId = entry.info.id;
+    const generation = ++entry.generation;
+    const settings = yield* settingsStore.get;
+    const session = yield* ADAPTERS[entry.info.provider].start({
+      threadId,
+      cwd: entry.home.path,
+      harness: settings.providers[entry.info.provider],
+      model: entry.info.model ?? settings.providers[entry.info.provider].defaultModel ?? undefined,
+      resumeToken: entry.resumeTokens[entry.info.provider],
+      effort: options.effort,
+      permission: options.permission,
+      onResumeToken: (token) =>
+        setResumeTokens(entry, { ...entry.resumeTokens, [entry.info.provider]: token }),
+      onCwd: (cwd) => void followAgentCwd(entry, cwd),
+      emit: (event) => {
+        if (entry.generation !== generation || threads.get(threadId) !== entry) return;
 
-            // The agent process ending isn't the thread ending: drop the session so the next message
-            // resumes it. A crash has already said what happened.
-            if (
-              RuntimeEvent.guards["thread.status"](event) &&
-              (event.status === "closed" || event.status === "error")
-            ) {
-              runFork(
-                event.status === "closed"
-                  ? dropSession(entry, AGENT_GONE)
-                  : dropSession(entry, null, "error"),
-              );
-              return;
-            }
-
-            if (RuntimeEvent.guards["thread.limitStop"](event)) {
-              if (event.limitStop) stopForLimit(entry, event.limitStop);
-              return;
-            }
-
-            publish(event);
-            if (RuntimeEvent.guards["turn.completed"](event)) endTurn(entry);
-            sendQueuedOnCue(entry, event);
-          },
-          mcpServer: mcp.issue(threadId),
-        }),
-      ).pipe(
-        Effect.flatMap((session) => {
-          if (entry.generation === generation) return Effect.sync(() => (entry.session = session));
-
-          return Effect.andThen(
-            session.close,
-            Effect.fail(createError("The agent stopped as it started. Send the message again.")),
+        // The agent process ending isn't the thread ending: drop the session so the next message
+        // resumes it. A crash has already said what happened.
+        if (
+          RuntimeEvent.guards["thread.status"](event) &&
+          (event.status === "closed" || event.status === "error")
+        ) {
+          runFork(
+            event.status === "closed"
+              ? dropSession(entry, AGENT_GONE)
+              : dropSession(entry, null, "error"),
           );
-        }),
-      );
+          return;
+        }
+
+        if (RuntimeEvent.guards["thread.limitStop"](event)) {
+          if (event.limitStop) stopForLimit(entry, event.limitStop);
+          return;
+        }
+
+        publish(event);
+        if (RuntimeEvent.guards["turn.completed"](event)) endTurn(entry);
+        sendQueuedOnCue(entry, event);
+      },
+      mcpServer: mcp.issue(threadId),
     });
-  }
+    if (entry.generation !== generation) {
+      yield* session.close;
+      return yield* Effect.fail(
+        createError("The agent stopped as it started. Send the message again."),
+      );
+    }
+
+    entry.session = session;
+    return session;
+  });
 
   /**
    * Snapshots the folder after a turn and announces what the turn changed. Runs in the
@@ -818,31 +817,29 @@ const make = Effect.gen(function* () {
    * ignored. A turn it had going ends here, since nothing else would end it: `reason` says why in
    * the transcript (null when the agent already did), and the thread goes to `status`.
    */
-  function dropSession(
+  const dropSession = Effect.fn("dropSession")(function* (
     entry: ThreadEntry,
     reason: string | null,
     status: "idle" | "error" = "idle",
   ) {
-    return Effect.suspend(() => {
-      const session = entry.session;
-      entry.session = null;
-      entry.generation++;
-      entry.subagentTools.clear();
+    const session = entry.session;
+    entry.session = null;
+    entry.generation++;
+    entry.subagentTools.clear();
 
-      const threadId = entry.info.id;
-      const isTurnCut = threads.get(threadId) === entry && isTurnActive(entry.info.status);
-      if (isTurnCut) {
-        publish(RuntimeEvent.cases["turn.completed"].make({ threadId, durationMs: null }));
-        endTurn(entry);
-        if (reason) publish(RuntimeEvent.cases.error.make({ threadId, message: reason }));
-      }
+    const threadId = entry.info.id;
+    const isTurnCut = threads.get(threadId) === entry && isTurnActive(entry.info.status);
+    if (isTurnCut) {
+      publish(RuntimeEvent.cases["turn.completed"].make({ threadId, durationMs: null }));
+      endTurn(entry);
+      if (reason) publish(RuntimeEvent.cases.error.make({ threadId, message: reason }));
+    }
 
-      if (isTurnCut || status === "error")
-        publish(RuntimeEvent.cases["thread.status"].make({ threadId, status }));
+    if (isTurnCut || status === "error")
+      publish(RuntimeEvent.cases["thread.status"].make({ threadId, status }));
 
-      return session?.close ?? Effect.void;
-    });
-  }
+    if (session) yield* session.close;
+  });
 
   // Turns going when the daemon died: nothing else will end them.
   for (const { threadId, messageId } of store.listUnfinishedTurns()) {
@@ -933,15 +930,15 @@ const make = Effect.gen(function* () {
   }
 
   /** Stops the thread's turn and holds its queue, then does the same for threads its agent started. */
-  function interrupt(entry: ThreadEntry): Effect.Effect<void, ProviderError> {
-    return Effect.gen(function* () {
-      if (isTurnActive(entry.info.status)) entry.isStopRequested = true;
-      if (entry.session) yield* entry.session.interrupt;
-      for (const started of threads.values())
-        if (started.info.startedBy === entry.info.id && isTurnActive(started.info.status))
-          yield* Effect.ignore(interrupt(started));
-    });
-  }
+  const interrupt = Effect.fn("interrupt")(function* (
+    entry: ThreadEntry,
+  ): Effect.fn.Return<void, ProviderError> {
+    if (isTurnActive(entry.info.status)) entry.isStopRequested = true;
+    if (entry.session) yield* entry.session.interrupt;
+    for (const started of threads.values())
+      if (started.info.startedBy === entry.info.id && isTurnActive(started.info.status))
+        yield* Effect.ignore(interrupt(started));
+  });
 
   /** Runs `action` against the thread's live session, if it has one. */
   function runOnLiveSession(
@@ -953,138 +950,133 @@ const make = Effect.gen(function* () {
     );
   }
 
-  function removeThread(threadId: string) {
-    return Effect.gen(function* () {
-      const entry = threads.get(threadId);
-      if (!entry) return;
+  const removeThread = Effect.fn("removeThread")(function* (threadId: string) {
+    const entry = threads.get(threadId);
+    if (!entry) return;
 
-      threads.delete(threadId);
-      terminals.closeThread(threadId);
-      devices.release(threadId);
-      mcp.revoke(threadId);
-      yield* dropSession(entry, null);
-      store.deleteThread(threadId);
+    threads.delete(threadId);
+    terminals.closeThread(threadId);
+    devices.release(threadId);
+    mcp.revoke(threadId);
+    yield* dropSession(entry, null);
+    store.deleteThread(threadId);
 
-      const { home } = entry;
-      void (async () => {
-        await deleteThreadCheckpoints(entry.info.cwd, threadId);
-        // A worktree with work left in it stays for the user to deal with; its branch stays until merged.
-        // A fork shares its thread's worktree, so the last one out removes it.
-        if (
-          home.isWorktree &&
-          ![...threads.values()].some((other) => other.home.path === home.path)
-        ) {
-          const root = await readRepoRoot(home.path);
-          if (root) await removeWorktreeIfClean(root);
-        }
-      })();
+    const { home } = entry;
+    void (async () => {
+      await deleteThreadCheckpoints(entry.info.cwd, threadId);
+      // A worktree with work left in it stays for the user to deal with; its branch stays until merged.
+      // A fork shares its thread's worktree, so the last one out removes it.
+      if (
+        home.isWorktree &&
+        ![...threads.values()].some((other) => other.home.path === home.path)
+      ) {
+        const root = await readRepoRoot(home.path);
+        if (root) await removeWorktreeIfClean(root);
+      }
+    })();
 
-      for (const [messageId, message] of streaming)
-        if (message.threadId === threadId) streaming.delete(messageId);
-      for (const [messageId, delta] of pendingDeltas)
-        if (delta.threadId === threadId) pendingDeltas.delete(messageId);
+    for (const [messageId, message] of streaming)
+      if (message.threadId === threadId) streaming.delete(messageId);
+    for (const [messageId, delta] of pendingDeltas)
+      if (delta.threadId === threadId) pendingDeltas.delete(messageId);
 
-      publish(RuntimeEvent.cases["thread.removed"].make({ threadId }));
-    });
-  }
+    publish(RuntimeEvent.cases["thread.removed"].make({ threadId }));
+  });
 
-  function setArchived(entry: ThreadEntry, isArchived: boolean) {
-    return Effect.gen(function* () {
-      if ((entry.info.archivedAt !== null) === isArchived) return;
+  const setArchived = Effect.fn("setArchived")(function* (entry: ThreadEntry, isArchived: boolean) {
+    if ((entry.info.archivedAt !== null) === isArchived) return;
 
-      const archivedAt = isArchived ? Date.now() : null;
-      entry.info = { ...entry.info, archivedAt };
-      store.setArchived(entry.info.id, archivedAt);
-      publish(RuntimeEvent.cases["thread.archived"].make({ threadId: entry.info.id, archivedAt }));
-      if (!isArchived) return;
+    const archivedAt = isArchived ? Date.now() : null;
+    entry.info = { ...entry.info, archivedAt };
+    store.setArchived(entry.info.id, archivedAt);
+    publish(RuntimeEvent.cases["thread.archived"].make({ threadId: entry.info.id, archivedAt }));
+    if (!isArchived) return;
 
-      terminals.closeThread(entry.info.id);
-      devices.release(entry.info.id);
-      mcp.revoke(entry.info.id);
-      // An archived thread shouldn't keep an agent process around; the next message resumes it.
-      yield* dropSession(entry, "Archiving the thread stopped its agent.");
-    });
-  }
+    terminals.closeThread(entry.info.id);
+    devices.release(entry.info.id);
+    mcp.revoke(entry.info.id);
+    // An archived thread shouldn't keep an agent process around; the next message resumes it.
+    yield* dropSession(entry, "Archiving the thread stopped its agent.");
+  });
 
   /** Sends a message: into the running turn, or as the start of a new one. */
-  function deliverMessage(entry: ThreadEntry, message: QueuedMessage, run?: CommandRun) {
-    return entry.lock.withPermit(
-      Effect.gen(function* () {
-        const threadId = entry.info.id;
-        // Writing in an archived thread brings it back.
-        yield* setArchived(entry, false);
+  const deliverMessage = Effect.fn("deliverMessage")(
+    function* (entry: ThreadEntry, message: QueuedMessage, run?: CommandRun) {
+      const threadId = entry.info.id;
+      // Writing in an archived thread brings it back.
+      yield* setArchived(entry, false);
 
-        const { text, attachments, effort, fast, permission } = message;
-        const settings = yield* settingsStore.get;
-        const turn = {
-          // SAFETY: send() lets only UUIDs through.
-          messageId: message.id as `${string}-${string}-${string}-${string}-${string}`,
-          text,
-          attachments,
-          effort,
-          fast,
-          permission,
-          skills: yield* Effect.promise(() =>
-            skills.findMentionedSkills(entry.info.provider, entry.info.cwd, text),
-          ),
-          handoff: null,
-        };
+      const { text, attachments, effort, fast, permission } = message;
+      const settings = yield* settingsStore.get;
+      const turn = {
+        // SAFETY: send() lets only UUIDs through.
+        messageId: message.id as `${string}-${string}-${string}-${string}-${string}`,
+        text,
+        attachments,
+        effort,
+        fast,
+        permission,
+        skills: yield* Effect.promise(() =>
+          skills.findMentionedSkills(entry.info.provider, entry.info.cwd, text),
+        ),
+        handoff: null,
+      };
 
-        const { provider } = entry.info;
-        // The harness was switched to and hasn't seen what happened since it last took part.
-        const since = entry.coverage[provider];
-        const handoff =
-          since === undefined
-            ? null
-            : buildHandoff({
-                events: store.readAfter(threadId, since).map((stored) => stored.event),
-                isFresh: entry.resumeTokens[provider] === undefined,
-                getHarnessName: (kind) => getHarnessName(settings, kind),
-              });
-        const event = RuntimeEvent.cases["user.message"].make({
-          threadId,
-          messageId: message.id,
-          text,
-          ...(attachments.length > 0 && { attachments }),
-          ...(run && { run }),
-          provider,
-          ...(handoff && { handoff }),
-        });
-        entry.permission = permission;
+      const { provider } = entry.info;
+      // The harness was switched to and hasn't seen what happened since it last took part.
+      const since = entry.coverage[provider];
+      const handoff =
+        since === undefined
+          ? null
+          : buildHandoff({
+              events: store.readAfter(threadId, since).map((stored) => stored.event),
+              isFresh: entry.resumeTokens[provider] === undefined,
+              getHarnessName: (kind) => getHarnessName(settings, kind),
+            });
+      const event = RuntimeEvent.cases["user.message"].make({
+        threadId,
+        messageId: message.id,
+        text,
+        ...(attachments.length > 0 && { attachments }),
+        ...(run && { run }),
+        provider,
+        ...(handoff && { handoff }),
+      });
+      entry.permission = permission;
 
-        // A turn is running: the message joins it.
-        if (entry.session && isTurnActive(entry.info.status)) {
-          publish({ ...event, steer: true });
-          return yield* entry.session.steer(turn);
-        }
+      // A turn is running: the message joins it.
+      if (entry.session && isTurnActive(entry.info.status)) {
+        publish({ ...event, steer: true });
+        return yield* entry.session.steer(turn);
+      }
 
-        entry.isStopRequested = false;
-        if (entry.info.limitStop) setLimitStop(entry, null);
-        publish(event);
-        publish(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
+      entry.isStopRequested = false;
+      if (entry.info.limitStop) setLimitStop(entry, null);
+      publish(event);
+      publish(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
 
-        // Snapshot the folder before the agent touches it, so the turn's changes can be shown and undone.
-        entry.currentTurn = message.id;
-        yield* Effect.promise(() =>
-          captureCheckpoint(entry.info.cwd, getCheckpointRef(threadId, message.id, "start")),
-        );
-        const session = yield* ensureSession(entry, { effort, permission, attachments: [] }).pipe(
-          Effect.tap((session) => session.send({ ...turn, handoff: handoff?.text ?? null })),
-          // The turn never got going; the session may be what's broken, so the next message starts afresh.
-          Effect.tapError(() => dropSession(entry, null, "error")),
-        );
+      // Snapshot the folder before the agent touches it, so the turn's changes can be shown and undone.
+      entry.currentTurn = message.id;
+      yield* Effect.promise(() =>
+        captureCheckpoint(entry.info.cwd, getCheckpointRef(threadId, message.id, "start")),
+      );
+      const session = yield* ensureSession(entry, { effort, permission, attachments: [] }).pipe(
+        Effect.tap((session) => session.send({ ...turn, handoff: handoff?.text ?? null })),
+        // The turn never got going; the session may be what's broken, so the next message starts afresh.
+        Effect.tapError(() => dropSession(entry, null, "error")),
+      );
 
-        // Caught up now; until the turn got going, the next attempt hands over the same again.
-        if (since !== undefined) {
-          const { [provider]: _caughtUp, ...behind } = entry.coverage;
-          setCoverage(entry, behind);
-        }
+      // Caught up now; until the turn got going, the next attempt hands over the same again.
+      if (since !== undefined) {
+        const { [provider]: _caughtUp, ...behind } = entry.coverage;
+        setCoverage(entry, behind);
+      }
 
-        // Stop came while the agent was starting, with no turn yet to interrupt.
-        if (entry.isStopRequested) yield* session.interrupt;
-      }),
-    );
-  }
+      // Stop came while the agent was starting, with no turn yet to interrupt.
+      if (entry.isStopRequested) yield* session.interrupt;
+    },
+    (effect, entry) => entry.lock.withPermit(effect),
+  );
 
   /**
    * Reports a failure on the thread itself. For commands that start a thread, whose failure
@@ -1105,7 +1097,7 @@ const make = Effect.gen(function* () {
    * Sends a message, or queues it with `queue` while a turn runs. A `messageId` already sent
    * or queued is a retry, and does nothing.
    */
-  function send(
+  const send = Effect.fn("send")(function* (
     entry: ThreadEntry,
     text: string,
     options: TurnOptions,
@@ -1115,29 +1107,27 @@ const make = Effect.gen(function* () {
       messageId = crypto.randomUUID(),
     }: { run?: CommandRun; queue?: boolean | undefined; messageId?: string | undefined } = {},
   ) {
-    return Effect.gen(function* () {
-      if (!UUID_PATTERN.test(messageId))
-        return yield* Effect.fail(createError(`Message ids must be UUIDs, not "${messageId}"`));
-      if (
-        store.hasMessage(entry.info.id, messageId) ||
-        entry.queue.some((queued) => queued.id === messageId)
-      )
-        return;
+    if (!UUID_PATTERN.test(messageId))
+      return yield* Effect.fail(createError(`Message ids must be UUIDs, not "${messageId}"`));
+    if (
+      store.hasMessage(entry.info.id, messageId) ||
+      entry.queue.some((queued) => queued.id === messageId)
+    )
+      return;
 
-      const message: QueuedMessage = {
-        id: messageId,
-        text,
-        attachments: yield* resolveAttachments(options.attachments),
-        effort: options.effort,
-        fast: options.fast,
-        permission: options.permission,
-      };
-      if ((queue && isTurnActive(entry.info.status)) || entry.isSettingUp)
-        return setQueue(entry, [...entry.queue, message]);
+    const message: QueuedMessage = {
+      id: messageId,
+      text,
+      attachments: yield* resolveAttachments(options.attachments),
+      effort: options.effort,
+      fast: options.fast,
+      permission: options.permission,
+    };
+    if ((queue && isTurnActive(entry.info.status)) || entry.isSettingUp)
+      return setQueue(entry, [...entry.queue, message]);
 
-      yield* deliverMessage(entry, message, run);
-    });
-  }
+    yield* deliverMessage(entry, message, run);
+  });
 
   function isBusy(entry: ThreadEntry) {
     return isTurnActive(entry.info.status);
@@ -1147,151 +1137,147 @@ const make = Effect.gen(function* () {
    * Rewinds to before a user message: the provider's conversation first (the step that
    * can refuse), then the transcript, then, if asked, the files.
    */
-  function rewind(command: Extract<ClientCommand, { _tag: "thread.rewind" }>) {
-    return Effect.gen(function* () {
-      const entry = yield* getEntry(command.threadId);
-      const { id: threadId, cwd, provider } = entry.info;
-      if (isBusy(entry)) return yield* Effect.fail(createError("Stop the agent before rewinding"));
+  const rewind = Effect.fn("rewind")(function* (
+    command: Extract<ClientCommand, { _tag: "thread.rewind" }>,
+  ) {
+    const entry = yield* getEntry(command.threadId);
+    const { id: threadId, cwd, provider } = entry.info;
+    if (isBusy(entry)) return yield* Effect.fail(createError("Stop the agent before rewinding"));
 
-      const found = store.findUserMessage(threadId, command.messageId);
-      if (!found) return yield* Effect.fail(createError("That message is gone"));
-      if (found.event.steer)
-        return yield* Effect.fail(createError("A message sent mid-turn can't be rewound to"));
+    const found = store.findUserMessage(threadId, command.messageId);
+    if (!found) return yield* Effect.fail(createError("That message is gone"));
+    if (found.event.steer)
+      return yield* Effect.fail(createError("A message sent mid-turn can't be rewound to"));
 
-      if (command.restoreFiles) {
-        const blocker = fileRestoreBlocker(
-          entry.info,
-          [...threads.values()].map((other) => other.info),
-        );
-        if (blocker) return yield* Effect.fail(createError(blocker));
-        if (!(yield* Effect.promise(() => hasCheckpoint(cwd, threadId, command.messageId)))) {
-          return yield* Effect.fail(
-            createError("There's no snapshot of the files from that point"),
-          );
-        }
-      }
-
-      yield* dropSession(entry, null);
-
-      const resumeToken = entry.resumeTokens[provider];
-      if (hasSwitchedHarness(entry)) {
-        // Each harness's own conversation holds only its turns, so none can be cut back to the
-        // same point: the next message starts this one afresh, handed what's left of the thread.
-        setResumeTokens(entry, {});
-        setCoverage(entry, { [provider]: 0 });
-      } else if (resumeToken) {
-        const token = yield* ADAPTERS[provider].rewind({
-          cwd: entry.home.path,
-          harness: (yield* settingsStore.get).providers[provider],
-          resumeToken,
-          messageId: command.messageId,
-          keep: found.before,
-          dropTurns: found.from.filter((message) => !message.steer).length,
-        });
-        setResumeTokens(entry, token ? { [provider]: token } : {});
-      }
-
-      store.truncate(threadId, found.seq);
-      publish(
-        RuntimeEvent.cases["thread.rewound"].make({ threadId, messageId: command.messageId }),
+    if (command.restoreFiles) {
+      const blocker = fileRestoreBlocker(
+        entry.info,
+        [...threads.values()].map((other) => other.info),
       );
-      markUpdated(threadId);
+      if (blocker) return yield* Effect.fail(createError(blocker));
+      if (!(yield* Effect.promise(() => hasCheckpoint(cwd, threadId, command.messageId)))) {
+        return yield* Effect.fail(createError("There's no snapshot of the files from that point"));
+      }
+    }
 
-      const error = command.restoreFiles
-        ? yield* Effect.promise(() => restoreCheckpoint(cwd, threadId, command.messageId))
-        : null;
-      void deleteCheckpoints(
-        cwd,
-        threadId,
-        found.from.map((message) => message.messageId),
+    yield* dropSession(entry, null);
+
+    const resumeToken = entry.resumeTokens[provider];
+    if (hasSwitchedHarness(entry)) {
+      // Each harness's own conversation holds only its turns, so none can be cut back to the
+      // same point: the next message starts this one afresh, handed what's left of the thread.
+      setResumeTokens(entry, {});
+      setCoverage(entry, { [provider]: 0 });
+    } else if (resumeToken) {
+      const token = yield* ADAPTERS[provider].rewind({
+        cwd: entry.home.path,
+        harness: (yield* settingsStore.get).providers[provider],
+        resumeToken,
+        messageId: command.messageId,
+        keep: found.before,
+        dropTurns: found.from.filter((message) => !message.steer).length,
+      });
+      setResumeTokens(entry, token ? { [provider]: token } : {});
+    }
+
+    store.truncate(threadId, found.seq);
+    publish(RuntimeEvent.cases["thread.rewound"].make({ threadId, messageId: command.messageId }));
+    markUpdated(threadId);
+
+    const error = command.restoreFiles
+      ? yield* Effect.promise(() => restoreCheckpoint(cwd, threadId, command.messageId))
+      : null;
+    void deleteCheckpoints(
+      cwd,
+      threadId,
+      found.from.map((message) => message.messageId),
+    );
+    if (error)
+      return yield* Effect.fail(
+        createError(`Rewound the conversation, but couldn't restore the files: ${error}`),
       );
-      if (error)
-        return yield* Effect.fail(
-          createError(`Rewound the conversation, but couldn't restore the files: ${error}`),
-        );
-    });
-  }
+  });
 
   /**
    * Starts a new thread with the conversation through a message's turn: the provider's copy
    * first (the step that can refuse), then the transcript and file snapshots.
    */
-  function fork(command: Extract<ClientCommand, { _tag: "thread.fork" }>) {
-    return Effect.gen(function* () {
-      const source = yield* getEntry(command.threadId);
-      const { cwd, provider } = source.info;
-      if (isBusy(source)) return yield* Effect.fail(createError("Stop the agent before forking"));
+  const fork = Effect.fn("fork")(function* (
+    command: Extract<ClientCommand, { _tag: "thread.fork" }>,
+  ) {
+    const source = yield* getEntry(command.threadId);
+    const { cwd, provider } = source.info;
+    if (isBusy(source)) return yield* Effect.fail(createError("Stop the agent before forking"));
 
-      const cut = store.findTurnsAfter(source.info.id, command.messageId);
-      if (!cut) return yield* Effect.fail(createError("That message is gone"));
+    const cut = store.findTurnsAfter(source.info.id, command.messageId);
+    if (!cut) return yield* Effect.fail(createError("That message is gone"));
 
-      const sourceToken = source.resumeTokens[provider];
-      // A thread that switched harness forks like a rewind: afresh, handed the conversation.
-      const resumeToken =
-        sourceToken && !hasSwitchedHarness(source)
-          ? yield* ADAPTERS[provider].fork({
-              cwd: source.home.path,
-              harness: (yield* settingsStore.get).providers[provider],
-              resumeToken: sourceToken,
-              messageId: cut.from[0]?.messageId ?? null,
-              keep: cut.before,
-              dropTurns: cut.from.filter((message) => !message.steer).length,
-            })
-          : null;
+    const sourceToken = source.resumeTokens[provider];
+    // A thread that switched harness forks like a rewind: afresh, handed the conversation.
+    const resumeToken =
+      sourceToken && !hasSwitchedHarness(source)
+        ? yield* ADAPTERS[provider].fork({
+            cwd: source.home.path,
+            harness: (yield* settingsStore.get).providers[provider],
+            resumeToken: sourceToken,
+            messageId: cut.from[0]?.messageId ?? null,
+            keep: cut.before,
+            dropTurns: cut.from.filter((message) => !message.steer).length,
+          })
+        : null;
 
-      const now = Date.now();
-      const info: ThreadInfo = {
-        id: crypto.randomUUID(),
-        projectId: source.info.projectId,
-        provider,
-        model: source.info.model,
-        cwd,
-        title: source.info.title.startsWith("Fork of ")
-          ? source.info.title
-          : deriveTitle(`Fork of ${source.info.title}`, source.info.title),
-        status: "idle",
-        createdAt: now,
-        updatedAt: now,
-        branch: source.info.branch,
-        archivedAt: null,
-        worktree: source.info.worktree,
-        seenRev: 0,
-        shelved: false,
-      };
+    const now = Date.now();
+    const info: ThreadInfo = {
+      id: crypto.randomUUID(),
+      projectId: source.info.projectId,
+      provider,
+      model: source.info.model,
+      cwd,
+      title: source.info.title.startsWith("Fork of ")
+        ? source.info.title
+        : deriveTitle(`Fork of ${source.info.title}`, source.info.title),
+      status: "idle",
+      createdAt: now,
+      updatedAt: now,
+      branch: source.info.branch,
+      archivedAt: null,
+      worktree: source.info.worktree,
+      seenRev: 0,
+      shelved: false,
+    };
 
-      const coverage: Coverage = hasSwitchedHarness(source) ? { [provider]: 0 } : {};
-      threads.set(
-        info.id,
-        createEntry(info, source.home, resumeToken ? { [provider]: resumeToken } : {}, coverage),
-      );
-      store.insertThread(info, source.home);
-      store.copyEvents(source.info.id, info.id, cut.seq);
-      store.appendEvent(
-        info.id,
-        RuntimeEvent.cases["thread.forked"].make({
-          threadId: info.id,
-          fromThreadId: source.info.id,
-          fromTitle: source.info.title,
-        }),
-      );
-      if (resumeToken) store.setResumeTokens(info.id, { [provider]: resumeToken });
-      store.setCoverage(info.id, coverage);
+    const coverage: Coverage = hasSwitchedHarness(source) ? { [provider]: 0 } : {};
+    threads.set(
+      info.id,
+      createEntry(info, source.home, resumeToken ? { [provider]: resumeToken } : {}, coverage),
+    );
+    store.insertThread(info, source.home);
+    store.copyEvents(source.info.id, info.id, cut.seq);
+    store.appendEvent(
+      info.id,
+      RuntimeEvent.cases["thread.forked"].make({
+        threadId: info.id,
+        fromThreadId: source.info.id,
+        fromTitle: source.info.title,
+      }),
+    );
+    if (resumeToken) store.setResumeTokens(info.id, { [provider]: resumeToken });
+    store.setCoverage(info.id, coverage);
 
-      publish(
-        RuntimeEvent.cases["thread.created"].make({
-          thread: info,
-          requestId: command.requestId,
-          hasTranscript: true,
-        }),
-      );
-      void copyCheckpoints(
-        cwd,
-        source.info.id,
-        info.id,
-        cut.from.map((message) => message.messageId),
-      );
-    });
-  }
+    publish(
+      RuntimeEvent.cases["thread.created"].make({
+        thread: info,
+        requestId: command.requestId,
+        hasTranscript: true,
+      }),
+    );
+    void copyCheckpoints(
+      cwd,
+      source.info.id,
+      info.id,
+      cut.from.map((message) => message.messageId),
+    );
+  });
 
   /** Side chats (BTW) by id; closing one forgets it. */
   const sideChats = new Map<string, SideChat>();
@@ -1306,91 +1292,93 @@ const make = Effect.gen(function* () {
    * conversation through the turn of `messageId`. Resolves to what to hand it with the first
    * question when there's no copy, and to null when the chat was closed while it started.
    */
-  function startSideChat(source: ThreadEntry, messageId: string, sideChatId: string) {
-    return Effect.gen(function* () {
-      const { id: threadId, provider } = source.info;
-      yield* ensureHarnessReady(provider);
+  const startSideChat = Effect.fn("startSideChat")(function* (
+    source: ThreadEntry,
+    messageId: string,
+    sideChatId: string,
+  ) {
+    const { id: threadId, provider } = source.info;
+    yield* ensureHarnessReady(provider);
 
-      const cut = store.findTurnsAfter(threadId, messageId);
-      if (!cut) return yield* Effect.fail(createError("That reply is gone"));
+    const cut = store.findTurnsAfter(threadId, messageId);
+    if (!cut) return yield* Effect.fail(createError("That reply is gone"));
 
-      const settings = yield* settingsStore.get;
-      const harness = settings.providers[provider];
-      const sourceToken = source.resumeTokens[provider];
-      // A running turn is still writing the harness's log, and some harnesses can't copy theirs:
-      // the agent then starts afresh, handed the transcript instead.
-      const resumeToken =
-        sourceToken && !hasSwitchedHarness(source) && !isBusy(source)
-          ? yield* ADAPTERS[provider]
-              .fork({
-                cwd: source.home.path,
-                harness,
-                resumeToken: sourceToken,
-                messageId: cut.from[0]?.messageId ?? null,
-                keep: cut.before,
-                dropTurns: cut.from.filter((message) => !message.steer).length,
-              })
-              .pipe(Effect.orElseSucceed(() => null))
-          : null;
-      const handoff = resumeToken
-        ? null
-        : buildHandoff({
-            events: store
-              .readAfter(threadId, 0)
-              .filter((stored) => cut.seq === null || stored.id < cut.seq)
-              .map((stored) => stored.event),
-            isFresh: true,
-            getHarnessName: (kind) => getHarnessName(settings, kind),
-          });
+    const settings = yield* settingsStore.get;
+    const harness = settings.providers[provider];
+    const sourceToken = source.resumeTokens[provider];
+    // A running turn is still writing the harness's log, and some harnesses can't copy theirs:
+    // the agent then starts afresh, handed the transcript instead.
+    const resumeToken =
+      sourceToken && !hasSwitchedHarness(source) && !isBusy(source)
+        ? yield* ADAPTERS[provider]
+            .fork({
+              cwd: source.home.path,
+              harness,
+              resumeToken: sourceToken,
+              messageId: cut.from[0]?.messageId ?? null,
+              keep: cut.before,
+              dropTurns: cut.from.filter((message) => !message.steer).length,
+            })
+            .pipe(Effect.orElseSucceed(() => null))
+        : null;
+    const handoff = resumeToken
+      ? null
+      : buildHandoff({
+          events: store
+            .readAfter(threadId, 0)
+            .filter((stored) => cut.seq === null || stored.id < cut.seq)
+            .map((stored) => stored.event),
+          isFresh: true,
+          getHarnessName: (kind) => getHarnessName(settings, kind),
+        });
 
-      const chat: SideChat = { session: null };
-      sideChats.set(sideChatId, chat);
-      const session = yield* ADAPTERS[provider].start({
-        threadId: sideChatId,
-        cwd: source.home.path,
-        harness,
-        model: source.info.model ?? harness.defaultModel ?? undefined,
-        resumeToken: resumeToken ?? undefined,
-        effort: null,
-        permission: "plan",
-        onResumeToken: () => {},
-        onCwd: () => {},
-        emit: (event) => {
-          if (sideChats.get(sideChatId) !== chat) return;
+    const chat: SideChat = { session: null };
+    sideChats.set(sideChatId, chat);
+    const session = yield* ADAPTERS[provider].start({
+      threadId: sideChatId,
+      cwd: source.home.path,
+      harness,
+      model: source.info.model ?? harness.defaultModel ?? undefined,
+      resumeToken: resumeToken ?? undefined,
+      effort: null,
+      permission: "plan",
+      onResumeToken: () => {},
+      onCwd: () => {},
+      emit: (event) => {
+        if (sideChats.get(sideChatId) !== chat) return;
 
-          // Read-only: whatever the agent asks to do beyond reading is refused.
-          if (RuntimeEvent.guards["approval.requested"](event)) {
-            if (chat.session)
-              runFork(Effect.ignore(chat.session.respondApproval(event.requestId, "deny")));
-            return;
-          }
+        // Read-only: whatever the agent asks to do beyond reading is refused.
+        if (RuntimeEvent.guards["approval.requested"](event)) {
+          if (chat.session)
+            runFork(Effect.ignore(chat.session.respondApproval(event.requestId, "deny")));
+          return;
+        }
 
-          if (
-            RuntimeEvent.guards["thread.status"](event) &&
-            (event.status === "closed" || event.status === "error")
-          )
-            sideChats.delete(sideChatId);
-          publishSideChat(event);
-        },
-        mcpServer: null,
-      });
-      if (sideChats.get(sideChatId) !== chat) {
-        yield* session.close;
-        return null;
-      }
-
-      chat.session = session;
-      return { session, handoff: handoff?.text ?? null };
+        if (
+          RuntimeEvent.guards["thread.status"](event) &&
+          (event.status === "closed" || event.status === "error")
+        )
+          sideChats.delete(sideChatId);
+        publishSideChat(event);
+      },
+      mcpServer: null,
     });
-  }
+    if (sideChats.get(sideChatId) !== chat) {
+      yield* session.close;
+      return null;
+    }
 
-  function askSideChat({
-    threadId,
-    messageId,
-    sideChatId,
-    text,
-  }: Extract<ClientCommand, { _tag: "sideChat.ask" }>) {
-    return Effect.gen(function* () {
+    chat.session = session;
+    return { session, handoff: handoff?.text ?? null };
+  });
+
+  const askSideChat = Effect.fn("askSideChat")(
+    function* ({
+      threadId,
+      messageId,
+      sideChatId,
+      text,
+    }: Extract<ClientCommand, { _tag: "sideChat.ask" }>) {
       const source = yield* getEntry(threadId);
       const session = sideChats.get(sideChatId)?.session;
       if (sideChats.has(sideChatId) && !session)
@@ -1431,8 +1419,9 @@ const make = Effect.gen(function* () {
         skills: [],
         handoff: started.handoff,
       });
-    }).pipe(
-      Effect.tapError((error) =>
+    },
+    (effect, { sideChatId }) =>
+      Effect.tapError(effect, (error) =>
         Effect.sync(() => {
           publishSideChat(
             RuntimeEvent.cases.error.make({ threadId: sideChatId, message: error.message }),
@@ -1442,74 +1431,63 @@ const make = Effect.gen(function* () {
           );
         }),
       ),
-    );
-  }
+  );
 
-  function closeSideChat(sideChatId: string) {
-    return Effect.suspend(() => {
-      const chat = sideChats.get(sideChatId);
-      sideChats.delete(sideChatId);
-      return chat?.session?.close ?? Effect.void;
-    });
-  }
+  const closeSideChat = Effect.fn("closeSideChat")(function* (sideChatId: string) {
+    const chat = sideChats.get(sideChatId);
+    sideChats.delete(sideChatId);
+    if (chat?.session) yield* chat.session.close;
+  });
 
   /** Fails, saying how to fix it, unless `provider`'s CLI is installed and signed in. */
-  function ensureHarnessReady(provider: ProviderKind) {
-    return Effect.gen(function* () {
-      const name = getHarnessName(yield* settingsStore.get, provider);
-      const status = (yield* registry.list).find((harness) => harness.kind === provider);
+  const ensureHarnessReady = Effect.fn("ensureHarnessReady")(function* (provider: ProviderKind) {
+    const name = getHarnessName(yield* settingsStore.get, provider);
+    const status = (yield* registry.list).find((harness) => harness.kind === provider);
 
-      if (status?.checking)
-        return yield* Effect.fail(
-          createError(`Still checking whether ${name} is set up. Try again in a moment.`),
-        );
-      if (!status?.installed)
-        return yield* Effect.fail(
-          createError(`${name} isn't installed on this machine. Install its CLI, then try again.`),
-        );
-      if (!status.linked)
-        return yield* Effect.fail(
-          createError(
-            `${name} isn't signed in. Sign in under Settings → Harnesses, then try again.`,
-          ),
-        );
-    });
-  }
-
-  function compact(threadId: string) {
-    return Effect.gen(function* () {
-      const entry = yield* getEntry(threadId);
-      if (isBusy(entry))
-        return yield* Effect.fail(createError("Wait for the agent to finish before compacting"));
-      if (!entry.resumeTokens[entry.info.provider] && !entry.session) return;
-
-      yield* entry.lock.withPermit(
-        ensureSession(entry, { effort: null, permission: "ask", attachments: [] }).pipe(
-          Effect.flatMap((session) => session.compact),
-        ),
+    if (status?.checking)
+      return yield* Effect.fail(
+        createError(`Still checking whether ${name} is set up. Try again in a moment.`),
       );
-    });
-  }
-
-  function listCommands(threadId: string) {
-    return Effect.gen(function* () {
-      const entry = yield* getEntry(threadId);
-      const commands = entry.session
-        ? yield* entry.session.commands.pipe(Effect.orElseSucceed(() => []))
-        : [];
-
-      // Claude reports its skills as commands too; they're offered under `$` instead.
-      const skillNames = yield* Effect.promise(() =>
-        skills.loadSkillNames(entry.info.provider, entry.info.cwd),
+    if (!status?.installed)
+      return yield* Effect.fail(
+        createError(`${name} isn't installed on this machine. Install its CLI, then try again.`),
       );
-      publish(
-        RuntimeEvent.cases["thread.commands"].make({
-          threadId,
-          commands: commands.filter((command) => !skillNames.has(command.name)),
-        }),
+    if (!status.linked)
+      return yield* Effect.fail(
+        createError(`${name} isn't signed in. Sign in under Settings → Harnesses, then try again.`),
       );
-    });
-  }
+  });
+
+  const compact = Effect.fn("compact")(function* (threadId: string) {
+    const entry = yield* getEntry(threadId);
+    if (isBusy(entry))
+      return yield* Effect.fail(createError("Wait for the agent to finish before compacting"));
+    if (!entry.resumeTokens[entry.info.provider] && !entry.session) return;
+
+    yield* entry.lock.withPermit(
+      ensureSession(entry, { effort: null, permission: "ask", attachments: [] }).pipe(
+        Effect.flatMap((session) => session.compact),
+      ),
+    );
+  });
+
+  const listCommands = Effect.fn("listCommands")(function* (threadId: string) {
+    const entry = yield* getEntry(threadId);
+    const commands = entry.session
+      ? yield* entry.session.commands.pipe(Effect.orElseSucceed(() => []))
+      : [];
+
+    // Claude reports its skills as commands too; they're offered under `$` instead.
+    const skillNames = yield* Effect.promise(() =>
+      skills.loadSkillNames(entry.info.provider, entry.info.cwd),
+    );
+    publish(
+      RuntimeEvent.cases["thread.commands"].make({
+        threadId,
+        commands: commands.filter((command) => !skillNames.has(command.name)),
+      }),
+    );
+  });
 
   /** Stops agent processes nobody has used in a while; they resume from their token on the next message. */
   const reapIdleSessions = Effect.gen(function* () {
@@ -1658,25 +1636,23 @@ const make = Effect.gen(function* () {
   }
 
   /** A message for everything uncommitted at `path`, from the commit model in settings. */
-  function writeCommitMessage(path: string) {
-    return Effect.gen(function* () {
-      const settings = yield* settingsStore.get;
-      const [diff, recent] = yield* Effect.promise(() =>
-        Promise.all([readDiff(path), readRecentSubjects(path, 20)]),
-      );
-      if (diff.error) return { error: diff.error };
-      if (!diff.patch) return { error: "Nothing to commit" };
+  const writeCommitMessage = Effect.fn("writeCommitMessage")(function* (path: string) {
+    const settings = yield* settingsStore.get;
+    const [diff, recent] = yield* Effect.promise(() =>
+      Promise.all([readDiff(path), readRecentSubjects(path, 20)]),
+    );
+    if (diff.error) return { error: diff.error };
+    if (!diff.patch) return { error: "Nothing to commit" };
 
-      return yield* Effect.tryPromise({
-        try: () =>
-          generateCommitMessage({ ...buildWriterInput(path, settings, recent), patch: diff.patch }),
-        catch: (error) => `Couldn't write a commit message: ${getErrorMessage(error)}`,
-      }).pipe(
-        Effect.map((message) => ({ message })),
-        Effect.catch((error) => Effect.succeed({ error })),
-      );
-    });
-  }
+    return yield* Effect.tryPromise({
+      try: () =>
+        generateCommitMessage({ ...buildWriterInput(path, settings, recent), patch: diff.patch }),
+      catch: (error) => `Couldn't write a commit message: ${getErrorMessage(error)}`,
+    }).pipe(
+      Effect.map((message) => ({ message })),
+      Effect.catch((error) => Effect.succeed({ error })),
+    );
+  });
 
   /**
    * Pushes the branch if the host doesn't have all of it, writes the title and body with the
@@ -1750,160 +1726,166 @@ const make = Effect.gen(function* () {
    * A worktree of the project's repo on a new branch named after the thread, under the
    * data dir. Resolves to the thread's folder in it (the project may be a repo subfolder).
    */
-  function createWorktree(projectPath: string, title: string, threadId: string) {
-    return Effect.gen(function* () {
-      const root = yield* Effect.promise(() => readRepoRoot(projectPath));
-      if (!root)
-        return yield* Effect.fail(createError("New worktrees need the project to be a git repo"));
+  const createWorktree = Effect.fn("createWorktree")(function* (
+    projectPath: string,
+    title: string,
+    threadId: string,
+  ) {
+    const root = yield* Effect.promise(() => readRepoRoot(projectPath));
+    if (!root)
+      return yield* Effect.fail(createError("New worktrees need the project to be a git repo"));
 
-      const slug = `${
-        title
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "")
-          .slice(0, 40) || "thread"
-      }-${threadId.slice(0, 6)}`;
-      const path = join(WORKTREES_DIR, basename(root), slug);
-      const { worktreeFromOrigin } = yield* settingsStore.get;
-      const error = yield* Effect.promise(() =>
-        addWorktree(projectPath, path, `masscode/${slug}`, worktreeFromOrigin === true),
-      );
-      if (error) return yield* Effect.fail(createError(`Couldn't create a worktree: ${error}`));
+    const slug = `${
+      title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 40) || "thread"
+    }-${threadId.slice(0, 6)}`;
+    const path = join(WORKTREES_DIR, basename(root), slug);
+    const { worktreeFromOrigin } = yield* settingsStore.get;
+    const error = yield* Effect.promise(() =>
+      addWorktree(projectPath, path, `masscode/${slug}`, worktreeFromOrigin === true),
+    );
+    if (error) return yield* Effect.fail(createError(`Couldn't create a worktree: ${error}`));
 
-      return join(path, relative(root, projectPath));
-    });
-  }
+    return join(path, relative(root, projectPath));
+  });
 
   /**
    * Runs `masscode.toml`'s worktree setup in the thread's new worktree; unless told not to wait,
    * messages queue until it ends.
    */
-  function setUpWorktree(entry: ThreadEntry, projectPath: string) {
-    return Effect.gen(function* () {
-      const threadId = entry.info.id;
-      const config = yield* Effect.promise(() => readProjectConfig(projectPath));
-      if (config instanceof Error)
-        return publish(
-          RuntimeEvent.cases.error.make({
-            threadId,
-            message: `${config.message}. The worktree's setup didn't run; fix the file and start a new thread.`,
-          }),
-        );
-
-      const command = config.worktree?.setup?.trim();
-      if (!command) return;
-
-      const setupError = terminals.run(
-        threadId,
-        WORKTREE_SETUP_TERMINAL_ID,
-        command,
-        120,
-        30,
-        ({ exitCode, output, wasStopped }) => {
-          if (threads.get(threadId) !== entry) return;
-
-          publish(
-            RuntimeEvent.cases["worktree.setup"].make({
-              threadId,
-              run: { command, exitCode, output },
-              stopped: wasStopped,
-            }),
-          );
-          if (!entry.isSettingUp) return;
-
-          entry.isSettingUp = false;
-          const [next] = entry.queue;
-          if (next && entry.info.archivedAt === null) sendQueued(entry, next);
-        },
-        { MASSCODE_PROJECT_ROOT: projectPath },
+  const setUpWorktree = Effect.fn("setUpWorktree")(function* (
+    entry: ThreadEntry,
+    projectPath: string,
+  ) {
+    const threadId = entry.info.id;
+    const config = yield* Effect.promise(() => readProjectConfig(projectPath));
+    if (config instanceof Error)
+      return publish(
+        RuntimeEvent.cases.error.make({
+          threadId,
+          message: `${config.message}. The worktree's setup didn't run; fix the file and start a new thread.`,
+        }),
       );
-      if (setupError)
-        return publish(
-          RuntimeEvent.cases.error.make({
+
+    const command = config.worktree?.setup?.trim();
+    if (!command) return;
+
+    const setupError = terminals.run(
+      threadId,
+      WORKTREE_SETUP_TERMINAL_ID,
+      command,
+      120,
+      30,
+      ({ exitCode, output, wasStopped }) => {
+        if (threads.get(threadId) !== entry) return;
+
+        publish(
+          RuntimeEvent.cases["worktree.setup"].make({
             threadId,
-            message: `Couldn't run the worktree setup: ${setupError.message}`,
+            run: { command, exitCode, output },
+            stopped: wasStopped,
           }),
         );
+        if (!entry.isSettingUp) return;
 
-      entry.isSettingUp = config.worktree?.wait_for_setup !== false;
-    });
-  }
+        entry.isSettingUp = false;
+        const [next] = entry.queue;
+        if (next && entry.info.archivedAt === null) sendQueued(entry, next);
+      },
+      { MASSCODE_PROJECT_ROOT: projectPath },
+    );
+    if (setupError)
+      return publish(
+        RuntimeEvent.cases.error.make({
+          threadId,
+          message: `Couldn't run the worktree setup: ${setupError.message}`,
+        }),
+      );
+
+    entry.isSettingUp = config.worktree?.wait_for_setup !== false;
+  });
 
   /**
    * Adds a thread and announces it; the first line of `text` names it until the writer model's
    * summary lands.
    */
-  function openThread(info: ThreadInfo, home: ThreadHome, text: string, requestId: string | null) {
-    return Effect.gen(function* () {
-      const entry = createEntry(info, home);
-      threads.set(info.id, entry);
-      store.insertThread(info, home);
-      publish(RuntimeEvent.cases["thread.created"].make({ thread: info, requestId }));
+  const openThread = Effect.fn("openThread")(function* (
+    info: ThreadInfo,
+    home: ThreadHome,
+    text: string,
+    requestId: string | null,
+  ) {
+    const entry = createEntry(info, home);
+    threads.set(info.id, entry);
+    store.insertThread(info, home);
+    publish(RuntimeEvent.cases["thread.created"].make({ thread: info, requestId }));
 
-      const { title } = info;
-      void generateThreadTitle({
-        ...buildWriterInput(info.cwd, yield* settingsStore.get, []),
-        text,
+    const { title } = info;
+    void generateThreadTitle({
+      ...buildWriterInput(info.cwd, yield* settingsStore.get, []),
+      text,
+    })
+      .then((summary) => {
+        // Unless it's been renamed meanwhile.
+        if (threads.get(info.id) === entry && entry.info.title === title)
+          setTitle(entry, deriveTitle(summary, title));
       })
-        .then((summary) => {
-          // Unless it's been renamed meanwhile.
-          if (threads.get(info.id) === entry && entry.info.title === title)
-            setTitle(entry, deriveTitle(summary, title));
-        })
-        .catch(() => {});
+      .catch(() => {});
 
-      return entry;
-    });
-  }
+    return entry;
+  });
 
-  function createThread(command: Extract<ClientCommand, { _tag: "thread.create" }>) {
-    return Effect.gen(function* () {
-      const { project, isNew } = yield* projectsStore
-        .ensure(command.path)
-        .pipe(Effect.mapError((error) => createError(error.message)));
-      if (isNew) publish(RuntimeEvent.cases["project.added"].make({ project }));
+  const createThread = Effect.fn("createThread")(function* (
+    command: Extract<ClientCommand, { _tag: "thread.create" }>,
+  ) {
+    const { project, isNew } = yield* projectsStore
+      .ensure(command.path)
+      .pipe(Effect.mapError((error) => createError(error.message)));
+    if (isNew) publish(RuntimeEvent.cases["project.added"].make({ project }));
 
-      const now = Date.now();
-      const id = crypto.randomUUID();
-      const title = deriveTitle(command.text, project.name);
-      const cwd =
-        command.workspace === "worktree"
-          ? yield* createWorktree(project.path, title, id)
-          : project.path;
+    const now = Date.now();
+    const id = crypto.randomUUID();
+    const title = deriveTitle(command.text, project.name);
+    const cwd =
+      command.workspace === "worktree"
+        ? yield* createWorktree(project.path, title, id)
+        : project.path;
 
-      const entry = yield* openThread(
-        {
-          id,
-          projectId: project.id,
-          provider: command.provider,
-          model: command.model,
-          cwd,
-          title,
-          status: "idle",
-          createdAt: now,
-          updatedAt: now,
-          branch: yield* Effect.promise(() => readBranch(cwd)),
-          archivedAt: null,
-          worktree: command.workspace === "worktree",
-          seenRev: 0,
-          shelved: false,
-        },
-        { path: cwd, isWorktree: command.workspace === "worktree" },
-        command.text,
-        command.requestId,
-      );
-      if (command.workspace === "worktree") yield* setUpWorktree(entry, project.path);
+    const entry = yield* openThread(
+      {
+        id,
+        projectId: project.id,
+        provider: command.provider,
+        model: command.model,
+        cwd,
+        title,
+        status: "idle",
+        createdAt: now,
+        updatedAt: now,
+        branch: yield* Effect.promise(() => readBranch(cwd)),
+        archivedAt: null,
+        worktree: command.workspace === "worktree",
+        seenRev: 0,
+        shelved: false,
+      },
+      { path: cwd, isWorktree: command.workspace === "worktree" },
+      command.text,
+      command.requestId,
+    );
+    if (command.workspace === "worktree") yield* setUpWorktree(entry, project.path);
 
-      // New chats preselect whichever harness was used last.
-      const settings = yield* settingsStore.get;
-      if (settings.lastProvider !== command.provider) {
-        const next = yield* settingsStore.update({ ...settings, lastProvider: command.provider });
-        publish(RuntimeEvent.cases["settings.updated"].make({ settings: next }));
-      }
+    // New chats preselect whichever harness was used last.
+    const settings = yield* settingsStore.get;
+    if (settings.lastProvider !== command.provider) {
+      const next = yield* settingsStore.update({ ...settings, lastProvider: command.provider });
+      publish(RuntimeEvent.cases["settings.updated"].make({ settings: next }));
+    }
 
-      yield* send(entry, command.text, command.options).pipe(reportErrorsOn(entry), Effect.ignore);
-    });
-  }
+    yield* send(entry, command.text, command.options).pipe(reportErrorsOn(entry), Effect.ignore);
+  });
 
   // --- orchestration: what agents do through MassCode's MCP tools -------------------------
 
@@ -1952,115 +1934,111 @@ const make = Effect.gen(function* () {
   }
 
   /** Waits for the thread's turn to end, up to `timeoutMs`. */
-  function waitForTurn(entry: ThreadEntry, timeoutMs: number) {
-    return Effect.gen(function* () {
-      const deadline = Date.now() + timeoutMs;
-      // ponytail: polls the thread's status; a per-thread signal if many agents wait at once.
-      while (entry.isSettingUp || isTurnActive(entry.info.status)) {
-        if (Date.now() >= deadline) return { ...summarizeThread(entry), timedOut: true };
-        yield* Effect.sleep("200 millis");
-      }
+  const waitForTurn = Effect.fn("waitForTurn")(function* (entry: ThreadEntry, timeoutMs: number) {
+    const deadline = Date.now() + timeoutMs;
+    // ponytail: polls the thread's status; a per-thread signal if many agents wait at once.
+    while (entry.isSettingUp || isTurnActive(entry.info.status)) {
+      if (Date.now() >= deadline) return { ...summarizeThread(entry), timedOut: true };
+      yield* Effect.sleep("200 millis");
+    }
 
-      return { ...summarizeThread(entry), ...readLastTurn(entry.info.id) };
-    });
-  }
+    return { ...summarizeThread(entry), ...readLastTurn(entry.info.id) };
+  });
 
-  function startThread(callerId: string, input: StartThreadInput) {
-    return Effect.gen(function* () {
-      const caller = yield* getEntry(callerId);
-      const id = input.requestId
-        ? deriveRequestUuid(callerId, input.requestId)
-        : crypto.randomUUID();
-      let entry = threads.get(id);
-      if (!entry) {
-        const permission = yield* checkPermissionCeiling(caller, input.permission);
-        const provider = input.provider ?? caller.info.provider;
-        yield* ensureHarnessReady(provider);
+  const startThread = Effect.fn("startThread")(function* (
+    callerId: string,
+    input: StartThreadInput,
+  ) {
+    const caller = yield* getEntry(callerId);
+    const id = input.requestId ? deriveRequestUuid(callerId, input.requestId) : crypto.randomUUID();
+    let entry = threads.get(id);
+    if (!entry) {
+      const permission = yield* checkPermissionCeiling(caller, input.permission);
+      const provider = input.provider ?? caller.info.provider;
+      yield* ensureHarnessReady(provider);
 
-        const project = (yield* projectsStore.list).find(
-          (candidate) => candidate.id === caller.info.projectId,
-        );
-        const title = deriveTitle(input.prompt, caller.info.title);
-        const cwd = input.worktree
-          ? yield* createWorktree(project?.path ?? caller.info.cwd, title, id)
-          : caller.info.cwd;
-        const now = Date.now();
-        entry = yield* openThread(
-          {
-            id,
-            projectId: caller.info.projectId,
-            provider,
-            model: input.model ?? (provider === caller.info.provider ? caller.info.model : null),
-            cwd,
-            title,
-            status: "idle",
-            createdAt: now,
-            updatedAt: now,
-            branch: yield* Effect.promise(() => readBranch(cwd)),
-            archivedAt: null,
-            worktree: input.worktree === true || caller.info.worktree,
-            seenRev: 0,
-            shelved: false,
-            startedBy: callerId,
-          },
-          // Same folder as the caller, which keeps it if it's a worktree made for the caller.
-          input.worktree
-            ? { path: cwd, isWorktree: true }
-            : cwd === caller.home.path
-              ? caller.home
-              : { path: cwd, isWorktree: false },
-          input.prompt,
-          null,
-        );
-        if (input.worktree) yield* setUpWorktree(entry, project?.path ?? caller.info.cwd);
-
-        publish(
-          RuntimeEvent.cases["thread.startedBy"].make({
-            threadId: id,
-            byThreadId: callerId,
-            byTitle: caller.info.title,
-          }),
-        );
-        yield* send(entry, input.prompt, { effort: null, permission, attachments: [] }).pipe(
-          reportErrorsOn(entry),
-        );
-      }
-
-      return input.wait
-        ? yield* waitForTurn(entry, (input.timeoutSeconds ?? 600) * 1000)
-        : summarizeThread(entry);
-    });
-  }
-
-  function sendMessage(callerId: string, input: SendMessageInput) {
-    return Effect.gen(function* () {
-      const caller = yield* getEntry(callerId);
-      const target = yield* getTargetEntry(input.threadId);
-      if (target === caller)
-        return yield* Effect.fail(
-          createError("That's your own thread; reply in your turn instead."),
-        );
-
-      const ceiling = caller.permission ?? "ask";
-      // The target's own level, unless that's more than the caller may give.
-      const fallback =
-        target.permission && getPermissionRank(target.permission) < getPermissionRank(ceiling)
-          ? target.permission
-          : ceiling;
-      const permission = yield* checkPermissionCeiling(caller, input.permission ?? fallback);
-      yield* send(
-        target,
-        input.text,
-        { effort: null, permission, attachments: [] },
-        {
-          queue: input.queue,
-          messageId: input.requestId ? deriveRequestUuid(callerId, input.requestId) : undefined,
-        },
+      const project = (yield* projectsStore.list).find(
+        (candidate) => candidate.id === caller.info.projectId,
       );
+      const title = deriveTitle(input.prompt, caller.info.title);
+      const cwd = input.worktree
+        ? yield* createWorktree(project?.path ?? caller.info.cwd, title, id)
+        : caller.info.cwd;
+      const now = Date.now();
+      entry = yield* openThread(
+        {
+          id,
+          projectId: caller.info.projectId,
+          provider,
+          model: input.model ?? (provider === caller.info.provider ? caller.info.model : null),
+          cwd,
+          title,
+          status: "idle",
+          createdAt: now,
+          updatedAt: now,
+          branch: yield* Effect.promise(() => readBranch(cwd)),
+          archivedAt: null,
+          worktree: input.worktree === true || caller.info.worktree,
+          seenRev: 0,
+          shelved: false,
+          startedBy: callerId,
+        },
+        // Same folder as the caller, which keeps it if it's a worktree made for the caller.
+        input.worktree
+          ? { path: cwd, isWorktree: true }
+          : cwd === caller.home.path
+            ? caller.home
+            : { path: cwd, isWorktree: false },
+        input.prompt,
+        null,
+      );
+      if (input.worktree) yield* setUpWorktree(entry, project?.path ?? caller.info.cwd);
 
-      return summarizeThread(target);
-    });
-  }
+      publish(
+        RuntimeEvent.cases["thread.startedBy"].make({
+          threadId: id,
+          byThreadId: callerId,
+          byTitle: caller.info.title,
+        }),
+      );
+      yield* send(entry, input.prompt, { effort: null, permission, attachments: [] }).pipe(
+        reportErrorsOn(entry),
+      );
+    }
+
+    return input.wait
+      ? yield* waitForTurn(entry, (input.timeoutSeconds ?? 600) * 1000)
+      : summarizeThread(entry);
+  });
+
+  const sendMessage = Effect.fn("sendMessage")(function* (
+    callerId: string,
+    input: SendMessageInput,
+  ) {
+    const caller = yield* getEntry(callerId);
+    const target = yield* getTargetEntry(input.threadId);
+    if (target === caller)
+      return yield* Effect.fail(createError("That's your own thread; reply in your turn instead."));
+
+    const ceiling = caller.permission ?? "ask";
+    // The target's own level, unless that's more than the caller may give.
+    const fallback =
+      target.permission && getPermissionRank(target.permission) < getPermissionRank(ceiling)
+        ? target.permission
+        : ceiling;
+    const permission = yield* checkPermissionCeiling(caller, input.permission ?? fallback);
+    yield* send(
+      target,
+      input.text,
+      { effort: null, permission, attachments: [] },
+      {
+        queue: input.queue,
+        messageId: input.requestId ? deriveRequestUuid(callerId, input.requestId) : undefined,
+      },
+    );
+
+    return summarizeThread(target);
+  });
 
   const orchestration = {
     listThreads: (callerId: string) =>
@@ -2116,56 +2094,61 @@ const make = Effect.gen(function* () {
    * Moves the thread to another harness for its next turns. Nothing is handed over yet: the
    * next message takes what the new harness missed, so switching back and forth costs nothing.
    */
-  function switchHarness(entry: ThreadEntry, provider: ProviderKind, model: string | null) {
-    return Effect.gen(function* () {
-      if (isBusy(entry))
-        return yield* Effect.fail(
-          createError("Stop the agent, or wait for its turn to end, before switching harness"),
-        );
+  const switchHarness = Effect.fn("switchHarness")(function* (
+    entry: ThreadEntry,
+    provider: ProviderKind,
+    model: string | null,
+  ) {
+    if (isBusy(entry))
+      return yield* Effect.fail(
+        createError("Stop the agent, or wait for its turn to end, before switching harness"),
+      );
 
-      yield* ensureHarnessReady(provider);
-      yield* dropSession(entry, null);
+    yield* ensureHarnessReady(provider);
+    yield* dropSession(entry, null);
 
-      const threadId = entry.info.id;
-      const from = entry.info.provider;
-      // Messages from before switching existed don't say where they went: here, to `from`.
-      store.tagUserMessages(threadId, from);
-      setCoverage(entry, {
-        ...entry.coverage,
-        // The harness left has everything so far, unless it hadn't caught up yet itself.
-        [from]: entry.coverage[from] ?? store.readCursor(threadId),
-        // One with no conversation of its own gets all of it.
-        ...(entry.resumeTokens[provider] === undefined && { [provider]: 0 }),
-      });
-      entry.info = { ...entry.info, provider, model };
-      store.setProvider(threadId, provider, model);
-      publish(RuntimeEvent.cases["thread.model"].make({ threadId, provider, model }));
+    const threadId = entry.info.id;
+    const from = entry.info.provider;
+    // Messages from before switching existed don't say where they went: here, to `from`.
+    store.tagUserMessages(threadId, from);
+    setCoverage(entry, {
+      ...entry.coverage,
+      // The harness left has everything so far, unless it hadn't caught up yet itself.
+      [from]: entry.coverage[from] ?? store.readCursor(threadId),
+      // One with no conversation of its own gets all of it.
+      ...(entry.resumeTokens[provider] === undefined && { [provider]: 0 }),
     });
-  }
+    entry.info = { ...entry.info, provider, model };
+    store.setProvider(threadId, provider, model);
+    publish(RuntimeEvent.cases["thread.model"].make({ threadId, provider, model }));
+  });
 
   /** Picks a thread up after a usage limit stopped it, on `provider` when given. */
-  function resumeAfterLimit(entry: ThreadEntry, options: TurnOptions, provider?: ProviderKind) {
-    return Effect.gen(function* () {
-      if (!entry.info.limitStop || isBusy(entry)) return;
+  const resumeAfterLimit = Effect.fn("resumeAfterLimit")(function* (
+    entry: ThreadEntry,
+    options: TurnOptions,
+    provider?: ProviderKind,
+  ) {
+    if (!entry.info.limitStop || isBusy(entry)) return;
 
-      if (provider && provider !== entry.info.provider) yield* switchHarness(entry, provider, null);
-      setLimitStop(entry, null);
+    if (provider && provider !== entry.info.provider) yield* switchHarness(entry, provider, null);
+    setLimitStop(entry, null);
 
-      const [next] = entry.queue;
-      if (next) return sendQueued(entry, next);
+    const [next] = entry.queue;
+    if (next) return sendQueued(entry, next);
 
-      yield* send(entry, "Continue where you left off.", options);
-    });
-  }
+    yield* send(entry, "Continue where you left off.", options);
+  });
 
   /** Announces the branches after `run` switched or created one, and the meta of threads in `path`. */
-  function changeBranch(path: string, run: () => Promise<string | null>) {
-    return Effect.gen(function* () {
-      const error = yield* Effect.promise(run);
-      yield* publishBranches(path, error);
-      for (const entry of threads.values()) if (entry.info.cwd === path) refreshMeta(entry);
-    });
-  }
+  const changeBranch = Effect.fn("changeBranch")(function* (
+    path: string,
+    run: () => Promise<string | null>,
+  ) {
+    const error = yield* Effect.promise(run);
+    yield* publishBranches(path, error);
+    for (const entry of threads.values()) if (entry.info.cwd === path) refreshMeta(entry);
+  });
 
   function dispatch(command: ClientCommand): Effect.Effect<void, ProviderError> {
     return ClientCommand.match(command, {
@@ -2538,23 +2521,20 @@ const make = Effect.gen(function* () {
     },
     search: (query) => store.search(query, 50).filter((hit) => threads.has(hit.threadId)),
     hasActiveTurns: () => [...threads.values()].some(isBusy),
-    shutdown: Effect.suspend(() => {
+    shutdown: Effect.gen(function* () {
       flushDeltas();
       terminals.closeAll();
 
-      return Effect.promise(() => devices.close()).pipe(
-        Effect.andThen(Effect.forEach([...sideChats.keys()], closeSideChat, { discard: true })),
-        Effect.andThen(
-          Effect.forEach(
-            [...threads.values()],
-            (entry) =>
-              dropSession(
-                entry,
-                "MassCode quit while this turn was running. Send a message to pick up where it left off.",
-              ),
-            { discard: true },
+      yield* Effect.promise(() => devices.close());
+      yield* Effect.forEach([...sideChats.keys()], closeSideChat, { discard: true });
+      yield* Effect.forEach(
+        [...threads.values()],
+        (entry) =>
+          dropSession(
+            entry,
+            "MassCode quit while this turn was running. Send a message to pick up where it left off.",
           ),
-        ),
+        { discard: true },
       );
     }),
   });
