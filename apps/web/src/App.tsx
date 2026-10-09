@@ -68,7 +68,7 @@ export function App() {
   const [chosen, setView] = useState<View | null>(readInitialView);
   const [modal, setModal] = useState<ModalView | null>(null);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
-  useKeybinding("palette.open", () => setIsPaletteOpen((open) => !open));
+  useKeybinding("palette.open", () => setIsPaletteOpen((isOpen) => !isOpen));
   useTheme(theme);
 
   // Stable, so sidebar rows (memoized) don't all redraw on every render.

@@ -52,11 +52,11 @@ export function formatResetLabel(resetsAt: number, now: number) {
 export function UsageMeter({
   threadId,
   provider,
-  busy,
+  isBusy,
 }: {
   threadId: string;
   provider: ProviderKind;
-  busy: boolean;
+  isBusy: boolean;
 }) {
   const usage = useStore((state) => state.threads[threadId]?.usage);
   const isReading = useStore((state) => state.readingUsage[threadId] ?? false);
@@ -117,7 +117,7 @@ export function UsageMeter({
           context={context}
           costUsd={usage?.costUsd ?? null}
           isReading={isReading}
-          busy={busy}
+          isBusy={isBusy}
         />
         <LimitsSection provider={provider} host={host} />
       </MorphPopoverContent>
@@ -130,13 +130,13 @@ function ContextSection({
   context,
   costUsd,
   isReading,
-  busy,
+  isBusy,
 }: {
   threadId: string;
   context: ContextUsage | null;
   costUsd: number | null;
   isReading: boolean;
-  busy: boolean;
+  isBusy: boolean;
 }) {
   if (!context) {
     return (
@@ -219,7 +219,7 @@ function ContextSection({
         )}
         <button
           type="button"
-          disabled={busy}
+          disabled={isBusy}
           onClick={() => send(ClientCommand.cases["thread.compact"].make({ threadId }))}
           title="Summarize the conversation so far to free up context"
           className="flex h-6 items-center gap-1 rounded-md px-1.5 text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"

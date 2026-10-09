@@ -123,8 +123,8 @@ interface ComposerProps {
   /** Card on top of the composer, e.g. queued messages. */
   header?: ReactNode;
   /** Something goes out with the next message besides its text, so an empty prompt can send. */
-  pendingContent?: boolean;
-  busy?: boolean;
+  hasPendingContent?: boolean;
+  isBusy?: boolean;
   disabled?: boolean;
   models: ReturnType<typeof buildModelChoices>;
   model: string | undefined;
@@ -481,14 +481,14 @@ export function Composer(props: ComposerProps) {
           onKeyDown={onKeyDown}
           onSelect={trackCaret}
           onFocus={trackCaret}
-          loading={props.busy ?? false}
+          loading={props.isBusy ?? false}
           disabled={props.disabled ?? false}
           controls={[
             <PromptModelMenu
               key="model"
               // The model can't change mid-turn; effort and fast mode apply from the next message.
               models={
-                props.busy
+                props.isBusy
                   ? props.models.map((option) => ({ ...option, disabled: true }))
                   : props.models
               }
@@ -552,12 +552,12 @@ export function Composer(props: ComposerProps) {
               <UsageMeter
                 threadId={threadId}
                 provider={props.provider}
-                busy={props.busy ?? false}
+                isBusy={props.isBusy ?? false}
               />
             ) : null
           }
           header={props.header}
-          pendingContent={props.pendingContent ?? false}
+          pendingContent={props.hasPendingContent ?? false}
           footer={
             <>
               <span className="flex min-w-0 items-center gap-0.5">
@@ -594,7 +594,7 @@ export function Composer(props: ComposerProps) {
                   <BranchPicker
                     cwd={props.cwd}
                     isWorktree={props.workspace?.value === "worktree"}
-                    disabled={(props.disabled || props.busy) ?? false}
+                    disabled={(props.disabled || props.isBusy) ?? false}
                   />
                 ) : (
                   <span />

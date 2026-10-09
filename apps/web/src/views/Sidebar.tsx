@@ -80,7 +80,7 @@ import type { ModalView } from "./AppModal.tsx";
 import { ThreadListMenu } from "./ThreadListMenu.tsx";
 
 /** Waiting on you: an approval, an answer, or a look at what went wrong. */
-function waitsOnYou(info: ThreadInfo) {
+function isWaitingOnYou(info: ThreadInfo) {
   return isAwaitingUser(info.status) || info.status === "error";
 }
 
@@ -119,12 +119,15 @@ export function Sidebar(props: {
   const [query, setQuery] = useState("");
   const [view, setView] = useThreadListView();
   const now = useNow();
-  const reduceMotion = useReducedMotion();
+  const shouldReduceMotion = useReducedMotion();
   const updateStatus = useUpdateStatus();
 
   // Grouped by state: whatever still needs you on top, then shelved threads, then archived ones.
-  const [showArchived, setShowArchived] = useState(false);
-  const [showShelved, setShowShelved] = usePersistedFlag("masscode.sidebar.shelvedOpen", true);
+  const [isArchivedShown, setIsArchivedShown] = useState(false);
+  const [isShelvedShown, setIsShelvedShown] = usePersistedFlag(
+    "masscode.sidebar.shelvedOpen",
+    true,
+  );
   const [collapsedProjects, setCollapsedProjects] = useState<ReadonlyArray<string>>([]);
   // Sections render a page of rows at a time: recent history is the common lookup, the deep tail shouldn't dominate the list.
   const [shownCounts, setShownCounts] = useState<Readonly<Record<string, number>>>({});
@@ -132,7 +135,7 @@ export function Sidebar(props: {
     const needle = query.trim().toLowerCase();
     const projectsById = new Map(projects.map((project) => [project.id, project]));
 
-    function keyOf(projectId: string) {
+    function getProjectGroupKey(projectId: string) {
       const project = projectsById.get(projectId);
       return project ? getProjectKey(project) : projectId;
     }
@@ -165,18 +168,18 @@ export function Sidebar(props: {
 
     return {
       infos,
-      needsYou: current.filter((info) => !info.shelved && waitsOnYou(info)),
-      active: current.filter((info) => !info.shelved && !waitsOnYou(info)),
+      needsYou: current.filter((info) => !info.shelved && isWaitingOnYou(info)),
+      active: current.filter((info) => !info.shelved && !isWaitingOnYou(info)),
       shelved: current.filter((info) => info.shelved),
       archived: infos.filter((info) => info.archivedAt !== null),
       // One group per repo, whichever machines its threads run on.
-      projectGroups: [...new Set(infos.map((info) => keyOf(info.projectId)))].map((key) =>
-        infos.filter((info) => keyOf(info.projectId) === key),
+      projectGroups: [...new Set(infos.map((info) => getProjectGroupKey(info.projectId)))].map(
+        (key) => infos.filter((info) => getProjectGroupKey(info.projectId) === key),
       ),
     };
   }, [projects, threads, query, view, now]);
 
-  function projectOf(info: ThreadInfo) {
+  function getThreadProject(info: ThreadInfo) {
     return (
       projects.find((project) => project.id === info.projectId) ?? {
         id: info.projectId,
@@ -187,7 +190,7 @@ export function Sidebar(props: {
     );
   }
 
-  function shownOf(key: string, infos: Array<ThreadInfo>) {
+  function getShownThreads(key: string, infos: Array<ThreadInfo>) {
     return query ? infos : infos.slice(0, shownCounts[key] ?? 10);
   }
 
@@ -196,20 +199,20 @@ export function Sidebar(props: {
   if (view.groupBy === "none") drawnInOrder = infos;
   else if (view.groupBy === "project")
     drawnInOrder = projectGroups.flatMap((group) => {
-      const key = getProjectKey(projectOf(group[0]));
-      return collapsedProjects.includes(key) && !query ? [] : shownOf(key, group);
+      const key = getProjectKey(getThreadProject(group[0]));
+      return collapsedProjects.includes(key) && !query ? [] : getShownThreads(key, group);
     });
   else if (view.status === "archived") drawnInOrder = archived;
   else
     drawnInOrder = [
       ...needsYou,
       ...active,
-      ...(showShelved || query ? shownOf("shelved", shelved) : []),
-      ...(showArchived || query ? shownOf("archived", archived) : []),
+      ...(isShelvedShown || query ? getShownThreads("shelved", shelved) : []),
+      ...(isArchivedShown || query ? getShownThreads("archived", archived) : []),
     ];
   const jumpIds = drawnInOrder.slice(0, 9).map((info) => info.id);
 
-  const [showDigits, setShowDigits] = useState(false);
+  const [isDigitHintShown, setIsDigitHintShown] = useState(false);
   const latestJump = useRef({ ids: jumpIds, onSelect: props.onSelect });
   latestJump.current = { ids: jumpIds, onSelect: props.onSelect };
 
@@ -217,21 +220,21 @@ export function Sidebar(props: {
     const modifier = isMac ? "Meta" : "Control";
     let hintTimer: ReturnType<typeof setTimeout> | undefined;
 
-    function hideDigits() {
+    function hideDigitHints() {
       clearTimeout(hintTimer);
-      setShowDigits(false);
+      setIsDigitHintShown(false);
     }
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === modifier) {
         // A delay, so the hints don't flash for every other ⌘ shortcut.
-        hintTimer = setTimeout(() => setShowDigits(true), 200);
+        hintTimer = setTimeout(() => setIsDigitHintShown(true), 200);
         return;
       }
 
-      hideDigits();
-      const held = isMac ? event.metaKey : event.ctrlKey;
-      if (event.defaultPrevented || !held || event.shiftKey || event.altKey) return;
+      hideDigitHints();
+      const isModifierHeld = isMac ? event.metaKey : event.ctrlKey;
+      if (event.defaultPrevented || !isModifierHeld || event.shiftKey || event.altKey) return;
       const id = /^[1-9]$/.test(event.key) ? latestJump.current.ids[Number(event.key) - 1] : null;
       if (!id) return;
       event.preventDefault();
@@ -239,17 +242,17 @@ export function Sidebar(props: {
     }
 
     function onKeyUp(event: KeyboardEvent) {
-      if (event.key === modifier) hideDigits();
+      if (event.key === modifier) hideDigitHints();
     }
 
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("blur", hideDigits);
+    window.addEventListener("blur", hideDigitHints);
     return () => {
-      hideDigits();
+      hideDigitHints();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("blur", hideDigits);
+      window.removeEventListener("blur", hideDigitHints);
     };
   }, []);
 
@@ -263,7 +266,7 @@ export function Sidebar(props: {
           <motion.div
             key={info.id}
             layout="position"
-            transition={reduceMotion ? { duration: 0 } : SPRING_LAYOUT}
+            transition={shouldReduceMotion ? { duration: 0 } : SPRING_LAYOUT}
             className={cn(
               "before:pointer-events-none before:absolute before:inset-x-3 before:-top-[2.5px] before:h-px before:bg-border/60",
               "first:before:hidden hover:before:hidden has-[[aria-current=page]]:before:hidden",
@@ -272,12 +275,14 @@ export function Sidebar(props: {
           >
             <ThreadCard
               info={info}
-              project={projectOf(info)}
-              active={info.id === props.activeId}
-              unread={info.archivedAt === null && !isSeen(info)}
-              shelved={info.archivedAt !== null || info.shelved}
+              project={getThreadProject(info)}
+              isActive={info.id === props.activeId}
+              isUnread={info.archivedAt === null && !isSeen(info)}
+              isShelved={info.archivedAt !== null || info.shelved}
               now={now}
-              digit={showDigits && jumpIds.includes(info.id) ? jumpIds.indexOf(info.id) + 1 : null}
+              digit={
+                isDigitHintShown && jumpIds.includes(info.id) ? jumpIds.indexOf(info.id) + 1 : null
+              }
               onSelect={props.onSelect}
             />
           </motion.div>
@@ -309,29 +314,29 @@ export function Sidebar(props: {
     label: string,
     icon: ReactNode,
     infos: Array<ThreadInfo>,
-    open: boolean,
+    isOpen: boolean,
     toggle: () => void,
   ) {
     if (infos.length === 0) return null;
 
-    const expanded = open || Boolean(query);
-    const snap = reduceMotion || Boolean(query);
-    const shown = shownOf(key, infos);
+    const isExpanded = isOpen || Boolean(query);
+    const shouldSnap = shouldReduceMotion || Boolean(query);
+    const shown = getShownThreads(key, infos);
 
     return (
       <motion.section
         key={key}
         layout="position"
-        transition={snap ? { duration: 0 } : SPRING_LAYOUT}
+        transition={shouldSnap ? { duration: 0 } : SPRING_LAYOUT}
         className="relative flex flex-col gap-1"
       >
         <button
           type="button"
-          aria-expanded={expanded}
+          aria-expanded={isExpanded}
           onClick={toggle}
           className={cn(
             "group/fold flex h-9 w-full shrink-0 items-center gap-2 rounded-xl px-3 text-left text-xs text-muted-foreground transition-colors outline-none hover:bg-muted/50 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
-            expanded && "sticky top-0 z-20 bg-sidebar hover:bg-sidebar",
+            isExpanded && "sticky top-0 z-20 bg-sidebar hover:bg-sidebar",
           )}
         >
           <span aria-hidden="true" className="grid shrink-0 place-items-center [&>svg]:size-3.5">
@@ -347,21 +352,21 @@ export function Sidebar(props: {
           <motion.span
             aria-hidden="true"
             initial={false}
-            animate={{ rotate: expanded ? 90 : 0 }}
-            transition={snap ? { duration: 0 } : SPRING_SWAP}
+            animate={{ rotate: isExpanded ? 90 : 0 }}
+            transition={shouldSnap ? { duration: 0 } : SPRING_SWAP}
             className="grid shrink-0 place-items-center"
           >
             <ChevronRight className="size-3.5" />
           </motion.span>
         </button>
         <AnimatePresence initial={false} mode="popLayout">
-          {expanded ? (
+          {isExpanded ? (
             <motion.div
               key="rows"
-              initial={snap ? false : { opacity: 0 }}
+              initial={shouldSnap ? false : { opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={snap ? { duration: 0 } : { duration: 0.2, ease: "easeOut" }}
+              transition={shouldSnap ? { duration: 0 } : { duration: 0.2, ease: "easeOut" }}
               className="w-full"
             >
               {renderCards(shown)}
@@ -399,7 +404,7 @@ export function Sidebar(props: {
       return (
         <div className="flex flex-col gap-0.5">
           {projectGroups.map((group) => {
-            const project = projectOf(group[0]);
+            const project = getThreadProject(group[0]);
             const key = getProjectKey(project);
             return renderFolding(
               key,
@@ -433,17 +438,17 @@ export function Sidebar(props: {
           <motion.div
             // Pinned to the bottom while folded, like t3code's shelf; unfolding rises into the free space.
             layout="position"
-            transition={reduceMotion || query ? { duration: 0 } : SPRING_LAYOUT}
+            transition={shouldReduceMotion || query ? { duration: 0 } : SPRING_LAYOUT}
             className={cn(
               "mt-auto flex flex-col gap-0.5",
               needsYou.length + active.length > 0 && "border-t border-border/60 pt-2",
             )}
           >
-            {renderFolding("shelved", "Shelved", <Check />, shelved, showShelved, () =>
-              setShowShelved(!showShelved),
+            {renderFolding("shelved", "Shelved", <Check />, shelved, isShelvedShown, () =>
+              setIsShelvedShown(!isShelvedShown),
             )}
-            {renderFolding("archived", "Archived", <Archive />, archived, showArchived, () =>
-              setShowArchived((open) => !open),
+            {renderFolding("archived", "Archived", <Archive />, archived, isArchivedShown, () =>
+              setIsArchivedShown((isShown) => !isShown),
             )}
           </motion.div>
         ) : null}
@@ -551,32 +556,32 @@ export function Sidebar(props: {
 /** Leading dot on the meta row: hue only when the thread needs you, solid while there's something new. */
 function StatusDot({
   info,
-  unread,
-  shelved,
+  isUnread,
+  isShelved,
 }: {
   info: ThreadInfo;
-  unread: boolean;
-  shelved: boolean;
+  isUnread: boolean;
+  isShelved: boolean;
 }) {
-  const { label, tone } = statusDotStyle(info, unread, shelved);
+  const { label, tone } = getStatusDotStyle(info, isUnread, isShelved);
 
   return (
     <span role="img" aria-label={label} className={cn("size-2 shrink-0 rounded-full", tone)} />
   );
 }
 
-function statusDotStyle(info: ThreadInfo, unread: boolean, shelved: boolean) {
+function getStatusDotStyle(info: ThreadInfo, isUnread: boolean, isShelved: boolean) {
   if (info.status === "awaiting-approval") return { label: "Needs approval", tone: "bg-warning" };
   if (info.status === "awaiting-answer") return { label: "Needs an answer", tone: "bg-warning" };
   if (info.status === "error") return { label: "Error", tone: "bg-destructive" };
   if (info.status === "running") return { label: "Working", tone: "bg-success animate-pulse" };
-  if (unread) return { label: "New activity", tone: "bg-brand" };
-  if (shelved) return { label: "Shelved", tone: "bg-muted-foreground/25" };
+  if (isUnread) return { label: "New activity", tone: "bg-brand" };
+  if (isShelved) return { label: "Shelved", tone: "bg-muted-foreground/25" };
   return { label: "Idle", tone: "bg-brand" };
 }
 
 /** What a running thread is doing: the command it runs, else the tool call in words. */
-function activityLabel(activity: ThreadActivity | undefined) {
+function describeActivity(activity: ThreadActivity | undefined) {
   if (!activity) return "Thinking…";
   if (categoryOf(activity.tool) === "run") return activity.summary;
   return livePhrase({
@@ -592,14 +597,14 @@ function activityLabel(activity: ThreadActivity | undefined) {
 function ProviderMark({ info }: { info: ThreadInfo }) {
   const Logo = PROVIDER_LOGO[info.provider];
   const settings = useStore((state) => state.settings);
-  const running = info.status === "running";
+  const isRunning = info.status === "running";
 
   return (
     <Logo
       className={cn(
         "size-3.5 shrink-0 text-muted-foreground",
-        running && "animate-spin [animation-duration:2.4s]",
-        running && getHarnessTint(settings, info.provider).active,
+        isRunning && "animate-spin [animation-duration:2.4s]",
+        isRunning && getHarnessTint(settings, info.provider).active,
       )}
     />
   );
@@ -627,15 +632,15 @@ interface CardAction {
 }
 
 /** One action list, shared by the ⋯ menu and the right-click menu. */
-function useThreadActions(info: ThreadInfo, shelved: boolean, onRename: () => void) {
+function useThreadActions(info: ThreadInfo, isShelved: boolean, onRename: () => void) {
   const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null);
-  const confirmArchive = useStore((state) => state.settings.confirmArchive === true);
-  const confirmDelete = useStore((state) => state.settings.confirmDelete !== false);
+  const shouldConfirmArchive = useStore((state) => state.settings.confirmArchive === true);
+  const shouldConfirmDelete = useStore((state) => state.settings.confirmDelete !== false);
 
-  const archived = info.archivedAt !== null;
+  const isArchived = info.archivedAt !== null;
   const actions: Array<CardAction> = [
     { key: "rename", label: "Rename", icon: Pencil, onSelect: onRename },
-    ...(archived
+    ...(isArchived
       ? [
           {
             key: "unarchive",
@@ -653,12 +658,12 @@ function useThreadActions(info: ThreadInfo, shelved: boolean, onRename: () => vo
       : [
           {
             key: "shelve",
-            label: shelved ? "Unshelve" : "Shelve",
-            icon: shelved ? X : Check,
-            onSelect: () => setShelved(info.id, !shelved),
+            label: isShelved ? "Unshelve" : "Shelve",
+            icon: isShelved ? X : Check,
+            onSelect: () => setShelved(info.id, !isShelved),
             disabled: !canShelve(info),
           },
-          confirmArchive && confirming !== "archive"
+          shouldConfirmArchive && confirming !== "archive"
             ? {
                 key: "archive",
                 label: "Archive",
@@ -669,7 +674,7 @@ function useThreadActions(info: ThreadInfo, shelved: boolean, onRename: () => vo
               }
             : {
                 key: "archive",
-                label: confirmArchive ? "Click again to archive" : "Archive",
+                label: shouldConfirmArchive ? "Click again to archive" : "Archive",
                 icon: Archive,
                 onSelect: () =>
                   send(
@@ -681,7 +686,7 @@ function useThreadActions(info: ThreadInfo, shelved: boolean, onRename: () => vo
                 disabled: !canShelve(info),
               },
         ]),
-    confirmDelete && confirming !== "delete"
+    shouldConfirmDelete && confirming !== "delete"
       ? {
           key: "delete",
           label: "Delete",
@@ -692,7 +697,7 @@ function useThreadActions(info: ThreadInfo, shelved: boolean, onRename: () => vo
         }
       : {
           key: "delete",
-          label: confirmDelete ? "Click again to delete" : "Delete",
+          label: shouldConfirmDelete ? "Click again to delete" : "Delete",
           icon: Trash2,
           destructive: true,
           onSelect: () => send(ClientCommand.cases["thread.close"].make({ threadId: info.id })),
@@ -728,9 +733,9 @@ function MenuRow({ action, onDone }: { action: CardAction; onDone: () => void })
 const ThreadCard = memo(function ThreadCard(props: {
   info: ThreadInfo;
   project: Project;
-  active: boolean;
-  unread: boolean;
-  shelved: boolean;
+  isActive: boolean;
+  isUnread: boolean;
+  isShelved: boolean;
   now: number;
   /** The ⌘-number that opens it, shown while ⌘ is held; null otherwise. */
   digit: number | null;
@@ -739,29 +744,31 @@ const ThreadCard = memo(function ThreadCard(props: {
 }) {
   const { info, project } = props;
   const host = useProjectHost(project.id);
-  const reduceMotion = useReducedMotion();
-  const [menuOpen, setMenuOpenState] = useState(false);
-  const [responding, setResponding] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const { actions, resetConfirm } = useThreadActions(info, props.shelved, () => setRenaming(true));
+  const shouldReduceMotion = useReducedMotion();
+  const [isMenuOpen, setIsMenuOpenState] = useState(false);
+  const [isResponding, setIsResponding] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const { actions, resetConfirm } = useThreadActions(info, props.isShelved, () =>
+    setIsRenaming(true),
+  );
   // Two-finger swipe left shelves (or unshelves): the row follows the fingers, and past the
   // threshold letting go commits; short of it, it springs back.
   const swipeX = useMotionValue(0);
   const swipeEnd = useRef<ReturnType<typeof setTimeout>>(undefined);
   const swipeReveal = useTransform(swipeX, [-64, -16], [1, 0]);
 
-  const urgent = !props.shelved && waitsOnYou(info);
+  const isUrgent = !props.isShelved && isWaitingOnYou(info);
   const request = info.request;
 
-  function setMenuOpen(open: boolean) {
-    setMenuOpenState(open);
-    if (!open) resetConfirm();
+  function setIsMenuOpen(isOpen: boolean) {
+    setIsMenuOpenState(isOpen);
+    if (!isOpen) resetConfirm();
   }
 
   useEffect(() => () => clearTimeout(swipeEnd.current), []);
-  useEffect(() => setResponding(false), [request?.requestId]);
+  useEffect(() => setIsResponding(false), [request?.requestId]);
 
-  const title = renaming ? (
+  const title = isRenaming ? (
     <input
       autoFocus
       aria-label="Thread title"
@@ -776,7 +783,7 @@ const ThreadCard = memo(function ThreadCard(props: {
         if (event.key === "Enter" || event.key === "Escape") event.currentTarget.blur();
       }}
       onBlur={(event) => {
-        setRenaming(false);
+        setIsRenaming(false);
         const next = event.currentTarget.value.trim();
         if (next && next !== info.title)
           send(ClientCommand.cases["thread.rename"].make({ threadId: info.id, title: next }));
@@ -789,33 +796,33 @@ const ThreadCard = memo(function ThreadCard(props: {
 
   const trailing = (
     <>
-      <span className={cn("shrink-0 text-xs", menuOpen ? "hidden" : "group-hover/card:hidden")}>
+      <span className={cn("shrink-0 text-xs", isMenuOpen ? "hidden" : "group-hover/card:hidden")}>
         <TrailingLabel info={info} now={props.now} />
       </span>
       <span
         className={cn(
           "-my-1 -mr-1 shrink-0 items-center gap-0.5 text-muted-foreground",
-          menuOpen ? "flex" : "hidden group-hover/card:flex",
+          isMenuOpen ? "flex" : "hidden group-hover/card:flex",
         )}
       >
         {info.archivedAt === null ? (
-          <Tooltip content={props.shelved ? "Unshelve" : "Shelve"} side="bottom">
+          <Tooltip content={props.isShelved ? "Unshelve" : "Shelve"} side="bottom">
             <button
               type="button"
               tabIndex={-1}
               disabled={!canShelve(info)}
-              aria-label={props.shelved ? "Unshelve" : "Shelve"}
+              aria-label={props.isShelved ? "Unshelve" : "Shelve"}
               onClick={(event) => {
                 event.stopPropagation();
-                setShelved(info.id, !props.shelved);
+                setShelved(info.id, !props.isShelved);
               }}
               className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
             >
-              {props.shelved ? <X className="size-3.5" /> : <Check className="size-3.5" />}
+              {props.isShelved ? <X className="size-3.5" /> : <Check className="size-3.5" />}
             </button>
           </Tooltip>
         ) : null}
-        <MorphPopover open={menuOpen} onOpenChange={setMenuOpen}>
+        <MorphPopover open={isMenuOpen} onOpenChange={setIsMenuOpen}>
           <MorphPopoverTrigger>
             <button
               type="button"
@@ -836,7 +843,7 @@ const ThreadCard = memo(function ThreadCard(props: {
           >
             <MorphPopoverMenu onClick={(event) => event.stopPropagation()}>
               {actions.map((action) => (
-                <MenuRow key={action.key} action={action} onDone={() => setMenuOpen(false)} />
+                <MenuRow key={action.key} action={action} onDone={() => setIsMenuOpen(false)} />
               ))}
             </MorphPopoverMenu>
           </MorphPopoverContent>
@@ -846,7 +853,7 @@ const ThreadCard = memo(function ThreadCard(props: {
   );
 
   return (
-    <ContextMenu onOpenChange={(open) => !open && resetConfirm()}>
+    <ContextMenu onOpenChange={(isOpen) => !isOpen && resetConfirm()}>
       <ContextMenuTrigger>
         <div className="relative">
           <motion.span
@@ -854,16 +861,16 @@ const ThreadCard = memo(function ThreadCard(props: {
             style={{ opacity: swipeReveal }}
             className="pointer-events-none absolute inset-y-0 right-3 grid place-items-center text-muted-foreground"
           >
-            {props.shelved ? <X className="size-4" /> : <Check className="size-4" />}
+            {props.isShelved ? <X className="size-4" /> : <Check className="size-4" />}
           </motion.span>
           <motion.div
             role="button"
             tabIndex={0}
-            aria-current={props.active ? "page" : undefined}
+            aria-current={props.isActive ? "page" : undefined}
             style={{ x: swipeX }}
             onClick={() => props.onSelect(info.id)}
             onKeyDown={(event) => {
-              if (event.target === event.currentTarget && event.key === "F2") setRenaming(true);
+              if (event.target === event.currentTarget && event.key === "F2") setIsRenaming(true);
               if (
                 event.target !== event.currentTarget ||
                 (event.key !== "Enter" && event.key !== " ")
@@ -878,23 +885,23 @@ const ThreadCard = memo(function ThreadCard(props: {
               swipeX.set(Math.max(-96, Math.min(0, swipeX.get() - event.deltaX)));
               clearTimeout(swipeEnd.current);
               swipeEnd.current = setTimeout(() => {
-                if (swipeX.get() <= -64) setShelved(info.id, !props.shelved);
-                animate(swipeX, 0, reduceMotion ? { duration: 0 } : SPRING_SWAP);
+                if (swipeX.get() <= -64) setShelved(info.id, !props.isShelved);
+                animate(swipeX, 0, shouldReduceMotion ? { duration: 0 } : SPRING_SWAP);
               }, 120);
             }}
             className={cn(
               "group/card rounded-xl px-3 transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring",
-              props.shelved ? "py-1.5" : "py-2.5",
-              props.active && "bg-muted",
+              props.isShelved ? "py-1.5" : "py-2.5",
+              props.isActive && "bg-muted",
             )}
           >
-            {props.shelved ? (
+            {props.isShelved ? (
               <div className="flex h-5 min-w-0 items-center gap-2 text-muted-foreground">
                 <p
-                  onDoubleClick={() => setRenaming(true)}
+                  onDoubleClick={() => setIsRenaming(true)}
                   className={cn(
                     "min-w-0 flex-1 truncate text-sm",
-                    props.active ? "text-foreground" : "text-foreground/60",
+                    props.isActive ? "text-foreground" : "text-foreground/60",
                   )}
                 >
                   {title}
@@ -904,16 +911,16 @@ const ThreadCard = memo(function ThreadCard(props: {
             ) : (
               <div className="min-w-0">
                 <p
-                  onDoubleClick={() => setRenaming(true)}
+                  onDoubleClick={() => setIsRenaming(true)}
                   className={cn(
                     "truncate text-sm text-foreground",
-                    props.unread || urgent ? "font-semibold" : "font-medium",
+                    props.isUnread || isUrgent ? "font-semibold" : "font-medium",
                   )}
                 >
                   {title}
                 </p>
                 <div className="mt-1 flex h-5 items-center gap-2 text-xs text-muted-foreground">
-                  <StatusDot info={info} unread={props.unread} shelved={props.shelved} />
+                  <StatusDot info={info} isUnread={props.isUnread} isShelved={props.isShelved} />
                   <ProviderMark info={info} />
                   {info.status === "running" ? (
                     <TextShimmer
@@ -922,7 +929,7 @@ const ThreadCard = memo(function ThreadCard(props: {
                         info.activity && categoryOf(info.activity.tool) === "run" && "font-mono",
                       )}
                     >
-                      {activityLabel(info.activity)}
+                      {describeActivity(info.activity)}
                     </TextShimmer>
                   ) : (
                     <span className="flex min-w-0 flex-1 items-center gap-2">
@@ -941,7 +948,10 @@ const ThreadCard = memo(function ThreadCard(props: {
                   )}
                   {trailing}
                 </div>
-                {urgent && request && !request.asksQuestions && request.title !== "ExitPlanMode" ? (
+                {isUrgent &&
+                request &&
+                !request.asksQuestions &&
+                request.title !== "ExitPlanMode" ? (
                   <>
                     <p className="mt-2 truncate rounded-lg bg-muted/70 px-2 py-1 font-mono text-[11px] text-muted-foreground">
                       <span className="text-foreground">{request.title}</span> {request.detail}
@@ -949,10 +959,10 @@ const ThreadCard = memo(function ThreadCard(props: {
                     <div className="mt-2 flex gap-1.5">
                       <Button
                         size="sm"
-                        disabled={responding}
+                        disabled={isResponding}
                         onClick={(event) => {
                           event.stopPropagation();
-                          setResponding(true);
+                          setIsResponding(true);
                           respondApproval(info.id, request.requestId, "allow");
                         }}
                         className="h-7 rounded-lg px-2.5"
@@ -962,10 +972,10 @@ const ThreadCard = memo(function ThreadCard(props: {
                       <Button
                         size="sm"
                         variant="ghost"
-                        disabled={responding}
+                        disabled={isResponding}
                         onClick={(event) => {
                           event.stopPropagation();
-                          setResponding(true);
+                          setIsResponding(true);
                           respondApproval(info.id, request.requestId, "deny");
                         }}
                         className="h-7 rounded-lg px-2.5"
@@ -974,7 +984,7 @@ const ThreadCard = memo(function ThreadCard(props: {
                       </Button>
                     </div>
                   </>
-                ) : urgent && request ? (
+                ) : isUrgent && request ? (
                   <Button
                     size="sm"
                     variant="secondary"

@@ -312,12 +312,12 @@ function toBlocks(items: ReadonlyArray<TranscriptItem>, heldAnswerId?: string): 
 }
 
 /** Whether `item`, the newest one, is in `block`. */
-function holdsNewest(block: Block, item: TranscriptItem | undefined) {
+function hasNewestItem(block: Block, item: TranscriptItem | undefined) {
   return block.kind === "work" ? block.items.at(-1) === item : block === item;
 }
 
 /** Whether the newest row already shows the agent at work, so a "Thinking…" placeholder would repeat it. */
-function showsWorking(items: ReadonlyArray<TranscriptItem>) {
+function isShowingWork(items: ReadonlyArray<TranscriptItem>) {
   const turnStart =
     items.findLastIndex(
       (item) => item.kind === "user" || item.kind === "forked" || item.kind === "startedBy",
@@ -338,12 +338,12 @@ function useProjectConfig(host: string | null, path: string | null | undefined, 
 
   useEffect(() => {
     if (!path) return;
-    let cancelled = false;
+    let isCancelled = false;
     void readProjectConfig(host, path).then((frame) => {
-      if (!cancelled && frame) setAnswer({ path, config: frame.config, error: frame.error });
+      if (!isCancelled && frame) setAnswer({ path, config: frame.config, error: frame.error });
     });
     return () => {
-      cancelled = true;
+      isCancelled = true;
     };
   }, [host, path, refreshKey]);
 
@@ -362,15 +362,15 @@ function Header({
   badge?: ReactNode;
   actions?: ReactNode;
 }) {
-  const { open } = useAnimatedSidebar();
+  const { open: isSidebarOpen } = useAnimatedSidebar();
   const host = useProjectHost(project?.id ?? "");
 
   return (
     // Same row geometry as the sidebar's title bar, so both line up with the traffic lights.
     <header
-      className={`@container flex h-10 shrink-0 items-center gap-2 pr-4 pb-[3px] [-webkit-app-region:drag] ${open ? "pl-5" : hasTrafficLights ? "pl-[86px]" : "pl-3"}`}
+      className={`@container flex h-10 shrink-0 items-center gap-2 pr-4 pb-[3px] [-webkit-app-region:drag] ${isSidebarOpen ? "pl-5" : hasTrafficLights ? "pl-[86px]" : "pl-3"}`}
     >
-      {open ? null : (
+      {isSidebarOpen ? null : (
         <AnimatedSidebarTrigger className="mr-1 size-7 rounded-lg text-muted-foreground [-webkit-app-region:no-drag] hover:bg-muted/60 hover:text-foreground">
           <PanelLeft className="size-4" />
         </AnimatedSidebarTrigger>
@@ -411,7 +411,7 @@ function ProjectList({
   const threads = useStore((state) => state.threads);
   const projectHosts = useStore((state) => state.projectHosts);
   const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
 
@@ -423,7 +423,7 @@ function ProjectList({
   const current = projects.find((project) => project.path === cwd);
   const currentKey = current && getProjectKey(current);
 
-  function lastUsed(project: Project) {
+  function getLastUsedAt(project: Project) {
     return Math.max(
       0,
       ...Object.values(threads).flatMap((info) =>
@@ -433,22 +433,22 @@ function ProjectList({
   }
 
   // The copy on the machine the project was last worked on, else this Mac's.
-  function preferredCopy(key: string) {
+  function getPreferredCopy(key: string) {
     return [...(copies.get(key) ?? [])].sort(
       (left, right) =>
-        lastUsed(right) - lastUsed(left) ||
+        getLastUsedAt(right) - getLastUsedAt(left) ||
         Number(Boolean(projectHosts[left.id])) - Number(Boolean(projectHosts[right.id])),
     )[0];
   }
 
-  const onAnotherMachine = projects.some((project) => projectHosts[project.id]);
+  const isOnAnotherMachine = projects.some((project) => projectHosts[project.id]);
   const needle = query.trim().toLowerCase();
   const rows = [
     ...[...copies]
       .map(([key, projectCopies]) => ({
         key,
         projectCopies,
-        lastUsedAt: Math.max(...projectCopies.map(lastUsed)),
+        lastUsedAt: Math.max(...projectCopies.map(getLastUsedAt)),
       }))
       .sort(
         (left, right) =>
@@ -456,12 +456,12 @@ function ProjectList({
           left.projectCopies[0].name.localeCompare(right.projectCopies[0].name),
       )
       .map(({ key, projectCopies }) => {
-        const shown = preferredCopy(key);
+        const shown = getPreferredCopy(key);
         const path = shown.path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
         return {
           id: key,
           project: shown,
-          where: onAnotherMachine
+          where: isOnAnotherMachine
             ? `${path} · ${projectCopies.map((copy) => projectHosts[copy.id] ?? "This Mac").join(", ")}`
             : path,
         };
@@ -480,11 +480,11 @@ function ProjectList({
   }, [focusSignal]);
 
   useEffect(() => {
-    if (searching)
+    if (isSearching)
       document.getElementById(`${listId}-${activeIndex}`)?.scrollIntoView({ block: "nearest" });
-  }, [activeIndex, listId, searching]);
+  }, [activeIndex, listId, isSearching]);
 
-  function pick(row: (typeof rows)[number]) {
+  function pickRow(row: (typeof rows)[number]) {
     setQuery("");
     if (row.project) {
       onPick(row.project.path);
@@ -504,8 +504,8 @@ function ProjectList({
         ref={searchRef}
         value={query}
         onChange={(event) => setQuery(event.target.value)}
-        onFocus={() => setSearching(true)}
-        onBlur={() => setSearching(false)}
+        onFocus={() => setIsSearching(true)}
+        onBlur={() => setIsSearching(false)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -513,7 +513,7 @@ function ProjectList({
             moveActive(event.key === "ArrowDown" ? 1 : -1);
           } else if (event.key === "Enter") {
             event.preventDefault();
-            pick(rows[activeIndex]);
+            pickRow(rows[activeIndex]);
           } else if (event.key === "Escape") {
             if (query) setQuery("");
             else if (cwd) focusComposer();
@@ -522,7 +522,7 @@ function ProjectList({
         role="combobox"
         aria-expanded
         aria-controls={listId}
-        aria-activedescendant={searching ? `${listId}-${activeIndex}` : undefined}
+        aria-activedescendant={isSearching ? `${listId}-${activeIndex}` : undefined}
         placeholder="Search projects…"
         className="mb-1 h-8 w-full rounded-lg bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
       />
@@ -541,10 +541,10 @@ function ProjectList({
             aria-selected={row.id === currentKey}
             tabIndex={-1}
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => pick(row)}
+            onClick={() => pickRow(row)}
             className={cn(
               "flex h-8 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground",
-              searching && index === activeIndex && "bg-muted text-foreground",
+              isSearching && index === activeIndex && "bg-muted text-foreground",
               row.id === currentKey && "text-foreground",
             )}
           >
@@ -586,7 +586,7 @@ function CloneCopy({
   const hostProjectFolder = useStore((state) =>
     machine === null ? undefined : state.settings.hostProjectFolders?.[machine],
   );
-  const [cloning, setCloning] = useState(false);
+  const [isCloning, setIsCloning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const where = machine ?? "this Mac";
@@ -612,9 +612,9 @@ function CloneCopy({
       </span>
       <Button
         className="rounded-lg [-webkit-app-region:no-drag]"
-        disabled={cloning}
+        disabled={isCloning}
         onClick={async () => {
-          setCloning(true);
+          setIsCloning(true);
           setError(null);
           const cloned = await cloneProject(
             machine,
@@ -624,13 +624,13 @@ function CloneCopy({
             // The same folder name as here, so both copies read the same; a subfolder's repo keeps its own.
             project.folder ? undefined : project.name,
           );
-          setCloning(false);
+          setIsCloning(false);
           if (cloned.path) onCloned(cloned.path);
           else setError(cloned.error);
         }}
       >
-        {cloning ? <LoaderCircle className="size-4 animate-spin" /> : null}
-        {cloning
+        {isCloning ? <LoaderCircle className="size-4 animate-spin" /> : null}
+        {isCloning
           ? "Cloning…"
           : `Clone into ${[parent.replace(/\/$/, ""), project.folder ? repositoryOf(project.remote).split("/").at(-1) : project.name, project.folder].filter(Boolean).join("/")}`}
       </Button>
@@ -659,7 +659,7 @@ export function DraftView({
   const host = missingOn ? missingOn.machine : pathHost;
   const providers = useProviders(host);
 
-  function copyOn(machine: string | null) {
+  function findCopyOn(machine: string | null) {
     return (
       project &&
       projects.find(
@@ -671,7 +671,7 @@ export function DraftView({
   }
 
   // A scan on the picked machine can find its copy after the clone offer shows.
-  const arrivedPath = missingOn ? copyOn(missingOn.machine)?.path : undefined;
+  const arrivedPath = missingOn ? findCopyOn(missingOn.machine)?.path : undefined;
   useEffect(() => {
     if (!arrivedPath) return;
     setMissing(null);
@@ -699,19 +699,19 @@ export function DraftView({
   );
   // Null until picked in the composer: then the project's `masscode.toml` decides, else Settings.
   const [pickedWorkspace, setWorkspace] = useState<"local" | "worktree" | null>(null);
-  const worktreeByDefault = useProjectConfig(host, missingOn ? null : path)?.config.worktree
+  const isWorktreeByDefault = useProjectConfig(host, missingOn ? null : path)?.config.worktree
     ?.default;
   const workspace =
     pickedWorkspace ??
-    (worktreeByDefault === undefined
+    (isWorktreeByDefault === undefined
       ? (settings.workspace ?? "local")
-      : worktreeByDefault
+      : isWorktreeByDefault
         ? "worktree"
         : "local");
   const [projectSignal, setProjectSignal] = useState(0);
-  const checkingProviders = providers.some((provider) => provider.checking);
+  const isCheckingProviders = providers.some((provider) => provider.checking);
 
-  function centerContent() {
+  function renderCenterContent() {
     if (missingOn && project) {
       return (
         <CloneCopy
@@ -732,13 +732,13 @@ export function DraftView({
         </div>
       );
     }
-    if (checkingProviders) return "Checking Claude and Codex…";
+    if (isCheckingProviders) return "Checking Claude and Codex…";
     if (host) return `Link a harness on ${host} in Settings → Harnesses to start.`;
     return "Link a harness in Settings to start.";
   }
 
-  function placeholder() {
-    if (!selected) return checkingProviders ? "Checking harnesses…" : "No harness linked";
+  function getPlaceholder() {
+    if (!selected) return isCheckingProviders ? "Checking harnesses…" : "No harness linked";
     if (!path) return "Pick a project above to start…";
     if (missingOn) {
       return `Clone ${project?.name ?? "the project"} to ${missingOn.machine ?? "this Mac"} to start…`;
@@ -755,7 +755,7 @@ export function DraftView({
         title="New thread"
       />
       <div className="flex flex-1 items-center justify-center px-6 text-center text-muted-foreground [-webkit-app-region:drag]">
-        {centerContent()}
+        {renderCenterContent()}
       </div>
       <Composer
         // Stable across the project pick, so effort/permission choices carry over.
@@ -771,12 +771,12 @@ export function DraftView({
                 options: [null, ...Object.keys(hosts)].map((machine) => ({
                   value: machine ?? THIS_MAC,
                   label: machine ?? "This Mac",
-                  description: copyOn(machine)?.path ?? "Not cloned here yet",
+                  description: findCopyOn(machine)?.path ?? "Not cloned here yet",
                   icon: machine ? <Server /> : <Monitor />,
                 })),
                 onChange: (value) => {
                   const machine = value === THIS_MAC ? null : value;
-                  const copy = copyOn(machine);
+                  const copy = findCopyOn(machine);
                   if (copy) {
                     setMissing(null);
                     onPickProject(copy.path);
@@ -800,7 +800,7 @@ export function DraftView({
           )
         }
         workspace={{ value: workspace, onChange: setWorkspace }}
-        placeholder={placeholder()}
+        placeholder={getPlaceholder()}
         onSubmit={(text, options, how) => {
           if (!selected || !path) return;
           const pickedModels = [selected, ...extraModels];
@@ -814,7 +814,7 @@ export function DraftView({
               options,
               workspace: pickedModels.length > 1 ? "worktree" : workspace,
               // Several models, or ⌘Enter: start in the background and stay in the draft.
-              open: pickedModels.length === 1 && !how.alternate,
+              shouldOpen: pickedModels.length === 1 && !how.alternate,
             });
           }
         }}
@@ -847,16 +847,16 @@ function AttachmentThumbnail({
 }) {
   // Undefined while signing, null once it can't be shown.
   const [url, setUrl] = useState<string | null | undefined>(undefined);
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    let current = true;
+    let isCurrent = true;
     void fetchImageUrl(threadId, attachment.path).then(
-      (signed) => current && setUrl(signed),
-      () => current && setUrl(null),
+      (signed) => isCurrent && setUrl(signed),
+      () => isCurrent && setUrl(null),
     );
     return () => {
-      current = false;
+      isCurrent = false;
     };
   }, [threadId, attachment.path]);
 
@@ -868,7 +868,7 @@ function AttachmentThumbnail({
       <button
         type="button"
         title={attachment.path}
-        onClick={() => setOpen(true)}
+        onClick={() => setIsOpen(true)}
         className="cursor-zoom-in overflow-hidden rounded-lg border border-border transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         <img
@@ -879,8 +879,8 @@ function AttachmentThumbnail({
         />
       </button>
       <MorphingModal
-        viewId={open ? attachment.path : null}
-        onClose={() => setOpen(false)}
+        viewId={isOpen ? attachment.path : null}
+        onClose={() => setIsOpen(false)}
         placement="center"
         className="w-auto max-w-[90vw]"
       >
@@ -939,18 +939,18 @@ function returnToComposer(threadId: string, queued: ReadonlyArray<QueuedMessage>
 function QueuedFollowUp({
   threadId,
   followUp,
-  next,
+  isNext,
 }: {
   threadId: string;
   followUp: QueuedMessage;
   /** First in line: it goes out at the next boundary, and the steer shortcut sends it. */
-  next: boolean;
+  isNext: boolean;
 }) {
   return (
     <div
       className="flex h-8 items-center gap-2 pl-1.5"
       title={
-        next
+        isNext
           ? "Sends after the next tool call, or when the turn ends"
           : "Sends after the messages above it"
       }
@@ -967,7 +967,7 @@ function QueuedFollowUp({
       ) : null}
       <button
         type="button"
-        title={`Send now, into the running turn${next ? ` (${formatKeybinding("composer.steerQueued")})` : ""}`}
+        title={`Send now, into the running turn${isNext ? ` (${formatKeybinding("composer.steerQueued")})` : ""}`}
         onClick={() => sendQueuedNow(threadId, followUp.id)}
         className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
@@ -1002,7 +1002,7 @@ function LimitStopNotice({
   options: TurnOptions;
 }) {
   const now = useNow(30_000);
-  const waiting = stop.resetsAt !== null && stop.resetsAt > now;
+  const isWaitingForReset = stop.resetsAt !== null && stop.resetsAt > now;
   const others = providers.filter(
     (other) => other.linked && other.kind !== stop.provider && other.kind !== provider,
   );
@@ -1016,7 +1016,7 @@ function LimitStopNotice({
           {stop.resetsAt === null ? null : (
             <span className="ml-1 text-muted-foreground">
               {" "}
-              {waiting ? formatResetLabel(stop.resetsAt, now) : "It has reset"}
+              {isWaitingForReset ? formatResetLabel(stop.resetsAt, now) : "It has reset"}
             </span>
           )}
         </span>
@@ -1042,7 +1042,7 @@ function LimitStopNotice({
           <Play className="size-3.5" />
           Resume
         </button>
-        {waiting ? (
+        {isWaitingForReset ? (
           <button
             type="button"
             aria-pressed={stop.resumeAtReset !== null}
@@ -1182,7 +1182,7 @@ function QuoteSelection({
     if (!area) return;
 
     // Arrows rather than function declarations: those are hoisted, so `area` wouldn't stay narrowed inside them.
-    const update = () => {
+    const updateQuote = () => {
       const selection = document.getSelection();
       const text = selection?.toString().trim() ?? "";
       const node = selection?.anchorNode;
@@ -1207,17 +1207,17 @@ function QuoteSelection({
       });
     };
 
-    function clear() {
+    function clearQuote() {
       if (document.getSelection()?.isCollapsed) setQuote(null);
     }
 
-    area.addEventListener("mouseup", update);
-    area.addEventListener("keyup", update);
-    document.addEventListener("selectionchange", clear);
+    area.addEventListener("mouseup", updateQuote);
+    area.addEventListener("keyup", updateQuote);
+    document.addEventListener("selectionchange", clearQuote);
     return () => {
-      area.removeEventListener("mouseup", update);
-      area.removeEventListener("keyup", update);
-      document.removeEventListener("selectionchange", clear);
+      area.removeEventListener("mouseup", updateQuote);
+      area.removeEventListener("keyup", updateQuote);
+      document.removeEventListener("selectionchange", clearQuote);
     };
   }, [container]);
 
@@ -1258,16 +1258,16 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   const providers = useProviders(host);
   const settings = useStore((state) => state.settings);
   const { status, provider } = info;
-  const busy = isTurnActive(status);
+  const isBusy = isTurnActive(status);
   // Another harness's model switches the thread to it, which waits for the turn to end.
-  const choices = buildModelChoices(providers, settings, busy ? provider : undefined);
+  const choices = buildModelChoices(providers, settings, isBusy ? provider : undefined);
   const current = info.model ?? findDefaultModel(providers, settings, provider);
   const modelChoice = current ? encodeChoice(provider, current) : undefined;
   const catalog = findCatalogModel(providers, modelChoice);
   const lastItem = items.at(-1);
 
   // `/btw` asks about the newest reply whose turn is over.
-  const runningTurnStart = busy
+  const runningTurnStart = isBusy
     ? items.findLastIndex((item) => item.kind === "user" && !item.steer)
     : items.length;
   const asideReplyId = items.findLast(
@@ -1275,7 +1275,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   )?.id;
 
   const [reveal, setReveal] = useState<ToolReveal | null>(null);
-  const runningAgents = busy
+  const runningAgents = isBusy
     ? items.filter(
         (item): item is ToolItem =>
           item.kind === "tool" && categoryOf(item.name) === "agent" && item.output === null,
@@ -1286,22 +1286,22 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   );
 
   // Per thread: each thread has its own view, kept while you switch away and back.
-  const [diffOpen, setDiffOpen] = useState(false);
+  const [isDiffOpen, setIsDiffOpen] = useState(false);
   // Null shows all uncommitted changes; a message id shows just what that turn changed.
   const [diffTurn, setDiffTurn] = useState<string | null>(null);
   const openTurnDiff = useCallback((messageId: string) => {
     setDiffTurn(messageId);
-    setDiffOpen(true);
+    setIsDiffOpen(true);
   }, []);
 
   // A rewind can take the turn on show with it.
-  const diffTurnGone =
+  const isDiffTurnGone =
     diffTurn !== null &&
     transcript?.status === "live" &&
     !items.some((item) => item.id === diffTurn);
   useEffect(() => {
-    if (diffTurnGone) setDiffTurn(null);
-  }, [diffTurnGone]);
+    if (isDiffTurnGone) setDiffTurn(null);
+  }, [isDiffTurnGone]);
 
   const reviewComments = useReviewComments(threadId);
   const [revealedComment, setRevealedComment] = useState<ReviewComment | null>(null);
@@ -1322,7 +1322,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   const [scriptsRead, setScriptsRead] = useState(0);
   const projectConfig = useProjectConfig(host, project?.path, scriptsRead);
   const scripts = projectConfig?.config.scripts ?? [];
-  const [editingScripts, setEditingScripts] = useState(false);
+  const [isEditingScripts, setIsEditingScripts] = useState(false);
 
   // Leaves the draft alone, and waits while the agent needs an approval or an answer.
   useKeybinding(
@@ -1350,27 +1350,27 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
     if (activeTerminal) focusComposer();
   });
 
-  const browserOpen = useBrowser((state) => state.threads[threadId]?.open ?? false);
+  const isBrowserOpen = useBrowser((state) => state.threads[threadId]?.open ?? false);
   useKeybinding(window.desktop ? "browser.toggle" : undefined, () => toggleBrowser(threadId));
 
   // Simulators run on this Mac only; a remote thread's agent couldn't reach them.
-  const simulatorAvailable =
+  const isSimulatorAvailable =
     window.desktop !== undefined && host === null && navigator.userAgent.includes("Mac");
-  const simulatorOpen = useSimulator(threadId).open;
-  useKeybinding(simulatorAvailable ? "simulator.toggle" : undefined, () =>
+  const isSimulatorOpen = useSimulator(threadId).open;
+  useKeybinding(isSimulatorAvailable ? "simulator.toggle" : undefined, () =>
     toggleSimulator(threadId),
   );
 
   // Looking at a thread marks whatever it did since you last saw it as seen.
   const { updatedAt } = info;
   useEffect(() => {
-    function mark() {
+    function markSeenIfFocused() {
       if (document.hasFocus()) markSeen(threadId);
     }
 
-    mark();
-    window.addEventListener("focus", mark);
-    return () => window.removeEventListener("focus", mark);
+    markSeenIfFocused();
+    window.addEventListener("focus", markSeenIfFocused);
+    return () => window.removeEventListener("focus", markSeenIfFocused);
   }, [threadId, updatedAt]);
 
   return (
@@ -1379,12 +1379,12 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
         <div ref={scrollArea} className="relative flex min-h-0 min-w-95 flex-1 flex-col">
           {project ? (
             <ScriptsEditor
-              isOpen={editingScripts}
+              isOpen={isEditingScripts}
               host={host}
               path={project.path}
-              onClose={() => setEditingScripts(false)}
+              onClose={() => setIsEditingScripts(false)}
               onSaved={() => {
-                setEditingScripts(false);
+                setIsEditingScripts(false);
                 setScriptsRead((read) => read + 1);
               }}
             />
@@ -1416,7 +1416,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                 <span className="flex items-center gap-0.5">
                   {project ? (
                     <DropdownMenu
-                      onOpenChange={(open) => open && setScriptsRead((read) => read + 1)}
+                      onOpenChange={(isOpen) => isOpen && setScriptsRead((read) => read + 1)}
                     >
                       <DropdownMenuTrigger
                         title="Scripts"
@@ -1452,7 +1452,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                         {scripts.length > 0 || projectConfig?.error ? (
                           <DropdownMenuSeparator />
                         ) : null}
-                        <DropdownMenuItem onSelect={() => setEditingScripts(true)}>
+                        <DropdownMenuItem onSelect={() => setIsEditingScripts(true)}>
                           <Pencil />
                           {scripts.length > 0 ? "Edit scripts…" : "Add a script…"}
                         </DropdownMenuItem>
@@ -1461,14 +1461,14 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                   ) : null}
                   <button
                     type="button"
-                    title={diffOpen ? "Hide changes" : "Show changes"}
-                    aria-label={diffOpen ? "Hide changes" : "Show changes"}
-                    aria-pressed={diffOpen}
+                    title={isDiffOpen ? "Hide changes" : "Show changes"}
+                    aria-label={isDiffOpen ? "Hide changes" : "Show changes"}
+                    aria-pressed={isDiffOpen}
                     onClick={() => {
-                      setDiffOpen(!diffOpen);
+                      setIsDiffOpen(!isDiffOpen);
                       setDiffTurn(null);
                     }}
-                    className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${diffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
+                    className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${isDiffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
                   >
                     <FileDiff className="size-4" />
                   </button>
@@ -1493,7 +1493,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                       </DropdownMenuCheckboxItem>
                       {window.desktop ? (
                         <DropdownMenuCheckboxItem
-                          checked={browserOpen}
+                          checked={isBrowserOpen}
                           onCheckedChange={() => toggleBrowser(threadId)}
                         >
                           <Globe />
@@ -1503,9 +1503,9 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                           </DropdownMenuShortcut>
                         </DropdownMenuCheckboxItem>
                       ) : null}
-                      {simulatorAvailable ? (
+                      {isSimulatorAvailable ? (
                         <DropdownMenuCheckboxItem
-                          checked={simulatorOpen}
+                          checked={isSimulatorOpen}
                           onCheckedChange={() => toggleSimulator(threadId)}
                         >
                           <Smartphone />
@@ -1525,7 +1525,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
           <SideChatDrawer threadId={threadId} provider={provider} />
           <TranscriptFind scope={transcriptViewport} />
           <MessageScroller
-            busy={busy}
+            busy={isBusy}
             navigation="rail"
             viewportRef={transcriptViewport}
             className="min-h-0 flex-1"
@@ -1546,7 +1546,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
               <TurnDiffContext value={openTurnDiff}>
                 <RevealContext value={reveal}>
                   <RunCommandContext value={runReplyCommand}>
-                    <TurnList items={items} threadId={threadId} busy={busy} />
+                    <TurnList items={items} threadId={threadId} isBusy={isBusy} />
                   </RunCommandContext>
                   {runs.map((run) => (
                     <RunningCommandWindow key={run.terminalId} threadId={threadId} run={run} />
@@ -1554,7 +1554,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                 </RevealContext>
               </TurnDiffContext>
 
-              {status === "running" && !showsWorking(items) ? (
+              {status === "running" && !isShowingWork(items) ? (
                 <Message
                   from="assistant"
                   animateIn
@@ -1586,7 +1586,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
             history={history}
             provider={provider}
             cwd={info.cwd}
-            busy={busy}
+            isBusy={isBusy}
             header={
               <>
                 <PromptInputTray open={runningAgents.length > 0} detached>
@@ -1617,7 +1617,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                       threadId={threadId}
                       comment={comment}
                       onReveal={() => {
-                        setDiffOpen(true);
+                        setIsDiffOpen(true);
                         setRevealedComment(comment);
                       }}
                     />
@@ -1627,7 +1627,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                       key={followUp.id}
                       threadId={threadId}
                       followUp={followUp}
-                      next={index === 0}
+                      isNext={index === 0}
                     />
                   ))}
                 </PromptInputTray>
@@ -1641,18 +1641,18 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
               )
             }
             placeholder={
-              busy
+              isBusy
                 ? followUpMode === "queue"
                   ? "Queue a follow-up (⌘↩ to send now)"
                   : `Steer ${formatHarnessLabel(settings, provider)} (⌘↩ to queue)`
                 : `Ask ${formatHarnessLabel(settings, provider)}…`
             }
-            pendingContent={reviewComments.length > 0}
+            hasPendingContent={reviewComments.length > 0}
             onSubmit={(typed, options, how) => {
               const text = buildReviewMessage(takeReviewComments(threadId), typed);
               // While the agent works, a message waits for the turn to end, or steers it; ⌘Enter flips that.
               const steer = (followUpMode === "steer") !== how.alternate;
-              if (busy && !steer) queueMessage(threadId, text, options);
+              if (isBusy && !steer) queueMessage(threadId, text, options);
               else send(ClientCommand.cases["thread.send"].make({ threadId, text, options }));
             }}
             onAskAside={
@@ -1669,7 +1669,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
             }}
           />
         </div>
-        {diffOpen ? (
+        {isDiffOpen ? (
           <Suspense
             fallback={
               <div
@@ -1688,12 +1688,12 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
               reveal={revealedComment}
               onRevealed={clearRevealedComment}
               onShowAll={() => setDiffTurn(null)}
-              onClose={() => setDiffOpen(false)}
+              onClose={() => setIsDiffOpen(false)}
             />
           </Suspense>
         ) : null}
-        {browserOpen && window.desktop ? <BrowserPanel threadId={threadId} /> : null}
-        {simulatorOpen && simulatorAvailable ? <SimulatorPanel threadId={threadId} /> : null}
+        {isBrowserOpen && window.desktop ? <BrowserPanel threadId={threadId} /> : null}
+        {isSimulatorOpen && isSimulatorAvailable ? <SimulatorPanel threadId={threadId} /> : null}
       </div>
       {activeTerminal ? (
         <Suspense fallback={null}>
@@ -1705,7 +1705,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
 });
 
 /** Same items, by identity: the store only replaces the item that changed. */
-function sameItems(left: ReadonlyArray<unknown>, right: ReadonlyArray<unknown>) {
+function hasSameItems(left: ReadonlyArray<unknown>, right: ReadonlyArray<unknown>) {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
@@ -1716,23 +1716,23 @@ function sameItems(left: ReadonlyArray<unknown>, right: ReadonlyArray<unknown>) 
 function TurnList({
   items,
   threadId,
-  busy,
+  isBusy,
 }: {
   items: ReadonlyArray<TranscriptItem>;
   threadId: string;
-  busy: boolean;
+  isBusy: boolean;
 }) {
   const turns = useMemo(() => toTurns(items), [items]);
 
   // Older turns skip layout and paint while off screen. Switched on after the first
   // frame with turns in it (the transcript can arrive after the view opens), so every
   // turn has been laid out once and its real height is remembered.
-  const [settled, setSettled] = useState(false);
+  const [isSettled, setIsSettled] = useState(false);
   const hasTurns = turns.length > 0;
 
   useEffect(() => {
     if (!hasTurns) return;
-    const frame = requestAnimationFrame(() => setSettled(true));
+    const frame = requestAnimationFrame(() => setIsSettled(true));
     return () => cancelAnimationFrame(frame);
   }, [hasTurns]);
 
@@ -1742,7 +1742,7 @@ function TurnList({
     // so settling doesn't re-render them all. The latest exchange stays fully rendered: it's what
     // streams and what the scroller follows.
     <div
-      data-settled={settled || undefined}
+      data-settled={isSettled || undefined}
       className="contents *:[contain-intrinsic-size:auto_240px] data-settled:[&>*:nth-last-child(n+3)]:[content-visibility:auto]"
     >
       {turns.map((turn, index) => {
@@ -1753,7 +1753,7 @@ function TurnList({
               key={turn.id}
               run={turn.item.run}
               label="Worktree setup"
-              stopped={turn.item.stopped}
+              isStopped={turn.item.stopped}
             />
           );
         }
@@ -1763,8 +1763,8 @@ function TurnList({
               key={turn.id}
               item={turn.item}
               threadId={threadId}
-              busy={busy}
-              animateIn={settled}
+              isBusy={isBusy}
+              animateIn={isSettled}
             />
           );
         }
@@ -1773,8 +1773,8 @@ function TurnList({
             key={turn.id}
             items={turn.items}
             threadId={threadId}
-            busy={busy}
-            last={index === turns.length - 1}
+            isBusy={isBusy}
+            isLast={index === turns.length - 1}
           />
         );
       })}
@@ -1787,18 +1787,20 @@ function TurnList({
  * way to stop it: before it reaches the agent, or to start the agent without waiting.
  */
 function RunningCommandWindow({ threadId, run }: { threadId: string; run: RunningCommand }) {
-  const setup = run.terminalId === WORKTREE_SETUP_TERMINAL_ID;
+  const isSetup = run.terminalId === WORKTREE_SETUP_TERMINAL_ID;
 
   return (
     <div className="overflow-hidden rounded-xl border border-border">
       <div className="flex h-9 items-center gap-2 border-b border-border pr-1.5 pl-3 text-xs">
         <LoaderCircle className="size-3.5 shrink-0 text-muted-foreground motion-safe:animate-spin" />
-        {setup ? <span className="shrink-0 text-muted-foreground">Setting up worktree</span> : null}
+        {isSetup ? (
+          <span className="shrink-0 text-muted-foreground">Setting up worktree</span>
+        ) : null}
         <code className="min-w-0 flex-1 truncate font-mono text-foreground/85">{run.command}</code>
         <button
           type="button"
           title={
-            setup
+            isSetup
               ? "Stop setup; queued messages go to the agent now"
               : "Stop it; the agent won't hear about this run"
           }
@@ -1825,16 +1827,16 @@ function RunningCommandWindow({ threadId, run }: { threadId: string; run: Runnin
 function CommandRunResult({
   run,
   label,
-  stopped = false,
+  isStopped = false,
 }: {
   run: CommandRun;
   label?: string;
-  stopped?: boolean;
+  isStopped?: boolean;
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border">
       <div className="flex h-9 items-center gap-2 border-b border-border px-3 text-xs">
-        {stopped ? (
+        {isStopped ? (
           <Square className="size-3 shrink-0 text-muted-foreground" />
         ) : run.exitCode === 0 ? (
           <Check className="size-3.5 shrink-0 text-success" />
@@ -1843,7 +1845,7 @@ function CommandRunResult({
         )}
         {label ? <span className="shrink-0 text-muted-foreground">{label}</span> : null}
         <code className="min-w-0 flex-1 truncate font-mono text-foreground/85">{run.command}</code>
-        {stopped ? (
+        {isStopped ? (
           <span className="shrink-0 text-muted-foreground">Stopped</span>
         ) : run.exitCode === 0 ? null : (
           <span className="shrink-0 text-destructive">Exit code {run.exitCode}</span>
@@ -1905,12 +1907,12 @@ const UserTurn = memo(
   ({
     item,
     threadId,
-    busy,
+    isBusy,
     animateIn,
   }: {
     item: UserItem;
     threadId: string;
-    busy: boolean;
+    isBusy: boolean;
     animateIn: boolean;
   }) =>
     item.run ? (
@@ -1932,7 +1934,7 @@ const UserTurn = memo(
             </MessageBubble>
           ) : null}
           {/* A message sent mid-turn has no turn of its own to go back to. */}
-          {busy || item.steer ? null : <EditFromHere item={item} threadId={threadId} />}
+          {isBusy || item.steer ? null : <EditFromHere item={item} threadId={threadId} />}
         </MessageContent>
       </Message>
     ),
@@ -1940,7 +1942,7 @@ const UserTurn = memo(
   (previous, next) =>
     previous.item === next.item &&
     previous.threadId === next.threadId &&
-    previous.busy === next.busy,
+    previous.isBusy === next.isBusy,
 );
 
 /** Above a message sent right after switching harness: what the new one was told it missed. */
@@ -1951,24 +1953,24 @@ function HandoffNote({
   handoff: NonNullable<UserItem["handoff"]>;
   to: ProviderKind;
 }) {
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const settings = useStore((state) => state.settings);
 
   return (
     <div className="flex flex-col items-end gap-1.5 text-xs text-muted-foreground">
       <button
         type="button"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1.5 rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ArrowLeftRight className="size-3.5 shrink-0" />
         Gave {formatHarnessLabel(settings, to)} the {handoff.messages}{" "}
         {handoff.messages === 1 ? "message" : "messages"}{" "}
         {formatHarnessLabel(settings, handoff.from)} had
-        <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+        <ChevronRight className={cn("size-3.5 transition-transform", isOpen && "rotate-90")} />
       </button>
-      {open ? (
+      {isOpen ? (
         <pre className="selectable max-h-72 w-full overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[11px] whitespace-pre-wrap">
           {handoff.text}
         </pre>
@@ -2036,14 +2038,14 @@ function ForkDialog({
   onClose: () => void;
 }) {
   const fork = useStore((state) => (state.forking?.messageId === item.id ? state.forking : null));
-  const pending = fork !== null && fork.error === null;
+  const isPending = fork !== null && fork.error === null;
   const forkButton = useRef<HTMLButtonElement>(null);
 
   return (
     <AlertDialog
       open
-      onOpenChange={(open) => {
-        if (open || pending) return;
+      onOpenChange={(isOpen) => {
+        if (isOpen || isPending) return;
         dismissForkError();
         onClose();
       }}
@@ -2068,7 +2070,7 @@ function ForkDialog({
           </p>
         ) : null}
         <AlertDialogFooter className="flex-row justify-end">
-          <AlertDialogCancel size="sm" disabled={pending}>
+          <AlertDialogCancel size="sm" disabled={isPending}>
             Cancel
             <kbd aria-hidden className="font-sans text-[10px] text-muted-foreground">
               esc
@@ -2077,15 +2079,15 @@ function ForkDialog({
           <AlertDialogAction
             ref={forkButton}
             size="sm"
-            disabled={pending}
+            disabled={isPending}
             onClick={(event) => {
               // Stays open until the fork opens, which replaces this view.
               event.preventDefault();
               forkThread(threadId, item.id);
             }}
           >
-            {pending ? "Forking…" : fork?.error ? "Try again" : "Fork"}
-            {pending ? null : (
+            {isPending ? "Forking…" : fork?.error ? "Try again" : "Fork"}
+            {isPending ? null : (
               <kbd aria-hidden className="font-sans text-[10px] text-primary-foreground/60">
                 ↵
               </kbd>
@@ -2108,13 +2110,13 @@ function SideChatDrawer({ threadId, provider }: { threadId: string; provider: Pr
   useEffect(() => () => closeSideChat(threadId), [threadId]);
 
   const items = sideChat?.items ?? NO_ITEMS;
-  const running = sideChat?.running ?? false;
+  const isRunning = sideChat?.running ?? false;
   const lastItem = items.at(-1);
   const blocks = useMemo(() => toBlocks(items), [items]);
 
-  function ask() {
+  function askQuestion() {
     const text = question.trim();
-    if (!text || running) return;
+    if (!text || isRunning) return;
     askSideChat(text);
     setQuestion("");
   }
@@ -2122,7 +2124,7 @@ function SideChatDrawer({ threadId, provider }: { threadId: string; provider: Pr
   return (
     <Drawer
       open={sideChat !== null}
-      onOpenChange={(open) => open || closeSideChat(threadId)}
+      onOpenChange={(isOpen) => isOpen || closeSideChat(threadId)}
       ariaLabel="Side question"
       className="w-[32rem]"
     >
@@ -2145,7 +2147,7 @@ function SideChatDrawer({ threadId, provider }: { threadId: string; provider: Pr
         </button>
       </div>
       <MessageScroller
-        busy={running}
+        busy={isRunning}
         className="min-h-0 flex-1"
         viewportClassName="px-4 py-4"
         contentClassName="min-h-full w-full"
@@ -2168,14 +2170,14 @@ function SideChatDrawer({ threadId, provider }: { threadId: string; provider: Pr
                     key={block.id}
                     block={block}
                     threadId={sideChat.id}
-                    live={running}
-                    streaming={running && holdsNewest(block, lastItem)}
+                    live={isRunning}
+                    streaming={isRunning && hasNewestItem(block, lastItem)}
                     showActions={false}
                   />
                 ),
               )
             : null}
-          {running && !showsWorking(items) ? (
+          {isRunning && !isShowingWork(items) ? (
             <div className="flex h-7 items-center text-sm">
               <ReasoningText variant="scramble" className="min-w-0 font-mono font-normal" />
             </div>
@@ -2186,7 +2188,7 @@ function SideChatDrawer({ threadId, provider }: { threadId: string; provider: Pr
         className="border-t border-border p-3"
         onSubmit={(event) => {
           event.preventDefault();
-          ask();
+          askQuestion();
         }}
       >
         <Textarea
@@ -2196,14 +2198,14 @@ function SideChatDrawer({ threadId, provider }: { threadId: string; provider: Pr
           onKeyDown={(event) => {
             if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
             event.preventDefault();
-            ask();
+            askQuestion();
           }}
-          placeholder={running ? `${label} is answering…` : "Ask a side question…"}
+          placeholder={isRunning ? `${label} is answering…` : "Ask a side question…"}
           aria-label="Side question"
           className="min-h-16 text-[13px]"
         />
         <div className="mt-2 flex justify-end">
-          <Button type="submit" size="sm" disabled={!question.trim() || running}>
+          <Button type="submit" size="sm" disabled={!question.trim() || isRunning}>
             Ask
             <kbd aria-hidden className="font-sans text-[10px] opacity-70">
               ↵
@@ -2230,15 +2232,15 @@ function RunningAgents({
   canStopOne: boolean;
   onReveal: (toolId: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
   const now = useNow(1000);
   const listId = useId();
   // Beyond two, the rows fold into one summary so the tray stays short.
-  const grouped = agents.length > 2;
+  const isGrouped = agents.length > 2;
 
-  function activityOf(agent: ToolItem) {
+  function describeAgentActivity(agent: ToolItem) {
     if (stopping.has(agent.id)) return "Stopping…";
     if (agent.progress !== undefined) return agent.progress;
     const last = agent.children?.at(-1);
@@ -2249,17 +2251,17 @@ function RunningAgents({
   return (
     <div
       onKeyDown={(event) => {
-        if (event.key !== "Escape" || !open) return;
+        if (event.key !== "Escape" || !isOpen) return;
         event.stopPropagation();
-        setOpen(false);
+        setIsOpen(false);
       }}
     >
-      {grouped ? (
+      {isGrouped ? (
         <button
           type="button"
-          aria-expanded={open}
+          aria-expanded={isOpen}
           aria-controls={listId}
-          onClick={() => setOpen(!open)}
+          onClick={() => setIsOpen(!isOpen)}
           className="flex h-8 w-full items-center gap-2 rounded-md pl-1.5 text-left transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           <span className="grid size-3.5 shrink-0 place-items-center">
@@ -2269,11 +2271,11 @@ function RunningAgents({
             {agents.length} subagents running
           </span>
           <ChevronRight
-            className={cn("mr-2 size-3.5 transition-transform duration-200", open && "rotate-90")}
+            className={cn("mr-2 size-3.5 transition-transform duration-200", isOpen && "rotate-90")}
           />
         </button>
       ) : null}
-      <Fold open={!grouped || open}>
+      <Fold open={!isGrouped || isOpen}>
         <ul id={listId}>
           {agents.map((agent) => {
             const calls = agent.children ?? [];
@@ -2294,7 +2296,7 @@ function RunningAgents({
                     className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span className="shrink-0 text-[13px] text-foreground/80">{name}</span>
-                    <span className="truncate">{activityOf(agent)}</span>
+                    <span className="truncate">{describeAgentActivity(agent)}</span>
                   </button>
                   {agent.tokens === undefined ? null : (
                     <span className="shrink-0 text-muted-foreground/70 tabular-nums">
@@ -2396,17 +2398,17 @@ function CheckpointChip({ item }: { item: Extract<TranscriptItem, { kind: "check
 interface AssistantTurnProps {
   items: ReadonlyArray<TranscriptItem>;
   threadId: string;
-  busy: boolean;
+  isBusy: boolean;
   /** The newest turn: its last block is the one streaming. */
-  last: boolean;
+  isLast: boolean;
 }
 
 const AssistantTurn = memo(
-  ({ items, threadId, busy, last }: AssistantTurnProps) => {
+  ({ items, threadId, isBusy, isLast }: AssistantTurnProps) => {
     const lastItem = items.at(-1);
-    const live = busy && last;
+    const isLive = isBusy && isLast;
     // Until the turn ends, trailing text may be a note before the next tool call; showing it as the answer only to fold it away is noise.
-    const heldAnswerId = live && lastItem?.kind === "assistant" ? lastItem.id : undefined;
+    const heldAnswerId = isLive && lastItem?.kind === "assistant" ? lastItem.id : undefined;
     const blocks = useMemo(() => toBlocks(items, heldAnswerId), [items, heldAnswerId]);
     const finalTextId = blocks.findLast((block) => block.kind === "assistant")?.id;
 
@@ -2415,10 +2417,10 @@ const AssistantTurn = memo(
       // The row widens rather than the face overflowing it: older turns clip to their box.
       <Message from="assistant" className="@min-[800px]:-ml-9 @min-[800px]:w-auto">
         {/* One face, on the newest reply: repeated down the thread it reads as wallpaper. */}
-        {last ? (
+        {isLast ? (
           <OrbFace
             state={
-              live
+              isLive
                 ? lastItem?.kind === "assistant"
                   ? "streaming"
                   : "thinking"
@@ -2437,9 +2439,9 @@ const AssistantTurn = memo(
               key={block.id}
               block={block}
               threadId={threadId}
-              live={busy}
-              streaming={busy && last && holdsNewest(block, lastItem)}
-              showActions={block.id === finalTextId && !(busy && last)}
+              live={isBusy}
+              streaming={isBusy && isLast && hasNewestItem(block, lastItem)}
+              showActions={block.id === finalTextId && !(isBusy && isLast)}
             />
           ))}
         </MessageContent>
@@ -2449,9 +2451,9 @@ const AssistantTurn = memo(
   // `toTurns` rebuilds the turn arrays each time; the items inside keep their identity.
   (previous, next) =>
     previous.threadId === next.threadId &&
-    previous.busy === next.busy &&
-    previous.last === next.last &&
-    sameItems(previous.items, next.items),
+    previous.isBusy === next.isBusy &&
+    previous.isLast === next.isLast &&
+    hasSameItems(previous.items, next.items),
 );
 
 /** The way to the answer, folded like thinking: what it's doing now while it streams, what it did once done. */
@@ -2514,26 +2516,26 @@ const AgentBlock = memo(
     (previous.block === next.block ||
       (previous.block.kind === "tools" &&
         next.block.kind === "tools" &&
-        sameItems(previous.block.calls, next.block.calls)) ||
+        hasSameItems(previous.block.calls, next.block.calls)) ||
       (previous.block.kind === "work" &&
         next.block.kind === "work" &&
-        sameItems(previous.block.items, next.block.items))),
+        hasSameItems(previous.block.items, next.block.items))),
 );
 
-function planStatus(plan: Extract<TranscriptItem, { kind: "approval" }>) {
+function getPlanStatus(plan: Extract<TranscriptItem, { kind: "approval" }>) {
   if (plan.decision === "deny") return "denied";
   if (!plan.decision) return "pending";
   return plan.resolved ? "approved" : "approving";
 }
 
 function AgentBlockContent({ block, threadId, live, streaming, showActions }: AgentBlockProps) {
-  const forking = useStore(
+  const isForking = useStore(
     (state) => state.forking?.messageId === block.id && state.forking.error === null,
   );
-  const [confirmingFork, setConfirmingFork] = useState(false);
+  const [isConfirmingFork, setIsConfirmingFork] = useState(false);
   const host = useThreadHost(threadId);
   const needsRootConsent = useNeedsRootConsent(host);
-  const [confirmingRoot, setConfirmingRoot] = useState(false);
+  const [isConfirmingRoot, setIsConfirmingRoot] = useState(false);
   const runReplyCommand = use(RunCommandContext);
   const resolveImage = useCallback((src: string) => fetchImageUrl(threadId, src), [threadId]);
   const provider = useStore((state) => state.threads[threadId]?.provider);
@@ -2548,8 +2550,8 @@ function AgentBlockContent({ block, threadId, live, streaming, showActions }: Ag
             <StreamingResponse
               status={streaming ? "streaming" : "complete"}
               copyText={block.text}
-              onFork={live ? undefined : () => setConfirmingFork(true)}
-              forking={forking}
+              onFork={live ? undefined : () => setIsConfirmingFork(true)}
+              forking={isForking}
               onAskAside={() => openSideChat(threadId, block.id)}
               showActions={showActions}
               showFeedback={false}
@@ -2564,8 +2566,12 @@ function AgentBlockContent({ block, threadId, live, streaming, showActions }: Ag
               </Markdown>
             </StreamingResponse>
           </MessageBubbleContent>
-          {confirmingFork ? (
-            <ForkDialog threadId={threadId} item={block} onClose={() => setConfirmingFork(false)} />
+          {isConfirmingFork ? (
+            <ForkDialog
+              threadId={threadId}
+              item={block}
+              onClose={() => setIsConfirmingFork(false)}
+            />
           ) : null}
         </MessageBubble>
       );
@@ -2598,7 +2604,7 @@ function AgentBlockContent({ block, threadId, live, streaming, showActions }: Ag
             <ToolApproval
               title="Approve this plan?"
               description={block.decision === "deny" ? "Rejected — say what to change" : undefined}
-              status={planStatus(block)}
+              status={getPlanStatus(block)}
               defaultOpen
               approveLabel={BUILD_WITH_LABEL["auto-edit"]}
               approveOptions={(["ask", "auto-edit", "auto", "full-access"] as const).flatMap(
@@ -2611,7 +2617,7 @@ function AgentBlockContent({ block, threadId, live, streaming, showActions }: Ag
                           label: BUILD_WITH_LABEL[level],
                           onSelect: () =>
                             level === "full-access" && needsRootConsent
-                              ? setConfirmingRoot(true)
+                              ? setIsConfirmingRoot(true)
                               : approvePlan(threadId, block.id, level),
                         },
                       ],
@@ -2625,11 +2631,11 @@ function AgentBlockContent({ block, threadId, live, streaming, showActions }: Ag
                 <Markdown className="selectable pr-3 leading-relaxed">{block.detail}</Markdown>
               </ScrollArea>
             </ToolApproval>
-            {confirmingRoot && host ? (
+            {isConfirmingRoot && host ? (
               <RootFullAccessDialog
                 host={host}
                 onAllow={() => approvePlan(threadId, block.id, "full-access")}
-                onClose={() => setConfirmingRoot(false)}
+                onClose={() => setIsConfirmingRoot(false)}
               />
             ) : null}
           </>

@@ -190,12 +190,12 @@ function SettingsModelSelect(props: {
 }) {
   const settings = useStore((state) => state.settings);
   const providers = useStore((state) => state.providers);
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const models = buildModelChoices(providers, settings);
   const current = models.find((option) => option.value === props.value);
 
   return (
-    <MorphPopover open={open} onOpenChange={setOpen} className={props.className}>
+    <MorphPopover open={isOpen} onOpenChange={setIsOpen} className={props.className}>
       <MorphPopoverTrigger>
         <button
           type="button"
@@ -213,7 +213,7 @@ function SettingsModelSelect(props: {
             aria-hidden
             className={cn(
               "size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out",
-              open && "rotate-180",
+              isOpen && "rotate-180",
             )}
           />
         </button>
@@ -224,7 +224,7 @@ function SettingsModelSelect(props: {
             type="button"
             onClick={() => {
               props.onChange(null);
-              setOpen(false);
+              setIsOpen(false);
             }}
             className={cn(
               "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors outline-none hover:bg-muted focus-visible:bg-muted",
@@ -239,7 +239,7 @@ function SettingsModelSelect(props: {
           models={models}
           value={current?.value}
           onChange={props.onChange}
-          onClose={() => setOpen(false)}
+          onClose={() => setIsOpen(false)}
           favorites={getFavoriteChoices(settings)}
           onToggleFavorite={toggleFavoriteModel}
         />
@@ -575,7 +575,7 @@ function GeneralPage() {
           >
             <SettingsTextField
               label="Add project starts in"
-              mono
+              isMonospace
               value={settings.addProjectFolder ?? ""}
               placeholder="~/"
               onCommit={(folder) =>
@@ -624,8 +624,8 @@ function UpdatesSection() {
     window.desktop?.appVersion().then(setVersion, () => {});
   }, []);
 
-  const ready = UpdateStatus.guards.ready(status);
-  const available = UpdateStatus.guards.available(status);
+  const isReady = UpdateStatus.guards.ready(status);
+  const isAvailable = UpdateStatus.guards.available(status);
 
   return (
     <Section title="About">
@@ -643,9 +643,9 @@ function UpdatesSection() {
                 <p className="text-xs text-destructive">{status.message}</p>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  {ready
+                  {isReady
                     ? `Version ${status.version} is downloaded and installs when MassCode restarts.`
-                    : available
+                    : isAvailable
                       ? `Version ${status.version} is available.`
                       : "Current version of the application."}
                 </p>
@@ -655,13 +655,13 @@ function UpdatesSection() {
         >
           <Button
             size="sm"
-            variant={ready || available ? "primary" : "secondary"}
+            variant={isReady || isAvailable ? "primary" : "secondary"}
             disabled={UpdateStatus.isAnyOf(["checking", "downloading"])(status)}
             className="h-7 rounded-lg tabular-nums disabled:opacity-100"
             onClick={() =>
-              ready
+              isReady
                 ? window.desktop?.installUpdate()
-                : available
+                : isAvailable
                   ? window.desktop?.downloadUpdate()
                   : window.desktop?.checkForUpdates()
             }
@@ -742,15 +742,15 @@ interface WorktreeDraft {
 function ProjectThreadSettings({ host, path }: { host: string | null; path: string }) {
   const [draft, setDraft] = useState<WorktreeDraft | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Leaving the setup box unchanged shouldn't rewrite the file.
   const savedSetup = useRef("");
 
   useEffect(() => {
-    let cancelled = false;
+    let isCancelled = false;
     void readProjectConfig(host, path).then((frame) => {
-      if (cancelled) return;
+      if (isCancelled) return;
       if (!frame)
         return setError(
           "MassCode's daemon didn't answer, so the project's settings couldn't be read. Check it's running and open this page again.",
@@ -774,14 +774,14 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
     });
 
     return () => {
-      cancelled = true;
+      isCancelled = true;
     };
   }, [host, path]);
 
-  async function save(next: WorktreeDraft) {
+  async function saveWorktreeSettings(next: WorktreeDraft) {
     setDraft(next);
     savedSetup.current = next.setup;
-    setSaving(true);
+    setIsSaving(true);
     const setup = next.setup.trim() ? next.setup.trimEnd() : "";
     const worktree: NonNullable<ProjectConfig["worktree"]> = {
       ...(next.startIn !== "settings" && { default: next.startIn === "worktree" }),
@@ -794,7 +794,7 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
         Object.keys(worktree).length ? { ...rest, worktree } : rest,
       ),
     );
-    setSaving(false);
+    setIsSaving(false);
   }
 
   return (
@@ -821,7 +821,7 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
             <SettingsSelect
               value={draft.startIn}
               onChange={(value) =>
-                void save({
+                void saveWorktreeSettings({
                   ...draft,
                   startIn: value === "worktree" || value === "local" ? value : "settings",
                 })
@@ -844,7 +844,7 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
               spellCheck={false}
               value={draft.setup}
               onChange={(event) => setDraft({ ...draft, setup: event.target.value })}
-              onBlur={() => draft.setup !== savedSetup.current && void save(draft)}
+              onBlur={() => draft.setup !== savedSetup.current && void saveWorktreeSettings(draft)}
               className="min-h-16 rounded-lg bg-background font-mono text-xs leading-5 md:text-xs dark:bg-background"
             />
           </div>
@@ -860,7 +860,9 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
               size="sm"
               checked={draft.waitForSetup}
               disabled={!draft.setup.trim()}
-              onCheckedChange={(waitForSetup) => void save({ ...draft, waitForSetup })}
+              onCheckedChange={(waitForSetup) =>
+                void saveWorktreeSettings({ ...draft, waitForSetup })
+              }
               ariaLabel="Wait for setup"
             />
           </SettingsRow>
@@ -873,7 +875,7 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
         )}
       >
         {error ??
-          (saving
+          (isSaving
             ? "Saving…"
             : "Saved to masscode.toml in the project; commit it to share with your team.")}
       </p>
@@ -884,11 +886,11 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
 function GitPage() {
   const settings = useStore((state) => state.settings);
   const sourceControl = useStore((state) => state.sourceControl);
-  const [checking, setChecking] = useState(true);
+  const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => send(ClientCommand.cases["sourceControl.refresh"].make({})), []);
   useEffect(() => {
-    if (sourceControl) setChecking(false);
+    if (sourceControl) setIsChecking(false);
   }, [sourceControl]);
 
   return (
@@ -964,7 +966,7 @@ function GitPage() {
                           : "bg-muted text-muted-foreground",
                     )}
                   >
-                    {signInLabel(status)}
+                    {formatSignInLabel(status)}
                   </span>
                 ) : (
                   <Skeleton className="h-4 w-16" />
@@ -978,14 +980,14 @@ function GitPage() {
             size="sm"
             variant="ghost"
             className="h-7 gap-1.5 rounded-lg text-xs"
-            disabled={checking}
+            disabled={isChecking}
             onClick={() => {
-              setChecking(true);
+              setIsChecking(true);
               send(ClientCommand.cases["sourceControl.refresh"].make({}));
             }}
           >
-            <RefreshCw className={cn("size-3.5", checking && "animate-spin")} />
-            {checking ? "Checking…" : "Check again"}
+            <RefreshCw className={cn("size-3.5", isChecking && "animate-spin")} />
+            {isChecking ? "Checking…" : "Check again"}
           </Button>
         </div>
       </Section>
@@ -1022,7 +1024,7 @@ function GitPage() {
   );
 }
 
-function signInLabel(status: SourceControlStatus) {
+function formatSignInLabel(status: SourceControlStatus) {
   if (status.authenticated) return "Signed in";
   if (!status.installed) return "Not installed";
   return status.authenticated === null ? "Unknown" : "Not signed in";
@@ -1093,15 +1095,15 @@ function ConnectionsPage() {
 
   const typed = query.trim();
 
-  function matches(name: string) {
+  function isMatchingQuery(name: string) {
     return name.toLowerCase().includes(typed.toLowerCase());
   }
 
-  const added = Object.entries(hosts).filter(([name]) => matches(name));
+  const added = Object.entries(hosts).filter(([name]) => isMatchingQuery(name));
   // Configs can list dozens, so they show once there's a search, or while there's no host yet.
   const suggestions =
     typed || Object.keys(hosts).length === 0
-      ? aliases.filter((name) => !hosts[name] && matches(name))
+      ? aliases.filter((name) => !hosts[name] && isMatchingQuery(name))
       : [];
   // What's typed is a host of its own, like me@server, when it isn't the start of a listed one.
   const addable = [
@@ -1109,7 +1111,7 @@ function ConnectionsPage() {
     ...suggestions,
   ];
 
-  function add(alias: string) {
+  function addHost(alias: string) {
     void window.desktop?.addHost(alias);
     setQuery("");
   }
@@ -1125,7 +1127,7 @@ function ConnectionsPage() {
         autoComplete="off"
         leftIcon={<Search />}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && addable.length === 1) add(addable[0]);
+          if (event.key === "Enter" && addable.length === 1) addHost(addable[0]);
           if (event.key === "Escape" && query) {
             event.stopPropagation();
             setQuery("");
@@ -1170,7 +1172,7 @@ function ConnectionsPage() {
                   size="sm"
                   variant="secondary"
                   className="h-7 rounded-lg"
-                  onClick={() => add(alias)}
+                  onClick={() => addHost(alias)}
                 >
                   Add
                 </Button>
@@ -1184,9 +1186,9 @@ function ConnectionsPage() {
 }
 
 function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
-  const [confirm, setConfirm] = useState<"remove" | "restart" | null>(null);
+  const [confirmingAction, setConfirmingAction] = useState<"remove" | "restart" | null>(null);
   const settings = useStore((state) => state.settings);
-  const confirming = confirm !== null;
+  const isConfirming = confirmingAction !== null;
 
   return (
     <>
@@ -1223,13 +1225,13 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
           </div>
         }
       >
-        {confirming ? (
+        {isConfirming ? (
           <div className="flex items-center gap-1">
             <Button
               size="sm"
               variant="ghost"
               className="h-7 rounded-lg"
-              onClick={() => setConfirm(null)}
+              onClick={() => setConfirmingAction(null)}
             >
               Cancel
             </Button>
@@ -1238,14 +1240,14 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
               variant="ghost"
               className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
               onClick={() => {
-                setConfirm(null);
-                if (confirm === "remove") {
+                setConfirmingAction(null);
+                if (confirmingAction === "remove") {
                   forgetFullAccessAsRoot(alias);
                   void window.desktop?.removeHost(alias);
                 } else void window.desktop?.restartHost(alias);
               }}
             >
-              {confirm === "remove" ? "Remove" : "Restart now"}
+              {confirmingAction === "remove" ? "Remove" : "Restart now"}
             </Button>
           </div>
         ) : (
@@ -1265,7 +1267,7 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
                 size="sm"
                 variant="secondary"
                 className="h-7 rounded-lg"
-                onClick={() => setConfirm("restart")}
+                onClick={() => setConfirmingAction("restart")}
               >
                 Restart now
               </Button>
@@ -1274,16 +1276,16 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
               size="sm"
               variant="ghost"
               className="h-7 rounded-lg"
-              onClick={() => setConfirm("remove")}
+              onClick={() => setConfirmingAction("remove")}
             >
               Remove
             </Button>
           </div>
         )}
       </SettingsRow>
-      {confirming ? (
+      {isConfirming ? (
         <p className="px-3 py-2.5 text-xs text-muted-foreground">
-          {confirm === "remove"
+          {confirmingAction === "remove"
             ? `This stops MassCode on ${alias}, and any agents working there. Its threads stay on ${alias} for when you add it again.`
             : `This stops the turns running on ${alias} and restarts it on this version.`}
         </p>
@@ -1298,7 +1300,7 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
       >
         <SettingsTextField
           label={`Projects folder on ${alias}`}
-          mono
+          isMonospace
           value={settings.hostProjectFolders?.[alias] ?? ""}
           placeholder="~"
           onCommit={(folder) => {
@@ -1403,19 +1405,19 @@ function LocalHarnessSettings({
           <SettingsRow label="Color">
             <div role="radiogroup" aria-label="Color" className="flex gap-1">
               {HarnessColor.literals.map((color) => {
-                const selected = (harness.color ?? "brand") === color;
+                const isSelected = (harness.color ?? "brand") === color;
                 return (
                   <button
                     key={color}
                     type="button"
                     role="radio"
-                    aria-checked={selected}
+                    aria-checked={isSelected}
                     aria-label={color}
                     title={color}
                     onClick={() => updateHarness(kind, { color })}
                     className={cn(
                       "grid size-7 place-items-center rounded-full border-2 border-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      selected && "border-foreground/70",
+                      isSelected && "border-foreground/70",
                     )}
                   >
                     <span
@@ -1436,7 +1438,7 @@ function LocalHarnessSettings({
           <SettingsRow label="Binary">
             <SettingsTextField
               label="Binary path"
-              mono
+              isMonospace
               value={harness.binaryPath ?? ""}
               placeholder={`/usr/local/bin/${kind}`}
               onCommit={(binaryPath) => updateHarness(kind, { binaryPath })}
@@ -1445,7 +1447,7 @@ function LocalHarnessSettings({
           <SettingsRow label="Config folder">
             <SettingsTextField
               label={CONFIG_DIR[kind].env}
-              mono
+              isMonospace
               value={harness.configDir ?? ""}
               placeholder={CONFIG_DIR[kind].placeholder}
               onCommit={(configDir) => updateHarness(kind, { configDir })}
@@ -1454,7 +1456,7 @@ function LocalHarnessSettings({
           <SettingsRow label="Launch arguments">
             <SettingsTextField
               label="Launch arguments"
-              mono
+              isMonospace
               value={(harness.launchArgs ?? []).join(" ")}
               placeholder={kind === "codex" ? "-c key=value" : "--flag value"}
               onCommit={(args) =>
@@ -1475,7 +1477,7 @@ function SettingsTextField(props: {
   label: string;
   value: string;
   placeholder: string;
-  mono?: boolean;
+  isMonospace?: boolean;
   onCommit: (value: string) => void;
 }) {
   const [draft, setDraft] = useState(props.value);
@@ -1499,7 +1501,7 @@ function SettingsTextField(props: {
       className="w-64"
       classNames={{
         field: "h-8 rounded-lg bg-background",
-        input: cn("pl-2.5 text-[13px]", props.mono && "font-mono text-xs"),
+        input: cn("pl-2.5 text-[13px]", props.isMonospace && "font-mono text-xs"),
       }}
     />
   );
@@ -1567,7 +1569,7 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
   const favorites = harness.favoriteModels ?? [];
   const shown = models.filter((model) => !hidden.includes(model.id));
 
-  function move(index: number, offset: number) {
+  function moveModel(index: number, offset: number) {
     const target = index + offset;
     if (target < 0 || target >= models.length) return;
     const ids = models.map((model) => model.id);
@@ -1600,8 +1602,8 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
         </SettingsGroup>
         <SettingsGroup>
           {models.map((model, index) => {
-            const off = hidden.includes(model.id);
-            const favorite = favorites.includes(model.id);
+            const isHidden = hidden.includes(model.id);
+            const isFavorite = favorites.includes(model.id);
             return (
               <div
                 key={model.id}
@@ -1609,26 +1611,26 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
                   if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown"))
                     return;
                   event.preventDefault();
-                  move(index, event.key === "ArrowUp" ? -1 : 1);
+                  moveModel(index, event.key === "ArrowUp" ? -1 : 1);
                 }}
                 className="flex h-11 items-center gap-1 pr-3 pl-1.5"
               >
                 <IconButton
-                  label={favorite ? `Unfavorite ${model.label}` : `Favorite ${model.label}`}
+                  label={isFavorite ? `Unfavorite ${model.label}` : `Favorite ${model.label}`}
                   onClick={() =>
                     updateHarness(kind, {
-                      favoriteModels: favorite
+                      favoriteModels: isFavorite
                         ? favorites.filter((id) => id !== model.id)
                         : [...favorites, model.id],
                     })
                   }
                 >
-                  <Star className={cn("size-3.5", favorite && "fill-brand text-brand")} />
+                  <Star className={cn("size-3.5", isFavorite && "fill-brand text-brand")} />
                 </IconButton>
                 <div
                   className={cn(
                     "flex min-w-0 flex-1 items-baseline gap-2 pl-1",
-                    off && "opacity-50",
+                    isHidden && "opacity-50",
                   )}
                 >
                   <span className="shrink-0 text-sm">{model.label}</span>
@@ -1644,25 +1646,25 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
                 <IconButton
                   label={`Move ${model.label} up (⌥↑)`}
                   disabled={index === 0}
-                  onClick={() => move(index, -1)}
+                  onClick={() => moveModel(index, -1)}
                 >
                   <ArrowUp className="size-3.5" />
                 </IconButton>
                 <IconButton
                   label={`Move ${model.label} down (⌥↓)`}
                   disabled={index === models.length - 1}
-                  onClick={() => move(index, 1)}
+                  onClick={() => moveModel(index, 1)}
                 >
                   <ArrowDown className="size-3.5" />
                 </IconButton>
                 <Switch
-                  checked={!off}
+                  checked={!isHidden}
                   // The picker always keeps one model to pick.
-                  disabled={!off && shown.length === 1}
+                  disabled={!isHidden && shown.length === 1}
                   ariaLabel={`Show ${model.label} in the model picker`}
-                  onCheckedChange={(on) =>
+                  onCheckedChange={(isShown) =>
                     updateHarness(kind, {
-                      hiddenModels: on
+                      hiddenModels: isShown
                         ? hidden.filter((id) => id !== model.id)
                         : [...hidden, model.id],
                     })
@@ -1680,11 +1682,11 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
 }
 
 /** CLIs report versions as e.g. "2.1.281 (Claude Code)" or "codex-cli 0.154.0"; keep just the number. */
-function shortVersion(raw: string) {
+function formatShortVersion(raw: string) {
   return raw.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? raw;
 }
 
-function statusLine(status: ProviderStatus | undefined) {
+function formatStatusLine(status: ProviderStatus | undefined) {
   if (!status) return "Checking…";
   if (!status.installed) return status.error ?? "Not installed";
   return status.linked ? (status.account ?? "Signed in") : "Not signed in";
@@ -1704,20 +1706,20 @@ function ProviderCard({
   const flow = useStore((state) =>
     host === null ? state.authFlows[kind] : state.hosts[host]?.authFlows[kind],
   );
-  const [confirmUnlink, setConfirmUnlink] = useState(false);
+  const [isConfirmingUnlink, setIsConfirmingUnlink] = useState(false);
   const [code, setCode] = useState("");
 
-  const inFlow =
+  const isSigningIn =
     flow &&
     (flow.stage === "starting" || flow.stage === "browser" || flow.stage === "awaiting-code");
   const Logo = PROVIDER_LOGO[kind];
-  const checking = !status || status.checking === true;
+  const isChecking = !status || status.checking === true;
 
   function renderAction() {
-    if (checking) return <Skeleton className="h-7 w-16 rounded-lg" />;
+    if (isChecking) return <Skeleton className="h-7 w-16 rounded-lg" />;
     if (!status?.installed) return null;
 
-    if (inFlow)
+    if (isSigningIn)
       return (
         <Button
           size="sm"
@@ -1731,14 +1733,14 @@ function ProviderCard({
         </Button>
       );
 
-    if (status.linked && confirmUnlink)
+    if (status.linked && isConfirmingUnlink)
       return (
         <div className="flex items-center gap-1">
           <Button
             size="sm"
             variant="ghost"
             className="h-7 rounded-lg"
-            onClick={() => setConfirmUnlink(false)}
+            onClick={() => setIsConfirmingUnlink(false)}
           >
             Keep
           </Button>
@@ -1747,7 +1749,7 @@ function ProviderCard({
             variant="ghost"
             className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
             onClick={() => {
-              setConfirmUnlink(false);
+              setIsConfirmingUnlink(false);
               send(ClientCommand.cases["provider.unlink"].make({ provider: kind }), host);
             }}
           >
@@ -1762,7 +1764,7 @@ function ProviderCard({
           size="sm"
           variant="secondary"
           className="h-7 rounded-lg"
-          onClick={() => setConfirmUnlink(true)}
+          onClick={() => setIsConfirmingUnlink(true)}
         >
           Unlink
         </Button>
@@ -1799,7 +1801,7 @@ function ProviderCard({
                 <span className="font-medium">{formatHarnessLabel(settings, kind)}</span>
                 {status?.version ? (
                   <span className="text-xs text-muted-foreground tabular-nums">
-                    v{shortVersion(status.version)}
+                    v{formatShortVersion(status.version)}
                   </span>
                 ) : null}
                 {status?.linked && status.plan ? (
@@ -1808,7 +1810,7 @@ function ProviderCard({
                   </span>
                 ) : null}
               </div>
-              {checking ? (
+              {isChecking ? (
                 <Skeleton aria-label="Checking…" className="mt-1 h-3 w-36" />
               ) : (
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -1822,7 +1824,7 @@ function ProviderCard({
                           : "bg-muted-foreground/40",
                     )}
                   />
-                  <span className="truncate">{statusLine(status)}</span>
+                  <span className="truncate">{formatStatusLine(status)}</span>
                 </div>
               )}
             </div>
@@ -1832,14 +1834,14 @@ function ProviderCard({
         {renderAction()}
       </SettingsRow>
 
-      {confirmUnlink ? (
+      {isConfirmingUnlink ? (
         <p className="px-3 py-2.5 text-xs text-muted-foreground">
           This signs {formatHarnessLabel(settings, kind)} out on {host ?? "this Mac"}, including in
           your terminal.
         </p>
       ) : null}
 
-      {host !== null && kind === "codex" && status?.installed && !status.linked && !checking ? (
+      {host !== null && kind === "codex" && status?.installed && !status.linked && !isChecking ? (
         // Codex's sign-in page calls back to a server on the host, which this Mac's browser can't reach.
         <p className="px-3 py-2.5 text-xs text-muted-foreground">
           To link it, run <code className="selectable font-mono">codex login --device-auth</code> in
@@ -1847,7 +1849,7 @@ function ProviderCard({
         </p>
       ) : null}
 
-      {inFlow ? (
+      {isSigningIn ? (
         <div className="px-3 py-2.5 text-xs text-muted-foreground">
           {Match.value(flow.stage).pipe(
             Match.when("starting", () => "Starting sign-in…"),

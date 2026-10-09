@@ -130,12 +130,12 @@ function getRootConsentKey(host: string) {
 
 /** Whether Full access on `host` still waits for that OK. */
 export function useNeedsRootConsent(host: string | null) {
-  const root = useStore((state) => host !== null && state.hosts[host]?.root === true);
-  const allowed = useSyncExternalStore(
+  const isRoot = useStore((state) => host !== null && state.hosts[host]?.root === true);
+  const isAllowed = useSyncExternalStore(
     subscribeToPrefs,
     () => host !== null && localStorage.getItem(getRootConsentKey(host)) === "1",
   );
-  return root && !allowed;
+  return isRoot && !isAllowed;
 }
 
 export function allowFullAccessAsRoot(host: string) {

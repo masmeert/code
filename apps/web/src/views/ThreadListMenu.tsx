@@ -73,7 +73,7 @@ export function ThreadListMenu(props: {
   const settings = useStore((state) => state.settings);
   const projectHosts = useStore((state) => state.projectHosts);
 
-  const filtered =
+  const isFiltered =
     view.status !== "active" ||
     view.projects.length > 0 ||
     view.provider !== "all" ||
@@ -86,7 +86,7 @@ export function ThreadListMenu(props: {
           variant="ghost"
           size="icon"
           aria-label="View options"
-          className={cn("size-7", filtered && "bg-muted/60 text-foreground")}
+          className={cn("size-7", isFiltered && "bg-muted/60 text-foreground")}
         >
           <SlidersHorizontal className="size-4" />
         </Button>
@@ -167,7 +167,7 @@ export function ThreadListMenu(props: {
           labels={{ updated: "Last activity", created: "Created" }}
           onChange={(sortBy) => props.onChange({ sortBy })}
         />
-        {filtered ? (
+        {isFiltered ? (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem

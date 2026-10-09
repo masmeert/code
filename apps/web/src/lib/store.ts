@@ -321,7 +321,10 @@ function isOnHost(state: State, host: string | null, projectId: string) {
  * `thread.create` and `thread.fork` commands sent from this window, by request id. A fork has
  * no options of its own to start its composer from.
  */
-const ownRequests = new Map<string, { readonly open: boolean; readonly options?: TurnOptions }>();
+const ownRequests = new Map<
+  string,
+  { readonly shouldOpen: boolean; readonly options?: TurnOptions }
+>();
 /** What threads created here sent their first message with, so their composer starts from the draft's picks. */
 const firstOptions = new Map<string, TurnOptions>();
 
@@ -607,7 +610,7 @@ function reduceShell(state: State, event: RuntimeEvent): State {
       const next = {
         ...state,
         forking: request ? null : state.forking,
-        switchTo: request?.open ? { threadId: thread.id } : state.switchTo,
+        switchTo: request?.shouldOpen ? { threadId: thread.id } : state.switchTo,
         order: [thread.id, ...state.order.filter((id) => id !== thread.id)],
         threads: { ...state.threads, [thread.id]: thread },
       };
@@ -1762,7 +1765,7 @@ export function toggleFavoriteModel(choice: string) {
 }
 
 /**
- * Creates a thread from a draft by sending its first message. With `open`, this window
+ * Creates a thread from a draft by sending its first message. With `shouldOpen`, this window
  * switches to it once it exists.
  */
 export function createThread(input: {
@@ -1772,11 +1775,11 @@ export function createThread(input: {
   text: string;
   options: TurnOptions;
   workspace: "local" | "worktree";
-  open?: boolean;
+  shouldOpen?: boolean;
 }) {
-  const { open = true, ...command } = input;
+  const { shouldOpen = true, ...command } = input;
   const requestId = crypto.randomUUID();
-  ownRequests.set(requestId, { open, options: command.options });
+  ownRequests.set(requestId, { shouldOpen, options: command.options });
   send(ClientCommand.cases["thread.create"].make({ requestId, ...command }));
 }
 
@@ -1789,7 +1792,7 @@ export function forkThread(threadId: string, messageId: string) {
   if (state.forking?.error === null) return;
 
   const requestId = crypto.randomUUID();
-  ownRequests.set(requestId, { open: true });
+  ownRequests.set(requestId, { shouldOpen: true });
   setState({ ...state, forking: { threadId, messageId, error: null } });
   send(ClientCommand.cases["thread.fork"].make({ threadId, messageId, requestId }));
 }
