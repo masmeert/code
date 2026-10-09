@@ -12,6 +12,7 @@ import {
   type ProviderKind,
   type ProviderSettings,
   type ProviderStatus,
+  type PairedPhone,
   type RemoteHost,
   type SourceControlStatus,
   type Settings,
@@ -159,6 +160,8 @@ export interface State {
   readonly settings: Settings;
   readonly projects: ReadonlyArray<Project>;
   readonly providers: ReadonlyArray<ProviderStatus>;
+  /** Phones paired with this Mac's daemon. */
+  readonly phones: ReadonlyArray<PairedPhone>;
   /** GitHub and GitLab CLI status; null until Settings asks for it. */
   readonly sourceControl: ReadonlyArray<SourceControlStatus> | null;
   readonly authFlows: Partial<Record<ProviderKind, AuthFlow>>;
@@ -277,6 +280,7 @@ const initial: State = {
   settings: DEFAULT_SETTINGS,
   projects: [],
   providers: [],
+  phones: [],
   sourceControl: null,
   authFlows: {},
   limits: {},
@@ -585,6 +589,7 @@ function reduceShell(state: State, event: RuntimeEvent): State {
         };
       },
       "providers.updated": ({ providers }) => ({ ...state, providers }),
+      "phones.updated": ({ phones }) => ({ ...state, phones }),
       "sourceControl.updated": ({ statuses }) => ({ ...state, sourceControl: statuses }),
       "git.branches": ({ path, current, branches, error }) => ({
         ...state,
@@ -1100,6 +1105,7 @@ function onShell(connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
           dataId: frame.dataId,
           settings: frame.settings,
           providers: frame.providers,
+          phones: frame.phones,
         }
       : updateHost(merged, host, (current) => ({
           ...current,
@@ -1736,6 +1742,18 @@ export async function attachDevice(threadId: string, deviceId: string | null) {
   );
 
   return attached ? attached.error : "MassCode didn't answer in time. Try again.";
+}
+
+/** A one-time code for a phone to pair with this Mac, or why it can't pair. */
+export async function startPhonePairing() {
+  const started = await sendRequest(
+    null,
+    ClientCommand.cases["pairing.start"].make({ requestId: crypto.randomUUID() }),
+    "pairing.started",
+    10_000,
+  );
+
+  return started ?? { offer: null, error: "MassCode didn't answer in time. Try again." };
 }
 
 /** Signed URLs by thread and source, renewed before the daemon's hour runs out. */
