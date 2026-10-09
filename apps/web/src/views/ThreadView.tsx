@@ -853,7 +853,10 @@ function AttachmentThumbnail({
 
   useEffect(() => {
     let current = true;
-    void imageUrl(threadId, attachment.path).then((signed) => current && setUrl(signed));
+    void imageUrl(threadId, attachment.path).then(
+      (signed) => current && setUrl(signed),
+      () => current && setUrl(null),
+    );
     return () => {
       current = false;
     };
