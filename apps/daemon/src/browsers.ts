@@ -21,6 +21,7 @@ export function createBrowsers() {
   function take(requestId: string) {
     const request = pending.get(requestId);
     if (!request) return null;
+
     clearTimeout(request.timer);
     pending.delete(requestId);
     return request;
@@ -43,8 +44,10 @@ export function createBrowsers() {
       result: BrowserResult | null,
       error: string | null,
     ) {
-      if (pending.get(requestId)?.host !== host) return;
-      const request = take(requestId)!;
+      const request = pending.get(requestId);
+      if (request?.host !== host) return;
+
+      take(requestId);
       if (result) request.resolve(result);
       else request.reject(new Error(error ?? "The browser action failed"));
     },
@@ -54,6 +57,7 @@ export function createBrowsers() {
         candidates.findLast((candidate) => candidate.shows(threadId)) ?? candidates.at(-1);
       if (!host)
         return Promise.reject(new Error("The browser needs the MassCode desktop app to be open"));
+
       const requestId = crypto.randomUUID();
       return new Promise<BrowserResult>((resolve, reject) => {
         const timer = setTimeout(

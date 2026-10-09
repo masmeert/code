@@ -14,13 +14,15 @@ import { claudeExtraArgs, harnessLaunch } from "./providers/launch.ts";
 
 /** Enough of the patch to describe it; the model doesn't need every line of a big change. */
 const MAX_PROMPT_PATCH = 60_000;
+
 const TIMEOUT_MS = 120_000;
 
 /** The writing style's rules for commits and pull requests, from Settings (wording follows t3code). */
 function styleRules(settings: Settings, recent: ReadonlyArray<string>) {
   const history = recent.length
-    ? `Recent commit subjects from this repository:\n${recent.map((s) => `- ${s}`).join("\n")}`
+    ? `Recent commit subjects from this repository:\n${recent.map((subject) => `- ${subject}`).join("\n")}`
     : null;
+
   switch (settings.writingStyle ?? "repo_conventions") {
     case "conventional_commits":
       return {
@@ -51,18 +53,19 @@ const COMMIT_INSTRUCTIONS = `You write git commit messages. Reply with the commi
 Subject line: imperative mood, at most 72 characters, no trailing period. If the change needs explaining, add a blank line and a short body wrapped at 72 characters.`;
 
 /** Models like to wrap the answer anyway; keep just the message. */
-const clean = (text: string) =>
-  text
+function clean(text: string) {
+  return text
     .trim()
     .replace(/^```[a-z]*\n?|\n?```$/g, "")
     .trim();
+}
 
-const withClaude = async (
+async function withClaude(
   cwd: string,
   harness: ProviderSettings,
   model: string | undefined,
   prompt: string,
-) => {
+) {
   const launch = harnessLaunch("claude", harness);
   const options: Options = {
     cwd,
@@ -77,29 +80,34 @@ const withClaude = async (
     env: launch.env,
   };
   if (model) options.model = model;
-  const q = query({ prompt, options });
+
+  const conversation = query({ prompt, options });
   try {
-    for await (const msg of q) {
-      if (msg.type !== "result") continue;
-      if (msg.subtype !== "success") throw new Error(`Claude stopped: ${msg.subtype}`);
-      return msg.result;
+    for await (const message of conversation) {
+      if (message.type !== "result") continue;
+      if (message.subtype !== "success") throw new Error(`Claude stopped: ${message.subtype}`);
+      return message.result;
     }
     throw new Error("Claude returned nothing");
   } finally {
-    q.close();
+    conversation.close();
   }
-};
+}
 
-const withCodex = async (
+async function withCodex(
   cwd: string,
   harness: ProviderSettings,
   model: string | undefined,
   prompt: string,
-) => {
+) {
   let finish: (text: string) => void = () => {};
   let abort: (error: Error) => void = () => {};
-  const done = new Promise<string>((resolve, reject) => ((finish = resolve), (abort = reject)));
+  const done = new Promise<string>((resolve, reject) => {
+    finish = resolve;
+    abort = reject;
+  });
   let text = "";
+
   const launch = harnessLaunch("codex", harness);
   const rpc = await connectCodex(
     cwd,
@@ -126,6 +134,7 @@ const withCodex = async (
     },
     launch,
   );
+
   try {
     const started = await rpc.request(
       "thread/start",
@@ -150,15 +159,15 @@ const withCodex = async (
   } finally {
     rpc.close();
   }
-};
+}
 
 /** Cursor's print mode, read-only ("ask"); `--trust` skips the prompt for a folder it hasn't seen. */
-const withCursor = async (
+async function withCursor(
   cwd: string,
   harness: ProviderSettings,
   model: string | undefined,
   prompt: string,
-) => {
+) {
   const launch = harnessLaunch("cursor", harness);
   const { stdout } = await promisify(execFile)(
     launch.bin,
@@ -176,7 +185,7 @@ const withCursor = async (
     { cwd, env: launch.env, maxBuffer: 10 * 1024 * 1024 },
   );
   return stdout;
-};
+}
 
 const WRITE: Record<ProviderKind, typeof withCursor> = {
   claude: withClaude,
@@ -199,6 +208,7 @@ async function write(input: WriterInput, prompt: string) {
   const timeout = new Promise<never>(
     (_, reject) => (timer = setTimeout(() => reject(new Error("Timed out")), TIMEOUT_MS)),
   );
+
   try {
     return clean(await Promise.race([run(input.cwd, input.harness, input.model, prompt), timeout]));
   } finally {
@@ -207,27 +217,28 @@ async function write(input: WriterInput, prompt: string) {
 }
 
 /** Resolves to the message, or rejects with why it couldn't be written. */
-export const generateCommitMessage = async (input: WriterInput & { readonly patch: string }) => {
+export async function generateCommitMessage(input: WriterInput & { readonly patch: string }) {
   const style = styleRules(input.settings, input.recent);
-  const cut = input.patch.length > MAX_PROMPT_PATCH;
+  const truncated = input.patch.length > MAX_PROMPT_PATCH;
   const message = await write(
     input,
     [
       COMMIT_INSTRUCTIONS,
       style.commit ? `Additional instructions:\n${style.commit}` : null,
       style.history,
-      `Changes to commit${cut ? " (truncated)" : ""}:\n${cut ? input.patch.slice(0, MAX_PROMPT_PATCH) : input.patch}`,
+      `Changes to commit${truncated ? " (truncated)" : ""}:\n${truncated ? input.patch.slice(0, MAX_PROMPT_PATCH) : input.patch}`,
     ]
       .filter(Boolean)
       .join("\n\n"),
   );
   if (!message) throw new Error("The model returned an empty message");
+
   return message;
-};
+}
 
 /** Resolves to a short title summarizing a thread's first message, or rejects with why it couldn't be written. */
-export const generateThreadTitle = async (input: WriterInput & { readonly text: string }) =>
-  (
+export async function generateThreadTitle(input: WriterInput & { readonly text: string }) {
+  return (
     await write(
       input,
       `You name chat threads with a coding agent. Reply with a title of at most 6 words summarizing what the user asks for: no preamble, no quotes, no trailing period.\n\nThe user's first message:\n${input.text.slice(0, 4_000)}`,
@@ -236,11 +247,12 @@ export const generateThreadTitle = async (input: WriterInput & { readonly text: 
     .split("\n")[0]!
     .replace(/^["'`]+|["'`.]+$/g, "")
     .trim();
+}
 
 const PullRequestText = Schema.Struct({ title: Schema.String, body: Schema.String });
 
 /** Resolves to the pull request's title and body, or rejects with why they couldn't be written. */
-export const generatePullRequest = async (
+export async function generatePullRequest(
   input: WriterInput & {
     readonly base: string;
     readonly head: string;
@@ -249,9 +261,9 @@ export const generatePullRequest = async (
     readonly patch: string;
     readonly template: string | null;
   },
-) => {
+) {
   const style = styleRules(input.settings, input.recent);
-  const body = input.template
+  const bodyRules = input.template
     ? [
         "- body must be markdown and follow the repository pull request template structure",
         "- fill in the template sections appropriately for this change",
@@ -263,6 +275,7 @@ export const generatePullRequest = async (
         "- under Summary, provide short bullet points",
         "- under Testing, include bullet points with concrete checks or 'Not run' where appropriate",
       ];
+
   const text = await write(
     input,
     [
@@ -271,7 +284,7 @@ export const generatePullRequest = async (
         "Reply with only a JSON object with keys: title, body. No code fences.",
         "Rules:",
         "- title should be concise and specific",
-        ...body,
+        ...bodyRules,
       ].join("\n"),
       style.pullRequest ? `Additional instructions:\n${style.pullRequest}` : null,
       style.history,
@@ -288,8 +301,9 @@ export const generatePullRequest = async (
   const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
   const parsed = Schema.decodeUnknownOption(Schema.fromJsonString(PullRequestText))(json);
   if (Option.isNone(parsed)) throw new Error("The model didn't return a title and body");
+
   return {
     title: parsed.value.title.split("\n")[0]!.trim() || "Update project changes",
     body: parsed.value.body.trim(),
   };
-};
+}

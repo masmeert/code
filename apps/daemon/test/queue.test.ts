@@ -19,6 +19,7 @@ afterEach(async () => {
 });
 
 const codex = fixture("codex-two-turns").sessions[0]!;
+
 /** The first turn takes a moment, long enough to queue a message behind it. */
 const slowFirstTurn = [
   ...until(codex, replyTo("rpc-3")),
@@ -26,18 +27,21 @@ const slowFirstTurn = [
   ...codex.slice(until(codex, replyTo("rpc-3")).length),
 ];
 
-const userMessages = (daemon: Daemon, threadId: string) =>
-  daemon
+function userMessages(daemon: Daemon, threadId: string) {
+  return daemon
     .transcript(threadId)
     .filter((event): event is Extract<RuntimeEvent, { _tag: "user.message" }> =>
       RuntimeEvent.guards["user.message"](event),
     );
+}
 
-const queueOf = async (daemon: Daemon, threadId: string) =>
-  (await daemon.threads()).find((thread) => thread.id === threadId)?.queue ?? [];
+async function queueOf(daemon: Daemon, threadId: string) {
+  return (await daemon.threads()).find((thread) => thread.id === threadId)?.queue ?? [];
+}
 
-const turnStarts = (folder: string) =>
-  peerLog(folder, "codex").filter((entry) => entry.out?.method === "turn/start");
+function turnStarts(folder: string) {
+  return peerLog(folder, "codex").filter((entry) => entry.out?.method === "turn/start");
+}
 
 test("a message queued during a turn starts the next turn when it ends", async () => {
   daemon = await startDaemon();
@@ -52,7 +56,8 @@ test("a message queued during a turn starts the next turn when it ends", async (
   ]);
 
   await daemon.waitFor(
-    () => daemon!.events.filter((e) => RuntimeEvent.guards["turn.completed"](e)).length === 2,
+    () =>
+      daemon!.events.filter((event) => RuntimeEvent.guards["turn.completed"](event)).length === 2,
   );
   expect(userMessages(daemon, thread.id).map((message) => message.steer ?? false)).toEqual([
     false,
@@ -125,7 +130,8 @@ test("a message sent twice with the same id runs once", async () => {
   await daemon.send(thread.id, "Reply with exactly: pong again", { messageId });
   await daemon.send(thread.id, "Reply with exactly: pong again", { messageId });
   await daemon.waitFor(
-    () => daemon!.events.filter((e) => RuntimeEvent.guards["turn.completed"](e)).length === 2,
+    () =>
+      daemon!.events.filter((event) => RuntimeEvent.guards["turn.completed"](event)).length === 2,
   );
 
   expect(userMessages(daemon, thread.id).map((message) => message.messageId)).toEqual([

@@ -16,7 +16,7 @@ export async function listFolders(path: string) {
       folders: entries
         .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
         .map((entry) => entry.name)
-        .sort((a, b) => a.localeCompare(b)),
+        .sort((left, right) => left.localeCompare(right)),
       error: null,
     };
   } catch (error) {

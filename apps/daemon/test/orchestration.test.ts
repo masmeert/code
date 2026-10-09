@@ -14,8 +14,9 @@ import {
 } from "./replay/daemon.ts";
 
 /** Which thread a tool's answer is about. */
-const threadIdOf = (json: Schema.JsonObject) =>
-  Schema.decodeUnknownSync(Schema.Struct({ threadId: Schema.String }))(json).threadId;
+function threadIdOf(json: Schema.JsonObject) {
+  return Schema.decodeUnknownSync(Schema.Struct({ threadId: Schema.String }))(json).threadId;
+}
 
 let daemon: Daemon | null = null;
 afterEach(async () => {
@@ -25,6 +26,7 @@ afterEach(async () => {
 
 const codex = fixture("codex-two-turns").sessions[0]!;
 const claude = fixture("claude-two-turns").sessions[0]!;
+
 /** The orchestrating agent's turn stays open while it uses the tools. */
 const claudeWorking = until(claude, (step) => "reply" in step);
 
@@ -38,6 +40,7 @@ async function orchestrator(
   const thread = await daemon.create(folder, "Coordinate the work", { permission });
   await daemon.waitFor(statusIs(thread.id, "running"));
   await eventually(() => peerLog(folder, "claude").some((entry) => entry.mcpToken));
+
   const token = peerLog(folder, "claude").find((entry) => entry.mcpToken)!.mcpToken!;
   return { folder, thread, tools: await daemon.agentTools(token) };
 }
@@ -53,7 +56,9 @@ test("an agent starts a thread on the other harness and waits for its answer", a
   expect(result.isError).toBe(false);
   expect(result.json).toMatchObject({ status: "idle", answer: "pong" });
 
-  const child = (await daemon.threads()).find((t) => t.id === threadIdOf(result.json));
+  const child = (await daemon.threads()).find(
+    (candidate) => candidate.id === threadIdOf(result.json),
+  );
   expect(child).toMatchObject({
     provider: "codex",
     projectId: thread.projectId,
@@ -71,7 +76,9 @@ test("an agent can't start a thread with more access than its own", async () => 
   });
   expect(result.isError).toBe(true);
   expect(result.text).toContain("full-access");
-  expect((await daemon.threads()).filter((t) => t.startedBy === thread.id)).toHaveLength(0);
+  expect(
+    (await daemon.threads()).filter((candidate) => candidate.startedBy === thread.id),
+  ).toHaveLength(0);
 });
 
 test("retrying start_thread with the same requestId returns the same thread", async () => {
@@ -81,7 +88,9 @@ test("retrying start_thread with the same requestId returns the same thread", as
   const first = await tools.call("start_thread", args);
   const second = await tools.call("start_thread", args);
   expect(threadIdOf(second.json)).toBe(threadIdOf(first.json));
-  expect((await daemon.threads()).filter((t) => t.startedBy === thread.id)).toHaveLength(1);
+  expect(
+    (await daemon.threads()).filter((candidate) => candidate.startedBy === thread.id),
+  ).toHaveLength(1);
 });
 
 test("an agent follows up with a thread it started, then reads it", async () => {

@@ -58,7 +58,9 @@ function run(
   );
 }
 
-const firstLine = (text: string) => text.split("\n").find(Boolean) ?? "";
+function firstLine(text: string) {
+  return text.split("\n").find(Boolean) ?? "";
+}
 
 const GitHubAuth = Schema.Struct({
   hosts: Schema.Record(
@@ -77,7 +79,7 @@ const GitHubAuth = Schema.Struct({
 async function probeOne(kind: SourceControlKind): Promise<SourceControlStatus> {
   const { label, install, bin } = CLI[kind];
   const version = await run(kind, ["--version"], undefined, 5000);
-  if (!version.ok)
+  if (!version.ok) {
     return {
       kind,
       installed: false,
@@ -86,13 +88,15 @@ async function probeOne(kind: SourceControlKind): Promise<SourceControlStatus> {
       account: null,
       detail: `\`${bin}\` isn't on your PATH. ${install}.`,
     };
+  }
+
   const base = { kind, installed: true, version: firstLine(version.stdout || version.stderr) };
   const signIn = `Run \`${bin} auth login\` in a terminal to sign in.`;
 
   if (kind === "github") {
     const auth = await run(kind, ["auth", "status", "--json", "hosts"], undefined, 10_000);
     const parsed = Schema.decodeUnknownOption(Schema.fromJsonString(GitHubAuth))(auth.stdout);
-    if (Option.isNone(parsed))
+    if (Option.isNone(parsed)) {
       return {
         ...base,
         authenticated: auth.stderr.includes("unknown flag: --json") ? null : false,
@@ -101,10 +105,13 @@ async function probeOne(kind: SourceControlKind): Promise<SourceControlStatus> {
           ? "Your gh is too old to check sign-in. Update it to 2.81 or newer."
           : `${label} isn't signed in. ${signIn}`,
       };
+    }
+
     const accounts = Object.values(parsed.value.hosts).flat();
     const account =
       accounts.find((entry) => entry.state === "success" && entry.active) ??
       accounts.find((entry) => entry.state === "success");
+
     return account
       ? { ...base, authenticated: true, account: account.login ?? null, detail: null }
       : {
@@ -136,14 +143,18 @@ function gitLabAccounts(output: string) {
     const account = line.match(/Logged in to (\S+) as\s+([^\s(]+)/i);
     if (account) found.push({ host: account[1] ?? host, account: account[2]! });
   }
+
   return found;
 }
 
-export const probeSourceControl = () => Promise.all([probeOne("github"), probeOne("gitlab")]);
+export function probeSourceControl() {
+  return Promise.all([probeOne("github"), probeOne("gitlab")]);
+}
 
 function remoteHost(url: string) {
   const scp = url.match(/^[^@/]+@([^:]+):/);
   if (scp) return scp[1]!.toLowerCase();
+
   try {
     return new URL(url).hostname.toLowerCase();
   } catch {
@@ -155,9 +166,11 @@ function remoteHost(url: string) {
 export async function detectSourceControl(url: string | null): Promise<SourceControlKind | null> {
   const host = url ? remoteHost(url) : null;
   if (!host) return null;
+
   const labels = host.split(".");
   if (host === "github.com" || labels.includes("github")) return "github";
   if (host === "gitlab.com" || labels.includes("gitlab")) return "gitlab";
+
   const auth = await run("gitlab", ["auth", "status"], undefined, 5000);
   return gitLabAccounts(`${auth.stdout}\n${auth.stderr}`).some((entry) => entry.host === host)
     ? "gitlab"
@@ -186,6 +199,17 @@ const GitLabMergeRequests = Schema.Array(
   }),
 );
 
+/** Host states that map straight onto ours; any other state is open, or draft. */
+const GITHUB_STATE = new Map<string, PullRequest["state"]>([
+  ["MERGED", "merged"],
+  ["CLOSED", "closed"],
+]);
+
+const GITLAB_STATE = new Map<string, PullRequest["state"]>([
+  ["merged", "merged"],
+  ["closed", "closed"],
+]);
+
 /** The branch's open pull request, else its most recent one; null when it has none or the CLI can't tell. */
 export async function readPullRequest(
   cwd: string,
@@ -209,50 +233,45 @@ export async function readPullRequest(
       ],
       cwd,
     );
-    const prs = Schema.decodeUnknownOption(Schema.fromJsonString(GitHubPullRequests))(
+    const pullRequests = Schema.decodeUnknownOption(Schema.fromJsonString(GitHubPullRequests))(
       listed.stdout,
     );
-    if (Option.isNone(prs)) return null;
+    if (Option.isNone(pullRequests)) return null;
+
     // gh lists newest first.
-    const pr = prs.value.find((entry) => entry.state === "OPEN") ?? prs.value[0];
-    if (!pr) return null;
+    const pullRequest =
+      pullRequests.value.find((entry) => entry.state === "OPEN") ?? pullRequests.value[0];
+    if (!pullRequest) return null;
+
     return {
-      number: pr.number,
-      url: pr.url,
-      title: pr.title,
-      state:
-        pr.state === "MERGED"
-          ? "merged"
-          : pr.state === "CLOSED"
-            ? "closed"
-            : pr.isDraft
-              ? "draft"
-              : "open",
-      base: pr.baseRefName,
+      number: pullRequest.number,
+      url: pullRequest.url,
+      title: pullRequest.title,
+      state: GITHUB_STATE.get(pullRequest.state) ?? (pullRequest.isDraft ? "draft" : "open"),
+      base: pullRequest.baseRefName,
     };
   }
+
   const listed = await run(
     kind,
     ["mr", "list", "--source-branch", branch, "--all", "--per-page", "20", "--output", "json"],
     cwd,
   );
-  const mrs = Schema.decodeUnknownOption(Schema.fromJsonString(GitLabMergeRequests))(listed.stdout);
-  if (Option.isNone(mrs)) return null;
-  const mr = mrs.value.find((entry) => entry.state === "opened") ?? mrs.value[0];
-  if (!mr) return null;
+  const mergeRequests = Schema.decodeUnknownOption(Schema.fromJsonString(GitLabMergeRequests))(
+    listed.stdout,
+  );
+  if (Option.isNone(mergeRequests)) return null;
+
+  const mergeRequest =
+    mergeRequests.value.find((entry) => entry.state === "opened") ?? mergeRequests.value[0];
+  if (!mergeRequest) return null;
+
   return {
-    number: mr.iid,
-    url: mr.web_url,
-    title: mr.title,
-    state:
-      mr.state === "merged"
-        ? "merged"
-        : mr.state === "closed"
-          ? "closed"
-          : mr.draft
-            ? "draft"
-            : "open",
-    base: mr.target_branch,
+    number: mergeRequest.iid,
+    url: mergeRequest.web_url,
+    title: mergeRequest.title,
+    state: GITLAB_STATE.get(mergeRequest.state) ?? (mergeRequest.draft ? "draft" : "open"),
+    base: mergeRequest.target_branch,
   };
 }
 
@@ -299,6 +318,7 @@ export async function openPullRequest(
           cwd,
           60_000,
         );
+
   return result.ok
     ? null
     : firstLine(result.stderr || result.stdout) || "Couldn't open the pull request";
@@ -333,6 +353,7 @@ export async function mergePullRequest(
           cwd,
           60_000,
         );
+
   return result.ok
     ? null
     : firstLine(result.stderr || result.stdout) || "Couldn't merge the pull request";
@@ -346,6 +367,7 @@ const TEMPLATE_FILES = [
   "docs/pull_request_template.md",
   "docs/PULL_REQUEST_TEMPLATE.md",
 ];
+
 const TEMPLATE_DIRS = [
   ".github/PULL_REQUEST_TEMPLATE",
   "PULL_REQUEST_TEMPLATE",
@@ -358,11 +380,13 @@ export async function readPullRequestTemplate(root: string) {
     const text = await readFile(join(root, file), "utf8").catch(() => null);
     if (text !== null) return text.slice(0, 8000);
   }
-  for (const dir of TEMPLATE_DIRS) {
-    const entries = await readdir(join(root, dir)).catch(() => []);
+
+  for (const folder of TEMPLATE_DIRS) {
+    const entries = await readdir(join(root, folder)).catch(() => []);
     const templates = entries.filter((name) => name.endsWith(".md"));
     if (templates.length === 1)
-      return (await readFile(join(root, dir, templates[0]!), "utf8")).slice(0, 8000);
+      return (await readFile(join(root, folder, templates[0]!), "utf8")).slice(0, 8000);
   }
+
   return null;
 }

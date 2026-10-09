@@ -26,52 +26,59 @@ import { harnessLaunch, promptlessQuery, type HarnessLaunch } from "./launch.ts"
 
 const exec = promisify(execFile);
 
-const unknown = (kind: ProviderKind, error: string | null = null): ProviderStatus => ({
-  kind,
-  installed: false,
-  version: null,
-  linked: false,
-  account: null,
-  plan: null,
-  models: [],
-  error,
-});
+function unknownStatus(kind: ProviderKind, error: string | null = null): ProviderStatus {
+  return {
+    kind,
+    installed: false,
+    version: null,
+    linked: false,
+    account: null,
+    plan: null,
+    models: [],
+    error,
+  };
+}
 
-const firstLine = (text: string) => text.trim().split("\n")[0] ?? "";
+function firstLine(text: string) {
+  return text.trim().split("\n")[0] ?? "";
+}
+
 function message(cause: unknown) {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
 // --- probes ------------------------------------------------------------------
 
-const probeClaude = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
+async function probeClaude(launch: HarnessLaunch): Promise<ProviderStatus> {
   const version = firstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
   const status = JSON.parse(
     (
-      await exec(launch.bin, ["auth", "status"], { env: launch.env }).catch((e) => ({
-        stdout: e.stdout ?? "{}",
+      await exec(launch.bin, ["auth", "status"], { env: launch.env }).catch((error) => ({
+        stdout: error.stdout ?? "{}",
       }))
     ).stdout || "{}",
   );
   const linked = status.loggedIn === true;
+
   let models: Array<ModelOption> = [];
   if (linked) {
-    const q = promptlessQuery(launch);
+    const session = promptlessQuery(launch);
     try {
       // Drop the "Default (recommended)" alias row and star the concrete model it resolves to instead.
-      const all = await q.supportedModels();
-      const fallback = all.find((m) => m.value === "default")?.resolvedModel;
-      const rows = all.filter((m) => m.value !== "default");
-      const starred = rows.find((m) => fallback && m.resolvedModel === fallback);
+      const catalog = await session.supportedModels();
+      const fallback = catalog.find((model) => model.value === "default")?.resolvedModel;
+      const rows = catalog.filter((model) => model.value !== "default");
+      const starred = rows.find((model) => fallback && model.resolvedModel === fallback);
+
       // The catalog doesn't carry default efforts; the session reports the one it would apply after each model switch.
       // `getSettings` is untyped in the SDK, so its answer is decoded and failures just leave the default unknown.
-      for (const m of rows) {
-        const effort = await q
-          .setModel(m.value)
+      for (const model of rows) {
+        const effort = await session
+          .setModel(model.value)
           .then(() =>
-            "getSettings" in q && Predicate.isFunction(q.getSettings)
+            "getSettings" in session && Predicate.isFunction(session.getSettings)
               ? // Awaited before decoding: a request left pending rejects unhandled on close() and kills the daemon.
-                Promise.resolve(q.getSettings()).then(
+                Promise.resolve(session.getSettings()).then(
                   Schema.decodeUnknownPromise(
                     Schema.Struct({
                       applied: Schema.optional(Schema.Struct({ effort: Schema.optional(Effort) })),
@@ -82,25 +89,26 @@ const probeClaude = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
           )
           .then((settings) => settings?.applied?.effort)
           .catch(() => undefined);
-        const levels = m.supportedEffortLevels ?? [];
+        const levels = model.supportedEffortLevels ?? [];
         models.push({
-          id: m.value,
-          label: m.displayName,
-          recommended: m === starred || undefined,
+          id: model.value,
+          label: model.displayName,
+          recommended: model === starred || undefined,
           defaultEffort: effort,
           efforts: [
             ...levels,
             // Ultracode runs at xhigh, so only models with it can take it.
             ...(levels.includes("xhigh") ? (["ultracode"] as const) : []),
-            ...(m.supportsAdaptiveThinking ? (["ultrathink"] as const) : []),
+            ...(model.supportsAdaptiveThinking ? (["ultrathink"] as const) : []),
           ],
-          fast: m.supportsFastMode || undefined,
+          fast: model.supportsFastMode || undefined,
         });
       }
     } finally {
-      q.close();
+      session.close();
     }
   }
+
   return {
     kind: "claude",
     installed: true,
@@ -111,9 +119,9 @@ const probeClaude = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
     models,
     error: null,
   };
-};
+}
 
-const probeCodex = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
+async function probeCodex(launch: HarnessLaunch): Promise<ProviderStatus> {
   const version = firstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
   const rpc = await connectCodex(undefined, {}, launch);
   try {
@@ -153,20 +161,21 @@ const probeCodex = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
             }),
           )
         ).data
-          .filter((m) => !m.hidden)
-          .map((m) => ({
-            id: m.id,
-            label: m.displayName,
-            recommended: m.isDefault || undefined,
-            defaultEffort: Schema.is(Effort)(m.defaultReasoningEffort)
-              ? m.defaultReasoningEffort
+          .filter((model) => !model.hidden)
+          .map((model) => ({
+            id: model.id,
+            label: model.displayName,
+            recommended: model.isDefault || undefined,
+            defaultEffort: Schema.is(Effort)(model.defaultReasoningEffort)
+              ? model.defaultReasoningEffort
               : undefined,
-            efforts: m.supportedReasoningEfforts
+            efforts: model.supportedReasoningEfforts
               .map((level) => level.reasoningEffort)
               .filter(Schema.is(Effort)),
-            fast: m.serviceTiers.some((tier) => tier.id === CODEX_FAST_TIER) || undefined,
+            fast: model.serviceTiers.some((tier) => tier.id === CODEX_FAST_TIER) || undefined,
           }))
       : [];
+
     return {
       kind: "codex",
       installed: true,
@@ -180,14 +189,15 @@ const probeCodex = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
   } finally {
     rpc.close();
   }
-};
+}
 
-const probeCursor = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
+async function probeCursor(launch: HarnessLaunch): Promise<ProviderStatus> {
   const version = firstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
-  const { stdout } = await exec(launch.bin, ["status"], { env: launch.env }).catch((e) => ({
-    stdout: String(e.stdout ?? ""),
+  const { stdout } = await exec(launch.bin, ["status"], { env: launch.env }).catch((error) => ({
+    stdout: String(error.stdout ?? ""),
   }));
   const account = stdout.match(new RegExp(String.raw`Logged in as ([^\s\u001b]+)`))?.[1] ?? null;
+
   return {
     kind: "cursor",
     installed: true,
@@ -198,7 +208,7 @@ const probeCursor = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
     models: account === null ? [] : await readCursorModels(launch),
     error: null,
   };
-};
+}
 
 const PROBE: Record<ProviderKind, (launch: HarnessLaunch) => Promise<ProviderStatus>> = {
   claude: probeClaude,
@@ -212,6 +222,7 @@ const ClaudeWindow = Schema.Struct({
   utilization: Schema.NullOr(Schema.Number),
   resets_at: Schema.NullOr(Schema.String),
 });
+
 const ClaudeUsage = Schema.Struct({
   rate_limits: Schema.NullOr(
     Schema.Struct({
@@ -227,13 +238,14 @@ const ClaudeUsage = Schema.Struct({
 });
 
 /** The plan's windows as `/usage` shows them; none for API-key logins. Decoded, since the SDK marks this call experimental. */
-const readClaudeLimits = async (launch: HarnessLaunch): Promise<Array<UsageLimit>> => {
-  const q = promptlessQuery(launch);
+async function readClaudeLimits(launch: HarnessLaunch): Promise<Array<UsageLimit>> {
+  const session = promptlessQuery(launch);
   try {
-    const { rate_limits: limits } = await q
+    const { rate_limits: limits } = await session
       .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
       .then(Schema.decodeUnknownPromise(ClaudeUsage));
     if (!limits) return [];
+
     return (
       [
         ["5-hour limit", limits.five_hour],
@@ -256,9 +268,9 @@ const readClaudeLimits = async (launch: HarnessLaunch): Promise<Array<UsageLimit
         : [],
     );
   } finally {
-    q.close();
+    session.close();
   }
-};
+}
 
 const CodexWindow = Schema.NullOr(
   Schema.Struct({
@@ -275,7 +287,7 @@ function codexWindowLabel(minutes: number | null) {
   return `${Math.round(minutes / 60)}-hour limit`;
 }
 
-const readCodexLimits = async (launch: HarnessLaunch): Promise<Array<UsageLimit>> => {
+async function readCodexLimits(launch: HarnessLaunch): Promise<Array<UsageLimit>> {
   const rpc = await connectCodex(undefined, {}, launch);
   try {
     const { rateLimits } = await rpc.request(
@@ -285,6 +297,7 @@ const readCodexLimits = async (launch: HarnessLaunch): Promise<Array<UsageLimit>
         rateLimits: Schema.Struct({ primary: CodexWindow, secondary: CodexWindow }),
       }),
     );
+
     return [rateLimits.primary, rateLimits.secondary].flatMap((window) =>
       window
         ? [
@@ -299,7 +312,7 @@ const readCodexLimits = async (launch: HarnessLaunch): Promise<Array<UsageLimit>
   } finally {
     rpc.close();
   }
-};
+}
 
 // Cursor's CLI doesn't report its plan's limits.
 const READ_LIMITS: Record<ProviderKind, (launch: HarnessLaunch) => Promise<Array<UsageLimit>>> = {
@@ -341,61 +354,73 @@ export class ProviderRegistry extends Context.Service<
 
 const make = Effect.gen(function* () {
   const settingsStore = yield* SettingsStore;
+
   /** Throws when the CLI can't be found, like the spawns it feeds. */
-  const launchFor = async (kind: ProviderKind) =>
-    harnessLaunch(kind, (await Effect.runPromise(settingsStore.get)).providers[kind]);
-  const probe = (kind: ProviderKind) =>
-    launchFor(kind)
+  async function launchFor(kind: ProviderKind) {
+    return harnessLaunch(kind, (await Effect.runPromise(settingsStore.get)).providers[kind]);
+  }
+
+  function probe(kind: ProviderKind) {
+    return launchFor(kind)
       .then((launch) => PROBE[kind](launch))
-      .catch((e) => {
-        const text = message(e);
-        return unknown(kind, text.includes("Could not find") ? null : text);
+      .catch((error) => {
+        const text = message(error);
+        return unknownStatus(kind, text.includes("Could not find") ? null : text);
       });
+  }
+
   // Checking the CLIs takes seconds; until it's done, clients get what the last check found rather
   // than "not installed", which hid every model picker and disabled sending on each launch.
   const lastChecked = yield* openJsonFile("providers.json", Schema.Array(ProviderStatus), []);
   const checked = yield* lastChecked.get;
   let providers = ProviderKind.literals.map(
     (kind) =>
-      checked.find((provider) => provider.kind === kind) ?? { ...unknown(kind), checking: true },
+      checked.find((provider) => provider.kind === kind) ?? {
+        ...unknownStatus(kind),
+        checking: true,
+      },
   );
   let listener: ProviderListener = { providers: () => {}, flow: () => {} };
   /** In-flight sign-in per harness. */
   const flows = new Map<ProviderKind, { child?: ChildProcess; rpc?: CodexRpc; loginId?: string }>();
 
-  const flow = (
+  function flow(
     provider: ProviderKind,
     stage: AuthFlow["stage"],
     url: string | null = null,
     text: string | null = null,
-  ) => listener.flow({ provider, stage, url, message: text });
+  ) {
+    listener.flow({ provider, stage, url, message: text });
+  }
 
-  const refreshOne = async (kind: ProviderKind) => {
+  async function refreshOne(kind: ProviderKind) {
     const next = await probe(kind);
-    providers = providers.map((p) => (p.kind === kind ? next : p));
+    providers = providers.map((provider) => (provider.kind === kind ? next : provider));
     listener.providers(providers);
     await Effect.runPromise(lastChecked.set(providers));
-  };
+  }
+
   async function refreshAll() {
     await Promise.all(ProviderKind.literals.map(refreshOne));
   }
 
-  const finish = async (kind: ProviderKind, ok: boolean, text: string | null) => {
+  async function finish(kind: ProviderKind, ok: boolean, text: string | null) {
     flows.delete(kind);
     await refreshOne(kind);
     flow(kind, ok ? "done" : "failed", null, text);
-  };
+  }
 
-  const linkClaude = async () => {
+  async function linkClaude() {
     const launch = await launchFor("claude");
     const child = spawn(launch.bin, ["auth", "login", "--claudeai"], {
       env: launch.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
     flows.set("claude", { child });
+
     let output = "";
     let announced = false;
-    const onData = (chunk: Buffer) => {
+    function onData(chunk: Buffer) {
       output += chunk.toString();
       // The CLI opens the browser itself and prints the URL wrapped in an OSC-8 hyperlink.
       const url = output.match(new RegExp(String.raw`https://[^\s\u0007\u001b]+`))?.[0];
@@ -403,7 +428,8 @@ const make = Effect.gen(function* () {
         announced = true;
         flow("claude", "awaiting-code", url);
       }
-    };
+    }
+
     child.stdout.on("data", onData);
     child.stderr.on("data", onData);
     child.on("exit", (code) => {
@@ -414,9 +440,9 @@ const make = Effect.gen(function* () {
         code === 0 ? null : firstLine(output.slice(-500)) || `exited with ${code}`,
       );
     });
-  };
+  }
 
-  const linkCodex = async () => {
+  async function linkCodex() {
     const rpc = await connectCodex(
       undefined,
       {
@@ -430,37 +456,41 @@ const make = Effect.gen(function* () {
       await launchFor("codex"),
     );
     flows.set("codex", { rpc });
-    const res = await rpc.request(
+
+    const login = await rpc.request(
       "account/login/start",
       { type: "chatgpt" },
       Schema.Struct({ loginId: Schema.String, authUrl: Schema.String }),
     );
-    flows.set("codex", { rpc, loginId: res.loginId });
+    flows.set("codex", { rpc, loginId: login.loginId });
+
     // Codex listens on a local callback, so opening the page is all that's needed. Elsewhere (a
     // remote host) the app opens it, and the callback only lands when the browser runs there too.
     if (process.platform === "darwin")
-      spawn("open", [res.authUrl], { stdio: "ignore", detached: true }).unref();
-    flow("codex", "browser", res.authUrl);
-  };
+      spawn("open", [login.authUrl], { stdio: "ignore", detached: true }).unref();
+    flow("codex", "browser", login.authUrl);
+  }
 
   /** Cursor's login opens the browser itself and finishes when the page does. */
-  const linkCursor = async () => {
+  async function linkCursor() {
     const launch = await launchFor("cursor");
     const child = spawn(launch.bin, ["login"], {
       env: launch.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     flows.set("cursor", { child });
+
     let output = "";
     let announced = false;
-    const onData = (chunk: Buffer) => {
+    function onData(chunk: Buffer) {
       output += chunk.toString();
       const url = output.match(new RegExp(String.raw`https://[^\s\u0007\u001b]+`))?.[0];
       if (url && !announced) {
         announced = true;
         flow("cursor", "browser", url);
       }
-    };
+    }
+
     child.stdout.on("data", onData);
     child.stderr.on("data", onData);
     child.on("exit", (code) => {
@@ -471,7 +501,7 @@ const make = Effect.gen(function* () {
         code === 0 ? null : firstLine(output.slice(-500)) || `exited with ${code}`,
       );
     });
-  };
+  }
 
   const LINK: Record<ProviderKind, () => Promise<void>> = {
     claude: linkClaude,
@@ -479,23 +509,25 @@ const make = Effect.gen(function* () {
     cursor: linkCursor,
   };
 
-  const cancel = (kind: ProviderKind) => {
+  function cancel(kind: ProviderKind) {
     const active = flows.get(kind);
     flows.delete(kind);
     active?.child?.kill();
-    if (active?.rpc && active.loginId)
+    if (active?.rpc && active.loginId) {
       void active.rpc
         .request("account/login/cancel", { loginId: active.loginId }, Schema.Unknown)
         .catch(() => {});
+    }
     active?.rpc?.close();
-  };
+  }
 
-  const background = (run: () => Promise<void>) =>
-    Effect.sync(() => {
-      void run().catch((e) =>
-        Effect.runFork(Effect.logWarning("provider task failed", message(e))),
+  function background(run: () => Promise<void>) {
+    return Effect.sync(() => {
+      void run().catch((error) =>
+        Effect.runFork(Effect.logWarning("provider task failed", message(error))),
       );
     });
+  }
 
   // Initial status, without blocking startup.
   yield* background(refreshAll);
@@ -509,9 +541,9 @@ const make = Effect.gen(function* () {
         flow(kind, "starting");
         try {
           await LINK[kind]();
-        } catch (e) {
+        } catch (error) {
           cancel(kind);
-          flow(kind, "failed", null, message(e));
+          flow(kind, "failed", null, message(error));
         }
       }),
     submitCode: (kind, code) =>
@@ -533,7 +565,7 @@ const make = Effect.gen(function* () {
           .then((launch) => READ_LIMITS[kind](launch))
           .then(
             (limits) => ({ limits, error: null }),
-            (e) => ({ limits: [], error: `Couldn't read usage limits: ${message(e)}` }),
+            (error) => ({ limits: [], error: `Couldn't read usage limits: ${message(error)}` }),
           ),
       ),
     setListener: (next) => {

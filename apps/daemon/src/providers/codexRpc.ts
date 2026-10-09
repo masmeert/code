@@ -218,7 +218,7 @@ export const ThreadResponse = Schema.Struct({
 const decodeNotification = Schema.decodeUnknownOption(CodexNotification);
 const decodeServerRequest = Schema.decodeUnknownOption(CodexServerRequest);
 
-export interface CodexRpcHandlers {
+interface CodexRpcHandlers {
   readonly onNotification?: (notification: CodexNotification) => void;
   /** Requests the server makes of us (approvals etc.). Unhandled ones get a method-not-found error. */
   readonly onServerRequest?: (id: RpcId, request: CodexServerRequest) => boolean;
@@ -245,6 +245,7 @@ export async function connectCodex(
       }),
     onExit: handlers.onExit,
   });
+
   await rpc.request(
     "initialize",
     {
@@ -254,5 +255,6 @@ export async function connectCodex(
     Schema.Unknown,
   );
   rpc.notify("initialized");
+
   return rpc;
 }

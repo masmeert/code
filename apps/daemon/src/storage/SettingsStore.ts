@@ -22,7 +22,9 @@ const make = Effect.gen(function* () {
     if (text.includes('"autoSettle'))
       await writeFile(path, text.replace(/"autoSettle(Days)?"/g, '"autoShelve$1"'));
   }).pipe(Effect.ignore);
+
   const file = yield* openJsonFile("settings.json", Settings, DEFAULT_SETTINGS);
+
   return SettingsStore.of({
     get: file.get,
     update: (settings) => file.set(settings).pipe(Effect.as(settings)),

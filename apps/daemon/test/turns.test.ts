@@ -1,17 +1,12 @@
 import { ClientCommand, RuntimeEvent } from "@masscode/contracts";
 import { afterEach, expect, test } from "bun:test";
-import { fixture, peerLog, project, startDaemon, type Daemon } from "./replay/daemon.ts";
+import { fixture, peerLog, project, startDaemon, statusIs, type Daemon } from "./replay/daemon.ts";
 
 let daemon: Daemon | null = null;
 afterEach(async () => {
   await daemon?.stop();
   daemon = null;
 });
-
-const idle = (threadId: string) => (event: RuntimeEvent) =>
-  RuntimeEvent.guards["thread.status"](event) &&
-  event.threadId === threadId &&
-  event.status === "idle";
 
 function turnsCompleted(threadId: string) {
   return daemon!.events.filter(
@@ -24,7 +19,7 @@ for (const provider of ["claude", "codex"] as const) {
     daemon = await startDaemon();
     const folder = project({ [provider]: fixture(`${provider}-two-turns`) });
     const thread = await daemon.create(folder, "Reply with exactly: pong", { provider });
-    await daemon.waitFor(idle(thread.id));
+    await daemon.waitFor(statusIs(thread.id, "idle"));
     await daemon.dispatch(
       ClientCommand.cases["thread.send"].make({
         threadId: thread.id,

@@ -83,6 +83,7 @@ function scrub(value: Schema.Json): Schema.Json {
       .replaceAll(homedir(), "/home/user");
   if (Array.isArray(value)) return value.map(scrub);
   if (!isObject(value)) return value;
+
   // Your own hooks' output (SessionStart and the like).
   const hook = Predicate.isString(value.subtype) && value.subtype.startsWith("hook_");
   return Object.fromEntries(
@@ -100,16 +101,18 @@ function scrubbed(entry: Recorded): ReadonlyArray<Recorded> {
   if ("out" in entry)
     return [{ pid: entry.pid, out: Schema.decodeUnknownSync(Schema.JsonObject)(scrub(entry.out)) }];
   if (!("in" in entry)) return [entry];
+
   if (
     Predicate.isString(entry.in.method) &&
     /^(hook\/|mcpServer\/startupStatus)/.test(entry.in.method)
   )
     return [];
+
   return [{ pid: entry.pid, in: Schema.decodeUnknownSync(Schema.JsonObject)(scrub(entry.in)) }];
 }
 
 const only = process.argv[2];
-for (const scenario of SCENARIOS.filter((s) => !only || s.name === only)) {
+for (const scenario of SCENARIOS.filter((candidate) => !only || candidate.name === only)) {
   const folder = project({});
   const daemon = await startDaemon({
     [scenario.provider]: {
@@ -124,9 +127,11 @@ for (const scenario of SCENARIOS.filter((s) => !only || s.name === only)) {
       },
     },
   });
+
   const [first, ...rest] = scenario.messages;
   const effort = scenario.provider === "codex" ? "low" : null;
   const thread = await daemon.create(folder, first!, { provider: scenario.provider, effort });
+
   for (const text of [null, ...rest]) {
     if (text !== null)
       await daemon.dispatch(
@@ -136,13 +141,20 @@ for (const scenario of SCENARIOS.filter((s) => !only || s.name === only)) {
           options: { effort, permission: "ask", attachments: [] },
         }),
       );
-    const turns = daemon.events.filter((e) => RuntimeEvent.guards["turn.completed"](e)).length;
-    while (daemon.events.filter((e) => RuntimeEvent.guards["turn.completed"](e)).length === turns) {
+
+    const turns = daemon.events.filter((event) =>
+      RuntimeEvent.guards["turn.completed"](event),
+    ).length;
+    while (
+      daemon.events.filter((event) => RuntimeEvent.guards["turn.completed"](event)).length === turns
+    ) {
       const request = daemon.events.find(
-        (e): e is Extract<RuntimeEvent, { _tag: "approval.requested" }> =>
-          RuntimeEvent.guards["approval.requested"](e) &&
+        (event): event is Extract<RuntimeEvent, { _tag: "approval.requested" }> =>
+          RuntimeEvent.guards["approval.requested"](event) &&
           !daemon.events.some(
-            (r) => RuntimeEvent.guards["approval.resolved"](r) && r.requestId === e.requestId,
+            (resolution) =>
+              RuntimeEvent.guards["approval.resolved"](resolution) &&
+              resolution.requestId === event.requestId,
           ),
       );
       if (request && scenario.approve)
@@ -155,15 +167,18 @@ for (const scenario of SCENARIOS.filter((s) => !only || s.name === only)) {
         );
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
+
     await daemon.waitFor(
-      (e) => RuntimeEvent.guards["thread.status"](e) && e.status === "idle",
+      (event) => RuntimeEvent.guards["thread.status"](event) && event.status === "idle",
       60_000,
     );
   }
+
   await daemon.stop();
   const recorded = readRecording(join(folder, "recording.jsonl")).flatMap(scrubbed);
-  const out = join(import.meta.dir, "..", "fixtures", `${scenario.name}.json`);
-  writeFileSync(out, `${JSON.stringify(toFixture(recorded), null, 2)}\n`);
-  console.log(`wrote ${out}`);
+  const fixturePath = join(import.meta.dir, "..", "fixtures", `${scenario.name}.json`);
+  writeFileSync(fixturePath, `${JSON.stringify(toFixture(recorded), null, 2)}\n`);
+  console.log(`wrote ${fixturePath}`);
 }
+
 process.exit(0);

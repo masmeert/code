@@ -4,7 +4,9 @@ import { RuntimeEvent, type ProviderKind } from "@masscode/contracts";
 const MAX_CHARS = 40_000;
 const MAX_MESSAGE_CHARS = 6_000;
 
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
+function clip(text: string, maxChars: number) {
+  return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
+}
 
 /**
  * What a harness is told on taking a thread over: the messages it missed, oldest first,
@@ -26,6 +28,7 @@ export function handoffText({
   let messages = 0;
   // Switching harness tags every earlier message with where it went, so each one says.
   let answering: ProviderKind | undefined;
+
   for (const event of events) {
     if (RuntimeEvent.guards["user.message"](event)) {
       answering = event.provider ?? answering;
@@ -36,10 +39,13 @@ export function handoffText({
       lines.push(
         `${answering ? names(answering) : "Agent"}: ${clip(event.text, MAX_MESSAGE_CHARS)}`,
       );
-    } else if (RuntimeEvent.guards["tool.started"](event) && !event.parentToolId)
+    } else if (RuntimeEvent.guards["tool.started"](event) && !event.parentToolId) {
       lines.push(`  (${event.name}${event.summary ? `: ${clip(event.summary, 200)}` : ""})`);
-    else if (RuntimeEvent.guards.error(event)) lines.push(`  (Error: ${clip(event.message, 500)})`);
+    } else if (RuntimeEvent.guards.error(event)) {
+      lines.push(`  (Error: ${clip(event.message, 500)})`);
+    }
   }
+
   if (messages === 0 || answering === undefined) return null;
 
   const kept: Array<string> = [];
@@ -52,10 +58,12 @@ export function handoffText({
     kept.push(line);
     size += line.length + 1;
   }
+
   const from = names(answering);
   const intro = fresh
     ? `This conversation started with ${from} in MassCode, and you're taking it over. Here it is so far, oldest first.`
     : `While you were away, ${from} carried on this conversation in MassCode. Here's what was said since your last turn, oldest first.`;
+
   return {
     from: answering,
     messages,

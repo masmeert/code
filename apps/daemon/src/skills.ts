@@ -13,7 +13,7 @@ const FRESH_MS = 30_000;
 /** `$name` at the start or after whitespace. Only known names count, so `$HOME` or `$20` stay prose. */
 const MENTION = /(^|\s)\$([A-Za-z0-9][\w:-]*)(?![\w:-])/g;
 
-export interface SkillMention {
+interface SkillMention {
   readonly skill: ProviderSkill;
   /** Where the `$` is. */
   readonly start: number;
@@ -27,12 +27,13 @@ export function skillMentions(
   return [...text.matchAll(MENTION)].flatMap((match) => {
     const skill = skills.find((candidate) => candidate.name === match[2]);
     if (!skill) return [];
+
     const start = match.index + match[1]!.length;
     return [{ skill, start, end: match.index + match[0].length }];
   });
 }
 
-export interface SkillListing {
+interface SkillListing {
   readonly skills: ReadonlyArray<ProviderSkill>;
   readonly error: string | null;
   readonly listedAtMs: number;
@@ -53,6 +54,7 @@ export function createSkillCatalog(options: {
     const key = `${provider}:${cwd}`;
     const inFlight = reading.get(key);
     if (inFlight) return inFlight;
+
     const next = Effect.runPromise(
       options.read(provider, cwd).pipe(
         Effect.match({
@@ -65,6 +67,7 @@ export function createSkillCatalog(options: {
       ),
     ).then((result) => {
       reading.delete(key);
+
       const previous = listings.get(key);
       const listing = { ...result, listedAtMs: Date.now() };
       listings.set(key, listing);
@@ -74,8 +77,10 @@ export function createSkillCatalog(options: {
         JSON.stringify(previous.skills) !== JSON.stringify(listing.skills)
       )
         options.onListed(provider, cwd, listing);
+
       return listing;
     });
+
     reading.set(key, next);
     return next;
   }
@@ -95,6 +100,7 @@ export function createSkillCatalog(options: {
     /** The skills `text` mentions, from the listing the menu showed. */
     async mentionedIn(provider: ProviderKind, cwd: string, text: string) {
       if (!/\$[A-Za-z0-9]/.test(text)) return [];
+
       const { skills } = await latest(provider, cwd);
       return [...new Set(skillMentions(text, skills).map((mention) => mention.skill))];
     },

@@ -81,7 +81,7 @@ export const PromptResponse = Schema.Struct({ stopReason: Schema.String });
 
 const decodeUpdate = Schema.decodeUnknownOption(Schema.Struct({ update: SessionUpdate }));
 
-export interface AcpHandlers {
+interface AcpHandlers {
   readonly onUpdate?: (update: SessionUpdate) => void;
   /** Requests the agent makes of us, permission and extensions; unhandled ones get method-not-found. */
   readonly onRequest?: (id: RpcId, method: string, params: Schema.Json | undefined) => boolean;
@@ -107,6 +107,7 @@ export async function connectAcp(
     {
       onNotification: (method, params) => {
         if (method !== "session/update") return;
+
         const update = decodeUpdate(params);
         if (Option.isSome(update)) handlers.onUpdate?.(update.value.update);
       },
@@ -115,6 +116,7 @@ export async function connectAcp(
     },
     { versioned: true },
   );
+
   await rpc.request(
     "initialize",
     {
@@ -129,12 +131,13 @@ export async function connectAcp(
     },
     Schema.Unknown,
   );
+
   return rpc;
 }
 
 /** The text an update or tool result carries, for the transcript. */
-export const contentText = (content: ReadonlyArray<ToolContent> | null | undefined) =>
-  (content ?? [])
+export function contentText(content: ReadonlyArray<ToolContent> | null | undefined) {
+  return (content ?? [])
     .flatMap((part) => {
       switch (part.type) {
         case "content":
@@ -146,3 +149,4 @@ export const contentText = (content: ReadonlyArray<ToolContent> | null | undefin
       }
     })
     .join("\n");
+}

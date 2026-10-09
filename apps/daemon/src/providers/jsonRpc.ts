@@ -28,7 +28,7 @@ type RpcMessage = typeof RpcMessage.Type;
 
 const decodeRpcMessage = Schema.decodeUnknownOption(Schema.fromJsonString(RpcMessage));
 
-export interface JsonRpcHandlers {
+interface JsonRpcHandlers {
   readonly onNotification?: (method: string, params: Schema.Json | undefined) => void;
   /** Requests the child makes of us. Unhandled ones (false) get a method-not-found error. */
   readonly onRequest?:
@@ -68,6 +68,7 @@ export function connectJsonRpc(
     RpcId,
     { readonly resolve: (reply: RpcMessage) => void; readonly reject: (error: Error) => void }
   >();
+
   function write(message: Schema.JsonObject) {
     child.stdin.write(`${JSON.stringify(versioned ? { jsonrpc: "2.0", ...message } : message)}\n`);
   }
@@ -75,16 +76,19 @@ export function connectJsonRpc(
   createInterface({ input: child.stdout }).on("line", (line) => {
     const message = Option.getOrUndefined(decodeRpcMessage(line));
     if (message === undefined) return;
+
     const { id, method, params } = message;
     if (method !== undefined && id !== undefined && id !== null) {
       if (!(handlers.onRequest?.(id, method, params) ?? false))
         write({ id, error: { code: -32601, message: `MassCode does not handle ${method}` } });
       return;
     }
+
     if (method !== undefined) {
       handlers.onNotification?.(method, params);
       return;
     }
+
     if (id !== undefined && id !== null) {
       const waiter = inflight.get(id);
       inflight.delete(id);
@@ -97,6 +101,7 @@ export function connectJsonRpc(
     "data",
     (chunk: Buffer) => (stderrTail = (stderrTail + chunk.toString()).slice(-4000)),
   );
+
   let reportExit: (error: Error) => void = () => {};
   const exited = new Promise<never>((_, reject) => (reportExit = reject));
   // Settled with nothing awaiting it yet; requests race it.
@@ -104,6 +109,7 @@ export function connectJsonRpc(
   child.on("error", (error) => reportExit(error));
   // A write racing the exit fails with EPIPE; the exit itself is what's reported.
   child.stdin.on("error", () => {});
+
   child.on("exit", (code) => {
     const error = new Error(`${name} exited (code ${code}): ${stderrTail.trim() || "no output"}`);
     reportExit(error);

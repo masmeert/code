@@ -15,11 +15,13 @@ const program = Effect.gen(function* () {
   const manager = yield* SessionManager;
   yield* Effect.addFinalizer(() => manager.shutdown);
   yield* serve(PORT);
+
   // An update on a remote host waits for running turns: the app asks with SIGUSR2, and the
   // host's supervisor loop starts the new version once we're gone.
   let draining = false;
   process.on("SIGUSR2", () => {
     if (draining) return;
+
     draining = true;
     const drain = setInterval(() => {
       if (manager.busy()) return;
@@ -27,6 +29,7 @@ const program = Effect.gen(function* () {
       process.kill(process.pid, "SIGTERM");
     }, 2000);
   });
+
   return yield* Effect.never;
 });
 
@@ -47,6 +50,7 @@ if (!process.env.MASSCODE_DETACHED) {
     } catch (error) {
       // SAFETY: process.kill only throws system errors, which carry an errno code.
       if ((error as NodeJS.ErrnoException).code !== "ESRCH") return;
+
       clearInterval(parentWatch);
       process.kill(process.pid, "SIGTERM");
     }

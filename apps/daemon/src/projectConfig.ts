@@ -32,6 +32,7 @@ export async function writeProjectConfig(projectPath: string, config: ProjectCon
   // ponytail: hand-rolled for this schema (Bun parses TOML but can't write it); parsed back so a mistake never lands.
   const parsed = text ? parseProjectConfig(projectPath, text) : null;
   if (parsed instanceof Error) return parsed.message;
+
   try {
     await (text ? writeFile(path, text) : rm(path, { force: true }));
     return null;
@@ -46,6 +47,7 @@ function toToml({ worktree, scripts = [] }: ProjectConfig) {
     worktree?.setup === undefined ? [] : [`setup = ${tomlString(worktree.setup)}`],
     worktree?.wait_for_setup === undefined ? [] : [`wait_for_setup = ${worktree.wait_for_setup}`],
   ].flat();
+
   const tables = [
     ...(worktreeLines.length ? [["[worktree]", ...worktreeLines]] : []),
     ...scripts.map((script) => [
@@ -57,6 +59,7 @@ function toToml({ worktree, scripts = [] }: ProjectConfig) {
         : [`preview_url = ${tomlString(script.preview_url)}`]),
     ]),
   ];
+
   return tables.length ? `${tables.map((lines) => lines.join("\n")).join("\n\n")}\n` : "";
 }
 

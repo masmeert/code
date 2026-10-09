@@ -33,20 +33,25 @@ const ALLOWED_ORIGINS = new Set(["app://masscode", "http://localhost:1420"]);
  */
 const TOKEN = process.env.MASSCODE_TOKEN || null;
 delete process.env.MASSCODE_TOKEN;
+
 /** Browsers can't set headers on a WebSocket, so the token rides in as a subprotocol. */
 const TOKEN_PROTOCOL_PREFIX = "masscode.";
 
 /** The subprotocol carrying the right token, if the request offers one. */
-const tokenProtocol = (req: Request) => {
+function tokenProtocol(request: Request) {
   if (!TOKEN) return null;
+
   const expected = Buffer.from(TOKEN_PROTOCOL_PREFIX + TOKEN);
-  const offered = (req.headers.get("sec-websocket-protocol") ?? "").split(",").map((p) => p.trim());
+  const offered = (request.headers.get("sec-websocket-protocol") ?? "")
+    .split(",")
+    .map((protocol) => protocol.trim());
   return (
     offered.find(
-      (p) => p.length === expected.length && timingSafeEqual(Buffer.from(p), expected),
+      (protocol) =>
+        protocol.length === expected.length && timingSafeEqual(Buffer.from(protocol), expected),
     ) ?? null
   );
-};
+}
 
 /**
  * A client this far behind (bytes queued in the socket) is dropped rather than buffered
@@ -72,24 +77,25 @@ interface ConnectionData {
   browserHost?: BrowserHost;
 }
 
-export const serve = (port: number) =>
-  Effect.gen(function* () {
+export function serve(port: number) {
+  return Effect.gen(function* () {
     const manager = yield* SessionManager;
 
-    const send = (ws: ServerWebSocket<ConnectionData>, frame: ServerFrame) => {
-      if (ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify(frame));
-      if (ws.getBufferedAmount() > MAX_BUFFERED_BYTES)
-        ws.close(4000, "Too far behind; resume from your cursor");
-    };
+    function send(socket: ServerWebSocket<ConnectionData>, frame: ServerFrame) {
+      if (socket.readyState !== WebSocket.OPEN) return;
 
-    const connection = (ws: ServerWebSocket<ConnectionData>) =>
-      Effect.scoped(
+      socket.send(JSON.stringify(frame));
+      if (socket.getBufferedAmount() > MAX_BUFFERED_BYTES)
+        socket.close(4000, "Too far behind; resume from your cursor");
+    }
+
+    function connection(socket: ServerWebSocket<ConnectionData>) {
+      return Effect.scoped(
         Effect.gen(function* () {
           const { dataId, settings, projects, providers, threads, terminals, live } =
             yield* manager.subscribe;
           send(
-            ws,
+            socket,
             ServerFrame.cases.shell.make({
               dataId,
               settings,
@@ -104,31 +110,33 @@ export const serve = (port: number) =>
           yield* Stream.runForEach(live, ({ seq, id, event }) =>
             Effect.sync(() => {
               if (isTranscriptEvent(event)) {
-                const since = ws.data.threads.get(event.threadId);
+                const since = socket.data.threads.get(event.threadId);
                 if (since === undefined || seq <= since) return;
               }
-              send(ws, ServerFrame.cases.event.make({ id, event }));
+              send(socket, ServerFrame.cases.event.make({ id, event }));
             }),
           );
         }),
       );
+    }
 
     /** Transcript subscriptions are per connection, so they're handled here rather than by the manager. */
-    const handle = (ws: ServerWebSocket<ConnectionData>, command: ClientCommand) =>
-      Effect.suspend(() =>
+    function handle(socket: ServerWebSocket<ConnectionData>, command: ClientCommand) {
+      return Effect.suspend(() =>
         ClientCommand.matchOrElse(
           command,
           {
             "thread.subscribe": (command) => {
               const read = manager.readThread(command.threadId, command.after, command.turnLimit);
               if (!read) return Effect.void;
-              ws.data.threads.set(command.threadId, read.seq);
-              send(ws, read.frame);
+
+              socket.data.threads.set(command.threadId, read.seq);
+              send(socket, read.frame);
               return Effect.void;
             },
             search: (command) => {
               send(
-                ws,
+                socket,
                 ServerFrame.cases["search.results"].make({
                   requestId: command.requestId,
                   hits: manager.search(command.query),
@@ -139,7 +147,7 @@ export const serve = (port: number) =>
             "folder.list": ({ path, requestId }) =>
               Effect.promise(async () =>
                 send(
-                  ws,
+                  socket,
                   ServerFrame.cases["folder.entries"].make({
                     requestId,
                     ...(await listFolders(path)),
@@ -151,7 +159,7 @@ export const serve = (port: number) =>
                 const text = await readProjectConfigText(path);
                 const config = text === null ? {} : parseProjectConfig(path, text);
                 send(
-                  ws,
+                  socket,
                   ServerFrame.cases["project.config"].make({
                     requestId,
                     config: config instanceof Error ? {} : config,
@@ -163,7 +171,7 @@ export const serve = (port: number) =>
             "project.saveConfig": ({ path, config, requestId }) =>
               Effect.promise(async () =>
                 send(
-                  ws,
+                  socket,
                   ServerFrame.cases["project.configSaved"].make({
                     requestId,
                     error: await writeProjectConfig(path, config),
@@ -173,7 +181,7 @@ export const serve = (port: number) =>
             "image.sign": ({ path, cwd, requestId }) =>
               Effect.promise(async () =>
                 send(
-                  ws,
+                  socket,
                   ServerFrame.cases["image.signed"].make({
                     requestId,
                     url: await signImage(path, cwd),
@@ -188,7 +196,7 @@ export const serve = (port: number) =>
                 if (path)
                   yield* manager.dispatch(ClientCommand.cases["project.add"].make({ path }));
                 send(
-                  ws,
+                  socket,
                   ServerFrame.cases["project.cloned"].make({
                     requestId,
                     path,
@@ -197,62 +205,62 @@ export const serve = (port: number) =>
                 );
               }),
             "sideChat.ask": (command) => {
-              ws.data.sideChats.set(command.sideChatId, command.threadId);
-              ws.data.threads.set(command.sideChatId, 0);
+              socket.data.sideChats.set(command.sideChatId, command.threadId);
+              socket.data.threads.set(command.sideChatId, 0);
               return manager.dispatch(command);
             },
             "sideChat.close": (command) => {
-              ws.data.sideChats.delete(command.sideChatId);
-              ws.data.threads.delete(command.sideChatId);
+              socket.data.sideChats.delete(command.sideChatId);
+              socket.data.threads.delete(command.sideChatId);
               return manager.dispatch(command);
             },
             "thread.unsubscribe": (command) => {
-              ws.data.threads.delete(command.threadId);
+              socket.data.threads.delete(command.threadId);
               return Effect.void;
             },
             "thread.loadOlder": (command) => {
               const older = manager.readOlder(command.threadId, command.before, command.turnLimit);
               if (older)
                 send(
-                  ws,
+                  socket,
                   ServerFrame.cases["thread.page"].make({ threadId: command.threadId, ...older }),
                 );
               return Effect.void;
             },
             "terminal.open": (command) => {
-              if (ws.data.viewer)
+              if (socket.data.viewer)
                 manager.terminals.attach(
                   command.threadId,
                   command.terminalId,
                   command.columns,
                   command.rows,
-                  ws.data.viewer,
+                  socket.data.viewer,
                   command.input,
                 );
               return Effect.void;
             },
             "terminal.detach": (command) => {
-              if (ws.data.viewer)
-                manager.terminals.detach(command.threadId, command.terminalId, ws.data.viewer);
+              if (socket.data.viewer)
+                manager.terminals.detach(command.threadId, command.terminalId, socket.data.viewer);
               return Effect.void;
             },
             "terminal.acknowledge": (command) => {
-              if (ws.data.viewer)
+              if (socket.data.viewer)
                 manager.terminals.acknowledge(
                   command.threadId,
                   command.terminalId,
-                  ws.data.viewer,
+                  socket.data.viewer,
                   command.characters,
                 );
               return Effect.void;
             },
             "browser.host": () => {
-              if (!ws.data.browserHost) {
-                ws.data.browserHost = {
-                  send: (frame) => send(ws, frame),
-                  shows: (threadId) => ws.data.threads.has(threadId),
+              if (!socket.data.browserHost) {
+                socket.data.browserHost = {
+                  send: (frame) => send(socket, frame),
+                  shows: (threadId) => socket.data.threads.has(threadId),
                 };
-                manager.browsers.attach(ws.data.browserHost);
+                manager.browsers.attach(socket.data.browserHost);
               }
               return Effect.void;
             },
@@ -267,7 +275,7 @@ export const serve = (port: number) =>
                     error: error.message,
                   }),
                 );
-                send(ws, ServerFrame.cases["device.listed"].make({ requestId, ...listed }));
+                send(socket, ServerFrame.cases["device.listed"].make({ requestId, ...listed }));
               }),
             "device.attach": ({ requestId, threadId, deviceId }) =>
               Effect.promise(async () => {
@@ -275,12 +283,12 @@ export const serve = (port: number) =>
                   () => null,
                   (error: Error) => error.message,
                 );
-                send(ws, ServerFrame.cases["device.attached"].make({ requestId, error }));
+                send(socket, ServerFrame.cases["device.attached"].make({ requestId, error }));
               }),
             "browser.respond": (command) => {
-              if (ws.data.browserHost)
+              if (socket.data.browserHost)
                 manager.browsers.respond(
-                  ws.data.browserHost,
+                  socket.data.browserHost,
                   command.requestId,
                   command.result,
                   command.error,
@@ -291,59 +299,66 @@ export const serve = (port: number) =>
           (command) => manager.dispatch(command),
         ),
       );
+    }
 
     const server = yield* Effect.acquireRelease(
       Effect.sync(() =>
         Bun.serve<ConnectionData>({
           hostname: "127.0.0.1",
           port,
-          fetch(req, server) {
-            const { pathname, searchParams } = new URL(req.url);
-            if (pathname === "/mcp" || pathname.startsWith("/mcp/")) return manager.mcp.handle(req);
+          fetch(request, server) {
+            const { pathname, searchParams } = new URL(request.url);
+            if (pathname === "/mcp" || pathname.startsWith("/mcp/"))
+              return manager.mcp.handle(request);
             if (pathname.startsWith(ASSET_ROUTE_PREFIX))
               return serveAsset(pathname.slice(ASSET_ROUTE_PREFIX.length));
-            const origin = req.headers.get("origin");
+
+            const origin = request.headers.get("origin");
             if (!origin || !ALLOWED_ORIGINS.has(origin))
               return new Response("Forbidden origin", { status: 403 });
-            const protocol = tokenProtocol(req);
+
+            const protocol = tokenProtocol(request);
             if (TOKEN && !protocol) return new Response("Unauthorized", { status: 401 });
-            // The accepted subprotocol must be echoed back, or the browser drops the connection.
+
             const data: ConnectionData = {
               protocol: searchParams.get("protocol"),
               threads: new Map(),
               sideChats: new Map(),
             };
+            // The accepted subprotocol must be echoed back, or the browser drops the connection.
             const upgraded = protocol
-              ? server.upgrade(req, { data, headers: { "Sec-WebSocket-Protocol": protocol } })
-              : server.upgrade(req, { data });
+              ? server.upgrade(request, { data, headers: { "Sec-WebSocket-Protocol": protocol } })
+              : server.upgrade(request, { data });
             if (upgraded) return undefined;
             return new Response("MassCode daemon", { status: 426 });
           },
           websocket: {
-            open(ws) {
+            open(socket) {
               // Upgraded before closing: a refused upgrade reaches a browser with no reason attached.
-              if (ws.data.protocol !== String(PROTOCOL_VERSION))
-                return ws.close(
+              if (socket.data.protocol !== String(PROTOCOL_VERSION))
+                return socket.close(
                   PROTOCOL_MISMATCH,
                   "This app and MassCode on this machine are different versions. Update the older one.",
                 );
-              ws.data.viewer = { send: (frame) => send(ws, frame) };
-              ws.data.fiber = Effect.runFork(connection(ws));
+
+              socket.data.viewer = { send: (frame) => send(socket, frame) };
+              socket.data.fiber = Effect.runFork(connection(socket));
             },
-            message(ws, raw) {
-              if (ws.data.protocol !== String(PROTOCOL_VERSION)) return;
+            message(socket, raw) {
+              if (socket.data.protocol !== String(PROTOCOL_VERSION)) return;
+
               Effect.runFork(
                 decodeCommand(raw.toString()).pipe(
-                  Effect.flatMap((command) => handle(ws, command)),
+                  Effect.flatMap((command) => handle(socket, command)),
                   Effect.catch((error) => Effect.logWarning("command failed", error)),
                 ),
               );
             },
-            close(ws) {
-              if (ws.data.viewer) manager.terminals.detachViewer(ws.data.viewer);
-              if (ws.data.browserHost) manager.browsers.detach(ws.data.browserHost);
-              if (ws.data.fiber) Effect.runFork(Fiber.interrupt(ws.data.fiber));
-              for (const [sideChatId, threadId] of ws.data.sideChats)
+            close(socket) {
+              if (socket.data.viewer) manager.terminals.detachViewer(socket.data.viewer);
+              if (socket.data.browserHost) manager.browsers.detach(socket.data.browserHost);
+              if (socket.data.fiber) Effect.runFork(Fiber.interrupt(socket.data.fiber));
+              for (const [sideChatId, threadId] of socket.data.sideChats)
                 Effect.runFork(
                   manager.dispatch(
                     ClientCommand.cases["sideChat.close"].make({ threadId, sideChatId }),
@@ -359,7 +374,10 @@ export const serve = (port: number) =>
     // Port 0 lets the OS pick, for remote hosts where another user's daemon may hold ours.
     // SAFETY: a server bound to a TCP hostname always has a port.
     setPort(server.port!);
+
     const portFile = process.env.MASSCODE_PORT_FILE;
     if (portFile) yield* Effect.promise(() => writeFile(portFile, String(server.port)));
+
     yield* Effect.logInfo(`MassCode daemon listening on ws://127.0.0.1:${server.port}`);
   });
+}

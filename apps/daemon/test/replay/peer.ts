@@ -23,6 +23,7 @@ export const Frame = Schema.JsonObject;
 export type Frame = typeof Frame.Type;
 
 const RpcId = Schema.Union([Schema.Number, Schema.String]);
+
 /** From the Claude SDK; the CLI answers with a `control_response` carrying its `request_id`. */
 const ControlRequest = Schema.Struct({
   type: Schema.Literal("control_request"),
@@ -84,8 +85,9 @@ export function matches(pattern: Schema.Json, value: Schema.Json | undefined): b
   return Object.entries(pattern).every(([key, expected]) => matches(expected, value[key]));
 }
 
-const isRequest = (frame: Frame) =>
-  Schema.is(ControlRequest)(frame) || Schema.is(RpcRequest)(frame);
+function isRequest(frame: Frame) {
+  return Schema.is(ControlRequest)(frame) || Schema.is(RpcRequest)(frame);
+}
 
 /** The response to `request` in its own protocol. */
 function answer(request: Frame, outcome: { result: Schema.Json } | { error: string }): Frame {
@@ -97,6 +99,7 @@ function answer(request: Frame, outcome: { result: Schema.Json } | { error: stri
           ? { subtype: "error", request_id: request.request_id, error: outcome.error }
           : { subtype: "success", request_id: request.request_id, response: outcome.result },
     };
+
   const id = Schema.is(RpcRequest)(request) ? request.id : null;
   return "error" in outcome
     ? { id, error: { message: outcome.error } }
@@ -104,9 +107,9 @@ function answer(request: Frame, outcome: { result: Schema.Json } | { error: stri
 }
 
 function replay(fixturePath: string) {
-  const log = `${fixturePath}.log.jsonl`;
-  const spawnIndex = existsSync(log)
-    ? readFileSync(log, "utf8")
+  const logPath = `${fixturePath}.log.jsonl`;
+  const spawnIndex = existsSync(logPath)
+    ? readFileSync(logPath, "utf8")
         .split("\n")
         .filter((line) => line.startsWith('{"spawn"')).length
     : 0;
@@ -115,10 +118,12 @@ function replay(fixturePath: string) {
     process.stderr.write("replay peer: one-shot calls aren't replayed\n");
     process.exit(1);
   }
+
   appendFileSync(
-    log,
+    logPath,
     `${JSON.stringify({ spawn: spawnIndex, pid: process.pid, args, mcpToken: process.env.MASSCODE_MCP_TOKEN ?? null })}\n`,
   );
+
   const steps = decodeFixture(readFileSync(fixturePath, "utf8")).sessions[spawnIndex];
   if (!steps) {
     process.stderr.write(`replay peer: the fixture has no session ${spawnIndex}\n`);
@@ -128,11 +133,13 @@ function replay(fixturePath: string) {
   const inbox: Array<Frame> = [];
   let wake: (() => void) | null = null;
   let stdinClosed = false;
+
   const lines = createInterface({ input: process.stdin });
   lines.on("line", (line) => {
     if (!line.trim()) return;
+
     const frame = decodeFrame(line);
-    appendFileSync(log, `${JSON.stringify({ session: spawnIndex, out: frame })}\n`);
+    appendFileSync(logPath, `${JSON.stringify({ session: spawnIndex, out: frame })}\n`);
     inbox.push(frame);
     wake?.();
   });
@@ -157,11 +164,13 @@ function replay(fixturePath: string) {
   void (async () => {
     const awaited = new Map<string, Frame>();
     let last: Frame | null = null;
+
     for (const step of steps) {
       if ("await" in step) {
         while (true) {
           const frame = await next();
           if (frame === null) process.exit(0);
+
           if (matches(step.await, frame)) {
             last = frame;
             if (step.as) awaited.set(step.as, frame);
@@ -172,17 +181,21 @@ function replay(fixturePath: string) {
       } else if ("reply" in step || "replyError" in step) {
         const request = step.to ? awaited.get(step.to) : last;
         if (!request) throw new Error(`replay peer: nothing awaited to answer (${step.to})`);
+
         write(
           answer(request, "reply" in step ? { result: step.reply } : { error: step.replyError }),
         );
-      } else if ("send" in step) write(step.send);
-      else if ("sleepMs" in step) await new Promise((resolve) => setTimeout(resolve, step.sleepMs));
-      else {
+      } else if ("send" in step) {
+        write(step.send);
+      } else if ("sleepMs" in step) {
+        await new Promise((resolve) => setTimeout(resolve, step.sleepMs));
+      } else {
         // Let the frames written so far reach the adapter before the process goes.
         process.stdout.write("", () => process.exit(step.exit));
         return;
       }
     }
+
     // Out of steps: idle like a CLI waiting for its next message, until stdin closes.
     while (true) {
       const frame = await next();
@@ -192,17 +205,22 @@ function replay(fixturePath: string) {
   })();
 }
 
-function record(realBin: string, out: string) {
+function record(realBin: string, recordingPath: string) {
   const args = process.argv.slice(2);
   const child = spawn(realBin, args, { stdio: ["pipe", "pipe", "inherit"] });
   process.stdin.pipe(child.stdin);
+
   // Writer calls run alongside sessions; they aren't replayed, so they aren't recorded.
   if (args.includes(ONE_SHOT_FLAG)) {
     child.stdout.pipe(process.stdout);
     child.on("exit", (code) => process.exit(code ?? 1));
     return;
   }
-  const log = (entry: Recorded) => appendFileSync(out, `${JSON.stringify(entry)}\n`);
+
+  function log(entry: Recorded) {
+    appendFileSync(recordingPath, `${JSON.stringify(entry)}\n`);
+  }
+
   const pid = process.pid;
   log({ pid, spawn: args });
   createInterface({ input: process.stdin }).on("line", (line) => {
@@ -229,6 +247,7 @@ function awaitFor(frame: Frame): Step {
   if (Schema.is(RpcRequest)(frame))
     return { await: { method: frame.method }, as: `rpc-${frame.id}` };
   if (Schema.is(RpcNotification)(frame)) return { await: { method: frame.method } };
+
   return Schema.is(RpcResponse)(frame) ? { await: { id: frame.id } } : { await: frame };
 }
 
@@ -240,11 +259,13 @@ function replyOrSend(frame: Frame): Step {
       ? { reply: response ?? {}, to: request_id }
       : { replyError: error ?? "error", to: request_id };
   }
+
   // A response has an id and no method; the CLI's own requests (approvals) have both.
   if (!Schema.is(RpcNotification)(frame) && Schema.is(RpcResponse)(frame))
     return frame.error
       ? { replyError: frame.error.message, to: `rpc-${frame.id}` }
       : { reply: frame.result ?? null, to: `rpc-${frame.id}` };
+
   return { send: frame };
 }
 
@@ -256,12 +277,15 @@ export function toFixture(recorded: ReadonlyArray<Recorded>): Fixture {
       sessions.set(entry.pid, []);
       continue;
     }
+
     const steps = sessions.get(entry.pid);
     if (!steps) continue;
+
     if ("out" in entry) steps.push(awaitFor(entry.out));
     else if ("in" in entry) steps.push(replyOrSend(entry.in));
     else if (entry.exit !== 0 && entry.exit !== null) steps.push({ exit: entry.exit });
   }
+
   return { sessions: [...sessions.values()] };
 }
 
@@ -273,12 +297,13 @@ export function readRecording(path: string): ReadonlyArray<Recorded> {
 }
 
 if (import.meta.main) {
-  if (process.argv[2] === "fixture" && process.argv[3])
+  if (process.argv[2] === "fixture" && process.argv[3]) {
     process.stdout.write(`${JSON.stringify(toFixture(readRecording(process.argv[3])), null, 2)}\n`);
-  else if (process.env.MASSCODE_REPLAY) replay(resolve(process.env.MASSCODE_REPLAY));
-  else if (process.env.MASSCODE_REAL_BIN && process.env.MASSCODE_RECORD)
+  } else if (process.env.MASSCODE_REPLAY) {
+    replay(resolve(process.env.MASSCODE_REPLAY));
+  } else if (process.env.MASSCODE_REAL_BIN && process.env.MASSCODE_RECORD) {
     record(process.env.MASSCODE_REAL_BIN, resolve(process.env.MASSCODE_RECORD));
-  else {
+  } else {
     process.stderr.write(
       "replay peer: set MASSCODE_REPLAY, or MASSCODE_REAL_BIN and MASSCODE_RECORD\n",
     );

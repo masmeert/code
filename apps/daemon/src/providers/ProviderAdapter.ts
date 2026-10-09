@@ -67,7 +67,7 @@ export interface ProviderSkill extends Skill {
   readonly path: string | null;
 }
 
-export interface ListSkillsInput {
+interface ListSkillsInput {
   readonly cwd: string;
   readonly harness: ProviderSettings;
 }
@@ -111,11 +111,11 @@ export interface ForkInput {
   readonly dropTurns: number;
 }
 
-export interface RewindInput extends ForkInput {
+interface RewindInput extends ForkInput {
   readonly messageId: string;
 }
 
-export interface ReadUsageInput {
+interface ReadUsageInput {
   readonly cwd: string;
   readonly harness: ProviderSettings;
   readonly resumeToken: string;
@@ -159,6 +159,7 @@ export function summarizeToolInput(input: Schema.Json): string {
   if (input === null) return "";
   if (!Predicate.isObjectOrArray(input)) return String(input);
   if (Object.keys(input).length === 0) return "";
+
   const summary = Schema.is(Schema.JsonObject)(input)
     ? [
         "command",
@@ -176,14 +177,16 @@ export function summarizeToolInput(input: Schema.Json): string {
         .find(Predicate.isString)
     : undefined;
   if (summary !== undefined) return summary;
+
   const json = JSON.stringify(input);
   return json.length > 200 ? `${json.slice(0, 200)}…` : json;
 }
 
 /** The message text with non-image attachments listed as paths for the agent to read. */
-export const textWithFiles = (turn: TurnInput) => {
-  const files = turn.attachments.filter((a) => !a.isImage);
+export function textWithFiles(turn: TurnInput) {
+  const files = turn.attachments.filter((attachment) => !attachment.isImage);
   if (!files.length) return turn.text;
-  const list = files.map((a) => `- ${a.path}`).join("\n");
+
+  const list = files.map((file) => `- ${file.path}`).join("\n");
   return `${turn.text}${turn.text ? "\n\n" : ""}Attached files:\n${list}`;
-};
+}

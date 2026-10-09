@@ -79,7 +79,7 @@ export type StartThreadInput = z.infer<z.ZodObject<typeof StartThreadInput>>;
 export type SendMessageInput = z.infer<z.ZodObject<typeof SendMessageInput>>;
 
 /** What the orchestration tools do, for the agent of thread `caller`; failures are messages for that agent. */
-export interface Orchestration {
+interface Orchestration {
   readonly listThreads: (caller: string) => Effect.Effect<unknown, Error>;
   readonly readThread: (
     caller: string,
@@ -112,6 +112,7 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
       }),
     );
   }
+
   const server = new McpServer(
     { name: "masscode", version: "1.0.0" },
     {
@@ -119,7 +120,9 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
         "MassCode's threads. Start agents (Claude or Codex) in threads of their own to work on tasks in parallel, get a second opinion from the other harness, or review work; message them, wait for and read their answers. Threads you start show in the user's sidebar, in your project, where the user can watch and steer them. Stopping your thread stops them too.",
     },
   );
+
   const readOnly = { readOnlyHint: true };
+
   server.registerTool(
     "list_threads",
     {
@@ -128,6 +131,7 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
     },
     () => run(orchestration.listThreads(caller)),
   );
+
   server.registerTool(
     "read_thread",
     {
@@ -138,6 +142,7 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
     },
     ({ threadId, after }) => run(orchestration.readThread(caller, threadId, after)),
   );
+
   server.registerTool(
     "start_thread",
     {
@@ -147,6 +152,7 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
     },
     (input) => run(orchestration.startThread(caller, input)),
   );
+
   server.registerTool(
     "send_message",
     {
@@ -155,6 +161,7 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
     },
     (input) => run(orchestration.sendMessage(caller, input)),
   );
+
   server.registerTool(
     "wait_for_thread",
     {
@@ -166,6 +173,7 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
     ({ threadId, timeoutSeconds }) =>
       run(orchestration.waitForThread(caller, threadId, (timeoutSeconds ?? WAIT_MS / 1000) * 1000)),
   );
+
   server.registerTool(
     "stop_thread",
     {
@@ -174,6 +182,7 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
     },
     ({ threadId }) => run(orchestration.stopThread(caller, threadId)),
   );
+
   return server;
 }
 
@@ -213,7 +222,9 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
         "A real browser the user watches in MassCode's Browser panel next to this thread; it shares their logins. Use it to check web apps you build (such as a local dev server) or to read pages. Call snapshot to see the page (text, interactive elements with refs like e3, and a screenshot), then click or type by ref. Refs go stale after navigation or re-renders, so take a new snapshot when an action says nothing matches.",
     },
   );
+
   const alwaysLoad = { "anthropic/alwaysLoad": true };
+
   server.registerTool(
     "navigate",
     {
@@ -224,6 +235,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
     },
     ({ url }) => run(BrowserAction.cases.navigate.make({ url })),
   );
+
   server.registerTool(
     "snapshot",
     {
@@ -234,6 +246,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
     },
     () => run(BrowserAction.cases.snapshot.make({})),
   );
+
   server.registerTool(
     "click",
     {
@@ -244,6 +257,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
     },
     ({ target }) => run(BrowserAction.cases.click.make({ target })),
   );
+
   server.registerTool(
     "type",
     {
@@ -255,6 +269,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
     ({ target, text, submit }) =>
       run(BrowserAction.cases.type.make({ target, text, submit: submit ?? false })),
   );
+
   server.registerTool(
     "press",
     {
@@ -264,6 +279,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
     },
     ({ key }) => run(BrowserAction.cases.press.make({ key })),
   );
+
   server.registerTool(
     "evaluate",
     {
@@ -273,6 +289,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
     },
     ({ expression }) => run(BrowserAction.cases.evaluate.make({ expression })),
   );
+
   server.registerTool(
     "console",
     {
@@ -282,6 +299,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
     },
     () => run(BrowserAction.cases.console.make({})),
   );
+
   return server;
 }
 
@@ -304,6 +322,7 @@ function deviceServer(threadId: string, devices: Devices) {
         "An iOS simulator or Android emulator the user watches in MassCode's Simulator panel next to this thread. Call device_open to show one and learn how to drive it, before simctl, adb or computer use.",
     },
   );
+
   server.registerTool(
     "device_open",
     {
@@ -348,6 +367,7 @@ function deviceServer(threadId: string, devices: Devices) {
         ];
       }),
   );
+
   server.registerTool(
     "device_screenshot",
     {
@@ -359,6 +379,7 @@ function deviceServer(threadId: string, devices: Devices) {
         { type: "image", data: await devices.screenshot(threadId), mimeType: "image/png" },
       ]),
   );
+
   return server;
 }
 
@@ -373,6 +394,7 @@ export function createMcp(
   function revoke(threadId: string) {
     const tokenHash = tokenHashByThread.get(threadId);
     if (tokenHash === undefined) return;
+
     threadByTokenHash.delete(tokenHash);
     tokenHashByThread.delete(threadId);
   }
@@ -380,6 +402,7 @@ export function createMcp(
   return {
     issue(threadId: string): McpServerAccess {
       revoke(threadId);
+
       const token = randomBytes(32).toString("base64url");
       const tokenHash = hashOf(token);
       threadByTokenHash.set(tokenHash, threadId);
@@ -395,6 +418,7 @@ export function createMcp(
           status: 401,
           headers: { "www-authenticate": "Bearer" },
         });
+
       const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
       await Match.value(new URL(request.url).pathname)
         .pipe(

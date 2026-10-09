@@ -39,13 +39,43 @@ export type ResumeTokens = Partial<Record<ProviderKind, string>>;
  */
 export type Coverage = Partial<Record<ProviderKind, number>>;
 
-export interface StoredThread {
+interface StoredThread {
   readonly info: ThreadInfo;
   readonly home: ThreadHome;
   readonly resumeTokens: ResumeTokens;
   readonly coverage: Coverage;
   readonly shelveOverride: ShelveOverride;
   readonly queue: ReadonlyArray<QueuedMessage>;
+}
+
+type UserMessage = Extract<RuntimeEvent, { _tag: "user.message" }>;
+
+interface EventRow {
+  readonly seq: number;
+  readonly json: string;
+}
+
+interface ThreadRow {
+  readonly id: string;
+  readonly project_id: string;
+  readonly provider: ProviderKind;
+  readonly model: string | null;
+  readonly cwd: string;
+  readonly agent_cwd: string | null;
+  readonly title: string;
+  readonly created_at: number;
+  readonly updated_at: number;
+  readonly archived_at: number | null;
+  readonly resume_token: string | null;
+  readonly resume_tokens: string | null;
+  readonly coverage: string | null;
+  readonly worktree: number;
+  readonly usage: string | null;
+  readonly seen_rev: number;
+  readonly shelve_override: ShelveOverride;
+  readonly started_by: string | null;
+  readonly queue: string | null;
+  readonly limit_stop: string | null;
 }
 
 /** Events worth replaying after a restart: the transcript, with deltas folded into `assistant.completed`. */
@@ -74,10 +104,6 @@ export class ThreadStore extends Context.Service<
     }>;
     readonly hasMessage: (threadId: string, messageId: string) => boolean;
     readonly firstUserMessage: (threadId: string) => string | null;
-    /** The thread's messages, user and assistant, oldest first; tool calls and the rest left out. */
-    readonly readMessages: (
-      threadId: string,
-    ) => ReadonlyArray<Extract<RuntimeEvent, { _tag: "user.message" | "assistant.completed" }>>;
     /** Newest stored event id of a thread; 0 if none. */
     readonly cursor: (threadId: string) => number;
     /** How many events come after id `after`, and their encoded size, without reading them. */
@@ -111,10 +137,10 @@ export class ThreadStore extends Context.Service<
       messageId: string,
     ) => {
       readonly seq: number;
-      readonly event: Extract<RuntimeEvent, { _tag: "user.message" }>;
+      readonly event: UserMessage;
       /** User messages before it. */
       readonly before: number;
-      readonly from: ReadonlyArray<Extract<RuntimeEvent, { _tag: "user.message" }>>;
+      readonly from: ReadonlyArray<UserMessage>;
     } | null;
     /**
      * Where the turns after message `messageId` (of any kind) start: the first user message
@@ -127,7 +153,7 @@ export class ThreadStore extends Context.Service<
       readonly seq: number | null;
       /** User messages before it. */
       readonly before: number;
-      readonly from: ReadonlyArray<Extract<RuntimeEvent, { _tag: "user.message" }>>;
+      readonly from: ReadonlyArray<UserMessage>;
     } | null;
     /** Copies a thread's events before id `before` (all of them when null) to another thread. */
     readonly copyEvents: (fromThreadId: string, toThreadId: string, before: number | null) => void;
@@ -156,6 +182,7 @@ const decodeEvent = Schema.decodeUnknownOption(Schema.fromJsonString(RuntimeEven
 const decodeUsage = Schema.decodeUnknownOption(Schema.fromJsonString(ThreadUsage));
 const decodeQueue = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(QueuedMessage)));
 const decodeLimitStop = Schema.decodeUnknownOption(Schema.fromJsonString(LimitStop));
+
 const decodeTokens = Schema.decodeUnknownOption(
   Schema.fromJsonString(
     Schema.Struct({
@@ -164,6 +191,7 @@ const decodeTokens = Schema.decodeUnknownOption(
     }),
   ),
 );
+
 const decodeCoverage = Schema.decodeUnknownOption(
   Schema.fromJsonString(
     Schema.Struct({
@@ -174,11 +202,9 @@ const decodeCoverage = Schema.decodeUnknownOption(
 );
 
 /** Per-harness tokens, with the one stored before there were several counted for the thread's harness. */
-function legacyTokens(row: {
-  readonly provider: ProviderKind;
-  readonly resume_token: string | null;
-  readonly resume_tokens: string | null;
-}): ResumeTokens {
+function legacyTokens(
+  row: Pick<ThreadRow, "provider" | "resume_token" | "resume_tokens">,
+): ResumeTokens {
   const tokens: ResumeTokens =
     row.resume_tokens === null ? {} : Option.getOrElse(decodeTokens(row.resume_tokens), () => ({}));
   if (row.resume_token !== null) tokens[row.provider] ??= row.resume_token;
@@ -188,13 +214,14 @@ function legacyTokens(row: {
 const make = Effect.acquireRelease(
   Effect.sync(() => {
     mkdirSync(DATA_DIR, { recursive: true });
-    const db = new Database(join(DATA_DIR, "masscode.db"), { create: true, strict: true });
-    db.run("PRAGMA journal_mode = WAL");
+    const database = new Database(join(DATA_DIR, "masscode.db"), { create: true, strict: true });
+    database.run("PRAGMA journal_mode = WAL");
     // With WAL, NORMAL only fsyncs at checkpoints: still safe against corruption, much cheaper per append.
-    db.run("PRAGMA synchronous = NORMAL");
-    db.run("PRAGMA busy_timeout = 5000");
-    db.run("PRAGMA foreign_keys = ON");
-    db.run(`CREATE TABLE IF NOT EXISTS threads (
+    database.run("PRAGMA synchronous = NORMAL");
+    database.run("PRAGMA busy_timeout = 5000");
+    database.run("PRAGMA foreign_keys = ON");
+
+    database.run(`CREATE TABLE IF NOT EXISTS threads (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
       provider TEXT NOT NULL,
@@ -203,26 +230,28 @@ const make = Effect.acquireRelease(
       created_at INTEGER NOT NULL,
       resume_token TEXT
     )`);
-    db.run(`CREATE TABLE IF NOT EXISTS events (
+    database.run(`CREATE TABLE IF NOT EXISTS events (
       seq INTEGER PRIMARY KEY AUTOINCREMENT,
       thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
       json TEXT NOT NULL
     )`);
-    db.run("CREATE INDEX IF NOT EXISTS events_thread ON events(thread_id)");
+    database.run("CREATE INDEX IF NOT EXISTS events_thread ON events(thread_id)");
+
     // The event's tag as a column, so turns and approvals are found without decoding every row.
     const eventColumns = new Set(
-      db
+      database
         .query<{ name: string }, []>("PRAGMA table_info(events)")
         .all()
-        .map((c) => c.name),
+        .map((column) => column.name),
     );
-    if (!eventColumns.has("kind")) db.run("ALTER TABLE events ADD COLUMN kind TEXT");
-    const untagged = db
-      .query<{ seq: number; json: string }, []>("SELECT seq, json FROM events WHERE kind IS NULL")
+    if (!eventColumns.has("kind")) database.run("ALTER TABLE events ADD COLUMN kind TEXT");
+
+    const untagged = database
+      .query<EventRow, []>("SELECT seq, json FROM events WHERE kind IS NULL")
       .all();
     if (untagged.length) {
-      const setKind = db.prepare("UPDATE events SET kind = $kind WHERE seq = $seq");
-      db.transaction(() => {
+      const setKind = database.prepare("UPDATE events SET kind = $kind WHERE seq = $seq");
+      database.transaction(() => {
         for (const row of untagged)
           setKind.run({
             seq: row.seq,
@@ -235,77 +264,85 @@ const make = Effect.acquireRelease(
           });
       })();
     }
-    db.run("CREATE INDEX IF NOT EXISTS events_thread_kind ON events(thread_id, kind, seq)");
-    db.run("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
-    db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('data_id', $id)").run({
+
+    database.run("CREATE INDEX IF NOT EXISTS events_thread_kind ON events(thread_id, kind, seq)");
+    database.run("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    database.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('data_id', $id)").run({
       id: crypto.randomUUID(),
     });
+
     // Migrations for databases created before a column existed.
     const columns = new Set(
-      db
+      database
         .query<{ name: string }, []>("PRAGMA table_info(threads)")
         .all()
-        .map((c) => c.name),
+        .map((column) => column.name),
     );
-    if (!columns.has("model")) db.run("ALTER TABLE threads ADD COLUMN model TEXT");
-    if (!columns.has("archived_at")) db.run("ALTER TABLE threads ADD COLUMN archived_at INTEGER");
+    if (!columns.has("model")) database.run("ALTER TABLE threads ADD COLUMN model TEXT");
+    if (!columns.has("archived_at"))
+      database.run("ALTER TABLE threads ADD COLUMN archived_at INTEGER");
     if (!columns.has("updated_at")) {
-      db.run("ALTER TABLE threads ADD COLUMN updated_at INTEGER");
-      db.run("UPDATE threads SET updated_at = created_at");
+      database.run("ALTER TABLE threads ADD COLUMN updated_at INTEGER");
+      database.run("UPDATE threads SET updated_at = created_at");
     }
     if (!columns.has("worktree"))
-      db.run("ALTER TABLE threads ADD COLUMN worktree INTEGER NOT NULL DEFAULT 0");
-    if (!columns.has("agent_cwd")) db.run("ALTER TABLE threads ADD COLUMN agent_cwd TEXT");
-    if (!columns.has("usage")) db.run("ALTER TABLE threads ADD COLUMN usage TEXT");
+      database.run("ALTER TABLE threads ADD COLUMN worktree INTEGER NOT NULL DEFAULT 0");
+    if (!columns.has("agent_cwd")) database.run("ALTER TABLE threads ADD COLUMN agent_cwd TEXT");
+    if (!columns.has("usage")) database.run("ALTER TABLE threads ADD COLUMN usage TEXT");
     if (!columns.has("seen_rev")) {
-      db.run("ALTER TABLE threads ADD COLUMN seen_rev INTEGER NOT NULL DEFAULT 0");
+      database.run("ALTER TABLE threads ADD COLUMN seen_rev INTEGER NOT NULL DEFAULT 0");
       // Threads from before the daemon tracked this count as looked at.
-      db.run("UPDATE threads SET seen_rev = updated_at");
+      database.run("UPDATE threads SET seen_rev = updated_at");
     }
     if (!columns.has("shelve_override"))
-      db.run("ALTER TABLE threads ADD COLUMN shelve_override TEXT");
-    if (!columns.has("started_by")) db.run("ALTER TABLE threads ADD COLUMN started_by TEXT");
-    if (!columns.has("queue")) db.run("ALTER TABLE threads ADD COLUMN queue TEXT");
-    if (!columns.has("limit_stop")) db.run("ALTER TABLE threads ADD COLUMN limit_stop TEXT");
+      database.run("ALTER TABLE threads ADD COLUMN shelve_override TEXT");
+    if (!columns.has("started_by")) database.run("ALTER TABLE threads ADD COLUMN started_by TEXT");
+    if (!columns.has("queue")) database.run("ALTER TABLE threads ADD COLUMN queue TEXT");
+    if (!columns.has("limit_stop")) database.run("ALTER TABLE threads ADD COLUMN limit_stop TEXT");
     // Per-harness tokens replace `resume_token`, which is emptied once they're written.
-    if (!columns.has("resume_tokens")) db.run("ALTER TABLE threads ADD COLUMN resume_tokens TEXT");
-    if (!columns.has("coverage")) db.run("ALTER TABLE threads ADD COLUMN coverage TEXT");
+    if (!columns.has("resume_tokens"))
+      database.run("ALTER TABLE threads ADD COLUMN resume_tokens TEXT");
+    if (!columns.has("coverage")) database.run("ALTER TABLE threads ADD COLUMN coverage TEXT");
     if (columns.has("settle_override")) {
       // Shelving was called settling. Both columns can exist, so a newer shelve value wins.
-      db.run(
+      database.run(
         "UPDATE threads SET shelve_override = CASE settle_override WHEN 'settled' THEN 'shelved' ELSE settle_override END WHERE shelve_override IS NULL",
       );
-      db.run("ALTER TABLE threads DROP COLUMN settle_override");
+      database.run("ALTER TABLE threads DROP COLUMN settle_override");
     }
+
     // Full-text index of what was said, for search. Filled as messages are stored; built from the log once.
     const hasSearch =
-      db.query("SELECT name FROM sqlite_master WHERE name = 'messages_fts'").get() !== null;
+      database.query("SELECT name FROM sqlite_master WHERE name = 'messages_fts'").get() !== null;
     if (!hasSearch) {
-      db.run(
+      database.run(
         `CREATE VIRTUAL TABLE messages_fts USING fts5(text, thread_id UNINDEXED, message_id UNINDEXED, sender UNINDEXED, seq UNINDEXED, tokenize = "unicode61 remove_diacritics 2")`,
       );
-      db.run(`INSERT INTO messages_fts (text, thread_id, message_id, sender, seq)
+      database.run(`INSERT INTO messages_fts (text, thread_id, message_id, sender, seq)
         SELECT json_extract(json, '$.text'), thread_id, json_extract(json, '$.messageId'),
           CASE kind WHEN 'user.message' THEN 'user' ELSE 'assistant' END, seq
         FROM events WHERE kind IN ('user.message', 'assistant.completed') AND json_extract(json, '$.text') != ''`);
     }
-    return db;
+
+    return database;
   }),
-  (db) => Effect.sync(() => db.close()),
+  (database) => Effect.sync(() => database.close()),
 ).pipe(
-  Effect.map((db) => {
-    const insertThread = db.prepare(
+  Effect.map((database) => {
+    const insertThread = database.prepare(
       "INSERT INTO threads (id, project_id, provider, model, cwd, agent_cwd, title, created_at, updated_at, worktree, started_by) VALUES ($id, $projectId, $provider, $model, $cwd, $agentCwd, $title, $createdAt, $updatedAt, $worktree, $startedBy)",
     );
-    const setAgentCwd = db.prepare("UPDATE threads SET agent_cwd = $cwd WHERE id = $id");
-    const setMeta = db.prepare(
+    const setAgentCwd = database.prepare("UPDATE threads SET agent_cwd = $cwd WHERE id = $id");
+    const setMeta = database.prepare(
       "UPDATE threads SET title = $title, updated_at = $updatedAt WHERE id = $id",
     );
-    const setModel = db.prepare("UPDATE threads SET model = $model WHERE id = $id");
-    const setQueue = db.prepare("UPDATE threads SET queue = $queue WHERE id = $id");
-    const setLimitStop = db.prepare("UPDATE threads SET limit_stop = $limitStop WHERE id = $id");
+    const setModel = database.prepare("UPDATE threads SET model = $model WHERE id = $id");
+    const setQueue = database.prepare("UPDATE threads SET queue = $queue WHERE id = $id");
+    const setLimitStop = database.prepare(
+      "UPDATE threads SET limit_stop = $limitStop WHERE id = $id",
+    );
     // A turn starts at a user message not sent into a running one, and ends at turn.completed.
-    const selectUnfinished = db.prepare<{ thread_id: string; message_id: string }, []>(
+    const selectUnfinished = database.prepare<{ thread_id: string; message_id: string }, []>(
       `SELECT thread_id, (SELECT json_extract(json, '$.messageId') FROM events WHERE seq = turn_seq) AS message_id
        FROM (
          SELECT thread_id,
@@ -314,139 +351,121 @@ const make = Effect.acquireRelease(
          FROM events WHERE kind IN ('user.message', 'turn.completed') GROUP BY thread_id
        ) WHERE turn_seq > COALESCE(done_seq, 0)`,
     );
-    const setUsage = db.prepare("UPDATE threads SET usage = $usage WHERE id = $id");
-    const setArchived = db.prepare("UPDATE threads SET archived_at = $archivedAt WHERE id = $id");
-    const setSeenRev = db.prepare("UPDATE threads SET seen_rev = $seenRev WHERE id = $id");
-    const setShelveOverride = db.prepare(
+    const setUsage = database.prepare("UPDATE threads SET usage = $usage WHERE id = $id");
+    const setArchived = database.prepare(
+      "UPDATE threads SET archived_at = $archivedAt WHERE id = $id",
+    );
+    const setSeenRev = database.prepare("UPDATE threads SET seen_rev = $seenRev WHERE id = $id");
+    const setShelveOverride = database.prepare(
       "UPDATE threads SET shelve_override = $override WHERE id = $id",
     );
-    const setResumeTokens = db.prepare(
+    const setResumeTokens = database.prepare(
       "UPDATE threads SET resume_tokens = $tokens, resume_token = NULL WHERE id = $id",
     );
-    const setCoverage = db.prepare("UPDATE threads SET coverage = $coverage WHERE id = $id");
-    const setProvider = db.prepare(
+    const setCoverage = database.prepare("UPDATE threads SET coverage = $coverage WHERE id = $id");
+    const setProvider = database.prepare(
       "UPDATE threads SET provider = $provider, model = $model WHERE id = $id",
     );
-    const tagUserMessages = db.prepare(
+    const tagUserMessages = database.prepare(
       "UPDATE events SET json = json_set(json, '$.provider', $provider) WHERE thread_id = $threadId AND kind = 'user.message' AND json_extract(json, '$.provider') IS NULL",
     );
-    const appendEvent = db.prepare(
+    const appendEvent = database.prepare(
       "INSERT INTO events (thread_id, kind, json) VALUES ($threadId, $kind, $json)",
     );
-    const indexMessage = db.prepare(
+    const indexMessage = database.prepare(
       "INSERT INTO messages_fts (text, thread_id, message_id, sender, seq) VALUES ($text, $threadId, $messageId, $sender, $seq)",
     );
-    const selectUserMessages = db.prepare<{ seq: number; json: string }, { threadId: string }>(
+    const selectUserMessages = database.prepare<EventRow, { threadId: string }>(
       "SELECT seq, json FROM events WHERE thread_id = $threadId AND kind = 'user.message' ORDER BY seq",
     );
-    const selectMessages = db.prepare<{ seq: number; json: string }, { threadId: string }>(
-      "SELECT seq, json FROM events WHERE thread_id = $threadId AND kind IN ('user.message', 'assistant.completed') ORDER BY seq",
-    );
-    const selectMessageSeq = db.prepare<{ seq: number }, { threadId: string; messageId: string }>(
+    const selectMessageSeq = database.prepare<
+      { seq: number },
+      { threadId: string; messageId: string }
+    >(
       "SELECT seq FROM events WHERE thread_id = $threadId AND json_extract(json, '$.messageId') = $messageId ORDER BY seq LIMIT 1",
     );
-    const copyEvents = db.prepare(
+    const copyEvents = database.prepare(
       "INSERT INTO events (thread_id, kind, json) SELECT $to, kind, json_set(json, '$.threadId', $to) FROM events WHERE thread_id = $from AND seq < $before ORDER BY seq",
     );
-    const indexThread = db.prepare(
+    const indexThread = database.prepare(
       `INSERT INTO messages_fts (text, thread_id, message_id, sender, seq)
         SELECT json_extract(json, '$.text'), thread_id, json_extract(json, '$.messageId'),
           CASE kind WHEN 'user.message' THEN 'user' ELSE 'assistant' END, seq
         FROM events WHERE thread_id = $threadId AND kind IN ('user.message', 'assistant.completed') AND json_extract(json, '$.text') != ''`,
     );
-    const truncateEvents = db.prepare(
+    const truncateEvents = database.prepare(
       "DELETE FROM events WHERE thread_id = $threadId AND seq >= $seq",
     );
-    const truncateIndex = db.prepare(
+    const truncateIndex = database.prepare(
       "DELETE FROM messages_fts WHERE thread_id = $threadId AND seq >= $seq",
     );
-    const deleteIndex = db.prepare("DELETE FROM messages_fts WHERE thread_id = $threadId");
-    const selectSearch = db.prepare<
+    const deleteIndex = database.prepare("DELETE FROM messages_fts WHERE thread_id = $threadId");
+    const selectSearch = database.prepare<
       { thread_id: string; message_id: string; sender: "user" | "assistant"; snippet: string },
       { query: string; limit: number }
     >(
       `SELECT thread_id, message_id, sender, snippet(messages_fts, 0, char(57344), char(57345), '…', 16) AS snippet
        FROM messages_fts WHERE messages_fts MATCH $query ORDER BY seq DESC LIMIT $limit`,
     );
-    const dataId = db
+    const dataId = database
       .query<{ value: string }, []>("SELECT value FROM meta WHERE key = 'data_id'")
       .get()!.value;
-    const toStored = (rows: ReadonlyArray<{ seq: number; json: string }>): Array<StoredEvent> =>
-      rows.flatMap((row) =>
+
+    function toStored(rows: ReadonlyArray<EventRow>): Array<StoredEvent> {
+      return rows.flatMap((row) =>
         Option.match(decodeEvent(row.json), {
           onNone: () => [],
           onSome: (event) => [{ id: row.seq, event }],
         }),
       );
-    const userMessages = (threadId: string) =>
-      toStored(selectUserMessages.all({ threadId })).flatMap(({ id, event }) =>
+    }
+
+    function userMessages(threadId: string) {
+      return toStored(selectUserMessages.all({ threadId })).flatMap(({ id, event }) =>
         RuntimeEvent.guards["user.message"](event) ? [{ seq: id, event }] : [],
       );
-    const selectAfter = db.prepare<
-      { seq: number; json: string },
-      { threadId: string; after: number }
-    >("SELECT seq, json FROM events WHERE thread_id = $threadId AND seq > $after ORDER BY seq");
-    const selectMeasure = db.prepare<
+    }
+
+    const selectAfter = database.prepare<EventRow, { threadId: string; after: number }>(
+      "SELECT seq, json FROM events WHERE thread_id = $threadId AND seq > $after ORDER BY seq",
+    );
+    const selectMeasure = database.prepare<
       { count: number; bytes: number | null },
       { threadId: string; after: number }
     >(
       "SELECT COUNT(*) AS count, SUM(length(CAST(json AS BLOB))) AS bytes FROM events WHERE thread_id = $threadId AND seq > $after",
     );
-    const selectRange = db.prepare<
-      { seq: number; json: string },
+    const selectRange = database.prepare<
+      EventRow,
       { threadId: string; from: number; before: number }
     >(
       "SELECT seq, json FROM events WHERE thread_id = $threadId AND seq >= $from AND seq < $before ORDER BY seq",
     );
-    const selectTurnStart = db.prepare<
+    const selectTurnStart = database.prepare<
       { seq: number },
       { threadId: string; before: number; offset: number }
     >(
       "SELECT seq FROM events WHERE thread_id = $threadId AND kind = 'user.message' AND seq < $before ORDER BY seq DESC LIMIT 1 OFFSET $offset",
     );
-    const selectOlder = db.prepare<{ seq: number }, { threadId: string; before: number }>(
+    const selectOlder = database.prepare<{ seq: number }, { threadId: string; before: number }>(
       "SELECT seq FROM events WHERE thread_id = $threadId AND seq < $before LIMIT 1",
     );
-    const selectCursor = db.prepare<{ seq: number | null }, { threadId: string }>(
+    const selectCursor = database.prepare<{ seq: number | null }, { threadId: string }>(
       "SELECT MAX(seq) AS seq FROM events WHERE thread_id = $threadId",
     );
-    const selectApprovals = db.prepare<{ thread_id: string; kind: string; json: string }, []>(
+    const selectApprovals = database.prepare<{ thread_id: string; kind: string; json: string }, []>(
       "SELECT thread_id, kind, json FROM events WHERE kind IN ('approval.requested', 'approval.resolved') ORDER BY seq",
     );
-    const selectFirstUser = db.prepare<{ json: string }, { threadId: string }>(
+    const selectFirstUser = database.prepare<{ json: string }, { threadId: string }>(
       "SELECT json FROM events WHERE thread_id = $threadId AND kind = 'user.message' ORDER BY seq LIMIT 1",
     );
-    const deleteThread = db.prepare("DELETE FROM threads WHERE id = $id");
+    const deleteThread = database.prepare("DELETE FROM threads WHERE id = $id");
 
     return ThreadStore.of({
       dataId,
       load: Effect.sync(() =>
-        db
-          .query<
-            {
-              id: string;
-              project_id: string;
-              provider: ProviderKind;
-              model: string | null;
-              cwd: string;
-              agent_cwd: string | null;
-              title: string;
-              created_at: number;
-              updated_at: number;
-              archived_at: number | null;
-              resume_token: string | null;
-              resume_tokens: string | null;
-              coverage: string | null;
-              worktree: number;
-              usage: string | null;
-              seen_rev: number;
-              shelve_override: ShelveOverride;
-              started_by: string | null;
-              queue: string | null;
-              limit_stop: string | null;
-            },
-            []
-          >("SELECT * FROM threads ORDER BY created_at")
+        database
+          .query<ThreadRow, []>("SELECT * FROM threads ORDER BY created_at")
           .all()
           .map((row) => ({
             info: {
@@ -490,6 +509,7 @@ const make = Effect.acquireRelease(
             )(row.json),
           )?.requestId;
           if (requestId === undefined) continue;
+
           if (row.kind === "approval.requested") pending.set(requestId, row.thread_id);
           else pending.delete(requestId);
         }
@@ -503,6 +523,7 @@ const make = Effect.acquireRelease(
       firstUserMessage: (threadId) => {
         const row = selectFirstUser.get({ threadId });
         if (!row) return null;
+
         return (
           Option.getOrUndefined(
             Schema.decodeUnknownOption(
@@ -511,10 +532,6 @@ const make = Effect.acquireRelease(
           )?.text ?? null
         );
       },
-      readMessages: (threadId) =>
-        toStored(selectMessages.all({ threadId })).flatMap(({ event }) =>
-          RuntimeEvent.isAnyOf(["user.message", "assistant.completed"])(event) ? [event] : [],
-        ),
       cursor: (threadId) => selectCursor.get({ threadId })?.seq ?? 0,
       measureAfter: (threadId, after) => {
         const row = selectMeasure.get({ threadId, after });
@@ -526,6 +543,7 @@ const make = Effect.acquireRelease(
         const from = start?.seq ?? 0;
         const events = toStored(selectRange.all({ threadId, from, before }));
         if (events.length === 0) return { events, page: null };
+
         const hasMore = start !== null && selectOlder.get({ threadId, before: from }) !== null;
         return { events, page: { before: events[0]!.id, hasMore } };
       },
@@ -592,39 +610,47 @@ const make = Effect.acquireRelease(
           const sender = RuntimeEvent.guards["user.message"](event) ? "user" : "assistant";
           indexMessage.run({ text: event.text, threadId, messageId: event.messageId, sender, seq });
         }
+
         return seq;
       },
       findUserMessage: (threadId, messageId) => {
         const messages = userMessages(threadId);
-        const index = messages.findIndex((m) => m.event.messageId === messageId);
-        if (index === -1) return null;
+        const index = messages.findIndex((message) => message.event.messageId === messageId);
+        const found = messages[index];
+        if (!found) return null;
+
         return {
-          seq: messages[index]!.seq,
-          event: messages[index]!.event,
+          seq: found.seq,
+          event: found.event,
           before: index,
-          from: messages.slice(index).map((m) => m.event),
+          from: messages.slice(index).map((message) => message.event),
         };
       },
       findTurnsAfter: (threadId, messageId) => {
         const after = selectMessageSeq.get({ threadId, messageId });
         if (!after) return null;
+
         const messages = userMessages(threadId);
-        const index = messages.findIndex((m) => m.seq > after.seq && !m.event.steer);
-        if (index === -1) return { seq: null, before: messages.length, from: [] };
+        const index = messages.findIndex(
+          (message) => message.seq > after.seq && !message.event.steer,
+        );
+        const found = messages[index];
+        if (!found) return { seq: null, before: messages.length, from: [] };
+
         return {
-          seq: messages[index]!.seq,
+          seq: found.seq,
           before: index,
-          from: messages.slice(index).map((m) => m.event),
+          from: messages.slice(index).map((message) => message.event),
         };
       },
       copyEvents: (from, to, before) => {
-        db.transaction(() => {
+        database.transaction(() => {
           copyEvents.run({ from, to, before: before ?? Number.MAX_SAFE_INTEGER });
           indexThread.run({ threadId: to });
         })();
       },
       truncate: (threadId, seq) => {
-        db.transaction(() => {
+        database.transaction(() => {
           truncateEvents.run({ threadId, seq });
           truncateIndex.run({ threadId, seq });
         })();
@@ -636,6 +662,7 @@ const make = Effect.acquireRelease(
           .filter(Boolean)
           .map((word) => `"${word.replaceAll('"', '""')}"*`);
         if (!terms.length) return [];
+
         return selectSearch.all({ query: terms.join(" "), limit }).map((row) => ({
           threadId: row.thread_id,
           messageId: row.message_id,
@@ -644,7 +671,7 @@ const make = Effect.acquireRelease(
         }));
       },
       deleteThread: (id) => {
-        db.transaction(() => {
+        database.transaction(() => {
           deleteThread.run({ id });
           deleteIndex.run({ threadId: id });
         })();

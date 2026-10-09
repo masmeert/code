@@ -1,5 +1,3 @@
-import { execFileSync } from "node:child_process";
-
 /**
  * Apps launched from Finder/Dock inherit launchd's bare environment (PATH=/usr/bin:/bin:...),
  * not the one the user's shell builds from ~/.zshrc etc. Ask the login shell once at startup
@@ -8,17 +6,20 @@ import { execFileSync } from "node:child_process";
  *
  * Imported for its side effect as the daemon's first module, before anything reads process.env.
  */
+import { execFileSync } from "node:child_process";
+
 const MARKER = "__MASSCODE_SHELL_ENV__";
 
 // Values that describe this process rather than the user's setup; keep ours.
 const SKIP = new Set(["_", "PWD", "OLDPWD", "SHLVL", "PPID"]);
 
-const loadShellEnv = (): Record<string, string> | null => {
+function loadShellEnv(): Record<string, string> | null {
   if (process.platform === "win32" || process.env.MASSCODE_SKIP_SHELL_ENV) return null;
+
   const shell = process.env.SHELL || "/bin/zsh";
   try {
     // Markers fence off anything the rc files print; NUL-separated so multi-line values survive.
-    const out = execFileSync(
+    const output = execFileSync(
       shell,
       ["-ilc", `printf '${MARKER}'; /usr/bin/env -0; printf '${MARKER}'`],
       {
@@ -29,18 +30,19 @@ const loadShellEnv = (): Record<string, string> | null => {
         env: { ...process.env, DISABLE_AUTO_UPDATE: "true", ZSH_TMUX_AUTOSTARTED: "true" },
       },
     );
-    const body = out.split(MARKER)[1];
+    const body = output.split(MARKER)[1];
     if (!body) return null;
+
     const env: Record<string, string> = {};
     for (const entry of body.split("\0")) {
-      const eq = entry.indexOf("=");
-      if (eq > 0) env[entry.slice(0, eq)] = entry.slice(eq + 1);
+      const separator = entry.indexOf("=");
+      if (separator > 0) env[entry.slice(0, separator)] = entry.slice(separator + 1);
     }
     return env;
   } catch {
     return null;
   }
-};
+}
 
 const shellEnv = loadShellEnv();
 if (shellEnv) {

@@ -5,6 +5,7 @@ import { extname, resolve } from "node:path";
 
 /** Per launch, so a restart revokes every URL handed out. */
 const SIGNING_KEY = randomBytes(32);
+
 export const ASSET_ROUTE_PREFIX = "/assets/";
 
 const IMAGE_TYPES = new Map([
@@ -35,8 +36,10 @@ function signature(payload: string) {
 export async function signImage(path: string, cwd: string) {
   const absolute = resolve(cwd, path.replace(/^~(?=\/|$)/, homedir()));
   if (!IMAGE_TYPES.has(extname(absolute).toLowerCase())) return null;
+
   const file = await stat(absolute, { bigint: true }).catch(() => null);
   if (!file?.isFile()) return null;
+
   const payload = Buffer.from(
     JSON.stringify({
       path: absolute,
@@ -45,6 +48,7 @@ export async function signImage(path: string, cwd: string) {
       expiresAt: Date.now() + 60 * 60 * 1000,
     } satisfies AssetClaims),
   ).toString("base64url");
+
   return `${ASSET_ROUTE_PREFIX}${payload}.${signature(payload)}`;
 }
 
@@ -54,12 +58,15 @@ export async function serveAsset(token: string) {
   const expected = Buffer.from(signature(payload));
   if (given.length !== expected.length || !timingSafeEqual(Buffer.from(given), expected))
     return new Response("Not found", { status: 404 });
+
   // SAFETY: signed by this process from an AssetClaims.
   const claims = JSON.parse(Buffer.from(payload, "base64url").toString()) as AssetClaims;
   if (claims.expiresAt < Date.now()) return new Response("Expired", { status: 410 });
+
   const file = await stat(claims.path, { bigint: true }).catch(() => null);
   if (!file || String(file.dev) !== claims.device || String(file.ino) !== claims.inode)
     return new Response("Not found", { status: 404 });
+
   return new Response(Bun.file(claims.path), {
     headers: {
       "content-type":

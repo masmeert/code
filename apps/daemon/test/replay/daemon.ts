@@ -38,11 +38,13 @@ import { decodeFixture, Frame, type Fixture, type Step } from "./peer.ts";
 
 export const FAKE_CLI = join(import.meta.dir, "fake-cli");
 
-const replaying = (kind: ProviderKind) => ({
-  defaultModel: null,
-  binaryPath: FAKE_CLI,
-  env: { MASSCODE_REPLAY: `replay-${kind}.json` },
-});
+function replaying(kind: ProviderKind) {
+  return {
+    defaultModel: null,
+    binaryPath: FAKE_CLI,
+    env: { MASSCODE_REPLAY: `replay-${kind}.json` },
+  };
+}
 
 /** Each harness runs the peer; `harness` swaps in other settings for it, like recording. */
 function settingsWith(harness: Partial<Settings["providers"]>): Settings {
@@ -106,12 +108,14 @@ const Logged = Schema.Struct({
   session: Schema.optional(Schema.Number),
   out: Schema.optional(Frame),
 });
+
 const decodeLogged = Schema.decodeUnknownSync(Schema.fromJsonString(Logged));
 
 /** What the adapter did with the CLI in `folder`: each spawn, then each frame it sent. */
 export function peerLog(folder: string, kind: ProviderKind) {
   const path = join(folder, `replay-${kind}.json.log.jsonl`);
   if (!existsSync(path)) return [];
+
   return readFileSync(path, "utf8")
     .split("\n")
     .filter(Boolean)
@@ -125,6 +129,7 @@ const ToolResult = Schema.Struct({
   ),
   isError: Schema.optional(Schema.Boolean),
 });
+
 const decodeToolResult = Schema.decodeUnknownSync(ToolResult);
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.JsonObject));
 
@@ -133,6 +138,7 @@ export async function startDaemon(harness: Partial<Settings["providers"]> = {}) 
   const scope = await Effect.runPromise(Scope.make());
   const context = await Effect.runPromise(Layer.buildWithScope(layer, scope));
   const manager = Context.get(context, SessionManager);
+
   const events: Array<RuntimeEvent> = [];
   const waiters = new Set<() => void>();
   await Effect.runPromise(
@@ -150,6 +156,7 @@ export async function startDaemon(harness: Partial<Settings["providers"]> = {}) 
       scope,
     ),
   );
+
   const folders = new Set<string>();
 
   /** Resolves with the first event, from the start of this daemon, that `test` accepts. */
@@ -163,24 +170,28 @@ export async function startDaemon(harness: Partial<Settings["providers"]> = {}) 
   ): Promise<RuntimeEvent>;
   function waitFor(test: (event: RuntimeEvent) => boolean, timeoutMs = 4_000) {
     return new Promise<RuntimeEvent>((resolve, reject) => {
-      const check = () => {
+      function check() {
         const found = events.find(test);
         if (!found) return;
+
         cleanup();
         resolve(found);
-      };
+      }
+
+      function cleanup() {
+        clearTimeout(timer);
+        waiters.delete(check);
+      }
+
       const timer = setTimeout(() => {
         cleanup();
         reject(
           new Error(
-            `No matching event within ${timeoutMs} ms. Got:\n${events.map((e) => JSON.stringify(e)).join("\n")}`,
+            `No matching event within ${timeoutMs} ms. Got:\n${events.map((event) => JSON.stringify(event)).join("\n")}`,
           ),
         );
       }, timeoutMs);
-      const cleanup = () => {
-        clearTimeout(timer);
-        waiters.delete(check);
-      };
+
       waiters.add(check);
       check();
     });
@@ -209,6 +220,7 @@ export async function startDaemon(harness: Partial<Settings["providers"]> = {}) 
       }: { provider?: ProviderKind; permission?: PermissionLevel; effort?: Effort | null } = {},
     ) {
       folders.add(folder);
+
       const requestId = crypto.randomUUID();
       void Effect.runPromise(
         Effect.ignore(
@@ -269,6 +281,7 @@ export async function startDaemon(harness: Partial<Settings["providers"]> = {}) 
       );
       // SAFETY: the SDK's own transport; its `sessionId?: string` only clashes with exactOptionalPropertyTypes.
       await client.connect(transport as Transport);
+
       return {
         async call(name: string, args: Schema.JsonObject) {
           const result = decodeToolResult(await client.callTool({ name, arguments: args }));
@@ -299,6 +312,7 @@ export async function startDaemon(harness: Partial<Settings["providers"]> = {}) 
     /** Dies without cleaning up, like a crash or a kill -9, taking the agent processes with it. */
     async crash() {
       await Effect.runPromise(Scope.close(scope, Exit.void));
+
       for (const folder of folders)
         for (const kind of ProviderKind.literals)
           for (const { pid } of peerLog(folder, kind))
@@ -323,15 +337,19 @@ export function fixture(name: string): Fixture {
 export function until(steps: ReadonlyArray<Step>, stop: (step: Step) => boolean): Array<Step> {
   const end = steps.findIndex(stop);
   if (end === -1) throw new Error("until: no step matched");
+
   return steps.slice(0, end + 1);
 }
 
 /** The step that answers the request awaited as `name`. */
-export const replyTo = (name: string) => (step: Step) => "reply" in step && step.to === name;
+export function replyTo(name: string) {
+  return (step: Step) => "reply" in step && step.to === name;
+}
 
 /** The first wait for a frame like `pattern`. */
-export const awaiting = (pattern: Schema.JsonObject) => (step: Step) =>
-  "await" in step && JSON.stringify(step.await) === JSON.stringify(pattern);
+export function awaiting(pattern: Schema.JsonObject) {
+  return (step: Step) => "await" in step && JSON.stringify(step.await) === JSON.stringify(pattern);
+}
 
 /** Codex picks a thread back up with `thread/resume` where a new one starts with `thread/start`. */
 export function resumed(steps: ReadonlyArray<Step>): Array<Step> {
@@ -355,13 +373,16 @@ export function claudeSessionId(steps: ReadonlyArray<Step>) {
   const WithSession = Schema.Struct({ send: Schema.Struct({ session_id: Schema.String }) });
   const step = steps.find(Schema.is(WithSession));
   if (!step || !Schema.is(WithSession)(step)) throw new Error("claudeSessionId: none in the steps");
+
   return step.send.session_id;
 }
 
-export const statusIs = (threadId: string, status: ThreadInfo["status"]) => (event: RuntimeEvent) =>
-  RuntimeEvent.guards["thread.status"](event) &&
-  event.threadId === threadId &&
-  event.status === status;
+export function statusIs(threadId: string, status: ThreadInfo["status"]) {
+  return (event: RuntimeEvent) =>
+    RuntimeEvent.guards["thread.status"](event) &&
+    event.threadId === threadId &&
+    event.status === status;
+}
 
 /**
  * Codex's first turn as recorded, held open until Stop interrupts it, then ending as
@@ -378,6 +399,7 @@ export function interruptible(steps: ReadonlyArray<Step>): Array<Step> {
   const completed = steps.find(Schema.is(TurnCompleted));
   if (!completed || !Schema.is(TurnCompleted)(completed))
     throw new Error("interruptible: no turn/completed in the steps");
+
   return [
     ...until(steps, replyTo("rpc-3")),
     { await: { method: "turn/interrupt" } },

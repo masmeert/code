@@ -36,11 +36,13 @@ export function harnessLaunch(kind: ProviderKind, settings: ProviderSettings): H
     : resolveExecutable(cli.name, cli.pathEnv);
   if (!existsSync(bin))
     throw new Error(`No file at ${bin}. Fix the binary path in Settings → Harnesses.`);
+
   const env = { ...process.env, ...settings.env };
   const configDir = settings.configDir?.trim()
     ? expandHome(settings.configDir)
     : cli.defaultConfigDir;
   if (configDir) env[cli.configEnv] = configDir;
+
   return { bin, args: settings.launchArgs ?? [], env };
 }
 
@@ -61,6 +63,7 @@ export function claudeExtraArgs(args: ReadonlyArray<string>) {
       index++;
     } else flags[flag!] = null;
   }
+
   return flags;
 }
 

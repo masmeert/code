@@ -22,10 +22,11 @@ afterEach(async () => {
 const claude = fixture("claude-two-turns").sessions[0]!;
 const codex = fixture("codex-two-turns").sessions[0]!;
 
-const switchTo = (threadId: string, provider: "claude" | "codex") =>
-  daemon!.dispatch(
+function switchTo(threadId: string, provider: "claude" | "codex") {
+  return daemon!.dispatch(
     ClientCommand.cases["thread.setModel"].make({ threadId, provider, model: null }),
   );
+}
 
 async function turn(threadId: string, text: string) {
   const before = daemon!.events.filter(RuntimeEvent.guards["turn.completed"]).length;
@@ -72,7 +73,9 @@ test("switching harness hands the new one the conversation so far", async () => 
   const thread = await daemon.create(folder, "Reply with exactly: pong");
   await daemon.waitFor(statusIs(thread.id, "idle"));
   expect(await switchTo(thread.id, "codex")).toBeNull();
-  expect((await daemon.threads()).find((t) => t.id === thread.id)?.provider).toBe("codex");
+  expect((await daemon.threads()).find((candidate) => candidate.id === thread.id)?.provider).toBe(
+    "codex",
+  );
 
   await turn(thread.id, "Now say hi");
   const [items] = codexTurnTexts(folder);
@@ -134,7 +137,9 @@ test("the harness can't be switched mid-turn", async () => {
   const thread = await daemon.create(folder, "Reply with exactly: pong");
   await daemon.waitFor(statusIs(thread.id, "running"));
   expect(await switchTo(thread.id, "codex")).toContain("Stop");
-  expect((await daemon.threads()).find((t) => t.id === thread.id)?.provider).toBe("claude");
+  expect((await daemon.threads()).find((candidate) => candidate.id === thread.id)?.provider).toBe(
+    "claude",
+  );
 });
 
 test("rewinding a thread that switched harness starts its agent afresh with the conversation kept", async () => {

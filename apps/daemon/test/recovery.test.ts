@@ -23,6 +23,7 @@ afterEach(async () => {
 
 const codex = fixture("codex-two-turns").sessions[0]!;
 const claude = fixture("claude-two-turns").sessions[0]!;
+
 /** Claude up to answering `initialize`: the turn has started and nothing has come back yet. */
 const claudeMidTurn = until(claude, (step) => "reply" in step);
 
@@ -111,7 +112,9 @@ test("a turn cut short by quitting the app ends in the transcript", async () => 
   daemon = await startDaemon();
   const transcript = daemon.transcript(thread.id);
   expect(transcript.slice(-2).map((event) => event._tag)).toEqual(["turn.completed", "error"]);
-  expect((await daemon.threads()).find((t) => t.id === thread.id)?.status).toBe("idle");
+  expect((await daemon.threads()).find((candidate) => candidate.id === thread.id)?.status).toBe(
+    "idle",
+  );
 });
 
 test("a turn cut short by the daemon crashing ends in the transcript on the next start", async () => {

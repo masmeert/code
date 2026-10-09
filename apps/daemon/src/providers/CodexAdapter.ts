@@ -39,7 +39,9 @@ import {
   type TurnInput,
 } from "./ProviderAdapter.ts";
 
-const fail = (message: string) => new ProviderError({ provider: "codex", message });
+function fail(message: string) {
+  return new ProviderError({ provider: "codex", message });
+}
 
 /** Codex's own presets: untrusted asks before most commands, on-request is "Auto", never + full access is "Full access". */
 const PERMISSION = {
@@ -58,8 +60,8 @@ const CODEX_DECISION = {
 } as const satisfies Record<ApprovalDecision, string>;
 
 /** The per-turn form of `PERMISSION[level].sandbox`. */
-const codexSandboxPolicy = (level: PermissionLevel, cwd: string) =>
-  Match.value(PERMISSION[level].sandbox).pipe(
+function codexSandboxPolicy(level: PermissionLevel, cwd: string) {
+  return Match.value(PERMISSION[level].sandbox).pipe(
     Match.when("danger-full-access", () => ({ type: "dangerFullAccess" })),
     Match.when("read-only", () => ({ type: "readOnly" })),
     Match.orElse(() => ({
@@ -70,10 +72,12 @@ const codexSandboxPolicy = (level: PermissionLevel, cwd: string) =>
       excludeSlashTmp: false,
     })),
   );
+}
 
 /** Ultracode and ultrathink are Claude's; Codex keeps its default effort for them. */
-const toCodexEffort = (effort: Effort) =>
-  effort === "ultracode" || effort === "ultrathink" ? null : effort;
+function toCodexEffort(effort: Effort) {
+  return effort === "ultracode" || effort === "ultrathink" ? null : effort;
+}
 
 const ModelPrice = Schema.Struct({
   input_cost_per_token: Schema.Number,
@@ -109,8 +113,10 @@ async function apiCostUsd(
       prices = undefined;
       return new Map();
     });
+
   const price = (await prices).get(model);
   if (!price) return null;
+
   // ponytail: prices the whole thread at its current model, and ignores long-context surcharges.
   return (
     (usage.inputTokens - usage.cachedInputTokens) * price.input_cost_per_token +
@@ -134,6 +140,7 @@ async function threadUsage(
 
 function elicitationResponse(elicitation: CodexElicitation, decision: ApprovalDecision) {
   if (decision === "deny" || elicitation.mode === "url") return { action: "decline" };
+
   const content = Object.fromEntries(
     Object.entries(elicitation.requestedSchema?.properties ?? {}).flatMap(([key, field]) => {
       const chosen = (
@@ -144,7 +151,8 @@ function elicitationResponse(elicitation: CodexElicitation, decision: ApprovalDe
           : /once|accept|approve|allow|yes/i.test(value) && !/session|always|persist/i.test(value),
       );
       if (chosen !== undefined) return [[key, chosen] as const];
-      if (field.type === "boolean")
+
+      if (field.type === "boolean") {
         return [
           [
             key,
@@ -153,17 +161,20 @@ function elicitationResponse(elicitation: CodexElicitation, decision: ApprovalDe
               : (field.default ?? true),
           ] as const,
         ];
+      }
+
       if (field.default !== undefined && field.default !== null)
         return [[key, field.default] as const];
       return [];
     }),
   );
+
   return decision === "allow-session" && [elicitation._meta?.persist].flat().includes("session")
     ? { action: "accept", content, _meta: { persist: "session" } }
     : { action: "accept", content };
 }
 
-const start = ({
+function start({
   threadId,
   cwd,
   harness,
@@ -174,8 +185,8 @@ const start = ({
   onResumeToken,
   emit,
   mcpServer,
-}: StartSessionInput) =>
-  Effect.gen(function* () {
+}: StartSessionInput) {
+  return Effect.gen(function* () {
     const pendingApprovals = new Map<
       string,
       { readonly rpcId: RpcId; readonly elicitation: CodexElicitation | null }
@@ -209,6 +220,7 @@ const start = ({
       isError: boolean,
     ) {
       if (subagent.nested || !subagent.open) return;
+
       subagent.open = false;
       emit(
         RuntimeEvent.cases["tool.completed"].make({
@@ -226,6 +238,7 @@ const start = ({
     function subagentsRunning() {
       return [...subagents.values()].some((subagent) => !subagent.nested && subagent.open);
     }
+
     let currentModel = model ?? null;
     let permission = initialPermission;
     let effort = initialEffort;
@@ -261,6 +274,7 @@ const start = ({
           "item/started": ({ params }) => {
             const subagent = subagents.get(params.threadId);
             if (params.threadId !== codexThreadId && !subagent) return;
+
             emit(
               RuntimeEvent.cases["tool.started"].make({
                 ...StartedItem.match(params.item, {
@@ -290,6 +304,7 @@ const start = ({
           "item/completed": ({ params }) => {
             const subagent = subagents.get(params.threadId);
             if (params.threadId !== codexThreadId && !subagent) return;
+
             const event = CompletedItem.match(params.item, {
               agentMessage: (item) => {
                 // A subagent's messages are its report, not the thread's.
@@ -315,6 +330,7 @@ const start = ({
                 // Subagents also report on the main thread ("/root"); taking it for one of them
                 // would swallow the main agent's answer as a subagent's report.
                 if (item.agentThreadId === codexThreadId) return null;
+
                 const known = subagents.get(item.agentThreadId);
                 if (item.kind === "started" && !known) {
                   const leaf = item.agentPath.split("/").at(-1)?.replaceAll("_", " ") ?? "";
@@ -327,6 +343,7 @@ const start = ({
                     lastMessage: "",
                   });
                   if (subagent) return null;
+
                   return RuntimeEvent.cases["tool.started"].make({
                     threadId,
                     toolId: item.id,
@@ -334,12 +351,14 @@ const start = ({
                     summary: name,
                   });
                 }
-                if (known && (item.kind === "completed" || item.kind === "interrupted"))
+
+                if (known && (item.kind === "completed" || item.kind === "interrupted")) {
                   closeSubagent(
                     known,
                     item.kind === "interrupted" ? "Stopped" : known.lastMessage || "Finished",
                     false,
                   );
+                }
                 return null;
               },
               commandExecution: (item) =>
@@ -368,6 +387,7 @@ const start = ({
                   isError: item.status === "failed" || item.error !== null,
                 }),
             });
+
             if (event) emit(event);
           },
           "turn/completed": ({ params }) => {
@@ -376,7 +396,7 @@ const start = ({
               // A subagent's turn ending is its end: Codex doesn't always report it on the main
               // thread, and says nothing there when Stop interrupts it.
               const subagent = subagents.get(params.threadId);
-              if (subagent)
+              if (subagent) {
                 closeSubagent(
                   subagent,
                   Match.value(params.turn.status).pipe(
@@ -386,28 +406,33 @@ const start = ({
                   ),
                   params.turn.status === "failed",
                 );
+              }
               return;
             }
+
             activeTurnId = null;
             // Codex doesn't say when the limit resets; the session manager asks for the windows.
             if (
               params.turn.status === "failed" &&
               (limited || params.turn.error?.codexErrorInfo === "usageLimitExceeded")
-            )
+            ) {
               emit(
                 RuntimeEvent.cases["thread.limitStop"].make({
                   threadId,
                   limitStop: { provider: "codex", resetsAt: null, resumeAtReset: null },
                 }),
               );
+            }
             limited = false;
-            if (params.turn.status === "failed")
+
+            if (params.turn.status === "failed") {
               emit(
                 RuntimeEvent.cases.error.make({
                   threadId,
                   message: params.turn.error?.message ?? "Turn failed",
                 }),
               );
+            }
             emit(
               RuntimeEvent.cases["turn.completed"].make({
                 threadId,
@@ -419,6 +444,7 @@ const start = ({
           },
           error: ({ params }) => {
             if (params.willRetry) return;
+
             if (params.threadId === codexThreadId) {
               limited ||= params.error.codexErrorInfo === "usageLimitExceeded";
               emit(RuntimeEvent.cases.error.make({ threadId, message: params.error.message }));
@@ -435,8 +461,10 @@ const start = ({
               );
               return;
             }
+
             const subagent = subagents.get(params.threadId);
             if (!subagent || subagent.nested) return;
+
             emit(
               RuntimeEvent.cases["tool.progress"].make({
                 threadId,
@@ -460,6 +488,7 @@ const start = ({
       // Each process numbers its requests from 0, and the transcript keeps approvals across relaunches.
       const requestId = `codex-${randomUUID()}`;
       pendingApprovals.set(requestId, { rpcId, elicitation });
+
       emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "awaiting-approval" }));
       emit(
         RuntimeEvent.cases["approval.requested"].make({
@@ -470,6 +499,7 @@ const start = ({
           agent: subagents.get(fromThreadId ?? "")?.name,
         }),
       );
+
       return true;
     }
 
@@ -510,7 +540,7 @@ const start = ({
             onServerRequest,
             onExit: (code, stderrTail) => {
               const crashed = code !== 0 && code !== null;
-              if (crashed)
+              if (crashed) {
                 emit(
                   RuntimeEvent.cases.error.make({
                     threadId,
@@ -519,6 +549,7 @@ const start = ({
                     }. Send a message to pick the thread back up.`,
                   }),
                 );
+              }
               emit(
                 RuntimeEvent.cases["thread.status"].make({
                   threadId,
@@ -565,12 +596,14 @@ const start = ({
           },
         );
       },
-      catch: (e) => fail(e instanceof Error ? e.message : String(e)),
+      catch: (error) => fail(error instanceof Error ? error.message : String(error)),
     });
+
     function request<A>(method: string, params: Schema.Json, response: Schema.Decoder<A>) {
       return Effect.tryPromise({
         try: () => rpc.request(method, params, response),
-        catch: (e) => fail(`${method}: ${e instanceof Error ? e.message : String(e)}`),
+        catch: (error) =>
+          fail(`${method}: ${error instanceof Error ? error.message : String(error)}`),
       });
     }
 
@@ -595,19 +628,19 @@ const start = ({
     startedModel = started.model;
     onResumeToken(codexThreadId);
 
-    const input = (turn: TurnInput) => {
+    function input(turn: TurnInput) {
       const text = textWithFiles(turn);
       return [
         ...(turn.handoff ? [{ type: "text", text: turn.handoff, text_elements: [] }] : []),
         ...turn.attachments
-          .filter((a) => a.isImage)
-          .map((a) => ({ type: "localImage", path: a.path })),
+          .filter((attachment) => attachment.isImage)
+          .map((image) => ({ type: "localImage", path: image.path })),
         ...(text ? [{ type: "text", text, text_elements: [] }] : []),
         ...turn.skills.flatMap(({ name, path }) =>
           path === null ? [] : [{ type: "skill", name, path }],
         ),
       ];
-    };
+    }
 
     const session: ProviderSession = {
       send: (turn) =>
@@ -619,7 +652,8 @@ const start = ({
             turn.effort !== null && turn.effort !== effort ? toCodexEffort(turn.effort) : null;
           permission = turn.permission;
           if (turn.effort) effort = turn.effort;
-          const res = yield* request(
+
+          const response = yield* request(
             "turn/start",
             {
               threadId: codexThreadId,
@@ -633,7 +667,7 @@ const start = ({
             },
             Schema.Struct({ turn: Schema.Struct({ id: Schema.String }) }),
           );
-          activeTurnId = res.turn.id;
+          activeTurnId = response.turn.id;
         }),
       // Joins the running turn; with none running (it just ended), starts one.
       steer: (turn) =>
@@ -677,6 +711,7 @@ const start = ({
           const pending = pendingApprovals.get(requestId);
           if (pending === undefined)
             return Effect.fail(fail(`Unknown approval request ${requestId}`));
+
           pendingApprovals.delete(requestId);
           rpc.respond(
             pending.rpcId,
@@ -686,18 +721,22 @@ const start = ({
           );
           emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
           emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
+
           return Effect.void;
         }),
       // A turn's model override sticks for later turns, so "null" keeps the last one.
       setModel: (next) => Effect.sync(() => void (currentModel = next ?? currentModel)),
       close: Effect.sync(() => rpc.close()),
     };
+
     return session;
   });
+}
 
 /** `thread/revert` cuts history before a turn id, so look up the oldest of the last `dropTurns` turns. */
 async function dropLastTurns(rpc: CodexRpc, threadId: string, dropTurns: number) {
   if (dropTurns <= 0) return;
+
   const { data: turns } = await rpc.request(
     "thread/turns/list",
     { threadId, limit: dropTurns, sortDirection: "desc" },
@@ -706,6 +745,7 @@ async function dropLastTurns(rpc: CodexRpc, threadId: string, dropTurns: number)
   const firstDropped = turns[dropTurns - 1];
   if (firstDropped === undefined)
     throw new Error(`the thread has ${turns.length} turns, can't drop ${dropTurns}`);
+
   await rpc.request("thread/revert", { threadId, beforeTurnId: firstDropped.id }, Schema.Unknown);
 }
 
@@ -726,7 +766,8 @@ const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, dropTurn
         rpc.close();
       }
     },
-    catch: (e) => fail(`Couldn't rewind: ${e instanceof Error ? e.message : String(e)}`),
+    catch: (error) =>
+      fail(`Couldn't rewind: ${error instanceof Error ? error.message : String(error)}`),
   });
 
 /** Forks the thread in a short-lived app-server and drops the fork's last turns. */
@@ -746,7 +787,8 @@ const fork: ProviderAdapter["fork"] = ({ cwd, harness, resumeToken, dropTurns })
         rpc.close();
       }
     },
-    catch: (e) => fail(`Couldn't fork: ${e instanceof Error ? e.message : String(e)}`),
+    catch: (error) =>
+      fail(`Couldn't fork: ${error instanceof Error ? error.message : String(error)}`),
   });
 
 /** Codex reports a thread's token usage as it loads it, so a short-lived app-server resumes it and waits for that. */
@@ -762,8 +804,9 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
             if (
               CodexNotification.guards["thread/tokenUsage/updated"](notification) &&
               notification.params.threadId === resumeToken
-            )
+            ) {
               report(notification.params.tokenUsage);
+            }
           },
         },
         harnessLaunch("codex", harness),
@@ -778,6 +821,7 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
           reported,
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
         ]);
+
         return usage
           ? await threadUsage(usage, model ?? resumed.model)
           : { context: null, costUsd: null };
@@ -785,7 +829,8 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
         rpc.close();
       }
     },
-    catch: (e) => fail(`Couldn't read usage: ${e instanceof Error ? e.message : String(e)}`),
+    catch: (error) =>
+      fail(`Couldn't read usage: ${error instanceof Error ? error.message : String(error)}`),
   });
 
 const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
@@ -820,7 +865,7 @@ const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
         rpc.close();
       }
     },
-    catch: (e) => fail(e instanceof Error ? e.message : String(e)),
+    catch: (error) => fail(error instanceof Error ? error.message : String(error)),
   });
 
 export const CodexAdapter: ProviderAdapter = {

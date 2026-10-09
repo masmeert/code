@@ -23,18 +23,18 @@ if (!process.env.MASSCODE_DATA_DIR && !existsSync(DATA_DIR) && existsSync(LEGACY
  * A schema-validated JSON file held in memory and written through on every change.
  * A missing or invalid file starts from `fallback`.
  */
-export const openJsonFile = <A, I>(fileName: string, schema: Schema.Codec<A, I>, fallback: A) =>
-  Effect.gen(function* () {
+export function openJsonFile<A, I>(fileName: string, schema: Schema.Codec<A, I>, fallback: A) {
+  return Effect.gen(function* () {
     const path = join(DATA_DIR, fileName);
     const initial = yield* Effect.tryPromise(() => readFile(path, "utf8")).pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(schema))),
       Effect.orElseSucceed(() => fallback),
     );
-    const ref = yield* Ref.make(initial);
+    const current = yield* Ref.make(initial);
     const encode = Schema.encodeSync(schema);
 
-    const set = (value: A) =>
-      Ref.set(ref, value).pipe(
+    function set(value: A) {
+      return Ref.set(current, value).pipe(
         Effect.andThen(
           Effect.tryPromise(async () => {
             await mkdir(dirname(path), { recursive: true });
@@ -43,6 +43,8 @@ export const openJsonFile = <A, I>(fileName: string, schema: Schema.Codec<A, I>,
         ),
         Effect.catch((error) => Effect.logWarning(`failed to write ${path}`, error)),
       );
+    }
 
-    return { get: Ref.get(ref), set };
+    return { get: Ref.get(current), set };
   });
+}

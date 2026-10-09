@@ -10,7 +10,7 @@ import { expandHome } from "../folders.ts";
 import { readRemoteUrl, readRepoFolder } from "../git.ts";
 import { openJsonFile } from "./jsonFile.ts";
 
-export class ProjectNotFound extends Schema.TaggedError<ProjectNotFound>()("ProjectNotFound", {
+class ProjectNotFound extends Schema.TaggedError<ProjectNotFound>()("ProjectNotFound", {
   message: Schema.String,
 }) {}
 
@@ -28,8 +28,10 @@ export class ProjectsStore extends Context.Service<
 
 const make = Effect.gen(function* () {
   const file = yield* openJsonFile("projects.json", Schema.Array(Project), []);
+
   // Serializes read-modify-write so concurrent commands can't register the same folder twice.
   const lock = yield* Semaphore.make(1);
+
   // Projects added before their repo was read get it once, so they group with their copies elsewhere.
   const saved = yield* file.get;
   if (saved.some((project) => project.remote === undefined || project.folder === undefined))
@@ -44,18 +46,18 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const ensure = (rawPath: string) =>
-    Effect.gen(function* () {
+  function ensure(rawPath: string) {
+    return Effect.gen(function* () {
       const path = resolve(expandHome(rawPath));
       const projects = yield* file.get;
-      const existing = projects.find((p) => p.path === path);
+      const existing = projects.find((project) => project.path === path);
       if (existing) return { project: existing, created: false };
 
-      const isDir = yield* Effect.tryPromise(() => stat(path)).pipe(
-        Effect.map((s) => s.isDirectory()),
+      const isFolder = yield* Effect.tryPromise(() => stat(path)).pipe(
+        Effect.map((stats) => stats.isDirectory()),
         Effect.orElseSucceed(() => false),
       );
-      if (!isDir)
+      if (!isFolder)
         return yield* Effect.fail(new ProjectNotFound({ message: `Not a folder: ${path}` }));
 
       const project: Project = {
@@ -69,15 +71,18 @@ const make = Effect.gen(function* () {
       yield* file.set([...projects, project]);
       return { project, created: true };
     });
+  }
 
-  const remove = (projectId: string) =>
-    Effect.gen(function* () {
+  function remove(projectId: string) {
+    return Effect.gen(function* () {
       const projects = yield* file.get;
-      const next = projects.filter((p) => p.id !== projectId);
+      const next = projects.filter((project) => project.id !== projectId);
       if (next.length === projects.length) return false;
+
       yield* file.set(next);
       return true;
     });
+  }
 
   return ProjectsStore.of({
     list: file.get,
