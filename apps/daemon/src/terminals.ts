@@ -343,6 +343,25 @@ export function createTerminals(options: {
       for (const session of sessions.values())
         if (session.threadId === threadId) close(threadId, session.terminalId);
     },
+    /** Closes the thread's shells sitting at a prompt with no one watching; runs and busy shells stay (as in t3code). */
+    closeIdle(threadId: string) {
+      for (const session of sessions.values()) {
+        if (
+          session.threadId !== threadId ||
+          session.command !== undefined ||
+          session.viewers.size > 0
+        )
+          continue;
+        // A child process means the shell is running something: an editor, a dev server, a background job.
+        // pgrep exits 1 only when it found none; anything else (or no pgrep at all) keeps the shell.
+        try {
+          if (Bun.spawnSync(["pgrep", "-P", String(session.shell.pid)]).exitCode !== 1) continue;
+        } catch {
+          continue;
+        }
+        close(threadId, session.terminalId);
+      }
+    },
     closeAll() {
       for (const session of sessions.values()) {
         session.onExit = null;

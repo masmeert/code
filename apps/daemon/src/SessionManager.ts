@@ -597,6 +597,10 @@ const make = Effect.gen(function* () {
     if (shelved === entry.info.shelved) return;
     entry.info = { ...entry.info, shelved };
     publish(RuntimeEvent.cases["thread.shelved"].make({ threadId: entry.info.id, shelved }));
+    if (!shelved) return;
+    terminals.closeIdle(entry.info.id);
+    // Shelved threads never have a turn going; like the idle reaper, the next message resumes from the token.
+    if (entry.session) Effect.runFork(dropSession(entry, null));
   };
   // Idle threads shelve with time alone; the threshold is in days, so a check a minute is plenty.
   // Resuming at a usage limit's reset rides along: a minute late is fine, and it survives sleep.
