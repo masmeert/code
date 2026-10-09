@@ -12,11 +12,11 @@ import type { TranscriptItem } from "./store.ts";
 
 /** Bump when a record's shape changes; older records then read as a cold cache. */
 const VERSION = 4;
-const DB = "masscode.cache";
+const DATABASE_NAME = "masscode.cache";
 const SHELL = "shell";
 const THREADS = "threads";
 
-export interface CachedShell {
+interface CachedShell {
   readonly version: number;
   readonly dataId: string;
   readonly settings: Settings;
@@ -26,37 +26,36 @@ export interface CachedShell {
   readonly threads: Readonly<Record<string, ThreadInfo>>;
 }
 
-export interface CachedTranscript {
+interface CachedTranscript {
   readonly version: number;
   readonly items: ReadonlyArray<TranscriptItem>;
   readonly cursor: number;
   readonly page: PageInfo | null;
 }
 
-let db: Promise<IDBDatabase> | null = null;
-const open = () =>
-  (db ??= new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, VERSION);
-    req.onupgradeneeded = () => {
-      // Stores from older versions hold shapes we no longer read.
-      for (const name of req.result.objectStoreNames) req.result.deleteObjectStore(name);
-      req.result.createObjectStore(SHELL);
-      req.result.createObjectStore(THREADS);
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  }));
+let database: Promise<IDBDatabase> | null = null;
 
-const get = async <A extends { version: number }>(
-  store: string,
-  key: string,
-): Promise<A | null> => {
+function open() {
+  return (database ??= new Promise((resolve, reject) => {
+    const request = indexedDB.open(DATABASE_NAME, VERSION);
+    request.onupgradeneeded = () => {
+      // Stores from older versions hold shapes we no longer read.
+      for (const name of request.result.objectStoreNames) request.result.deleteObjectStore(name);
+      request.result.createObjectStore(SHELL);
+      request.result.createObjectStore(THREADS);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  }));
+}
+
+async function get<A extends { version: number }>(store: string, key: string): Promise<A | null> {
   try {
-    const conn = await open();
+    const connection = await open();
     const value = await new Promise<unknown>((resolve, reject) => {
-      const req = conn.transaction(store).objectStore(store).get(key);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
+      const request = connection.transaction(store).objectStore(store).get(key);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
     });
     // SAFETY: only saveShell/saveTranscript write these stores, and a record from another version is dropped below.
     const record = value as A | undefined;
@@ -64,13 +63,19 @@ const get = async <A extends { version: number }>(
   } catch {
     return null;
   }
-};
+}
 
-const threadKey = (dataId: string, threadId: string) => `${dataId}:${threadId}`;
+function threadKey(dataId: string, threadId: string) {
+  return `${dataId}:${threadId}`;
+}
 
-export const loadShell = () => get<CachedShell>(SHELL, "shell");
-export const loadTranscript = (dataId: string, threadId: string) =>
-  get<CachedTranscript>(THREADS, threadKey(dataId, threadId));
+export function loadShell() {
+  return get<CachedShell>(SHELL, "shell");
+}
+
+export function loadTranscript(dataId: string, threadId: string) {
+  return get<CachedTranscript>(THREADS, threadKey(dataId, threadId));
+}
 
 // Writes are debounced (streaming deltas arrive many times a second) and only the
 // latest value per key is kept.
@@ -80,37 +85,44 @@ const pending = new Map<
 >();
 let timer: ReturnType<typeof setTimeout> | null = null;
 
-const flush = async () => {
+async function flush() {
   timer = null;
   if (pending.size === 0) return;
+
   const writes = [...pending];
   pending.clear();
   try {
-    const conn = await open();
-    const tx = conn.transaction([SHELL, THREADS], "readwrite");
+    const connection = await open();
+    const transaction = connection.transaction([SHELL, THREADS], "readwrite");
     for (const [key, { store, value }] of writes) {
-      const objects = tx.objectStore(store);
+      const objects = transaction.objectStore(store);
       const id = key.slice(store.length + 1);
       if (value === undefined) objects.delete(id);
       else objects.put(value, id);
     }
   } catch {}
-};
+}
 
-const queue = (store: string, id: string, value: CachedShell | CachedTranscript | undefined) => {
+function queue(store: string, id: string, value: CachedShell | CachedTranscript | undefined) {
   pending.set(`${store}:${id}`, { store, value });
   timer ??= setTimeout(flush, 500);
-};
+}
 
-export const saveShell = (shell: Omit<CachedShell, "version">) =>
+export function saveShell(shell: Omit<CachedShell, "version">) {
   queue(SHELL, "shell", { version: VERSION, ...shell });
-export const saveTranscript = (
+}
+
+export function saveTranscript(
   dataId: string,
   threadId: string,
   transcript: Omit<CachedTranscript, "version">,
-) => queue(THREADS, threadKey(dataId, threadId), { version: VERSION, ...transcript });
-export const removeTranscript = (dataId: string, threadId: string) =>
+) {
+  queue(THREADS, threadKey(dataId, threadId), { version: VERSION, ...transcript });
+}
+
+export function removeTranscript(dataId: string, threadId: string) {
   queue(THREADS, threadKey(dataId, threadId), undefined);
+}
 
 // Don't lose the last half second on quit.
 window.addEventListener("pagehide", () => {

@@ -1,6 +1,14 @@
-import { isTurnActive } from "@masscode/contracts";
+import { isTurnActive, type ThreadStatus } from "@masscode/contracts";
 import { harnessLabel } from "./models.ts";
 import { watchState } from "./store.ts";
+
+function describeChange(was: ThreadStatus, status: ThreadStatus) {
+  if (status === "awaiting-approval") return "needs your approval";
+  if (status === "awaiting-answer") return "has a question for you";
+  if (status === "error") return "stopped with an error";
+  if (status === "idle" && isTurnActive(was)) return "finished";
+  return null;
+}
 
 /**
  * Tells you, through the OS, when a thread finishes, stops on an error or waits on an
@@ -11,26 +19,19 @@ watchState((prev, next) => {
   const desktop = window.desktop;
   if (!desktop || next.threads === prev.threads) return;
   // Only live changes: loading the cache or reconnecting isn't news.
-  if (prev.source === "daemon" && next.settings.notifications !== false)
-    for (const id of next.order) {
-      const info = next.threads[id]!;
-      const was = prev.threads[id]?.status;
-      if (was === undefined || was === info.status) continue;
-      const body =
-        info.status === "awaiting-approval"
-          ? "needs your approval"
-          : info.status === "awaiting-answer"
-            ? "has a question for you"
-            : info.status === "error"
-              ? "stopped with an error"
-              : info.status === "idle" && isTurnActive(was)
-                ? "finished"
-                : null;
-      if (body)
-        void desktop.notify({
-          threadId: id,
-          title: info.title,
-          body: `${harnessLabel(next.settings, info.provider)} ${body}`,
-        });
-    }
+  if (prev.source !== "daemon" || next.settings.notifications === false) return;
+
+  for (const id of next.order) {
+    const info = next.threads[id];
+    const was = prev.threads[id]?.status;
+    if (was === undefined || was === info.status) continue;
+
+    const body = describeChange(was, info.status);
+    if (body)
+      void desktop.notify({
+        threadId: id,
+        title: info.title,
+        body: `${harnessLabel(next.settings, info.provider)} ${body}`,
+      });
+  }
 });

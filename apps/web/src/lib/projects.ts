@@ -23,14 +23,15 @@ function setPending(next: typeof pending) {
   for (const listener of listeners) listener();
 }
 
-export const useAddProjectOpen = () =>
-  useSyncExternalStore(
+export function useAddProjectOpen() {
+  return useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
     () => pending !== null,
   );
+}
 
 /** Answers the open Add Project dialog: the added folder, or null when it was closed. */
 export function finishAddProject(path: string | null) {
@@ -52,5 +53,6 @@ export function addProject(): Promise<string | null> {
  * Which project this is on every machine: its repo, and where it sits in it since a repo can
  * hold several projects. A folder outside git, or in a repo without a remote, is only itself.
  */
-export const projectKey = (project: Pick<Project, "id" | "remote" | "folder">) =>
-  project.remote ? `${repositoryOf(project.remote)}#${project.folder ?? ""}` : project.id;
+export function projectKey(project: Pick<Project, "id" | "remote" | "folder">) {
+  return project.remote ? `${repositoryOf(project.remote)}#${project.folder ?? ""}` : project.id;
+}

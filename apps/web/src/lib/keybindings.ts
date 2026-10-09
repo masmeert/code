@@ -31,23 +31,27 @@ export const KEYBINDINGS = {
 export type KeybindingId = keyof typeof KEYBINDINGS;
 
 /** How a shortcut reads in the UI, e.g. ⌘⇧M. */
-export const describe = (id: KeybindingId) => formatBinding(KEYBINDINGS[id]);
+export function describe(id: KeybindingId) {
+  return formatBinding(KEYBINDINGS[id]);
+}
 
 /** Runs `onPress` on the shortcut while mounted. */
-export const useKeybinding = (
+export function useKeybinding(
   id: KeybindingId | undefined,
   onPress: (event: KeyboardEvent) => void,
-) => {
+) {
   const handler = useRef(onPress);
   handler.current = onPress;
   useEffect(() => {
     if (!id) return;
+    // An arrow, so `id` stays narrowed to defined inside it.
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || !matches(event, KEYBINDINGS[id])) return;
       event.preventDefault();
       handler.current(event);
     };
+
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [id]);
-};
+}

@@ -15,13 +15,13 @@ const STATUS: Record<FileDiffMetadata["type"], GitStatus> = {
  * The files in the current diff, as a tree with git status.
  * Selecting a file reports it so the diff view can scroll there.
  */
-export const ChangedFilesTree = ({
+export function ChangedFilesTree({
   files,
   onPick,
 }: {
   files: ReadonlyArray<FileDiffMetadata>;
   onPick: (path: string) => void;
-}) => {
+}) {
   const paths = useMemo(() => files.map((file) => file.name), [files]);
   // Shape (and sort) once per diff, outside the tree's render path.
   const prepared = useMemo(() => prepareFileTreeInput(paths), [paths]);
@@ -33,6 +33,7 @@ export const ChangedFilesTree = ({
   // The model reads its options once; later callbacks go through a ref.
   const pick = useRef(onPick);
   pick.current = onPick;
+
   const { model } = useFileTree({
     preparedInput: prepared,
     gitStatus: status,
@@ -47,10 +48,10 @@ export const ChangedFilesTree = ({
   });
 
   // After mount, updates go through model methods (the hook doesn't re-read options).
-  const first = useRef(true);
+  const isFirstRender = useRef(true);
   useEffect(() => {
-    if (first.current) {
-      first.current = false;
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
       return;
     }
     model.resetPaths({ preparedInput: prepared });
@@ -65,4 +66,4 @@ export const ChangedFilesTree = ({
       className="h-full [--trees-bg-override:var(--background)] [--trees-border-color-override:var(--border)] [--trees-fg-muted-override:var(--muted-foreground)] [--trees-fg-override:var(--foreground)] [--trees-selected-bg-override:var(--muted)]"
     />
   );
-};
+}

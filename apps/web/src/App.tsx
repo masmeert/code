@@ -27,30 +27,34 @@ import { DiffWorkers } from "./views/DiffWorkers.tsx";
 import { Sidebar } from "./views/Sidebar.tsx";
 import { DraftView, ThreadView } from "./views/ThreadView.tsx";
 
-/** What this window shows. Each window keeps its own. */
-/** A draft with a null path is a new thread whose project hasn't been picked yet. */
+/**
+ * What this window shows. Each window keeps its own. A draft with a null path is a new
+ * thread whose project hasn't been picked yet.
+ */
 type View =
   | { readonly kind: "thread"; readonly id: string }
   | { readonly kind: "draft"; readonly path: string | null };
 
 /** Windows opened with Ctrl+N carry their starting point in the URL. */
-const initialView = (): View | null => {
+function initialView(): View | null {
   const params = new URLSearchParams(location.search);
   const path = params.get("path");
   if (path) return { kind: "draft", path };
   if (params.has("home")) return { kind: "draft", path: null };
   return null;
-};
+}
 
-export const App = () => {
-  const order = useStore((s) => s.order);
-  const threads = useStore((s) => s.threads);
-  const projects = useStore((s) => s.projects);
-  const connected = useStore((s) => s.connected);
+export function App() {
+  const order = useStore((state) => state.order);
+  const threads = useStore((state) => state.threads);
+  const projects = useStore((state) => state.projects);
+  const connected = useStore((state) => state.connected);
   const incompatible = useStore(
-    (s) => s.incompatible ?? Object.values(s.hosts).find((host) => host.incompatible)?.incompatible,
+    (state) =>
+      state.incompatible ??
+      Object.values(state.hosts).find((host) => host.incompatible)?.incompatible,
   );
-  const source = useStore((s) => s.source);
+  const source = useStore((state) => state.source);
   // A cold start takes a moment and the cached threads are already on screen, so
   // only speak up if it's slow. Losing a live daemon is worth saying right away.
   const [slowStart, setSlowStart] = useState(false);
@@ -58,13 +62,15 @@ export const App = () => {
     const timer = setTimeout(() => setSlowStart(true), 2500);
     return () => clearTimeout(timer);
   }, []);
-  const theme = useStore((s) => s.settings.theme);
-  const switchTo = useStore((s) => s.switchTo);
+
+  const theme = useStore((state) => state.settings.theme);
+  const switchTo = useStore((state) => state.switchTo);
   const [chosen, setView] = useState<View | null>(initialView);
   const [modal, setModal] = useState<ModalView | null>(null);
   const [palette, setPalette] = useState(false);
   useKeybinding("palette.open", () => setPalette((open) => !open));
   useTheme(theme);
+
   // Stable, so sidebar rows (memoized) don't all redraw on every render.
   const selectThread = useCallback((id: string) => setView({ kind: "thread", id }), []);
   useEffect(() => window.desktop?.onOpenThread(selectThread), [selectThread]);
@@ -88,6 +94,7 @@ export const App = () => {
   if (activeThread && recent[0] !== activeThread)
     setRecent([activeThread, ...recent.filter((id) => id !== activeThread)].slice(0, 4));
   useEffect(() => keepFollowing(recent), [recent]);
+
   // A kept view isn't remounted, so its composer's autoFocus doesn't fire again.
   useEffect(() => {
     if (activeThread) focusComposer();
@@ -99,9 +106,16 @@ export const App = () => {
     window.desktop !== undefined &&
     navigator.userAgent.includes("Mac");
 
-  const draft = (path: string | null) => setView({ kind: "draft", path });
-  const projectPath = (threadId: string | undefined) =>
-    projects.find((project) => project.id === threads[threadId ?? ""]?.projectId)?.path ?? null;
+  function draft(path: string | null) {
+    setView({ kind: "draft", path });
+  }
+
+  function projectPath(threadId: string | undefined) {
+    return (
+      projects.find((project) => project.id === threads[threadId ?? ""]?.projectId)?.path ?? null
+    );
+  }
+
   // Where a new thread starts: the project on screen, else the latest thread's. A worktree
   // thread's cwd is its worktree, so this goes by the thread's project instead.
   const currentPath =
@@ -111,12 +125,13 @@ export const App = () => {
   useShortcut("n", () => draft(currentPath));
   useShortcut(",", () => setModal("settings"));
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && !e.metaKey && e.key === "n") {
-        e.preventDefault();
+    function onKey(event: KeyboardEvent) {
+      if (event.ctrlKey && !event.metaKey && event.key === "n") {
+        event.preventDefault();
         openWindow(currentPath);
       }
-    };
+    }
+
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [currentPath]);
@@ -224,4 +239,4 @@ export const App = () => {
       </DiffWorkers>
     </MotionConfig>
   );
-};
+}

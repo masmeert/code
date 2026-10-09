@@ -12,38 +12,41 @@ const TINTS = [
 ];
 
 /** "my-app" → "MA", "APSchool" → "AP". */
-const initials = (name: string) => {
+function initials(name: string) {
   const words = name.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-  const letters = words.length > 1 ? words[0]![0]! + words[1]![0]! : (words[0] ?? name).slice(0, 2);
+  const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? name).slice(0, 2);
   return letters.toUpperCase();
-};
+}
 
-const tint = (key: string) => {
+function tint(key: string) {
   let hash = 0;
   for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) | 0;
-  return TINTS[Math.abs(hash) % TINTS.length]!;
-};
+  return TINTS[Math.abs(hash) % TINTS.length];
+}
 
 /** Two-letter project mark, tinted per project (the same on every machine) so they're told apart at a glance. */
-export const ProjectBadge = ({
+export function ProjectBadge({
   project,
   className,
 }: {
   project: Pick<Project, "id" | "name" | "remote" | "folder">;
   className?: string;
-}) => (
-  <span
-    aria-hidden="true"
-    className={cn(
-      "grid size-4 shrink-0 place-items-center rounded-[4px] text-[8.5px] leading-none font-semibold tracking-tight",
-      tint(projectKey(project)),
-      className,
-    )}
-  >
-    {initials(project.name)}
-  </span>
-);
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "grid size-4 shrink-0 place-items-center rounded-[4px] text-[8.5px] leading-none font-semibold tracking-tight",
+        tint(projectKey(project)),
+        className,
+      )}
+    >
+      {initials(project.name)}
+    </span>
+  );
+}
 
 /** A project's name, and the remote host it's on when it isn't on this Mac. */
-export const projectLabel = (name: string, host: string | null | undefined) =>
-  host ? `${name} on ${host}` : name;
+export function projectLabel(name: string, host: string | null | undefined) {
+  return host ? `${name} on ${host}` : name;
+}

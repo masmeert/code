@@ -55,16 +55,14 @@ export const PERMISSION_DESCRIPTION: Record<PermissionLevel, string> = {
   "full-access": "Runs anything without asking, outside the sandbox too",
 };
 
-export interface TurnPrefs {
+interface TurnPrefs {
   /** Null leaves it to the harness. */
   readonly effort: Effort | null;
   readonly fast: boolean;
   readonly permission: PermissionLevel;
 }
 
-// --- prefs -----------------------------------------------------------------
 // Each thread keeps its own picks while the window is open; new ones start from Settings.
-
 const perThread = new Map<string, Partial<TurnPrefs>>();
 const prefsListeners = new Set<() => void>();
 
@@ -82,21 +80,23 @@ function setTurnPrefs(key: string, patch: Partial<TurnPrefs>) {
  * Drops what the harness doesn't take (e.g. "max" effort or plan mode after switching a draft to
  * Codex), and Full access on a root host that isn't allowed yet.
  */
-const fit = (prefs: TurnPrefs, provider: ProviderKind, needsRootConsent: boolean): TurnPrefs => ({
-  fast: prefs.fast,
-  effort: prefs.effort && EFFORTS[provider].includes(prefs.effort) ? prefs.effort : null,
-  permission:
-    PERMISSIONS[provider].includes(prefs.permission) &&
-    !(needsRootConsent && prefs.permission === "full-access")
-      ? prefs.permission
-      : // Every harness offers a level besides plan.
-        PERMISSIONS[provider].find((level) => level !== "plan")!,
-});
+function fit(prefs: TurnPrefs, provider: ProviderKind, needsRootConsent: boolean): TurnPrefs {
+  return {
+    fast: prefs.fast,
+    effort: prefs.effort && EFFORTS[provider].includes(prefs.effort) ? prefs.effort : null,
+    permission:
+      PERMISSIONS[provider].includes(prefs.permission) &&
+      !(needsRootConsent && prefs.permission === "full-access")
+        ? prefs.permission
+        : // Every harness offers a level besides plan.
+          PERMISSIONS[provider].find((level) => level !== "plan")!,
+  };
+}
 
 /** Effort and permission level for the composer identified by `key` (a thread id, or a draft's path). */
-export const useTurnPrefs = (key: string, provider: ProviderKind, host: string | null) => {
+export function useTurnPrefs(key: string, provider: ProviderKind, host: string | null) {
   const stored = useSyncExternalStore(onPrefsChange, () => perThread.get(key));
-  const settings = useStore((s) => s.settings);
+  const settings = useStore((state) => state.settings);
   const needsRootConsent = useNeedsRootConsent(host);
   const first = firstTurnOptions(key);
   const prefs = fit(
@@ -115,17 +115,17 @@ export const useTurnPrefs = (key: string, provider: ProviderKind, host: string |
     needsRootConsent,
   );
   return [prefs, (patch: Partial<TurnPrefs>) => setTurnPrefs(key, { ...prefs, ...patch })] as const;
-};
+}
 
-// --- root hosts ------------------------------------------------------------
 // A daemon running as root lets Full access change anything on its machine, so each such host
 // needs a one-time OK first.
-
-const rootConsentKey = (host: string) => `masscode.fullAccessAsRoot.${host}`;
+function rootConsentKey(host: string) {
+  return `masscode.fullAccessAsRoot.${host}`;
+}
 
 /** Whether Full access on `host` still waits for that OK. */
 export function useNeedsRootConsent(host: string | null) {
-  const root = useStore((s) => host !== null && s.hosts[host]?.root === true);
+  const root = useStore((state) => host !== null && state.hosts[host]?.root === true);
   const allowed = useSyncExternalStore(
     onPrefsChange,
     () => host !== null && localStorage.getItem(rootConsentKey(host)) === "1",
@@ -160,27 +160,27 @@ export function approvePlan(
   setTurnPrefs(threadId, { permission });
 }
 
-// --- attachments -----------------------------------------------------------
-
 const IMAGE_NAME = /\.(png|jpe?g|gif|webp)$/i;
-const fileName = (path: string) => path.split(/[\\/]/).at(-1) ?? path;
 
-export const fromPath = (path: string): DraftAttachment => ({
-  id: crypto.randomUUID(),
-  name: fileName(path),
-  image: IMAGE_NAME.test(path),
-  input: AttachmentInput.cases.path.make({ path }),
-});
+function fromPath(path: string): DraftAttachment {
+  return {
+    id: crypto.randomUUID(),
+    name: path.split(/[\\/]/).at(-1) ?? path,
+    image: IMAGE_NAME.test(path),
+    input: AttachmentInput.cases.path.make({ path }),
+  };
+}
 
-const readBase64 = (file: File) =>
-  new Promise<string>((resolve, reject) => {
+function readBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result).split(",", 2)[1] ?? "");
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
 
-const fromFile = async (file: File): Promise<DraftAttachment> => {
+async function fromFile(file: File): Promise<DraftAttachment> {
   const image = file.type.startsWith("image/");
   const name =
     file.name || (image ? `Pasted image.${file.type.split("/")[1] ?? "png"}` : "Pasted file");
@@ -195,24 +195,27 @@ const fromFile = async (file: File): Promise<DraftAttachment> => {
       data: await readBase64(file),
     }),
   };
-};
+}
 
 /** A sent message's files, back in a composer (they're on disk by then). */
-export const fromSent = (attachment: Attachment): DraftAttachment => fromPath(attachment.path);
+export function fromSent(attachment: Attachment): DraftAttachment {
+  return fromPath(attachment.path);
+}
 
 /** Past this, pasted text becomes an attached file instead of flooding the prompt (t3code uses 32 KiB too). */
 export const LARGE_PASTE_BYTES = 32 * 1024;
 
-const toBase64 = (text: string) => {
+function toBase64(text: string) {
   const bytes = new TextEncoder().encode(text);
   let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000)
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  // Chunked so the spread stays under the engine's argument limit.
+  for (let offset = 0; offset < bytes.length; offset += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
   return btoa(binary);
-};
+}
 
 /** Pasted text as a file the agent can read. */
-export const fromText = (text: string): DraftAttachment => {
+export function fromText(text: string): DraftAttachment {
   const name = `Pasted text (${Math.max(1, Math.round(text.length / 1024))} KB).txt`;
   return {
     id: crypto.randomUUID(),
@@ -220,7 +223,7 @@ export const fromText = (text: string): DraftAttachment => {
     image: false,
     input: AttachmentInput.cases.data.make({ name, mediaType: "text/plain", data: toBase64(text) }),
   };
-};
+}
 
 /** Picked or dropped files; a remote host can't read this Mac's paths, so they go as data. */
 async function fromPaths(paths: ReadonlyArray<string>, remote: boolean) {
@@ -237,7 +240,7 @@ async function fromPaths(paths: ReadonlyArray<string>, remote: boolean) {
 }
 
 /** Files queued for the next message of composer `key`: picked, pasted, or dropped onto the window. */
-export const useAttachments = ({
+export function useAttachments({
   key,
   acceptDrops,
   remote,
@@ -246,23 +249,29 @@ export const useAttachments = ({
   acceptDrops: boolean;
   /** The composer's thread runs on a remote host. */
   remote: boolean;
-}) => {
+}) {
   const attachments = useDraft(key).attachments;
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const setAttachments = (
+
+  function setAttachments(
     update: (prev: ReadonlyArray<DraftAttachment>) => ReadonlyArray<DraftAttachment>,
-  ) => setDraft(key, (draft) => ({ ...draft, attachments: update(draft.attachments) }));
+  ) {
+    setDraft(key, (draft) => ({ ...draft, attachments: update(draft.attachments) }));
+  }
 
-  const add = (next: ReadonlyArray<DraftAttachment>) =>
+  function add(next: ReadonlyArray<DraftAttachment>) {
     setAttachments((prev) => [...prev, ...next]);
-  const revoke = (list: ReadonlyArray<DraftAttachment>) => {
-    for (const a of list) if (a.preview) URL.revokeObjectURL(a.preview);
-  };
+  }
 
-  const addFiles = async (files: ReadonlyArray<File>) =>
+  function revoke(list: ReadonlyArray<DraftAttachment>) {
+    for (const attachment of list) if (attachment.preview) URL.revokeObjectURL(attachment.preview);
+  }
+
+  async function addFiles(files: ReadonlyArray<File>) {
     add(await Promise.all(files.map(fromFile)));
+  }
 
-  const pick = async () => {
+  async function pick() {
     if (!window.desktop) {
       // Browsers can't hand out paths, so files travel as data.
       const input =
@@ -276,22 +285,24 @@ export const useAttachments = ({
       input.click();
       return;
     }
-    add(await fromPaths(await window.desktop.pickFiles("Attach files"), remote));
-  };
 
-  const remove = (id: string) =>
+    add(await fromPaths(await window.desktop.pickFiles("Attach files"), remote));
+  }
+
+  function remove(id: string) {
     setAttachments((prev) => {
-      revoke(prev.filter((a) => a.id === id));
-      return prev.filter((a) => a.id !== id);
+      revoke(prev.filter((attachment) => attachment.id === id));
+      return prev.filter((attachment) => attachment.id !== id);
     });
+  }
 
   /** Hands the queue over for sending and empties it. */
-  const take = (): ReadonlyArray<AttachmentInput> => {
+  function take(): ReadonlyArray<AttachmentInput> {
     const current = getDraft(key).attachments;
     revoke(current);
     setAttachments(() => []);
-    return current.map((a) => a.input);
-  };
+    return current.map((attachment) => attachment.input);
+  }
 
   const addDropped = useEffectEvent(async (paths: ReadonlyArray<string>) =>
     add(await fromPaths(paths, remote)),
@@ -302,14 +313,16 @@ export const useAttachments = ({
   }, [acceptDrops]);
 
   return { attachments, add, pick, addFiles, remove, take };
-};
+}
 
-export const toTurnOptions = (
+export function toTurnOptions(
   prefs: TurnPrefs,
   attachments: ReadonlyArray<AttachmentInput>,
-): TurnOptions => ({
-  effort: prefs.effort,
-  fast: prefs.fast,
-  permission: prefs.permission,
-  attachments,
-});
+): TurnOptions {
+  return {
+    effort: prefs.effort,
+    fast: prefs.fast,
+    permission: prefs.permission,
+    attachments,
+  };
+}

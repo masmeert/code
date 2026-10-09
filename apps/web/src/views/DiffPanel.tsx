@@ -25,9 +25,6 @@ import { ChangedFilesTree } from "./ChangedFilesTree.tsx";
 import { DiffComment, DiffCommentForm } from "./DiffComment.tsx";
 import { HIGHLIGHT, useDiffWorkersReady } from "./DiffWorkers.tsx";
 
-export const PANEL_WIDTH_KEY = "masscode.diffPanelWidth";
-export const defaultPanelWidth = () => Math.min(960, Math.round(window.innerWidth * 0.45));
-const TREE_WIDTH_KEY = "masscode.diffTreeWidth";
 /** The chat keeps at least this much room next to the panel. */
 const MIN_CHAT = 380;
 const MIN_PANEL = 360;
@@ -38,13 +35,13 @@ const MIN_SPLIT_DIFF = 720;
 
 const TREE_KEY = "masscode.diffTree";
 
-const readTree = () => {
+function readTree() {
   try {
     return localStorage.getItem(TREE_KEY) !== "0";
   } catch {
     return true;
   }
-};
+}
 
 interface ParsedPatch {
   readonly patch: string;
@@ -54,8 +51,9 @@ interface ParsedPatch {
 /** Last parse per patch string, so reopening the panel (or another thread in the same repo) skips the work. */
 let lastParse: ParsedPatch = { patch: "", files: [] };
 
-const parseFiles = (patch: string): Array<FileDiffMetadata> => {
+function parseFiles(patch: string): Array<FileDiffMetadata> {
   if (patch === lastParse.patch) return lastParse.files;
+
   let files: Array<FileDiffMetadata> = [];
   try {
     // Key each file's highlight cache by its blob ids, so an unchanged file is never re-highlighted
@@ -67,9 +65,10 @@ const parseFiles = (patch: string): Array<FileDiffMetadata> => {
         cacheKey: `${file.name}:${file.prevObjectId ?? ""}:${file.newObjectId ?? ""}`,
       }));
   } catch {}
+
   lastParse = { patch, files };
   return files;
-};
+}
 
 /** What sits under one diff line: its saved comments, and the one being written. */
 interface CommentSlot {
@@ -85,8 +84,10 @@ function commentAnnotations(
   const shown = comments.map((comment) =>
     comment.id === draft?.id ? { comment: draft, editing: true } : { comment, editing: false },
   );
-  if (draft && !comments.some((comment) => comment.id === draft.id))
+  if (draft && !comments.some((comment) => comment.id === draft.id)) {
     shown.push({ comment: draft, editing: true });
+  }
+
   for (const entry of shown) {
     const { end, endSide } = entry.comment.range;
     const key = `${endSide}:${end}`;
@@ -97,10 +98,11 @@ function commentAnnotations(
       metadata: { entries: [...(slot?.metadata.entries ?? []), entry] },
     });
   }
+
   return [...slots.values()];
 }
 
-const countLines = (files: ReadonlyArray<FileDiffMetadata>) => {
+function countLines(files: ReadonlyArray<FileDiffMetadata>) {
   let additions = 0;
   let deletions = 0;
   for (const file of files) {
@@ -109,15 +111,16 @@ const countLines = (files: ReadonlyArray<FileDiffMetadata>) => {
       deletions += hunk.deletionLines;
     }
   }
+
   return { additions, deletions };
-};
+}
 
 /**
  * Uncommitted changes in the thread's folder (vs HEAD, untracked files included), or with
  * `turn`, just what one turn changed (from the snapshots taken around it).
  * `refreshKey` changes whenever the thread may have touched files, which re-reads the diff.
  */
-export const DiffPanel = ({
+export function DiffPanel({
   threadId,
   cwd,
   refreshKey,
@@ -137,11 +140,12 @@ export const DiffPanel = ({
   onRevealed: () => void;
   onShowAll: () => void;
   onClose: () => void;
-}) => {
+}) {
   const turnThreadId = turn?.threadId;
   const turnMessageId = turn?.messageId;
   const turnKey = turn ? `${turn.threadId}:${turn.messageId}` : null;
-  const diff = useStore((s) => (turnKey ? s.turnDiffs[turnKey] : s.diffs[cwd]));
+  const diff = useStore((state) => (turnKey ? state.turnDiffs[turnKey] : state.diffs[cwd]));
+
   const refresh = useCallback(
     () =>
       send(
@@ -154,40 +158,50 @@ export const DiffPanel = ({
       ),
     [cwd, turnThreadId, turnMessageId],
   );
+
   const workersReady = useDiffWorkersReady();
-  const preferredStyle = useStore((s) => s.settings.diffLayout ?? "unified");
+  const preferredStyle = useStore((state) => state.settings.diffLayout ?? "unified");
   const [showTree, setShowTree] = useState(readTree);
   const viewer = useRef<CodeViewHandle<CommentSlot, undefined>>(null);
   const comments = useReviewComments(threadId);
   // The comment being written or edited; it only reaches the thread's comments once saved.
   const [draft, setDraft] = useState<ReviewComment | null>(null);
+
   const aside = useRef<HTMLElement>(null);
   const panel = useResizable({
-    key: PANEL_WIDTH_KEY,
-    initial: defaultPanelWidth(),
+    key: "masscode.diffPanelWidth",
+    initial: Math.min(960, Math.round(window.innerWidth * 0.45)),
     side: "start",
-    clamp: (w) =>
+    clamp: (width) =>
       Math.max(
         MIN_PANEL,
-        Math.min(w, (aside.current?.parentElement?.clientWidth ?? window.innerWidth) - MIN_CHAT),
+        Math.min(
+          width,
+          (aside.current?.parentElement?.clientWidth ?? window.innerWidth) - MIN_CHAT,
+        ),
       ),
   });
   const tree = useResizable({
-    key: TREE_WIDTH_KEY,
+    key: "masscode.diffTreeWidth",
     initial: 256,
     side: "end",
-    clamp: (w) => Math.max(MIN_TREE, Math.min(w, (aside.current?.clientWidth ?? 720) - MIN_DIFF)),
+    clamp: (width) =>
+      Math.max(MIN_TREE, Math.min(width, (aside.current?.clientWidth ?? 720) - MIN_DIFF)),
   });
   const [asideWidth, setAsideWidth] = useState(Number.POSITIVE_INFINITY);
+
   useEffect(() => {
     const element = aside.current;
     if (!element) return;
+
     const observer = new ResizeObserver(() => setAsideWidth(element.clientWidth));
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+
   const splitFits = asideWidth - (showTree ? tree.width : 0) >= MIN_SPLIT_DIFF;
   const style = splitFits ? preferredStyle : "unified";
+
   const jumpTo = useCallback(
     (path: string) =>
       viewer.current?.scrollTo({ type: "item", id: path, align: "start", behavior: "instant" }),
@@ -196,6 +210,7 @@ export const DiffPanel = ({
 
   // Agents edit in bursts; wait for a short lull before re-reading. A finished turn's changes don't change.
   const changesKey = turnKey ? null : refreshKey;
+
   useEffect(() => {
     const timer = window.setTimeout(refresh, turnKey ? 0 : 250);
     return () => window.clearTimeout(timer);
@@ -221,19 +236,23 @@ export const DiffPanel = ({
         const seen = versions.current.get(file.name);
         const version = !seen ? 0 : seen.key === key ? seen.version : seen.version + 1;
         versions.current.set(file.name, { key, version });
+
         return { id: file.name, type: "diff", fileDiff: file, annotations, version };
       }),
     [files, comments, draft],
   );
+
   const startComment = useCallback((range: SelectedLineRange, fileDiff: FileDiffMetadata) => {
     const rows = selectRows(fileDiff, range);
     if (!rows) return;
     setDraft({ id: crypto.randomUUID(), path: fileDiff.name, ...rows, text: "" });
   }, []);
+
   const closeComment = useCallback(() => {
     setDraft(null);
     viewer.current?.clearSelectedLines();
   }, []);
+
   const renderAnnotation = useCallback(
     (annotation: { metadata?: CommentSlot }) => (
       <div className="flex flex-col gap-px">
@@ -264,6 +283,7 @@ export const DiffPanel = ({
 
   useEffect(() => {
     if (!reveal || !items.some((item) => item.id === reveal.path)) return;
+
     viewer.current?.scrollTo({
       type: "line",
       id: reveal.path,
@@ -299,6 +319,7 @@ export const DiffPanel = ({
     }),
     [style, writing, startComment],
   );
+
   const truncated = diff?.truncated ?? false;
   const renderFooter = useCallback(
     () =>
@@ -309,12 +330,15 @@ export const DiffPanel = ({
       ) : null,
     [truncated],
   );
+
   const { additions, deletions } = useMemo(() => countLines(files), [files]);
+
   // The thread view re-renders on every streamed delta; these subtrees only change with the diff.
   const fileTree = useMemo(
     () => <ChangedFilesTree files={files} onPick={jumpTo} />,
     [files, jumpTo],
   );
+
   const codeView = useMemo(
     () => (
       // Virtualized: only the files and lines on screen are in the DOM.
@@ -331,12 +355,44 @@ export const DiffPanel = ({
     [items, options, renderFooter, renderAnnotation],
   );
 
-  const toggleTree = () => {
+  function toggleTree() {
     setShowTree(!showTree);
     try {
       localStorage.setItem(TREE_KEY, showTree ? "0" : "1");
     } catch {}
-  };
+  }
+
+  function panelBody() {
+    if (!diff || !workersReady) return <Empty>Loading changes…</Empty>;
+
+    if (diff.error) return <Empty>{diff.error}</Empty>;
+
+    if (!files.length) {
+      return <Empty>{turn ? "This turn changed no files" : "No uncommitted changes"}</Empty>;
+    }
+
+    return (
+      <>
+        {showTree ? (
+          <div
+            style={{ width: tree.width, maxWidth: `calc(100% - ${MIN_DIFF}px)` }}
+            // Below MIN_TREE + MIN_DIFF the tree would be squeezed to icons; give the diff the room instead.
+            className="relative shrink-0 border-r border-border @max-[480px]:hidden"
+          >
+            {fileTree}
+            <ResizeHandle
+              side="end"
+              label="Resize file tree"
+              value={tree.width}
+              dragging={tree.dragging}
+              {...tree.handleProps}
+            />
+          </div>
+        ) : null}
+        {codeView}
+      </>
+    );
+  }
 
   return (
     <aside
@@ -409,41 +465,15 @@ export const DiffPanel = ({
         </span>
       </div>
 
-      <div className="selectable flex min-h-0 flex-1">
-        {!diff || !workersReady ? (
-          <Empty>Loading changes…</Empty>
-        ) : diff.error ? (
-          <Empty>{diff.error}</Empty>
-        ) : !files.length ? (
-          <Empty>{turn ? "This turn changed no files" : "No uncommitted changes"}</Empty>
-        ) : (
-          <>
-            {showTree ? (
-              <div
-                style={{ width: tree.width, maxWidth: `calc(100% - ${MIN_DIFF}px)` }}
-                // Below MIN_TREE + MIN_DIFF the tree would be squeezed to icons; give the diff the room instead.
-                className="relative shrink-0 border-r border-border @max-[480px]:hidden"
-              >
-                {fileTree}
-                <ResizeHandle
-                  side="end"
-                  label="Resize file tree"
-                  value={tree.width}
-                  dragging={tree.dragging}
-                  {...tree.handleProps}
-                />
-              </div>
-            ) : null}
-            {codeView}
-          </>
-        )}
-      </div>
+      <div className="selectable flex min-h-0 flex-1">{panelBody()}</div>
     </aside>
   );
-};
+}
 
-const Empty = ({ children }: { children: React.ReactNode }) => (
-  <div className="flex h-full w-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
-    {children}
-  </div>
-);
+function Empty({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-full w-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+      {children}
+    </div>
+  );
+}

@@ -2,8 +2,6 @@ import { useWorkerPool, WorkerPoolContextProvider } from "@pierre/diffs/react";
 import WorkerUrl from "@pierre/diffs/worker/worker.js?worker&url";
 import { useEffect, useState } from "react";
 
-const cores = navigator.hardwareConcurrency || 4;
-
 /**
  * Highlighting runs off the main thread; one pool for the whole window. Tuned like t3code's:
  * half the cores, and room to keep a big diff's highlighted files for scrolling back
@@ -11,7 +9,7 @@ const cores = navigator.hardwareConcurrency || 4;
  */
 const POOL_OPTIONS = {
   workerFactory: () => new Worker(WorkerUrl, { type: "module" }),
-  poolSize: Math.max(2, Math.min(6, Math.floor(cores / 2))),
+  poolSize: Math.max(2, Math.min(6, Math.floor((navigator.hardwareConcurrency || 4) / 2))),
   totalASTLRUCacheSize: 240,
 };
 
@@ -50,25 +48,29 @@ const HIGHLIGHTER_OPTIONS = {
  * Whether the pool is up. Rendering before it is paints the diff plain, then again once the
  * highlighting arrives. A pool that failed to start falls back to highlighting on the main thread.
  */
-export const useDiffWorkersReady = () => {
+export function useDiffWorkersReady() {
   const pool = useWorkerPool();
   const [, setStarted] = useState(0);
   const ready = !pool || pool.isInitialized() || !pool.isWorkingPool();
+
   useEffect(() => {
     if (ready || !pool) return;
     let mounted = true;
-    const done = () => mounted && setStarted((n) => n + 1);
+    const done = () => mounted && setStarted((count) => count + 1);
     void pool.initialize().then(done, done);
     return () => {
       mounted = false;
     };
   }, [pool, ready]);
+
   return ready;
-};
+}
 
 /** Mount once near the root: the pool (and its render cache) outlives any one panel. */
-export const DiffWorkers = ({ children }: { children: React.ReactNode }) => (
-  <WorkerPoolContextProvider poolOptions={POOL_OPTIONS} highlighterOptions={HIGHLIGHTER_OPTIONS}>
-    {children}
-  </WorkerPoolContextProvider>
-);
+export function DiffWorkers({ children }: { children: React.ReactNode }) {
+  return (
+    <WorkerPoolContextProvider poolOptions={POOL_OPTIONS} highlighterOptions={HIGHLIGHTER_OPTIONS}>
+      {children}
+    </WorkerPoolContextProvider>
+  );
+}

@@ -33,7 +33,7 @@ function write(threadId: string, comments: ReadonlyArray<ReviewComment>) {
   for (const listener of listeners) listener();
 }
 
-export function getReviewComments(threadId: string) {
+function getReviewComments(threadId: string) {
   return commentsByThread.get(threadId) ?? NO_COMMENTS;
 }
 
@@ -90,6 +90,7 @@ function diffRows(fileDiff: FileDiffMetadata): Array<DiffRow> {
         }
         continue;
       }
+
       for (let offset = 0; offset < segment.deletions; offset++) {
         rows.push({
           marker: "-",
@@ -98,6 +99,7 @@ function diffRows(fileDiff: FileDiffMetadata): Array<DiffRow> {
           content: fileDiff.deletionLines[segment.deletionLineIndex + offset] ?? "",
         });
       }
+
       for (let offset = 0; offset < segment.additions; offset++) {
         rows.push({
           marker: "+",
@@ -108,6 +110,7 @@ function diffRows(fileDiff: FileDiffMetadata): Array<DiffRow> {
       }
     }
   }
+
   return rows;
 }
 
@@ -128,11 +131,12 @@ export function selectRows(fileDiff: FileDiffMetadata, range: SelectedLineRange)
   const startIndex = rowIndex(rows, range.start, startSide);
   const endIndex = rowIndex(rows, range.end, endSide);
   if (startIndex < 0 || endIndex < 0) return null;
-  const forward = startIndex <= endIndex;
+
   return {
-    range: forward
-      ? { start: range.start, side: startSide, end: range.end, endSide }
-      : { start: range.end, side: endSide, end: range.start, endSide: startSide },
+    range:
+      startIndex <= endIndex
+        ? { start: range.start, side: startSide, end: range.end, endSide }
+        : { start: range.end, side: endSide, end: range.start, endSide: startSide },
     excerpt: rows
       .slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1)
       .map((row) => `${row.marker}${row.content.replace(/\r?\n$/, "")}`)
@@ -162,6 +166,7 @@ function fence(code: string) {
 /** The message that carries the comments, followed by whatever was typed with them. */
 export function withReviewComments(comments: ReadonlyArray<ReviewComment>, text: string) {
   if (!comments.length) return text;
+
   const review = [
     "Review comments on the diff:",
     ...comments.map(

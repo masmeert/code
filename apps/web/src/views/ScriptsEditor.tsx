@@ -72,14 +72,17 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
   // Problems show once a save is tried, not while a row is still being filled in.
   const [showProblems, setShowProblems] = useState(false);
   const [addedId, setAddedId] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     void readProjectConfig(host, path).then((frame) => {
       if (cancelled) return;
-      if (!frame)
+      if (!frame) {
         return setError(
           "MassCode's daemon didn't answer, so the scripts couldn't be read. Check it's running and open this again.",
         );
+      }
+
       const saved = frame.config.scripts ?? [];
       setScripts(
         saved.length
@@ -114,9 +117,12 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
 
   async function save() {
     if (!scripts || saving) return;
+
     const filled = filledScripts(scripts);
-    if (filled.some((script) => problemsOf(script, filled).length > 0))
+    if (filled.some((script) => problemsOf(script, filled).length > 0)) {
       return setShowProblems(true);
+    }
+
     setSaving(true);
     const failed = await updateProjectConfig(host, path, ({ scripts: _replaced, ...rest }) =>
       filled.length
@@ -169,6 +175,7 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
           <div className="divide-y divide-rule rounded-xl border border-border bg-card">
             {scripts.map((script) => {
               const problems = showProblems ? problemsOf(script, filledScripts(scripts)) : [];
+
               return (
                 <div key={script.id} className="flex flex-col gap-2 px-3 py-3">
                   <div className="flex items-start gap-2">

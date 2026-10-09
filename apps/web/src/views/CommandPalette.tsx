@@ -20,7 +20,7 @@ import {
 import { createPortal } from "react-dom";
 import { searchMessages, useStore } from "../lib/store.ts";
 
-export interface PaletteAction {
+interface PaletteAction {
   readonly id: string;
   readonly label: string;
   readonly hint?: string;
@@ -50,50 +50,57 @@ const SEARCH_DELAY_MS = 150;
 const NO_HITS: ReadonlyArray<SearchHit> = [];
 
 /** A search snippet with the matched words highlighted (the daemon wraps them in U+E000 / U+E001). */
-const Snippet = ({ text }: { text: string }) => (
-  <>
-    {text.split("").map((part, index) => {
-      if (index === 0) return <Fragment key={index}>{part}</Fragment>;
-      const [match, rest] = part.split("");
-      return (
-        <Fragment key={index}>
-          <mark className="rounded-sm bg-brand/15 text-foreground">{match}</mark>
-          {rest}
-        </Fragment>
-      );
-    })}
-  </>
-);
+function Snippet({ text }: { text: string }) {
+  return (
+    <>
+      {text.split("").map((part, index) => {
+        if (index === 0) return <Fragment key={index}>{part}</Fragment>;
+        const [match, rest] = part.split("");
+        return (
+          <Fragment key={index}>
+            <mark className="rounded-sm bg-brand/15 text-foreground">{match}</mark>
+            {rest}
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
 
 /** A row's action: close, then act with the latest props, so rows needn't be rebuilt when the parent re-renders. */
-const choose = (latest: RefObject<PaletteProps>, act: (props: PaletteProps) => void) => () => {
-  latest.current.onClose();
-  act(latest.current);
-};
+function choose(latest: RefObject<PaletteProps>, act: (props: PaletteProps) => void) {
+  return () => {
+    latest.current.onClose();
+    act(latest.current);
+  };
+}
 
 /**
  * ⌘K: jump to a thread or project, run an action, or find a message across every
  * thread. Start with ">" for actions only.
  */
-export const CommandPalette = ({ open, ...props }: PaletteProps & { readonly open: boolean }) =>
+export function CommandPalette({ open, ...props }: PaletteProps & { readonly open: boolean }) {
   // Portaled, so no ancestor's transform or stacking context can trap the overlay.
-  open ? createPortal(<Palette {...props} />, document.body) : null;
+  return open ? createPortal(<Palette {...props} />, document.body) : null;
+}
 
 /** Mounted only while open, so a closed palette subscribes to nothing and searches nothing. */
-const Palette = (props: PaletteProps) => {
-  const threads = useStore((s) => s.threads);
-  const projects = useStore((s) => s.projects);
-  const projectHosts = useStore((s) => s.projectHosts);
+function Palette(props: PaletteProps) {
+  const threads = useStore((state) => state.threads);
+  const projects = useStore((state) => state.projects);
+  const projectHosts = useStore((state) => state.projectHosts);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState(NO_HITS);
-  const uid = useId();
-  const reduce = useReducedMotion() ?? false;
+  const idPrefix = useId();
+  const reduceMotion = useReducedMotion() ?? false;
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const latest = useRef(props);
+
   useLayoutEffect(() => {
     latest.current = props;
   });
+
   const actionsOnly = query.startsWith(">");
   const needle = (actionsOnly ? query.slice(1) : query).trim();
   const messageQuery = !actionsOnly && needle.length >= 2 ? needle.toLowerCase() : "";
@@ -101,6 +108,7 @@ const Palette = (props: PaletteProps) => {
   // Message search goes to the daemon once there's something to look for.
   useEffect(() => {
     if (!messageQuery) return setHits(NO_HITS);
+
     let cancelled = false;
     const timer = setTimeout(
       () => void searchMessages(messageQuery).then((found) => !cancelled && setHits(found)),
@@ -117,10 +125,11 @@ const Palette = (props: PaletteProps) => {
   const threadEntries = useMemo(
     () =>
       Object.values(threads)
-        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .sort((left, right) => right.updatedAt - left.updatedAt)
         .map((thread) => ({ label: thread.title, thread })),
     [threads],
   );
+
   const projectEntries = useMemo(
     () =>
       projects.map((project) => ({
@@ -129,6 +138,7 @@ const Palette = (props: PaletteProps) => {
       })),
     [projects, projectHosts],
   );
+
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
@@ -143,17 +153,19 @@ const Palette = (props: PaletteProps) => {
             .slice(0, MAX_THREADS)
             .map(({ thread }) => {
               const project = projectById.get(thread.projectId);
+
               return {
                 id: `thread:${thread.id}`,
                 section: needle ? "Threads" : "Recent threads",
                 icon: project ? <ProjectBadge project={project} /> : <MessageSquare />,
                 label: thread.title,
                 detail: `${project ? projectLabel(project.name, projectHosts[project.id]) : thread.cwd.split("/").at(-1)}${thread.archivedAt ? ", archived" : ""}`,
-                run: choose(latest, (p) => p.onOpenThread(thread.id)),
+                run: choose(latest, (latestProps) => latestProps.onOpenThread(thread.id)),
               };
             }),
     [actionsOnly, needle, threadEntries, projectById, projectHosts],
   );
+
   const actionRows = useMemo(
     (): ReadonlyArray<Row> =>
       searchCommands(props.actions, needle).map((action) => ({
@@ -166,6 +178,7 @@ const Palette = (props: PaletteProps) => {
       })),
     [props.actions, needle],
   );
+
   const projectRows = useMemo(
     (): ReadonlyArray<Row> =>
       actionsOnly || !needle
@@ -176,10 +189,11 @@ const Palette = (props: PaletteProps) => {
             icon: <ProjectBadge project={project} />,
             label: projectLabel(project.name, projectHosts[project.id]),
             detail: project.path,
-            run: choose(latest, (p) => p.onNewThreadIn(project.path)),
+            run: choose(latest, (latestProps) => latestProps.onNewThreadIn(project.path)),
           })),
     [actionsOnly, needle, projectEntries, projectHosts],
   );
+
   // Hits from an older query stay up until the new ones land, but not once there's no search at all.
   const shownHits = messageQuery ? hits : NO_HITS;
   const messageRows = useMemo(
@@ -190,10 +204,11 @@ const Palette = (props: PaletteProps) => {
         icon: <Search />,
         label: <Snippet text={hit.snippet} />,
         detail: `${hit.from === "user" ? "You" : "Agent"} in ${threads[hit.threadId]?.title ?? ""}`,
-        run: choose(latest, (p) => p.onOpenThread(hit.threadId)),
+        run: choose(latest, (latestProps) => latestProps.onOpenThread(hit.threadId)),
       })),
     [shownHits, threads],
   );
+
   // Empty sections drop out: with no query that leaves recent threads, then actions.
   const rows = useMemo(
     () => [...threadRows, ...actionRows, ...projectRows, ...messageRows],
@@ -206,20 +221,23 @@ const Palette = (props: PaletteProps) => {
     moveTo,
     moveActive,
   } = useRowCursor(rows, query, { loop: true });
+
   // The highlight glides after the pointer. Arrow keys and a new list jump it: the keyboard wants each
   // step at once, and gliding from wherever the old row ended up reads as the list scrolling.
-  const glide = pointed && !reduce;
+  const glide = pointed && !reduceMotion;
 
   const activeId = rows[active]?.id;
+
   useEffect(() => {
     const container = list.current;
     if (!container) return;
+
     // The first row brings its section header into view too.
     if (active === 0) container.scrollTop = 0;
     else container.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: "nearest" });
   }, [active, activeId]);
 
-  const onKeyDown = (event: React.KeyboardEvent) => {
+  function onKeyDown(event: React.KeyboardEvent) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       moveActive(event.key === "ArrowDown" ? 1 : -1);
@@ -238,7 +256,7 @@ const Palette = (props: PaletteProps) => {
       event.preventDefault();
       rows[Number(event.key) - 1]?.run();
     }
-  };
+  }
 
   return (
     <>
@@ -269,8 +287,8 @@ const Palette = (props: PaletteProps) => {
               placeholder="Search threads, projects and messages… (> for actions)"
               role="combobox"
               aria-expanded
-              aria-controls={`${uid}-list`}
-              aria-activedescendant={rows.length ? `${uid}-option-${active}` : undefined}
+              aria-controls={`${idPrefix}-list`}
+              aria-activedescendant={rows.length ? `${idPrefix}-option-${active}` : undefined}
               aria-autocomplete="list"
               className="h-11 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
             />
@@ -282,7 +300,7 @@ const Palette = (props: PaletteProps) => {
           */}
           <motion.div
             ref={list}
-            id={`${uid}-list`}
+            id={`${idPrefix}-list`}
             role="listbox"
             aria-label="Results"
             layoutScroll
@@ -311,7 +329,7 @@ const Palette = (props: PaletteProps) => {
                   index={index}
                   active={index === active}
                   glide={index === active && glide}
-                  uid={uid}
+                  idPrefix={idPrefix}
                   onPoint={moveTo}
                 />
               </Fragment>
@@ -321,25 +339,26 @@ const Palette = (props: PaletteProps) => {
       </div>
     </>
   );
-};
+}
 
 /** Memoized, so moving the highlight re-renders only the two rows it moves between. */
 const PaletteRow = memo(function PaletteRow(props: {
   row: Row;
   index: number;
   active: boolean;
-  uid: string;
+  idPrefix: string;
   /** Whether the highlight glides in from the previous row, rather than appearing here. */
   glide: boolean;
   onPoint: (id: string) => void;
 }) {
   const { row, index, active } = props;
+
   return (
     <button
       type="button"
       role="option"
       tabIndex={-1}
-      id={`${props.uid}-option-${index}`}
+      id={`${props.idPrefix}-option-${index}`}
       data-index={index}
       aria-selected={active}
       // Not mouseenter: rows scrolling under a resting pointer would take the highlight from the keyboard.
@@ -352,7 +371,7 @@ const PaletteRow = memo(function PaletteRow(props: {
     >
       {active ? (
         <motion.span
-          layoutId={`${props.uid}-highlight`}
+          layoutId={`${props.idPrefix}-highlight`}
           transition={
             props.glide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }
           }

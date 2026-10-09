@@ -48,7 +48,7 @@ function readLastMergeMethod(): MergeMethod {
   }
 }
 
-const MenuItem = ({
+function MenuItem({
   onClick,
   disabled,
   children,
@@ -58,22 +58,24 @@ const MenuItem = ({
   disabled?: boolean;
   children: ReactNode;
   hint?: ReactNode;
-}) => (
-  <button
-    type="button"
-    role="menuitem"
-    disabled={disabled}
-    onClick={onClick}
-    className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4 [&_svg]:text-muted-foreground"
-  >
-    {children}
-    {hint ? (
-      <span className="ml-auto pl-3 font-mono text-xs text-muted-foreground tabular-nums">
-        {hint}
-      </span>
-    ) : null}
-  </button>
-);
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4 [&_svg]:text-muted-foreground"
+    >
+      {children}
+      {hint ? (
+        <span className="ml-auto pl-3 font-mono text-xs text-muted-foreground tabular-nums">
+          {hint}
+        </span>
+      ) : null}
+    </button>
+  );
+}
 
 /**
  * Commit / push for the thread's folder: the main button commits every change (or pushes
@@ -81,7 +83,7 @@ const MenuItem = ({
  * the thread may have touched files, which re-reads the repo state. A `worktree` thread can
  * also merge its branch into the one it was made from, then be deleted along with it.
  */
-export const GitMenu = ({
+export function GitMenu({
   cwd,
   refreshKey,
   threadId,
@@ -91,10 +93,10 @@ export const GitMenu = ({
   refreshKey: string;
   threadId: string;
   worktree: boolean;
-}) => {
-  const repo = useStore((s) => s.repos[cwd]);
-  const defaultMergeMethod = useStore((s) => s.settings.mergeMethod);
-  const confirmDelete = useStore((s) => s.settings.confirmDelete !== false);
+}) {
+  const repo = useStore((state) => state.repos[cwd]);
+  const defaultMergeMethod = useStore((state) => state.settings.mergeMethod);
+  const confirmDelete = useStore((state) => state.settings.confirmDelete !== false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
   const [mergeMethod, setMergeMethod] = useState<MergeMethod>("merge");
@@ -109,12 +111,14 @@ export const GitMenu = ({
       () => send(ClientCommand.cases["git.status"].make({ path: cwd })),
       250,
     );
+
     return () => window.clearTimeout(timer);
   }, [cwd, refreshKey]);
 
   // Any update carrying an action answers the one in flight (only one runs per repo at a time).
   const answerPending = useEffectEvent(() => {
     if (!repo?.action || !pending) return;
+
     setPending(null);
     setError(repo.error);
     if (!repo.error) {
@@ -126,6 +130,7 @@ export const GitMenu = ({
       setMessage("");
     }
   });
+
   useEffect(() => answerPending(), [repo]);
 
   useEffect(() => {
@@ -142,20 +147,20 @@ export const GitMenu = ({
   const canCommit = status.changes > 0 && !pending;
   const canPush = status.hasRemote && !status.detached && status.ahead > 0 && !pending;
   const pushHint = status.upstream ? `↑${status.ahead}` : status.ahead ? "new branch" : undefined;
-  const pr = status.pullRequest;
-  const prOpen = pr?.state === "open" || pr?.state === "draft";
+  const pullRequest = status.pullRequest;
+  const pullRequestOpen = pullRequest?.state === "open" || pullRequest?.state === "draft";
   // GitLab calls them merge requests.
-  const prName = status.sourceControl === "gitlab" ? "MR" : "PR";
-  const canCreatePr =
+  const pullRequestName = status.sourceControl === "gitlab" ? "MR" : "PR";
+  const canCreatePullRequest =
     !!status.sourceControl &&
     !!status.branch &&
     status.branch !== status.defaultBranch &&
     status.changes === 0 &&
     status.behind === 0 &&
     status.aheadOfDefault > 0 &&
-    !prOpen &&
+    !pullRequestOpen &&
     // A squash or rebase merge leaves the branch's commits off the default branch; only new work needs another.
-    (pr?.state !== "merged" || status.ahead > 0) &&
+    (pullRequest?.state !== "merged" || status.ahead > 0) &&
     !pending;
   const base = worktree ? status.base : null;
   const canMergeIntoBase =
@@ -165,22 +170,24 @@ export const GitMenu = ({
     base.conflicts.length === 0 &&
     status.changes === 0 &&
     !pending;
-  const run = (action: GitAction) => {
+
+  function run(action: GitAction) {
     setError(null);
     setPending(action);
-    if (action === "push") send(ClientCommand.cases["git.push"].make({ path: cwd }));
-    else if (action === "pull-request")
+    if (action === "push") {
+      send(ClientCommand.cases["git.push"].make({ path: cwd }));
+    } else if (action === "pull-request") {
       send(ClientCommand.cases["git.createPullRequest"].make({ path: cwd }));
-    else if (action === "merge") {
+    } else if (action === "merge") {
       try {
         localStorage.setItem(LAST_MERGE_METHOD_KEY, mergeMethod);
       } catch {
         // Only the default for next time is lost.
       }
       send(ClientCommand.cases["git.mergePullRequest"].make({ path: cwd, method: mergeMethod }));
-    } else if (action === "merge-into-base")
+    } else if (action === "merge-into-base") {
       send(ClientCommand.cases["git.mergeIntoBase"].make({ path: cwd }));
-    else
+    } else {
       send(
         ClientCommand.cases["git.commit"].make({
           path: cwd,
@@ -188,35 +195,39 @@ export const GitMenu = ({
           push: action === "commit-push",
         }),
       );
-  };
+    }
+  }
+
   // With nothing to commit, the main button pushes, or opens the branch's pull request (pushing first).
-  const primaryOpensPr = status.changes === 0 && canCreatePr;
-  const primaryPushes = status.changes === 0 && canPush && !primaryOpensPr;
+  const primaryOpensPullRequest = status.changes === 0 && canCreatePullRequest;
+  const primaryPushes = status.changes === 0 && canPush && !primaryOpensPullRequest;
   // Nothing left to do locally: the main button shows the pull request.
-  const primaryViewsPr = status.changes === 0 && !canPush && !primaryOpensPr && prOpen;
+  const primaryViewsPullRequest =
+    status.changes === 0 && !canPush && !primaryOpensPullRequest && pullRequestOpen;
   // Without a pull request to go through, a worktree's next step is merging it locally.
-  const primaryMerges = canMergeIntoBase && !primaryOpensPr && !primaryPushes && !primaryViewsPr;
-  const primary = () =>
-    primaryOpensPr
-      ? run("pull-request")
-      : primaryPushes
-        ? run("push")
-        : primaryViewsPr
-          ? window.open(pr!.url, "_blank", "noreferrer")
-          : primaryMerges
-            ? setPanel(panel === "merge-into-base" ? null : "merge-into-base")
-            : setPanel(panel === "commit" ? null : "commit");
-  const primaryLabel = primaryOpensPr
+  const primaryMerges =
+    canMergeIntoBase && !primaryOpensPullRequest && !primaryPushes && !primaryViewsPullRequest;
+
+  function primary() {
+    if (primaryOpensPullRequest) run("pull-request");
+    else if (primaryPushes) run("push");
+    else if (primaryViewsPullRequest) window.open(pullRequest!.url, "_blank", "noreferrer");
+    else if (primaryMerges) setPanel(panel === "merge-into-base" ? null : "merge-into-base");
+    else setPanel(panel === "commit" ? null : "commit");
+  }
+
+  const primaryLabel = primaryOpensPullRequest
     ? canPush || !status.upstream
-      ? `Push & create ${prName}`
-      : `Create ${prName}`
+      ? `Push & create ${pullRequestName}`
+      : `Create ${pullRequestName}`
     : primaryPushes
       ? "Push"
-      : primaryViewsPr
-        ? `View ${prName}`
+      : primaryViewsPullRequest
+        ? `View ${pullRequestName}`
         : primaryMerges
           ? `Merge into ${base!.branch}`
           : "Commit";
+
   // An empty message is written by the commit model first, which takes a moment.
   const pendingLabel =
     (pending === "commit" || pending === "commit-push") && !message.trim()
@@ -224,6 +235,7 @@ export const GitMenu = ({
       : pending
         ? PENDING_LABEL[pending]
         : null;
+
   const errorNote = error ? (
     <p className="px-2 pt-1.5 pb-1 text-xs whitespace-pre-wrap text-destructive">{error}</p>
   ) : null;
@@ -236,13 +248,17 @@ export const GitMenu = ({
           onClick={primary}
           disabled={
             !!pending ||
-            (!canCommit && !primaryPushes && !primaryOpensPr && !primaryViewsPr && !primaryMerges)
+            (!canCommit &&
+              !primaryPushes &&
+              !primaryOpensPullRequest &&
+              !primaryViewsPullRequest &&
+              !primaryMerges)
           }
           title={
-            primaryOpensPr
-              ? `Open a ${prName} for ${status.branch} into ${status.defaultBranch}`
-              : primaryViewsPr
-                ? `Open #${pr!.number} on ${status.sourceControl === "gitlab" ? "GitLab" : "GitHub"}`
+            primaryOpensPullRequest
+              ? `Open a ${pullRequestName} for ${status.branch} into ${status.defaultBranch}`
+              : primaryViewsPullRequest
+                ? `Open #${pullRequest!.number} on ${status.sourceControl === "gitlab" ? "GitLab" : "GitHub"}`
                 : primaryMerges
                   ? `Merge ${status.branch} into ${base!.branch}`
                   : primaryPushes
@@ -255,9 +271,9 @@ export const GitMenu = ({
         >
           {pending ? (
             <LoaderCircle className="size-4 animate-spin" />
-          ) : primaryOpensPr ? (
+          ) : primaryOpensPullRequest ? (
             <GitPullRequestArrow className="size-4" />
-          ) : primaryViewsPr ? (
+          ) : primaryViewsPullRequest ? (
             <ExternalLink className="size-4" />
           ) : primaryMerges ? (
             <GitMerge className="size-4" />
@@ -301,8 +317,8 @@ export const GitMenu = ({
         {panel === "merge-into-base" && base ? (
           <form
             className="flex flex-col gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
+            onSubmit={(event) => {
+              event.preventDefault();
               if (canMergeIntoBase) run("merge-into-base");
             }}
           >
@@ -334,16 +350,16 @@ export const GitMenu = ({
               </button>
             </div>
           </form>
-        ) : panel === "merge" && pr ? (
+        ) : panel === "merge" && pullRequest ? (
           <form
             className="flex flex-col gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
+            onSubmit={(event) => {
+              event.preventDefault();
               if (!pending) run("merge");
             }}
           >
             <p className="px-0.5 text-sm text-foreground">
-              Merge #{pr.number} into {pr.base}?
+              Merge #{pullRequest.number} into {pullRequest.base}?
             </p>
             <div role="radiogroup" aria-label="Merge method" className="flex flex-col gap-0.5">
               {MergeMethod.literals.map((method) => (
@@ -383,19 +399,19 @@ export const GitMenu = ({
         ) : panel === "commit" ? (
           <form
             className="flex flex-col gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
+            onSubmit={(event) => {
+              event.preventDefault();
               if (canCommit) run("commit");
             }}
           >
             <textarea
               ref={textarea}
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canCommit) {
-                  e.preventDefault();
-                  run(e.shiftKey && status.hasRemote ? "commit-push" : "commit");
+              onChange={(event) => setMessage(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && canCommit) {
+                  event.preventDefault();
+                  run(event.shiftKey && status.hasRemote ? "commit-push" : "commit");
                 }
               }}
               placeholder="Commit message, or leave empty to generate one"
@@ -481,46 +497,46 @@ export const GitMenu = ({
               )
             ) : null}
             {status.sourceControl ? (
-              prOpen && pr ? (
+              pullRequestOpen && pullRequest ? (
                 <>
                   <a
                     role="menuitem"
-                    href={pr.url}
+                    href={pullRequest.url}
                     target="_blank"
                     rel="noreferrer"
                     onClick={() => setPanel(null)}
                     className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:bg-muted/60 [&_svg]:size-4 [&_svg]:text-muted-foreground"
                   >
                     <ExternalLink />
-                    View {prName}
+                    View {pullRequestName}
                     <span className="ml-auto pl-3 font-mono text-xs text-muted-foreground tabular-nums">
-                      #{pr.number}
+                      #{pullRequest.number}
                     </span>
                   </a>
                   <MenuItem
                     onClick={() => setPanel("merge")}
-                    disabled={!!pending || pr.state === "draft"}
-                    hint={pr.state === "draft" ? "draft" : undefined}
+                    disabled={!!pending || pullRequest.state === "draft"}
+                    hint={pullRequest.state === "draft" ? "draft" : undefined}
                   >
                     <GitMerge />
-                    Merge {prName}…
+                    Merge {pullRequestName}…
                   </MenuItem>
                 </>
               ) : (
-                <MenuItem onClick={() => run("pull-request")} disabled={!canCreatePr}>
+                <MenuItem onClick={() => run("pull-request")} disabled={!canCreatePullRequest}>
                   <GitPullRequestArrow />
-                  Create {prName}
+                  Create {pullRequestName}
                 </MenuItem>
               )
             ) : null}
-            {pr && !prOpen ? (
+            {pullRequest && !pullRequestOpen ? (
               <a
-                href={pr.url}
+                href={pullRequest.url}
                 target="_blank"
                 rel="noreferrer"
                 className="block px-2 pt-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
               >
-                {prName} #{pr.number} {pr.state}
+                {pullRequestName} #{pullRequest.number} {pullRequest.state}
               </a>
             ) : null}
             {base?.merged ? (
@@ -547,4 +563,4 @@ export const GitMenu = ({
       </MorphPopoverContent>
     </MorphPopover>
   );
-};
+}

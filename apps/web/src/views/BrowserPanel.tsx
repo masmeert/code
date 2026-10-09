@@ -37,6 +37,7 @@ export function BrowserPanel({ threadId }: { threadId: string }) {
   const browser = useBrowser((state) => state.threads[threadId]);
   const tab = browser?.tabs.find((candidate) => candidate.id === browser.activeTabId);
   const activity = useBrowser((state) => (tab ? state.activity[tab.id] : undefined));
+
   const aside = useRef<HTMLElement>(null);
   const panel = useResizable({
     key: "masscode.browserPanelWidth",
@@ -128,6 +129,7 @@ function TabButton({
 }) {
   const favicon = useBrowser((state) => state.activity[tab.id]?.favicon ?? null);
   const label = tab.title || hostOf(tab.url) || "New tab";
+
   return (
     <div
       className={cn(
@@ -190,6 +192,7 @@ function AddressBar({
   useEffect(() => {
     if (!editing) setDraft(tab.url);
   }, [tab.url, editing]);
+
   useEffect(() => registerAddressInput(threadId, input.current!), [threadId]);
 
   return (
@@ -268,8 +271,10 @@ function AddressBar({
 
 function BrowserSurface({ threadId }: { threadId: string }) {
   const slot = useRef<HTMLDivElement>(null);
+
   useLayoutEffect(() => {
     const element = slot.current!;
+
     function publish() {
       const rect = element.getBoundingClientRect();
       setSurface(threadId, {
@@ -279,6 +284,7 @@ function BrowserSurface({ threadId }: { threadId: string }) {
         height: Math.round(rect.height),
       });
     }
+
     publish();
     const observer = new ResizeObserver(publish);
     observer.observe(element);
@@ -289,6 +295,7 @@ function BrowserSurface({ threadId }: { threadId: string }) {
       clearSurface(threadId);
     };
   }, [threadId]);
+
   return <div ref={slot} className="min-h-0 flex-1" />;
 }
 

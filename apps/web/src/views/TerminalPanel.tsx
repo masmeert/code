@@ -107,6 +107,7 @@ export function TerminalPanel({
         ),
       ),
   });
+
   return (
     <section
       ref={section}
@@ -196,6 +197,7 @@ export function TerminalView({
   className?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     let cancelled = false;
     let dispose = () => {};
@@ -204,6 +206,7 @@ export function TerminalView({
       .catch(() => symbolsFont)
       .then(() => {
         if (cancelled || !host.current) return;
+
         const terminal = new Terminal({
           allowProposedApi: true,
           cursorBlink: true,
@@ -215,8 +218,8 @@ export function TerminalView({
           minimumContrastRatio: 4.5,
           theme: terminalTheme(document.documentElement.classList.contains("dark")),
         });
-        const fit = new FitAddon();
-        terminal.loadAddon(fit);
+        const fitAddon = new FitAddon();
+        terminal.loadAddon(fitAddon);
         terminal.loadAddon(new Unicode11Addon());
         terminal.unicode.activeVersion = "11";
         terminal.loadAddon(
@@ -227,12 +230,14 @@ export function TerminalView({
           }),
         );
         terminal.open(host.current);
+
         try {
           const webgl = new WebglAddon();
           webgl.onContextLoss(() => webgl.dispose());
           terminal.loadAddon(webgl);
         } catch {}
-        fit.fit();
+
+        fitAddon.fit();
 
         let replaying = false;
         function acknowledge(characters: number) {
@@ -240,6 +245,7 @@ export function TerminalView({
             ClientCommand.cases["terminal.acknowledge"].make({ threadId, terminalId, characters }),
           );
         }
+
         const detach = attachTerminal({
           threadId,
           terminalId,
@@ -255,11 +261,13 @@ export function TerminalView({
           write: (data) => terminal.write(data, () => acknowledge(data.length)),
           fail: (message) => terminal.write(`\r\n\x1b[31m${message}\x1b[0m\r\n`),
         });
+
         terminal.onData((data) => {
-          if (!replaying)
+          if (!replaying) {
             sendIfConnected(
               ClientCommand.cases["terminal.write"].make({ threadId, terminalId, data }),
             );
+          }
         });
         terminal.onResize(({ cols, rows }) =>
           sendIfConnected(
@@ -275,9 +283,10 @@ export function TerminalView({
         let frame = 0;
         const sizeObserver = new ResizeObserver(() => {
           cancelAnimationFrame(frame);
-          frame = requestAnimationFrame(() => fit.fit());
+          frame = requestAnimationFrame(() => fitAddon.fit());
         });
         sizeObserver.observe(host.current);
+
         const themeObserver = new MutationObserver(() => {
           terminal.options.theme = terminalTheme(
             document.documentElement.classList.contains("dark"),
@@ -287,6 +296,7 @@ export function TerminalView({
           attributes: true,
           attributeFilter: ["class"],
         });
+
         if (autoFocus) terminal.focus();
 
         dispose = () => {
@@ -297,11 +307,13 @@ export function TerminalView({
           terminal.dispose();
         };
       });
+
     return () => {
       cancelled = true;
       dispose();
     };
   }, [threadId, terminalId, autoFocus]);
+
   return (
     <div className={cn("min-h-0 flex-1 pb-1 pl-3", className)}>
       <div ref={host} className="size-full" />

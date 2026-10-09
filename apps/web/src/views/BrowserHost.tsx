@@ -40,16 +40,18 @@ export function BrowserHost() {
   );
 
   if (!window.desktop) return null;
+
   const shown =
     surface && browsers[surface.threadId]?.open ? browsers[surface.threadId]?.activeTabId : null;
+
   return createPortal(
     alive.flatMap(({ threadId, tabId }) => {
       const tab = browsers[threadId]?.tabs.find((candidate) => candidate.id === tabId);
-      const info = threads[threadId];
-      if (!tab?.url || !info) return [];
+      const thread = threads[threadId];
+      if (!tab?.url || !thread) return [];
       // Shelved and archived threads' tabs unload unless on screen; showing them again reloads their URL.
       if (
-        (info.shelved || info.archivedAt !== null) &&
+        (thread.shelved || thread.archivedAt !== null) &&
         surface?.threadId !== threadId &&
         !activity[tabId]?.automating
       )
@@ -58,7 +60,7 @@ export function BrowserHost() {
         <HostedTab
           key={tabId}
           threadId={threadId}
-          partition={browserPartition(projectHosts[info.projectId] ?? null)}
+          partition={browserPartition(projectHosts[thread.projectId] ?? null)}
           tab={tab}
           rect={shown === tabId && !activity[tabId]?.error ? (surface?.rect ?? null) : null}
           automating={(activity[tabId]?.automating ?? 0) > 0}
@@ -100,12 +102,14 @@ function HostedTab({
 
   const width = rect?.width;
   const height = rect?.height;
+
   useEffect(() => {
     if (width !== undefined && height !== undefined) setHiddenSize({ width, height });
   }, [width, height]);
 
   useLayoutEffect(() => {
     const element = webview.current!;
+
     function syncHistory() {
       try {
         updateActivity(tab.id, {
@@ -114,6 +118,7 @@ function HostedTab({
         });
       } catch {}
     }
+
     const handlers = {
       "dom-ready": syncHistory,
       "did-start-loading": () => updateActivity(tab.id, { loading: true, error: null }),
@@ -147,6 +152,7 @@ function HostedTab({
       },
       focus: () => element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })),
     };
+
     // SAFETY: Electron dispatches each of these events with the WebviewEvent fields its handler reads.
     const listeners = Object.entries(handlers) as Array<[string, EventListener]>;
     for (const [name, listener] of listeners) element.addEventListener(name, listener);

@@ -87,7 +87,7 @@ function waitsOnYou(info: ThreadInfo) {
 /** Only the macOS desktop window draws traffic lights over the top-left corner. */
 export const hasTrafficLights = Boolean(window.desktop) && isMac;
 
-const IconButton = ({
+function IconButton({
   label,
   onClick,
   children,
@@ -95,15 +95,17 @@ const IconButton = ({
   label: string;
   onClick: () => void;
   children: React.ReactNode;
-}) => (
-  <Tooltip content={label} side="bottom">
-    <Button variant="ghost" size="icon" aria-label={label} onClick={onClick} className="size-7">
-      {children}
-    </Button>
-  </Tooltip>
-);
+}) {
+  return (
+    <Tooltip content={label} side="bottom">
+      <Button variant="ghost" size="icon" aria-label={label} onClick={onClick} className="size-7">
+        {children}
+      </Button>
+    </Tooltip>
+  );
+}
 
-export const Sidebar = (props: {
+export function Sidebar(props: {
   activeId: string | null;
   /** Folder of the thread or draft on screen; new threads start there. */
   currentPath: string | null;
@@ -111,13 +113,13 @@ export const Sidebar = (props: {
   onModal: (view: ModalView) => void;
   /** Opens a new-thread draft; null leaves the project to pick. */
   onDraft: (path: string | null) => void;
-}) => {
-  const projects = useStore((s) => s.projects);
-  const threads = useStore((s) => s.threads);
+}) {
+  const projects = useStore((state) => state.projects);
+  const threads = useStore((state) => state.threads);
   const [query, setQuery] = useState("");
   const [view, setView] = useThreadListView();
   const now = useNow();
-  const reduce = useReducedMotion();
+  const reduceMotion = useReducedMotion();
   const updateStatus = useUpdateStatus();
 
   // Grouped by state: whatever still needs you on top, then shelved threads, then archived ones.
@@ -128,11 +130,13 @@ export const Sidebar = (props: {
   const [shownCounts, setShownCounts] = useState<Readonly<Record<string, number>>>({});
   const { infos, needsYou, active, shelved, archived, projectGroups } = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const byId = new Map(projects.map((p) => [p.id, p]));
-    const keyOf = (projectId: string) => {
-      const project = byId.get(projectId);
+    const projectsById = new Map(projects.map((project) => [project.id, project]));
+
+    function keyOf(projectId: string) {
+      const project = projectsById.get(projectId);
       return project ? projectKey(project) : projectId;
-    };
+    }
+
     const infos = Object.values(threads)
       .filter(
         (info) =>
@@ -148,14 +152,17 @@ export const Sidebar = (props: {
       .filter(
         (info) =>
           !needle ||
-          [info.title, byId.get(info.projectId)?.name, info.branch].some((s) =>
-            s?.toLowerCase().includes(needle),
+          [info.title, projectsById.get(info.projectId)?.name, info.branch].some((field) =>
+            field?.toLowerCase().includes(needle),
           ),
       )
-      .sort((a, b) =>
-        view.sortBy === "created" ? b.createdAt - a.createdAt : b.updatedAt - a.updatedAt,
+      .sort((first, second) =>
+        view.sortBy === "created"
+          ? second.createdAt - first.createdAt
+          : second.updatedAt - first.updatedAt,
       );
     const current = infos.filter((info) => info.archivedAt === null);
+
     return {
       infos,
       needsYou: current.filter((info) => !info.shelved && waitsOnYou(info)),
@@ -169,53 +176,59 @@ export const Sidebar = (props: {
     };
   }, [projects, threads, query, view, now]);
 
-  const projectOf = (info: ThreadInfo) =>
-    projects.find((p) => p.id === info.projectId) ?? {
-      id: info.projectId,
-      name: info.cwd.split("/").at(-1) ?? info.cwd,
-      path: info.cwd,
-      addedAt: 0,
-    };
+  function projectOf(info: ThreadInfo) {
+    return (
+      projects.find((project) => project.id === info.projectId) ?? {
+        id: info.projectId,
+        name: info.cwd.split("/").at(-1) ?? info.cwd,
+        path: info.cwd,
+        addedAt: 0,
+      }
+    );
+  }
 
-  const shownOf = (key: string, infos: Array<ThreadInfo>) =>
-    query ? infos : infos.slice(0, shownCounts[key] ?? 10);
+  function shownOf(key: string, infos: Array<ThreadInfo>) {
+    return query ? infos : infos.slice(0, shownCounts[key] ?? 10);
+  }
 
   // ⌘1–9 open the first nine threads in the order they're drawn; holding ⌘ shows each one's shortcut.
-  const jumpIds = (
-    view.groupBy === "none"
-      ? infos
-      : view.groupBy === "project"
-        ? projectGroups.flatMap((group) => {
-            const key = projectKey(projectOf(group[0]!));
-            return collapsedProjects.includes(key) && !query ? [] : shownOf(key, group);
-          })
-        : view.status === "archived"
-          ? archived
-          : [
-              ...needsYou,
-              ...active,
-              ...(showShelved || query ? shownOf("shelved", shelved) : []),
-              ...(showArchived || query ? shownOf("archived", archived) : []),
-            ]
-  )
-    .slice(0, 9)
-    .map((info) => info.id);
+  let drawnInOrder: Array<ThreadInfo>;
+  if (view.groupBy === "none") drawnInOrder = infos;
+  else if (view.groupBy === "project")
+    drawnInOrder = projectGroups.flatMap((group) => {
+      const key = projectKey(projectOf(group[0]));
+      return collapsedProjects.includes(key) && !query ? [] : shownOf(key, group);
+    });
+  else if (view.status === "archived") drawnInOrder = archived;
+  else
+    drawnInOrder = [
+      ...needsYou,
+      ...active,
+      ...(showShelved || query ? shownOf("shelved", shelved) : []),
+      ...(showArchived || query ? shownOf("archived", archived) : []),
+    ];
+  const jumpIds = drawnInOrder.slice(0, 9).map((info) => info.id);
+
   const [showDigits, setShowDigits] = useState(false);
   const latestJump = useRef({ ids: jumpIds, onSelect: props.onSelect });
   latestJump.current = { ids: jumpIds, onSelect: props.onSelect };
+
   useEffect(() => {
     const modifier = isMac ? "Meta" : "Control";
     let hintTimer: ReturnType<typeof setTimeout> | undefined;
+
     function hideDigits() {
       clearTimeout(hintTimer);
       setShowDigits(false);
     }
+
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === modifier) {
         // A delay, so the hints don't flash for every other ⌘ shortcut.
         hintTimer = setTimeout(() => setShowDigits(true), 200);
         return;
       }
+
       hideDigits();
       const held = isMac ? event.metaKey : event.ctrlKey;
       if (event.defaultPrevented || !held || event.shiftKey || event.altKey) return;
@@ -224,9 +237,11 @@ export const Sidebar = (props: {
       event.preventDefault();
       latestJump.current.onSelect(id);
     }
+
     function onKeyUp(event: KeyboardEvent) {
       if (event.key === modifier) hideDigits();
     }
+
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", hideDigits);
@@ -241,36 +256,40 @@ export const Sidebar = (props: {
   // One hover pill glides between rows; rows glide too, so one leaving closes its gap smoothly.
   // Each row carries the hairline above it, centred in the gap and hidden next to a filled
   // (hovered or current) row.
-  const renderCards = (infos: Array<ThreadInfo>) => (
-    <SharedLayoutBg inset={0} pillClassName="rounded-xl bg-muted/50" className="gap-1">
-      {infos.map((info) => (
-        <motion.div
-          key={info.id}
-          layout="position"
-          transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
-          className={cn(
-            "before:pointer-events-none before:absolute before:inset-x-3 before:-top-[2.5px] before:h-px before:bg-border/60",
-            "first:before:hidden hover:before:hidden has-[[aria-current=page]]:before:hidden",
-            "[:has([aria-current=page])+&]:before:hidden [:hover+&]:before:hidden",
-          )}
-        >
-          <ThreadCard
-            info={info}
-            project={projectOf(info)}
-            active={info.id === props.activeId}
-            unread={info.archivedAt === null && !isSeen(info)}
-            shelved={info.archivedAt !== null || info.shelved}
-            now={now}
-            digit={showDigits && jumpIds.includes(info.id) ? jumpIds.indexOf(info.id) + 1 : null}
-            onSelect={props.onSelect}
-          />
-        </motion.div>
-      ))}
-    </SharedLayoutBg>
-  );
+  function renderCards(infos: Array<ThreadInfo>) {
+    return (
+      <SharedLayoutBg inset={0} pillClassName="rounded-xl bg-muted/50" className="gap-1">
+        {infos.map((info) => (
+          <motion.div
+            key={info.id}
+            layout="position"
+            transition={reduceMotion ? { duration: 0 } : SPRING_LAYOUT}
+            className={cn(
+              "before:pointer-events-none before:absolute before:inset-x-3 before:-top-[2.5px] before:h-px before:bg-border/60",
+              "first:before:hidden hover:before:hidden has-[[aria-current=page]]:before:hidden",
+              "[:has([aria-current=page])+&]:before:hidden [:hover+&]:before:hidden",
+            )}
+          >
+            <ThreadCard
+              info={info}
+              project={projectOf(info)}
+              active={info.id === props.activeId}
+              unread={info.archivedAt === null && !isSeen(info)}
+              shelved={info.archivedAt !== null || info.shelved}
+              now={now}
+              digit={showDigits && jumpIds.includes(info.id) ? jumpIds.indexOf(info.id) + 1 : null}
+              onSelect={props.onSelect}
+            />
+          </motion.div>
+        ))}
+      </SharedLayoutBg>
+    );
+  }
 
-  const renderList = (label: ReactNode, infos: Array<ThreadInfo>) =>
-    infos.length === 0 ? null : (
+  function renderList(label: ReactNode, infos: Array<ThreadInfo>) {
+    if (infos.length === 0) return null;
+
+    return (
       <section className="flex flex-col">
         <h3 className="flex items-center gap-2 px-3 pt-2 pb-1 text-[11px] font-medium text-muted-foreground">
           {label}
@@ -278,24 +297,27 @@ export const Sidebar = (props: {
         {renderCards(infos)}
       </section>
     );
+  }
 
   // Foldable sections open themselves while searching, so matches are never hidden.
   // The header is a full-width row, sticky while open so it can be folded from anywhere in the list.
   // No height animation: rows fade while sections glide to their new positions, so a shelf
   // pinned to the bottom rises as one block. popLayout lifts closing rows out of flow at once;
   // positioned in their section, they ride its glide as they fade.
-  const renderFolding = (
+  function renderFolding(
     key: string,
     label: string,
     icon: ReactNode,
     infos: Array<ThreadInfo>,
     open: boolean,
     toggle: () => void,
-  ) => {
+  ) {
     if (infos.length === 0) return null;
+
     const expanded = open || Boolean(query);
-    const snap = reduce || Boolean(query);
+    const snap = reduceMotion || Boolean(query);
     const shown = shownOf(key, infos);
+
     return (
       <motion.section
         key={key}
@@ -359,7 +381,75 @@ export const Sidebar = (props: {
         </AnimatePresence>
       </motion.section>
     );
-  };
+  }
+
+  function renderThreads() {
+    if (infos.length === 0)
+      return (
+        <p className="px-3 pt-2 text-xs text-muted-foreground">
+          {Object.keys(threads).length > 0
+            ? "No matching threads."
+            : `No threads yet. Press ${describe("thread.new")} to start one.`}
+        </p>
+      );
+
+    if (view.groupBy === "none") return renderCards(infos);
+
+    if (view.groupBy === "project")
+      return (
+        <div className="flex flex-col gap-0.5">
+          {projectGroups.map((group) => {
+            const project = projectOf(group[0]);
+            const key = projectKey(project);
+            return renderFolding(
+              key,
+              project.name,
+              <ProjectBadge project={project} />,
+              group,
+              !collapsedProjects.includes(key),
+              () =>
+                setCollapsedProjects((current) =>
+                  current.includes(key) ? current.filter((id) => id !== key) : [...current, key],
+                ),
+            );
+          })}
+        </div>
+      );
+
+    if (view.status === "archived") return renderList("Archived", archived);
+
+    return (
+      <>
+        {renderList(
+          <>
+            <span className="size-1.5 rounded-full bg-warning" />
+            <span className="text-foreground">Needs you</span>
+            <span className="tabular-nums">{needsYou.length}</span>
+          </>,
+          needsYou,
+        )}
+        {renderList("Active", active)}
+        {shelved.length + archived.length > 0 ? (
+          <motion.div
+            // Pinned to the bottom while folded, like t3code's shelf; unfolding rises into the free space.
+            layout="position"
+            transition={reduceMotion || query ? { duration: 0 } : SPRING_LAYOUT}
+            className={cn(
+              "mt-auto flex flex-col gap-0.5",
+              needsYou.length + active.length > 0 && "border-t border-border/60 pt-2",
+            )}
+          >
+            {renderFolding("shelved", "Shelved", <Check />, shelved, showShelved, () =>
+              setShowShelved(!showShelved),
+            )}
+            {renderFolding("archived", "Archived", <Archive />, archived, showArchived, () =>
+              setShowArchived((open) => !open),
+            )}
+          </motion.div>
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <AnimatedSidebar
@@ -393,7 +483,7 @@ export const Sidebar = (props: {
         <Input
           value={query}
           onChange={setQuery}
-          onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+          onKeyDown={(event) => event.key === "Escape" && setQuery("")}
           placeholder="Search"
           aria-label="Search threads"
           leftIcon={<Search />}
@@ -413,67 +503,7 @@ export const Sidebar = (props: {
           layoutScroll
           className="flex h-full [scrollbar-width:none] flex-col overflow-y-auto overscroll-contain px-2 pb-2 [&::-webkit-scrollbar]:hidden"
         >
-          {infos.length === 0 ? (
-            <p className="px-3 pt-2 text-xs text-muted-foreground">
-              {Object.keys(threads).length > 0
-                ? "No matching threads."
-                : `No threads yet. Press ${describe("thread.new")} to start one.`}
-            </p>
-          ) : view.groupBy === "none" ? (
-            renderCards(infos)
-          ) : view.groupBy === "project" ? (
-            <div className="flex flex-col gap-0.5">
-              {projectGroups.map((group) => {
-                const project = projectOf(group[0]);
-                const key = projectKey(project);
-                return renderFolding(
-                  key,
-                  project.name,
-                  <ProjectBadge project={project} />,
-                  group,
-                  !collapsedProjects.includes(key),
-                  () =>
-                    setCollapsedProjects((current) =>
-                      current.includes(key)
-                        ? current.filter((id) => id !== key)
-                        : [...current, key],
-                    ),
-                );
-              })}
-            </div>
-          ) : view.status === "archived" ? (
-            renderList("Archived", archived)
-          ) : (
-            <>
-              {renderList(
-                <>
-                  <span className="size-1.5 rounded-full bg-warning" />
-                  <span className="text-foreground">Needs you</span>
-                  <span className="tabular-nums">{needsYou.length}</span>
-                </>,
-                needsYou,
-              )}
-              {renderList("Active", active)}
-              {shelved.length + archived.length > 0 ? (
-                <motion.div
-                  // Pinned to the bottom while folded, like t3code's shelf; unfolding rises into the free space.
-                  layout="position"
-                  transition={reduce || query ? { duration: 0 } : SPRING_LAYOUT}
-                  className={cn(
-                    "mt-auto flex flex-col gap-0.5",
-                    needsYou.length + active.length > 0 && "border-t border-border/60 pt-2",
-                  )}
-                >
-                  {renderFolding("shelved", "Shelved", <Check />, shelved, showShelved, () =>
-                    setShowShelved(!showShelved),
-                  )}
-                  {renderFolding("archived", "Archived", <Archive />, archived, showArchived, () =>
-                    setShowArchived((open) => !open),
-                  )}
-                </motion.div>
-              ) : null}
-            </>
-          )}
+          {renderThreads()}
         </motion.div>
         <div
           aria-hidden="true"
@@ -516,10 +546,10 @@ export const Sidebar = (props: {
       <AnimatedSidebarRail />
     </AnimatedSidebar>
   );
-};
+}
 
 /** Leading dot on the meta row: hue only when the thread needs you, solid while there's something new. */
-const StatusDot = ({
+function StatusDot({
   info,
   unread,
   shelved,
@@ -527,45 +557,43 @@ const StatusDot = ({
   info: ThreadInfo;
   unread: boolean;
   shelved: boolean;
-}) => {
-  const [label, tone] =
-    info.status === "awaiting-approval"
-      ? ["Needs approval", "bg-warning"]
-      : info.status === "awaiting-answer"
-        ? ["Needs an answer", "bg-warning"]
-        : info.status === "error"
-          ? ["Error", "bg-destructive"]
-          : info.status === "running"
-            ? ["Working", "bg-success animate-pulse"]
-            : unread
-              ? ["New activity", "bg-brand"]
-              : shelved
-                ? ["Shelved", "bg-muted-foreground/25"]
-                : ["Idle", "bg-brand"];
+}) {
+  const { label, tone } = statusDotStyle(info, unread, shelved);
+
   return (
     <span role="img" aria-label={label} className={cn("size-2 shrink-0 rounded-full", tone)} />
   );
-};
+}
+
+function statusDotStyle(info: ThreadInfo, unread: boolean, shelved: boolean) {
+  if (info.status === "awaiting-approval") return { label: "Needs approval", tone: "bg-warning" };
+  if (info.status === "awaiting-answer") return { label: "Needs an answer", tone: "bg-warning" };
+  if (info.status === "error") return { label: "Error", tone: "bg-destructive" };
+  if (info.status === "running") return { label: "Working", tone: "bg-success animate-pulse" };
+  if (unread) return { label: "New activity", tone: "bg-brand" };
+  if (shelved) return { label: "Shelved", tone: "bg-muted-foreground/25" };
+  return { label: "Idle", tone: "bg-brand" };
+}
 
 /** What a running thread is doing: the command it runs, else the tool call in words. */
-const activityLabel = (activity: ThreadActivity | undefined) =>
-  !activity
-    ? "Thinking…"
-    : categoryOf(activity.tool) === "run"
-      ? activity.summary
-      : livePhrase({
-          id: activity.toolId,
-          name: activity.tool,
-          summary: activity.summary,
-          output: null,
-          isError: false,
-        });
+function activityLabel(activity: ThreadActivity | undefined) {
+  if (!activity) return "Thinking…";
+  if (categoryOf(activity.tool) === "run") return activity.summary;
+  return livePhrase({
+    id: activity.toolId,
+    name: activity.tool,
+    summary: activity.summary,
+    output: null,
+    isError: false,
+  });
+}
 
 /** Provider mark; spins while the agent works. */
-const ProviderMark = ({ info }: { info: ThreadInfo }) => {
+function ProviderMark({ info }: { info: ThreadInfo }) {
   const Logo = PROVIDER_LOGO[info.provider];
-  const settings = useStore((s) => s.settings);
+  const settings = useStore((state) => state.settings);
   const running = info.status === "running";
+
   return (
     <Logo
       className={cn(
@@ -575,17 +603,17 @@ const ProviderMark = ({ info }: { info: ThreadInfo }) => {
       )}
     />
   );
-};
+}
 
 /** Right end of the meta row: why the thread needs you, else its age. */
-const TrailingLabel = ({ info, now }: { info: ThreadInfo; now: number }) => {
+function TrailingLabel({ info, now }: { info: ThreadInfo; now: number }) {
   if (info.status === "awaiting-approval")
     return <span className="font-medium text-warning">Needs approval</span>;
   if (info.status === "awaiting-answer")
     return <span className="font-medium text-warning">Needs an answer</span>;
   if (info.status === "error") return <span className="font-medium text-destructive">Error</span>;
   return <span className="tabular-nums">{ago(info.updatedAt, now)}</span>;
-};
+}
 
 interface CardAction {
   readonly key: string;
@@ -599,10 +627,11 @@ interface CardAction {
 }
 
 /** One action list, shared by the ⋯ menu and the right-click menu. */
-const useThreadActions = (info: ThreadInfo, shelved: boolean, onRename: () => void) => {
+function useThreadActions(info: ThreadInfo, shelved: boolean, onRename: () => void) {
   const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null);
-  const confirmArchive = useStore((s) => s.settings.confirmArchive === true);
-  const confirmDelete = useStore((s) => s.settings.confirmDelete !== false);
+  const confirmArchive = useStore((state) => state.settings.confirmArchive === true);
+  const confirmDelete = useStore((state) => state.settings.confirmDelete !== false);
+
   const archived = info.archivedAt !== null;
   const actions: Array<CardAction> = [
     { key: "rename", label: "Rename", icon: Pencil, onSelect: onRename },
@@ -669,28 +698,31 @@ const useThreadActions = (info: ThreadInfo, shelved: boolean, onRename: () => vo
           onSelect: () => send(ClientCommand.cases["thread.close"].make({ threadId: info.id })),
         },
   ];
-  return { actions, resetConfirm: () => setConfirming(null) };
-};
 
-const MenuRow = ({ action, onDone }: { action: CardAction; onDone: () => void }) => (
-  <button
-    type="button"
-    disabled={action.disabled}
-    onClick={() => {
-      action.onSelect();
-      if (!action.keepOpen) onDone();
-    }}
-    className={cn(
-      "flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
-      action.destructive
-        ? "text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10"
-        : "text-foreground hover:bg-muted focus-visible:bg-muted",
-    )}
-  >
-    <action.icon aria-hidden="true" className="size-3.5 shrink-0" />
-    <span className="min-w-0 truncate">{action.label}</span>
-  </button>
-);
+  return { actions, resetConfirm: () => setConfirming(null) };
+}
+
+function MenuRow({ action, onDone }: { action: CardAction; onDone: () => void }) {
+  return (
+    <button
+      type="button"
+      disabled={action.disabled}
+      onClick={() => {
+        action.onSelect();
+        if (!action.keepOpen) onDone();
+      }}
+      className={cn(
+        "flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
+        action.destructive
+          ? "text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10"
+          : "text-foreground hover:bg-muted focus-visible:bg-muted",
+      )}
+    >
+      <action.icon aria-hidden="true" className="size-3.5 shrink-0" />
+      <span className="min-w-0 truncate">{action.label}</span>
+    </button>
+  );
+}
 
 // Memoized: any thread's status or activity replaces `threads`, and only that thread's row should redraw.
 const ThreadCard = memo(function ThreadCard(props: {
@@ -707,22 +739,25 @@ const ThreadCard = memo(function ThreadCard(props: {
 }) {
   const { info, project } = props;
   const host = useProjectHost(project.id);
-  const reduce = useReducedMotion();
+  const reduceMotion = useReducedMotion();
   const [menuOpen, setMenuOpenState] = useState(false);
   const [responding, setResponding] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const { actions, resetConfirm } = useThreadActions(info, props.shelved, () => setRenaming(true));
-  const setMenuOpen = (open: boolean) => {
-    setMenuOpenState(open);
-    if (!open) resetConfirm();
-  };
-  const urgent = !props.shelved && waitsOnYou(info);
-  const request = info.request;
   // Two-finger swipe left shelves (or unshelves): the row follows the fingers, and past the
   // threshold letting go commits; short of it, it springs back.
   const swipeX = useMotionValue(0);
   const swipeEnd = useRef<ReturnType<typeof setTimeout>>(undefined);
   const swipeReveal = useTransform(swipeX, [-64, -16], [1, 0]);
+
+  const urgent = !props.shelved && waitsOnYou(info);
+  const request = info.request;
+
+  function setMenuOpen(open: boolean) {
+    setMenuOpenState(open);
+    if (!open) resetConfirm();
+  }
+
   useEffect(() => () => clearTimeout(swipeEnd.current), []);
   useEffect(() => setResponding(false), [request?.requestId]);
 
@@ -731,18 +766,18 @@ const ThreadCard = memo(function ThreadCard(props: {
       autoFocus
       aria-label="Thread title"
       defaultValue={info.title}
-      onFocus={(e) => e.currentTarget.select()}
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          e.currentTarget.value = info.title;
+      onFocus={(event) => event.currentTarget.select()}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          event.currentTarget.value = info.title;
         }
-        if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+        if (event.key === "Enter" || event.key === "Escape") event.currentTarget.blur();
       }}
-      onBlur={(e) => {
+      onBlur={(event) => {
         setRenaming(false);
-        const next = e.currentTarget.value.trim();
+        const next = event.currentTarget.value.trim();
         if (next && next !== info.title)
           send(ClientCommand.cases["thread.rename"].make({ threadId: info.id, title: next }));
       }}
@@ -770,8 +805,8 @@ const ThreadCard = memo(function ThreadCard(props: {
               tabIndex={-1}
               disabled={!canShelve(info)}
               aria-label={props.shelved ? "Unshelve" : "Shelve"}
-              onClick={(e) => {
-                e.stopPropagation();
+              onClick={(event) => {
+                event.stopPropagation();
                 setShelved(info.id, !props.shelved);
               }}
               className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
@@ -786,7 +821,7 @@ const ThreadCard = memo(function ThreadCard(props: {
               type="button"
               tabIndex={-1}
               aria-label={`Actions for ${info.title}`}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
               className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground"
             >
               <MoreHorizontal className="size-4" />
@@ -799,7 +834,7 @@ const ThreadCard = memo(function ThreadCard(props: {
             radius={12}
             className="w-48 p-1.5"
           >
-            <MorphPopoverMenu onClick={(e) => e.stopPropagation()}>
+            <MorphPopoverMenu onClick={(event) => event.stopPropagation()}>
               {actions.map((action) => (
                 <MenuRow key={action.key} action={action} onDone={() => setMenuOpen(false)} />
               ))}
@@ -827,20 +862,24 @@ const ThreadCard = memo(function ThreadCard(props: {
             aria-current={props.active ? "page" : undefined}
             style={{ x: swipeX }}
             onClick={() => props.onSelect(info.id)}
-            onKeyDown={(e) => {
-              if (e.target === e.currentTarget && e.key === "F2") setRenaming(true);
-              if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-              e.preventDefault();
+            onKeyDown={(event) => {
+              if (event.target === event.currentTarget && event.key === "F2") setRenaming(true);
+              if (
+                event.target !== event.currentTarget ||
+                (event.key !== "Enter" && event.key !== " ")
+              )
+                return;
+              event.preventDefault();
               props.onSelect(info.id);
             }}
-            onWheel={(e) => {
+            onWheel={(event) => {
               if (info.archivedAt !== null || !canShelve(info)) return;
-              if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-              swipeX.set(Math.max(-96, Math.min(0, swipeX.get() - e.deltaX)));
+              if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+              swipeX.set(Math.max(-96, Math.min(0, swipeX.get() - event.deltaX)));
               clearTimeout(swipeEnd.current);
               swipeEnd.current = setTimeout(() => {
                 if (swipeX.get() <= -64) setShelved(info.id, !props.shelved);
-                animate(swipeX, 0, reduce ? { duration: 0 } : SPRING_SWAP);
+                animate(swipeX, 0, reduceMotion ? { duration: 0 } : SPRING_SWAP);
               }, 120);
             }}
             className={cn(
@@ -911,8 +950,8 @@ const ThreadCard = memo(function ThreadCard(props: {
                       <Button
                         size="sm"
                         disabled={responding}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={(event) => {
+                          event.stopPropagation();
                           setResponding(true);
                           respondApproval(info.id, request.requestId, "allow");
                         }}
@@ -924,8 +963,8 @@ const ThreadCard = memo(function ThreadCard(props: {
                         size="sm"
                         variant="ghost"
                         disabled={responding}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={(event) => {
+                          event.stopPropagation();
                           setResponding(true);
                           respondApproval(info.id, request.requestId, "deny");
                         }}
@@ -939,8 +978,8 @@ const ThreadCard = memo(function ThreadCard(props: {
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    onClick={(event) => {
+                      event.stopPropagation();
                       props.onSelect(info.id);
                     }}
                     className="mt-2 h-7 rounded-lg px-2.5"

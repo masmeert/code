@@ -192,20 +192,22 @@ import { hasTrafficLights } from "./Sidebar.tsx";
 const PANEL_WIDTH_KEY = "masscode.diffPanelWidth";
 
 // Loaded on first open, keeping the diff renderer out of startup.
-const DiffPanel = lazy(() => import("./DiffPanel.tsx").then((m) => ({ default: m.DiffPanel })));
+const DiffPanel = lazy(() =>
+  import("./DiffPanel.tsx").then((module) => ({ default: module.DiffPanel })),
+);
 const TerminalPanel = lazy(() =>
-  import("./TerminalPanel.tsx").then((m) => ({ default: m.TerminalPanel })),
+  import("./TerminalPanel.tsx").then((module) => ({ default: module.TerminalPanel })),
 );
 const TerminalView = lazy(() =>
-  import("./TerminalPanel.tsx").then((m) => ({ default: m.TerminalView })),
+  import("./TerminalPanel.tsx").then((module) => ({ default: module.TerminalView })),
 );
 
-/** Consecutive agent items form one turn under a single avatar. */
 type UserItem = Extract<TranscriptItem, { kind: "user" }>;
 
 /** Where a thread's own conversation starts: forked from or started by another thread. */
 type MarkerItem = Extract<TranscriptItem, { kind: "forked" | "startedBy" }>;
 
+/** Consecutive agent items form one turn under a single avatar. */
 type Turn =
   | { readonly from: "user"; readonly id: string; readonly item: UserItem }
   | {
@@ -220,27 +222,30 @@ type Turn =
       readonly item: Extract<TranscriptItem, { kind: "setup" }>;
     };
 
-const toTurns = (items: ReadonlyArray<TranscriptItem>): Array<Turn> => {
+function toTurns(items: ReadonlyArray<TranscriptItem>): Array<Turn> {
   const turns: Array<Turn> = [];
   for (const item of items) {
     if (item.kind === "user") {
       turns.push({ from: "user", id: item.id, item });
       continue;
     }
+
     if (item.kind === "forked" || item.kind === "startedBy") {
       turns.push({ from: "marker", id: item.id, item });
       continue;
     }
+
     if (item.kind === "setup") {
       turns.push({ from: "setup", id: item.id, item });
       continue;
     }
+
     const last = turns.at(-1);
     if (last?.from === "assistant") last.items.push(item);
     else turns.push({ from: "assistant", id: item.id, items: [item] });
   }
   return turns;
-};
+}
 
 type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
 
@@ -260,6 +265,7 @@ function toToolGroups(items: ReadonlyArray<TranscriptItem>): Array<Block> {
       blocks.push(item);
       continue;
     }
+
     const last = blocks.at(-1);
     if (last?.kind === "tools") last.calls.push(item);
     else blocks.push({ kind: "tools", id: item.id, calls: [item] });
@@ -285,21 +291,24 @@ function toBlocks(items: ReadonlyArray<TranscriptItem>, heldAnswerId?: string): 
   const lastWork = items.findLast(isWork);
   const answer =
     lastWork?.kind === "assistant" && lastWork.id !== heldAnswerId ? lastWork : undefined;
+
   const blocks: Array<Block> = [];
   for (const item of items) {
     if (item.kind !== "tool" && (item === answer || !isWork(item))) {
       blocks.push(item);
       continue;
     }
+
     const last = blocks.at(-1);
     if (last?.kind === "work") last.items.push(item);
     else blocks.push({ kind: "work", id: item.id, items: [item] });
   }
+
   // A lone thinking block or tool group already folds to one row; lone held text still needs the work row to fold into.
   return blocks.flatMap((block) => {
     if (block.kind !== "work") return [block];
     const inner = toToolGroups(block.items);
-    return inner.length === 1 && inner[0]!.id !== heldAnswerId ? inner : [block];
+    return inner.length === 1 && inner[0].id !== heldAnswerId ? inner : [block];
   });
 }
 
@@ -315,6 +324,7 @@ function showsWorking(items: ReadonlyArray<TranscriptItem>) {
       (item) => item.kind === "user" || item.kind === "forked" || item.kind === "startedBy",
     ) + 1;
   const newest = toBlocks(items.slice(turnStart)).at(-1);
+
   if (newest?.kind === "tools") return newest.calls.at(-1)?.output === null;
   return newest?.kind === "work" || newest?.kind === "assistant" || newest?.kind === "reasoning";
 }
@@ -326,6 +336,7 @@ function useProjectConfig(host: string | null, path: string | null | undefined, 
     config: ProjectConfig;
     error: string | null;
   } | null>(null);
+
   useEffect(() => {
     if (!path) return;
     let cancelled = false;
@@ -336,11 +347,12 @@ function useProjectConfig(host: string | null, path: string | null | undefined, 
       cancelled = true;
     };
   }, [host, path, refreshKey]);
+
   return answer?.path === path ? answer : null;
 }
 
 /** Top bar: project / title breadcrumb. Leaves room for the traffic lights when the sidebar is folded away. */
-const Header = ({
+function Header({
   project,
   title,
   badge,
@@ -350,9 +362,10 @@ const Header = ({
   title: string;
   badge?: ReactNode;
   actions?: ReactNode;
-}) => {
+}) {
   const { open } = useAnimatedSidebar();
   const host = useProjectHost(project?.id ?? "");
+
   return (
     // Same row geometry as the sidebar's title bar, so both line up with the traffic lights.
     <header
@@ -381,12 +394,12 @@ const Header = ({
       ) : null}
     </header>
   );
-};
+}
 
 const ADD_PROJECT = "\u0000add-project";
 
 /** Which project a draft starts in, one entry per repo whatever machines it's on; also the way to add one. */
-const ProjectList = ({
+function ProjectList({
   cwd,
   onPick,
   focusSignal,
@@ -394,33 +407,41 @@ const ProjectList = ({
   cwd: string | null;
   onPick: (path: string | null) => void;
   focusSignal: number;
-}) => {
-  const projects = useStore((s) => s.projects);
-  const threads = useStore((s) => s.threads);
-  const projectHosts = useStore((s) => s.projectHosts);
+}) {
+  const projects = useStore((state) => state.projects);
+  const threads = useStore((state) => state.threads);
+  const projectHosts = useStore((state) => state.projectHosts);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
+
   const copies = new Map<string, Array<Project>>();
-  for (const project of projects)
+  for (const project of projects) {
     copies.set(projectKey(project), [...(copies.get(projectKey(project)) ?? []), project]);
-  const current = projects.find((p) => p.path === cwd);
+  }
+
+  const current = projects.find((project) => project.path === cwd);
   const currentKey = current && projectKey(current);
-  const lastUsed = (project: Project) =>
-    Math.max(
+
+  function lastUsed(project: Project) {
+    return Math.max(
       0,
       ...Object.values(threads).flatMap((info) =>
         info.projectId === project.id ? [info.updatedAt] : [],
       ),
     );
+  }
+
   // The copy on the machine the project was last worked on, else this Mac's.
-  const preferred = (key: string) =>
-    [...(copies.get(key) ?? [])].sort(
-      (a, b) =>
-        lastUsed(b) - lastUsed(a) ||
-        Number(Boolean(projectHosts[a.id])) - Number(Boolean(projectHosts[b.id])),
-    )[0]!;
+  function preferredCopy(key: string) {
+    return [...(copies.get(key) ?? [])].sort(
+      (left, right) =>
+        lastUsed(right) - lastUsed(left) ||
+        Number(Boolean(projectHosts[left.id])) - Number(Boolean(projectHosts[right.id])),
+    )[0];
+  }
+
   const onAnotherMachine = projects.some((project) => projectHosts[project.id]);
   const needle = query.trim().toLowerCase();
   const rows = [
@@ -431,12 +452,12 @@ const ProjectList = ({
         lastUsedAt: Math.max(...projectCopies.map(lastUsed)),
       }))
       .sort(
-        (a, b) =>
-          b.lastUsedAt - a.lastUsedAt ||
-          a.projectCopies[0]!.name.localeCompare(b.projectCopies[0]!.name),
+        (left, right) =>
+          right.lastUsedAt - left.lastUsedAt ||
+          left.projectCopies[0].name.localeCompare(right.projectCopies[0].name),
       )
       .map(({ key, projectCopies }) => {
-        const shown = preferred(key);
+        const shown = preferredCopy(key);
         const path = shown.path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
         return {
           id: key,
@@ -469,12 +490,13 @@ const ProjectList = ({
     if (row.project) {
       onPick(row.project.path);
       focusComposer();
-    } else
+    } else {
       void addProject().then((path) => {
         if (!path) return;
         onPick(path);
         focusComposer();
       });
+    }
   }
 
   return (
@@ -492,7 +514,7 @@ const ProjectList = ({
             moveActive(event.key === "ArrowDown" ? 1 : -1);
           } else if (event.key === "Enter") {
             event.preventDefault();
-            pick(rows[activeIndex]!);
+            pick(rows[activeIndex]);
           } else if (event.key === "Escape") {
             if (query) setQuery("");
             else if (cwd) focusComposer();
@@ -547,12 +569,12 @@ const ProjectList = ({
       </div>
     </div>
   );
-};
+}
 
 const THIS_MAC = "\u0000this-mac";
 
 /** Clones a project onto a machine that doesn't have it yet, from its git origin. */
-const CloneCopy = ({
+function CloneCopy({
   project,
   machine,
   onCloned,
@@ -560,26 +582,30 @@ const CloneCopy = ({
   project: Project;
   machine: string | null;
   onCloned: (path: string) => void;
-}) => {
-  const addProjectFolder = useStore((s) => s.settings.addProjectFolder);
-  const hostProjectFolder = useStore((s) =>
-    machine === null ? undefined : s.settings.hostProjectFolders?.[machine],
+}) {
+  const addProjectFolder = useStore((state) => state.settings.addProjectFolder);
+  const hostProjectFolder = useStore((state) =>
+    machine === null ? undefined : state.settings.hostProjectFolders?.[machine],
   );
   const [cloning, setCloning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const where = machine ?? "this Mac";
   // This Mac's clone folder is a Mac path unless it's under ~, which means the host's home there.
   const parent =
     machine === null
       ? (addProjectFolder ?? "~")
       : hostProjectFolder || (addProjectFolder?.startsWith("~") ? addProjectFolder : "~/code");
-  if (!project.remote)
+
+  if (!project.remote) {
     return (
       <span>
         {project.name} isn't a git repo with a remote, so it can't be cloned to {where}. Add its
         folder there with Add project.
       </span>
     );
+  }
+
   return (
     <span className="flex flex-col items-center gap-3">
       <span>
@@ -612,34 +638,39 @@ const CloneCopy = ({
       {error ? <span className="max-w-md text-xs text-destructive">{error}</span> : null}
     </span>
   );
-};
+}
 
 /** A new chat that only exists in this window until its first message creates the thread. */
-export const DraftView = ({
+export function DraftView({
   path,
   onPickProject,
 }: {
   path: string | null;
   onPickProject: (path: string | null) => void;
-}) => {
+}) {
   const pathHost = usePathHost(path);
-  const settings = useStore((s) => s.settings);
-  const projects = useStore((s) => s.projects);
-  const projectHosts = useStore((s) => s.projectHosts);
-  const hosts = useStore((s) => s.hosts);
-  const project = projects.find((p) => p.path === path);
+  const settings = useStore((state) => state.settings);
+  const projects = useStore((state) => state.projects);
+  const projectHosts = useStore((state) => state.projectHosts);
+  const hosts = useStore((state) => state.hosts);
+  const project = projects.find((candidate) => candidate.path === path);
   // A machine picked that has no copy of the draft's project yet; it resets with the project.
   const [missing, setMissing] = useState<{ path: string; machine: string | null } | null>(null);
   const missingOn = missing && missing.path === path ? missing : null;
   const host = missingOn ? missingOn.machine : pathHost;
   const providers = useProviders(host);
-  const copyOn = (machine: string | null) =>
-    project &&
-    projects.find(
-      (candidate) =>
-        projectKey(candidate) === projectKey(project) &&
-        (projectHosts[candidate.id] ?? null) === machine,
+
+  function copyOn(machine: string | null) {
+    return (
+      project &&
+      projects.find(
+        (candidate) =>
+          projectKey(candidate) === projectKey(project) &&
+          (projectHosts[candidate.id] ?? null) === machine,
+      )
     );
+  }
+
   // A scan on the picked machine can find its copy after the clone offer shows.
   const arrivedPath = missingOn ? copyOn(missingOn.machine)?.path : undefined;
   useEffect(() => {
@@ -647,21 +678,26 @@ export const DraftView = ({
     setMissing(null);
     onPickProject(arrivedPath);
   }, [arrivedPath, onPickProject]);
+
   const choices = modelChoices(providers, settings);
   const saved = settings.newThreadModel;
   const lastModel = defaultModel(providers, settings, settings.lastProvider);
   const preferred =
-    saved && choices.some((o) => o.value === saved)
+    saved && choices.some((option) => option.value === saved)
       ? saved
       : lastModel
         ? encodeChoice(settings.lastProvider, lastModel)
         : undefined;
   const [choice, setChoice] = useState<string | undefined>(undefined);
   const selected =
-    [choice, preferred].find((c) => c && choices.some((o) => o.value === c)) ?? choices[0]?.value;
+    [choice, preferred].find(
+      (candidate) => candidate && choices.some((option) => option.value === candidate),
+    ) ?? choices[0]?.value;
   // Shift-click adds models: the prompt then starts one thread per model, each in its own worktree.
   const [extras, setExtras] = useState<Array<string>>([]);
-  const extraModels = extras.filter((c) => c !== selected && choices.some((o) => o.value === c));
+  const extraModels = extras.filter(
+    (extra) => extra !== selected && choices.some((option) => option.value === extra),
+  );
   // Null until picked in the composer: then the project's `masscode.toml` decides, else Settings.
   const [pickedWorkspace, setWorkspace] = useState<"local" | "worktree" | null>(null);
   const worktreeByDefault = useProjectConfig(host, missingOn ? null : path)?.config.worktree
@@ -674,6 +710,44 @@ export const DraftView = ({
         ? "worktree"
         : "local");
   const [projectSignal, setProjectSignal] = useState(0);
+  const checkingProviders = providers.some((provider) => provider.checking);
+
+  function centerContent() {
+    if (missingOn && project) {
+      return (
+        <CloneCopy
+          project={project}
+          machine={missingOn.machine}
+          onCloned={(clonedPath) => {
+            setMissing(null);
+            onPickProject(clonedPath);
+          }}
+        />
+      );
+    }
+    if (choices.length) {
+      return (
+        <div className="flex w-full flex-col items-center gap-6">
+          <OrbFace className="size-20" />
+          <ProjectList cwd={path} onPick={onPickProject} focusSignal={projectSignal} />
+        </div>
+      );
+    }
+    if (checkingProviders) return "Checking Claude and Codex…";
+    if (host) return `Link a harness on ${host} in Settings → Harnesses to start.`;
+    return "Link a harness in Settings to start.";
+  }
+
+  function placeholder() {
+    if (!selected) return checkingProviders ? "Checking harnesses…" : "No harness linked";
+    if (!path) return "Pick a project above to start…";
+    if (missingOn) {
+      return `Clone ${project?.name ?? "the project"} to ${missingOn.machine ?? "this Mac"} to start…`;
+    }
+    if (extraModels.length)
+      return `Ask ${extraModels.length + 1} models, each in its own worktree…`;
+    return `Ask ${harnessLabel(settings, decodeChoice(selected).provider)}…`;
+  }
 
   return (
     <>
@@ -682,34 +756,14 @@ export const DraftView = ({
         title="New thread"
       />
       <div className="flex flex-1 items-center justify-center px-6 text-center text-muted-foreground [-webkit-app-region:drag]">
-        {missingOn && project ? (
-          <CloneCopy
-            project={project}
-            machine={missingOn.machine}
-            onCloned={(clonedPath) => {
-              setMissing(null);
-              onPickProject(clonedPath);
-            }}
-          />
-        ) : choices.length ? (
-          <div className="flex w-full flex-col items-center gap-6">
-            <OrbFace className="size-20" />
-            <ProjectList cwd={path} onPick={onPickProject} focusSignal={projectSignal} />
-          </div>
-        ) : providers.some((p) => p.checking) ? (
-          "Checking Claude and Codex…"
-        ) : host ? (
-          `Link a harness on ${host} in Settings → Harnesses to start.`
-        ) : (
-          "Link a harness in Settings to start."
-        )}
+        {centerContent()}
       </div>
       <Composer
         // Stable across the project pick, so effort/permission choices carry over.
         prefsKey="draft:new"
         provider={selected ? decodeChoice(selected).provider : settings.lastProvider}
         cwd={missingOn ? null : path}
-        onNeedProject={() => setProjectSignal((n) => n + 1)}
+        onNeedProject={() => setProjectSignal((signal) => signal + 1)}
         disabled={!selected || Boolean(missingOn)}
         machine={
           project && Object.keys(hosts).length
@@ -740,49 +794,39 @@ export const DraftView = ({
         }}
         extraModels={extraModels}
         onToggleModel={(value) =>
-          setExtras((prev) =>
-            prev.includes(value) ? prev.filter((c) => c !== value) : [...prev, value],
+          setExtras((current) =>
+            current.includes(value)
+              ? current.filter((extra) => extra !== value)
+              : [...current, value],
           )
         }
         workspace={{ value: workspace, onChange: setWorkspace }}
-        placeholder={
-          !selected
-            ? providers.some((p) => p.checking)
-              ? "Checking harnesses…"
-              : "No harness linked"
-            : !path
-              ? "Pick a project above to start…"
-              : missingOn
-                ? `Clone ${project?.name ?? "the project"} to ${missingOn.machine ?? "this Mac"} to start…`
-                : extraModels.length
-                  ? `Ask ${extraModels.length + 1} models, each in its own worktree…`
-                  : `Ask ${harnessLabel(settings, decodeChoice(selected).provider)}…`
-        }
+        placeholder={placeholder()}
         onSubmit={(text, options, how) => {
           if (!selected || !path) return;
-          const all = [selected, ...extraModels];
-          for (const value of all) {
+          const pickedModels = [selected, ...extraModels];
+          for (const value of pickedModels) {
             const { provider, model } = decodeChoice(value);
-            // Several models, or ⌘Enter: start in the background and stay in the draft.
-            const open = all.length === 1 && !how.alternate;
             createThread({
               path,
               provider,
               model,
               text,
               options,
-              workspace: all.length > 1 ? "worktree" : workspace,
-              open,
+              workspace: pickedModels.length > 1 ? "worktree" : workspace,
+              // Several models, or ⌘Enter: start in the background and stay in the draft.
+              open: pickedModels.length === 1 && !how.alternate,
             });
           }
         }}
       />
     </>
   );
-};
+}
 
 function AttachmentChip({ attachment }: { attachment: Attachment }) {
   const Icon = attachment.isImage ? ImageIcon : FileText;
+
   return (
     <span
       title={attachment.path}
@@ -805,6 +849,7 @@ function AttachmentThumbnail({
   // Undefined while signing, null once it can't be shown.
   const [url, setUrl] = useState<string | null | undefined>(undefined);
   const [open, setOpen] = useState(false);
+
   useEffect(() => {
     let current = true;
     void imageUrl(threadId, attachment.path).then((signed) => current && setUrl(signed));
@@ -812,8 +857,10 @@ function AttachmentThumbnail({
       current = false;
     };
   }, [threadId, attachment.path]);
+
   if (url === null) return <AttachmentChip attachment={attachment} />;
   if (url === undefined) return <span className="size-20 animate-pulse rounded-lg bg-muted" />;
+
   return (
     <>
       <button
@@ -880,14 +927,14 @@ const RevealContext = createContext<ToolReveal | null>(null);
 const RunCommandContext = createContext<((command: string) => void) | undefined>(undefined);
 
 /** Held messages go back into the composer, after whatever is there. */
-const returnToComposer = (threadId: string, queued: ReadonlyArray<QueuedMessage>) => {
+function returnToComposer(threadId: string, queued: ReadonlyArray<QueuedMessage>) {
   if (!queued.length) return;
   appendToDraft(threadId, queued.map((message) => message.text).join("\n\n"));
   focusComposer();
-};
+}
 
 /** A message waiting for the turn to end: sends by itself then, or steers it now, or goes back to the composer. */
-const QueuedFollowUp = ({
+function QueuedFollowUp({
   threadId,
   followUp,
   next,
@@ -896,40 +943,44 @@ const QueuedFollowUp = ({
   followUp: QueuedMessage;
   /** First in line: it goes out at the next boundary, and the steer shortcut sends it. */
   next: boolean;
-}) => (
-  <div
-    className="flex h-8 items-center gap-2 pl-1.5"
-    title={
-      next
-        ? "Sends after the next tool call, or when the turn ends"
-        : "Sends after the messages above it"
-    }
-  >
-    <CornerDownRight className="size-3.5 shrink-0" />
-    <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/80">{followUp.text}</span>
-    {followUp.attachments.length ? (
-      <span className="shrink-0">
-        {followUp.attachments.length} file
-        {followUp.attachments.length === 1 ? "" : "s"}
+}) {
+  return (
+    <div
+      className="flex h-8 items-center gap-2 pl-1.5"
+      title={
+        next
+          ? "Sends after the next tool call, or when the turn ends"
+          : "Sends after the messages above it"
+      }
+    >
+      <CornerDownRight className="size-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/80">
+        {followUp.text}
       </span>
-    ) : null}
-    <button
-      type="button"
-      title={`Send now, into the running turn${next ? ` (${describe("composer.steerQueued")})` : ""}`}
-      onClick={() => sendQueuedNow(threadId, followUp.id)}
-      className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <CornerDownRight className="size-3.5" />
-      Steer
-    </button>
-    <IconAction
-      label="Edit in the composer"
-      onClick={() => returnToComposer(threadId, takeQueued(threadId, followUp.id))}
-    >
-      <Pencil className="size-3.5" />
-    </IconAction>
-  </div>
-);
+      {followUp.attachments.length ? (
+        <span className="shrink-0">
+          {followUp.attachments.length} file
+          {followUp.attachments.length === 1 ? "" : "s"}
+        </span>
+      ) : null}
+      <button
+        type="button"
+        title={`Send now, into the running turn${next ? ` (${describe("composer.steerQueued")})` : ""}`}
+        onClick={() => sendQueuedNow(threadId, followUp.id)}
+        className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <CornerDownRight className="size-3.5" />
+        Steer
+      </button>
+      <IconAction
+        label="Edit in the composer"
+        onClick={() => returnToComposer(threadId, takeQueued(threadId, followUp.id))}
+      >
+        <Pencil className="size-3.5" />
+      </IconAction>
+    </div>
+  );
+}
 
 /** A usage limit stopped the thread and holds its queue: when it resets, and the ways to carry on. */
 function LimitStopNotice({
@@ -953,6 +1004,7 @@ function LimitStopNotice({
   const others = providers.filter(
     (other) => other.linked && other.kind !== stop.provider && other.kind !== provider,
   );
+
   return (
     <div role="status" className="pb-1.5">
       <div className="flex h-8 items-center gap-2 pl-1.5">
@@ -1088,33 +1140,46 @@ function ReviewCommentRow({
   );
 }
 
-const IconAction = (props: { label: string; onClick: () => void; children: ReactNode }) => (
-  <button
-    type="button"
-    title={props.label}
-    aria-label={props.label}
-    onClick={props.onClick}
-    className="grid size-6 place-items-center rounded-md transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-  >
-    {props.children}
-  </button>
-);
+function IconAction({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      className="grid size-6 place-items-center rounded-md transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {children}
+    </button>
+  );
+}
 
 /**
  * Selecting text in an agent reply offers to quote it in the composer, where you can
  * comment on it (t3code's "Cite in composer").
  */
-const QuoteSelection = ({
+function QuoteSelection({
   container,
   threadId,
 }: {
   container: RefObject<HTMLDivElement | null>;
   threadId: string;
-}) => {
+}) {
   const [quote, setQuote] = useState<{ text: string; top: number; left: number } | null>(null);
+
   useEffect(() => {
     const area = container.current;
     if (!area) return;
+
+    // Arrows rather than function declarations: those are hoisted, so `area` wouldn't stay narrowed inside them.
     const update = () => {
       const selection = document.getSelection();
       const text = selection?.toString().trim() ?? "";
@@ -1123,16 +1188,27 @@ const QuoteSelection = ({
         node &&
         area.contains(node) &&
         (node instanceof Element ? node : node.parentElement)?.closest('[data-from="assistant"]');
-      if (!selection || selection.isCollapsed || !text || !inReply) return setQuote(null);
-      const rect = selection.getRangeAt(0).getBoundingClientRect();
-      const box = area.getBoundingClientRect();
+      if (!selection || selection.isCollapsed || !text || !inReply) {
+        setQuote(null);
+        return;
+      }
+
+      const selectionBox = selection.getRangeAt(0).getBoundingClientRect();
+      const areaBox = area.getBoundingClientRect();
       setQuote({
         text,
-        top: rect.top - box.top - 34,
-        left: Math.min(Math.max(rect.left - box.left + rect.width / 2, 40), box.width - 40),
+        top: selectionBox.top - areaBox.top - 34,
+        left: Math.min(
+          Math.max(selectionBox.left - areaBox.left + selectionBox.width / 2, 40),
+          areaBox.width - 40,
+        ),
       });
     };
-    const clear = () => document.getSelection()?.isCollapsed && setQuote(null);
+
+    function clear() {
+      if (document.getSelection()?.isCollapsed) setQuote(null);
+    }
+
     area.addEventListener("mouseup", update);
     area.addEventListener("keyup", update);
     document.addEventListener("selectionchange", clear);
@@ -1142,7 +1218,9 @@ const QuoteSelection = ({
       document.removeEventListener("selectionchange", clear);
     };
   }, [container]);
+
   if (!quote) return null;
+
   return (
     <button
       type="button"
@@ -1167,22 +1245,23 @@ const QuoteSelection = ({
       Quote in composer
     </button>
   );
-};
+}
 
 export const ThreadView = memo(function ThreadView({ threadId }: { threadId: string }) {
-  const info = useStore((s) => s.threads[threadId])!;
+  const info = useStore((state) => state.threads[threadId])!;
   // Loaded on open: from the local cache first, then caught up by the daemon.
   const transcript = useTranscript(threadId);
   const items = transcript?.items ?? NO_ITEMS;
   const host = useThreadHost(threadId);
   const providers = useProviders(host);
-  const settings = useStore((s) => s.settings);
+  const settings = useStore((state) => state.settings);
   const { status, provider } = info;
   const busy = isTurnActive(status);
   // Another harness's model switches the thread to it, which waits for the turn to end.
   const choices = modelChoices(providers, settings, busy ? provider : undefined);
   const current = info.model ?? defaultModel(providers, settings, provider);
   const lastItem = items.at(-1);
+
   // `/btw` asks about the newest reply whose turn is over.
   const runningTurnStart = busy
     ? items.findLastIndex((item) => item.kind === "user" && !item.steer)
@@ -1190,6 +1269,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   const asideReplyId = items.findLast(
     (item, index) => index < runningTurnStart && item.kind === "assistant",
   )?.id;
+
   const [reveal, setReveal] = useState<ToolReveal | null>(null);
   const runningAgents = busy
     ? items.filter(
@@ -1197,7 +1277,10 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
           item.kind === "tool" && categoryOf(item.name) === "agent" && item.output === null,
       )
     : [];
-  const project = useStore((s) => s.projects.find((p) => p.id === info.projectId));
+  const project = useStore((state) =>
+    state.projects.find((candidate) => candidate.id === info.projectId),
+  );
+
   // Per thread: each thread has its own view, kept while you switch away and back.
   const [diffOpen, setDiffOpen] = useState(false);
   // Null shows all uncommitted changes; a message id shows just what that turn changed.
@@ -1206,6 +1289,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
     setDiffTurn(messageId);
     setDiffOpen(true);
   }, []);
+
   // A rewind can take the turn on show with it.
   const diffTurnGone =
     diffTurn !== null &&
@@ -1214,11 +1298,13 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   useEffect(() => {
     if (diffTurnGone) setDiffTurn(null);
   }, [diffTurnGone]);
+
   const reviewComments = useReviewComments(threadId);
   const [revealedComment, setRevealedComment] = useState<ReviewComment | null>(null);
   const clearRevealedComment = useCallback(() => setRevealedComment(null), []);
-  const followUps = useStore((s) => s.threads[threadId]?.queue) ?? NO_QUEUE;
-  const followUpMode = useStore((s) => s.settings.followUp ?? "queue");
+
+  const followUps = useStore((state) => state.threads[threadId]?.queue) ?? NO_QUEUE;
+  const followUpMode = useStore((state) => state.settings.followUp ?? "queue");
   const [{ effort, fast, permission }] = useTurnPrefs(threadId, provider, host);
   // The turn its output starts runs at the composer's effort and permission level.
   const runReplyCommand = useCallback(
@@ -1226,36 +1312,43 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
       runCommand(threadId, command, toTurnOptions({ effort, fast, permission }, [])),
     [threadId, effort, fast, permission],
   );
-  const runs = useStore((s) => s.runs[threadId]) ?? NO_RUNS;
+
+  const runs = useStore((state) => state.runs[threadId]) ?? NO_RUNS;
   // Read again each time the Scripts menu opens, so edits to the file show without a reload.
   const [scriptsRead, setScriptsRead] = useState(0);
   const projectConfig = useProjectConfig(host, project?.path, scriptsRead);
   const scripts = projectConfig?.config.scripts ?? [];
   const [editingScripts, setEditingScripts] = useState(false);
+
   // Leaves the draft alone, and waits while the agent needs an approval or an answer.
   useKeybinding(
     followUps[0] && status === "running" ? "composer.steerQueued" : undefined,
     () => followUps[0] && sendQueuedNow(threadId, followUps[0].id),
   );
+
   const history = useMemo(
     () => items.flatMap((item) => (item.kind === "user" && item.text ? [item.text] : [])),
     [items],
   );
   const scrollArea = useRef<HTMLDivElement>(null);
   const transcriptViewport = useRef<HTMLElement>(null);
+
   // Re-read the diff whenever a tool finishes or a turn ends: either may have changed files.
   const finishedTools = items.reduce(
-    (n, item) => (item.kind === "tool" && item.output !== null ? n + 1 : n),
+    (count, item) => (item.kind === "tool" && item.output !== null ? count + 1 : count),
     0,
   );
   const diffKey = `${status}:${info.updatedAt}:${finishedTools}`;
-  const activeTerminal = useStore((s) => s.activeTerminals[threadId]);
+
+  const activeTerminal = useStore((state) => state.activeTerminals[threadId]);
   useKeybinding("terminal.toggle", () => {
     toggleTerminalPanel(threadId);
     if (activeTerminal) focusComposer();
   });
+
   const browserOpen = useBrowser((state) => state.threads[threadId]?.open ?? false);
   useKeybinding(window.desktop ? "browser.toggle" : undefined, () => toggleBrowser(threadId));
+
   // Simulators run on this Mac only; a remote thread's agent couldn't reach them.
   const simulatorAvailable =
     window.desktop !== undefined && host === null && navigator.userAgent.includes("Mac");
@@ -1267,7 +1360,10 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   // Looking at a thread marks whatever it did since you last saw it as seen.
   const { updatedAt } = info;
   useEffect(() => {
-    const mark = () => document.hasFocus() && markSeen(threadId);
+    function mark() {
+      if (document.hasFocus()) markSeen(threadId);
+    }
+
     mark();
     window.addEventListener("focus", mark);
     return () => window.removeEventListener("focus", mark);
@@ -1315,7 +1411,9 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                 />
                 <span className="flex items-center gap-0.5">
                   {project ? (
-                    <DropdownMenu onOpenChange={(open) => open && setScriptsRead((n) => n + 1)}>
+                    <DropdownMenu
+                      onOpenChange={(open) => open && setScriptsRead((read) => read + 1)}
+                    >
                       <DropdownMenuTrigger
                         title="Scripts"
                         aria-label="Scripts"
@@ -1602,14 +1700,15 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
 });
 
 /** Same items, by identity: the store only replaces the item that changed. */
-const sameItems = (a: ReadonlyArray<unknown>, b: ReadonlyArray<unknown>) =>
-  a.length === b.length && a.every((item, i) => item === b[i]);
+function sameItems(left: ReadonlyArray<unknown>, right: ReadonlyArray<unknown>) {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
+}
 
 /**
  * The transcript. Every delta re-renders this, but turns and blocks whose items are
  * unchanged bail out, so only the message actually streaming does any work.
  */
-export const TurnList = ({
+function TurnList({
   items,
   threadId,
   busy,
@@ -1617,18 +1716,21 @@ export const TurnList = ({
   items: ReadonlyArray<TranscriptItem>;
   threadId: string;
   busy: boolean;
-}) => {
+}) {
   const turns = useMemo(() => toTurns(items), [items]);
+
   // Older turns skip layout and paint while off screen. Switched on after the first
   // frame with turns in it (the transcript can arrive after the view opens), so every
   // turn has been laid out once and its real height is remembered.
   const [settled, setSettled] = useState(false);
   const hasTurns = turns.length > 0;
+
   useEffect(() => {
     if (!hasTurns) return;
     const frame = requestAnimationFrame(() => setSettled(true));
     return () => cancelAnimationFrame(frame);
   }, [hasTurns]);
+
   return (
     // Lighter than virtualizing (the message rail reads every turn's text from the DOM): the turns
     // stay in the document but cost nothing while scrolled away. Set here rather than on each turn,
@@ -1640,7 +1742,7 @@ export const TurnList = ({
     >
       {turns.map((turn, index) => {
         if (turn.from === "marker") return <ThreadMarker key={turn.id} item={turn.item} />;
-        if (turn.from === "setup")
+        if (turn.from === "setup") {
           return (
             <CommandRunResult
               key={turn.id}
@@ -1649,15 +1751,19 @@ export const TurnList = ({
               stopped={turn.item.stopped}
             />
           );
-        return turn.from === "user" ? (
-          <UserTurn
-            key={turn.id}
-            item={turn.item}
-            threadId={threadId}
-            busy={busy}
-            animateIn={settled}
-          />
-        ) : (
+        }
+        if (turn.from === "user") {
+          return (
+            <UserTurn
+              key={turn.id}
+              item={turn.item}
+              threadId={threadId}
+              busy={busy}
+              animateIn={settled}
+            />
+          );
+        }
+        return (
           <AssistantTurn
             key={turn.id}
             items={turn.items}
@@ -1669,7 +1775,7 @@ export const TurnList = ({
       })}
     </div>
   );
-};
+}
 
 /**
  * A command from a reply, or the new worktree's setup, while it runs: its terminal, live, and a
@@ -1677,6 +1783,7 @@ export const TurnList = ({
  */
 function RunningCommandWindow({ threadId, run }: { threadId: string; run: RunningCommand }) {
   const setup = run.terminalId === WORKTREE_SETUP_TERMINAL_ID;
+
   return (
     <div className="overflow-hidden rounded-xl border border-border">
       <div className="flex h-9 items-center gap-2 border-b border-border pr-1.5 pl-3 text-xs">
@@ -1764,8 +1871,9 @@ function ThreadMarker({ item }: { item: MarkerItem }) {
       startedBy: (started) => [started.byThreadId, started.byTitle] as const,
     }),
   );
-  const source = useStore((s) => s.threads[threadId]);
+  const source = useStore((state) => state.threads[threadId]);
   const { icon: Icon, label } = MARKERS[item.kind];
+
   return (
     <div className="flex items-center gap-3 py-2 text-xs text-muted-foreground">
       <span className="h-px flex-1 bg-border" />
@@ -1824,7 +1932,10 @@ const UserTurn = memo(
       </Message>
     ),
   // `animateIn` is only read on mount, so it flipping once the list settles is no reason to re-render.
-  (a, b) => a.item === b.item && a.threadId === b.threadId && a.busy === b.busy,
+  (previous, next) =>
+    previous.item === next.item &&
+    previous.threadId === next.threadId &&
+    previous.busy === next.busy,
 );
 
 /** Above a message sent right after switching harness: what the new one was told it missed. */
@@ -1836,7 +1947,8 @@ function HandoffNote({
   to: ProviderKind;
 }) {
   const [open, setOpen] = useState(false);
-  const settings = useStore((s) => s.settings);
+  const settings = useStore((state) => state.settings);
+
   return (
     <div className="flex flex-col items-end gap-1.5 text-xs text-muted-foreground">
       <button
@@ -1862,6 +1974,7 @@ function HandoffNote({
 /** Rewinds to before this message and puts it back in the composer to edit and resend. */
 function EditFromHere({ item, threadId }: { item: UserItem; threadId: string }) {
   const restoreBlocker = useFileRestoreBlocker(threadId);
+
   return (
     <div className="flex justify-end opacity-0 transition-opacity group-hover/turn:opacity-100 has-[[aria-expanded=true]]:opacity-100">
       <PromptSelect
@@ -1888,9 +2001,9 @@ function EditFromHere({ item, threadId }: { item: UserItem; threadId: string }) 
         variant="plain"
         onChange={(choice) => {
           // An unsent draft stays, above the restored prompt.
-          setDraft(threadId, (prev) => ({
-            text: prev.text.trim() ? `${prev.text.trimEnd()}\n\n${item.text}` : item.text,
-            attachments: [...prev.attachments, ...item.attachments.map(fromSent)],
+          setDraft(threadId, (draft) => ({
+            text: draft.text.trim() ? `${draft.text.trimEnd()}\n\n${item.text}` : item.text,
+            attachments: [...draft.attachments, ...item.attachments.map(fromSent)],
           }));
           send(
             ClientCommand.cases["thread.rewind"].make({
@@ -1916,9 +2029,10 @@ function ForkDialog({
   item: Extract<TranscriptItem, { kind: "assistant" }>;
   onClose: () => void;
 }) {
-  const fork = useStore((s) => (s.forking?.messageId === item.id ? s.forking : null));
+  const fork = useStore((state) => (state.forking?.messageId === item.id ? state.forking : null));
   const pending = fork !== null && fork.error === null;
   const forkButton = useRef<HTMLButtonElement>(null);
+
   return (
     <AlertDialog
       open
@@ -1979,20 +2093,26 @@ function ForkDialog({
 
 /** Read-only side questions about one reply (BTW), over the thread; closing it ends them for good. */
 function SideChatDrawer({ threadId, provider }: { threadId: string; provider: ProviderKind }) {
-  const sideChat = useStore((s) => (s.sideChat?.threadId === threadId ? s.sideChat : null));
-  const label = useStore((s) => harnessLabel(s.settings, provider));
+  const sideChat = useStore((state) =>
+    state.sideChat?.threadId === threadId ? state.sideChat : null,
+  );
+  const label = useStore((state) => harnessLabel(state.settings, provider));
   const [question, setQuestion] = useState("");
+
   useEffect(() => () => closeSideChat(threadId), [threadId]);
+
   const items = sideChat?.items ?? NO_ITEMS;
   const running = sideChat?.running ?? false;
   const lastItem = items.at(-1);
   const blocks = useMemo(() => toBlocks(items), [items]);
+
   function ask() {
     const text = question.trim();
     if (!text || running) return;
     askSideChat(text);
     setQuestion("");
   }
+
   return (
     <Drawer
       open={sideChat !== null}
@@ -2111,6 +2231,15 @@ function RunningAgents({
   const listId = useId();
   // Beyond two, the rows fold into one summary so the tray stays short.
   const grouped = agents.length > 2;
+
+  function activityOf(agent: ToolItem) {
+    if (stopping.has(agent.id)) return "Stopping…";
+    if (agent.progress !== undefined) return agent.progress;
+    const last = agent.children?.at(-1);
+    if (!last) return "Starting…";
+    return last.output === null ? livePhrase(last) : summarize([last]);
+  }
+
   return (
     <div
       onKeyDown={(event) => {
@@ -2142,10 +2271,10 @@ function RunningAgents({
         <ul id={listId}>
           {agents.map((agent) => {
             const calls = agent.children ?? [];
-            const last = calls.at(-1);
             const name = agent.summary || "Subagent";
             const isUnfolded = unfolded.has(agent.id);
             const earlier = calls.length - RECENT_AGENT_CALLS;
+
             return (
               <li key={agent.id}>
                 <div className="flex h-8 items-center gap-2 pl-1.5">
@@ -2159,16 +2288,7 @@ function RunningAgents({
                     className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span className="shrink-0 text-[13px] text-foreground/80">{name}</span>
-                    <span className="truncate">
-                      {stopping.has(agent.id)
-                        ? "Stopping…"
-                        : (agent.progress ??
-                          (!last
-                            ? "Starting…"
-                            : last.output === null
-                              ? livePhrase(last)
-                              : summarize([last])))}
-                    </span>
+                    <span className="truncate">{activityOf(agent)}</span>
                   </button>
                   {agent.tokens === undefined ? null : (
                     <span className="shrink-0 text-muted-foreground/70 tabular-nums">
@@ -2245,8 +2365,9 @@ function RunningAgents({
 }
 
 /** What a turn changed on disk; opens those changes. */
-const CheckpointChip = ({ item }: { item: Extract<TranscriptItem, { kind: "checkpoint" }> }) => {
+function CheckpointChip({ item }: { item: Extract<TranscriptItem, { kind: "checkpoint" }> }) {
   const openTurnDiff = use(TurnDiffContext);
+
   return (
     <button
       type="button"
@@ -2264,7 +2385,7 @@ const CheckpointChip = ({ item }: { item: Extract<TranscriptItem, { kind: "check
       </span>
     </button>
   );
-};
+}
 
 interface AssistantTurnProps {
   items: ReadonlyArray<TranscriptItem>;
@@ -2282,6 +2403,7 @@ const AssistantTurn = memo(
     const heldAnswerId = live && lastItem?.kind === "assistant" ? lastItem.id : undefined;
     const blocks = useMemo(() => toBlocks(items, heldAnswerId), [items, heldAnswerId]);
     const finalTextId = blocks.findLast((block) => block.kind === "assistant")?.id;
+
     return (
       // The face hangs in the margin once there's room, so replies share the composer's left edge.
       // The row widens rather than the face overflowing it: older turns clip to their box.
@@ -2319,11 +2441,11 @@ const AssistantTurn = memo(
     );
   },
   // `toTurns` rebuilds the turn arrays each time; the items inside keep their identity.
-  (a, b) =>
-    a.threadId === b.threadId &&
-    a.busy === b.busy &&
-    a.last === b.last &&
-    sameItems(a.items, b.items),
+  (previous, next) =>
+    previous.threadId === next.threadId &&
+    previous.busy === next.busy &&
+    previous.last === next.last &&
+    sameItems(previous.items, next.items),
 );
 
 /** The way to the answer, folded like thinking: what it's doing now while it streams, what it did once done. */
@@ -2342,6 +2464,7 @@ function WorkBlock({
   const blocks = useMemo(() => toToolGroups(items), [items]);
   const newest = items.at(-1);
   const calls = items.filter((item) => item.kind === "tool");
+
   return (
     <Reasoning
       label={calls.length ? summarize(calls) : thoughtTitle(items[0]?.id ?? "")}
@@ -2377,36 +2500,39 @@ interface AgentBlockProps {
 const AgentBlock = memo(
   (props: AgentBlockProps) => <AgentBlockContent {...props} />,
   // Tool groups are rebuilt by `toBlocks`; compare the calls they hold instead.
-  (a, b) =>
-    a.threadId === b.threadId &&
-    a.live === b.live &&
-    a.streaming === b.streaming &&
-    a.showActions === b.showActions &&
-    (a.block === b.block ||
-      (a.block.kind === "tools" &&
-        b.block.kind === "tools" &&
-        sameItems(a.block.calls, b.block.calls)) ||
-      (a.block.kind === "work" &&
-        b.block.kind === "work" &&
-        sameItems(a.block.items, b.block.items))),
+  (previous, next) =>
+    previous.threadId === next.threadId &&
+    previous.live === next.live &&
+    previous.streaming === next.streaming &&
+    previous.showActions === next.showActions &&
+    (previous.block === next.block ||
+      (previous.block.kind === "tools" &&
+        next.block.kind === "tools" &&
+        sameItems(previous.block.calls, next.block.calls)) ||
+      (previous.block.kind === "work" &&
+        next.block.kind === "work" &&
+        sameItems(previous.block.items, next.block.items))),
 );
 
-const AgentBlockContent = ({
-  block: item,
-  threadId,
-  live,
-  streaming,
-  showActions,
-}: AgentBlockProps) => {
-  const forking = useStore((s) => s.forking?.messageId === item.id && s.forking.error === null);
+function planStatus(plan: Extract<TranscriptItem, { kind: "approval" }>) {
+  if (plan.decision === "deny") return "denied";
+  if (!plan.decision) return "pending";
+  return plan.resolved ? "approved" : "approving";
+}
+
+function AgentBlockContent({ block, threadId, live, streaming, showActions }: AgentBlockProps) {
+  const forking = useStore(
+    (state) => state.forking?.messageId === block.id && state.forking.error === null,
+  );
   const [confirmingFork, setConfirmingFork] = useState(false);
   const host = useThreadHost(threadId);
   const needsRootConsent = useNeedsRootConsent(host);
   const [confirmingRoot, setConfirmingRoot] = useState(false);
-  const runCommand = use(RunCommandContext);
+  const runReplyCommand = use(RunCommandContext);
   const resolveImage = useCallback((src: string) => imageUrl(threadId, src), [threadId]);
-  const provider = useStore((s) => s.threads[threadId]?.provider);
-  switch (item.kind) {
+  const provider = useStore((state) => state.threads[threadId]?.provider);
+
+  switch (block.kind) {
     case "user":
       return null;
     case "assistant":
@@ -2415,64 +2541,58 @@ const AgentBlockContent = ({
           <MessageBubbleContent>
             <StreamingResponse
               status={streaming ? "streaming" : "complete"}
-              copyText={item.text}
+              copyText={block.text}
               onFork={live ? undefined : () => setConfirmingFork(true)}
               forking={forking}
-              onAskAside={() => openSideChat(threadId, item.id)}
+              onAskAside={() => openSideChat(threadId, block.id)}
               showActions={showActions}
               showFeedback={false}
             >
               <Markdown
                 streaming={streaming}
-                onRunCommand={runCommand}
+                onRunCommand={runReplyCommand}
                 resolveImage={resolveImage}
                 className="selectable leading-relaxed"
               >
-                {item.text}
+                {block.text}
               </Markdown>
             </StreamingResponse>
           </MessageBubbleContent>
           {confirmingFork ? (
-            <ForkDialog threadId={threadId} item={item} onClose={() => setConfirmingFork(false)} />
+            <ForkDialog threadId={threadId} item={block} onClose={() => setConfirmingFork(false)} />
           ) : null}
         </MessageBubble>
       );
     case "reasoning":
       return (
-        <Reasoning label={thoughtTitle(item.id)} streaming={streaming}>
+        <Reasoning label={thoughtTitle(block.id)} streaming={streaming}>
           <Markdown streaming={streaming} className="selectable leading-relaxed">
-            {item.text}
+            {block.text}
           </Markdown>
         </Reasoning>
       );
     case "work":
-      return <WorkBlock items={item.items} threadId={threadId} live={live} streaming={streaming} />;
+      return (
+        <WorkBlock items={block.items} threadId={threadId} live={live} streaming={streaming} />
+      );
     case "tools":
       return (
         <ToolGroup
-          calls={item.calls satisfies ReadonlyArray<ToolCall>}
+          calls={block.calls satisfies ReadonlyArray<ToolCall>}
           live={live}
           reveal={use(RevealContext)}
         />
       );
     case "approval":
-      if (item.title === "ExitPlanMode") {
+      if (block.title === "ExitPlanMode") {
         // Interrupted before an answer: the turn ended, so there's nothing left to approve.
-        if (item.resolved && !item.decision) return null;
+        if (block.resolved && !block.decision) return null;
         return (
           <>
             <ToolApproval
               title="Approve this plan?"
-              description={item.decision === "deny" ? "Rejected — say what to change" : undefined}
-              status={
-                item.decision === "deny"
-                  ? "denied"
-                  : item.decision
-                    ? item.resolved
-                      ? "approved"
-                      : "approving"
-                    : "pending"
-              }
+              description={block.decision === "deny" ? "Rejected — say what to change" : undefined}
+              status={planStatus(block)}
               defaultOpen
               approveLabel={BUILD_WITH_LABEL["auto-edit"]}
               approveOptions={(["ask", "auto-edit", "auto", "full-access"] as const).flatMap(
@@ -2486,31 +2606,31 @@ const AgentBlockContent = ({
                           onSelect: () =>
                             level === "full-access" && needsRootConsent
                               ? setConfirmingRoot(true)
-                              : approvePlan(threadId, item.id, level),
+                              : approvePlan(threadId, block.id, level),
                         },
                       ],
               )}
               denyLabel="Reject"
-              onApprove={() => approvePlan(threadId, item.id, "auto-edit")}
-              onDeny={() => respondApproval(threadId, item.id, "deny")}
+              onApprove={() => approvePlan(threadId, block.id, "auto-edit")}
+              onDeny={() => respondApproval(threadId, block.id, "deny")}
             >
               {/* Radix wraps content in display:table, which lets wide code blocks stretch past the card. */}
               <ScrollArea className="[&>[data-slot=scroll-area-viewport]]:max-h-96 [&>[data-slot=scroll-area-viewport]>div]:!block">
-                <Markdown className="selectable pr-3 leading-relaxed">{item.detail}</Markdown>
+                <Markdown className="selectable pr-3 leading-relaxed">{block.detail}</Markdown>
               </ScrollArea>
             </ToolApproval>
             {confirmingRoot && host ? (
               <RootFullAccessDialog
                 host={host}
-                onAllow={() => approvePlan(threadId, item.id, "full-access")}
+                onAllow={() => approvePlan(threadId, block.id, "full-access")}
                 onClose={() => setConfirmingRoot(false)}
               />
             ) : null}
           </>
         );
       }
-      if (item.questions) {
-        const { questions, answers } = item;
+      if (block.questions) {
+        const { questions, answers } = block;
         return (
           <ApprovalCard
             autoFocus={
@@ -2519,18 +2639,18 @@ const AgentBlockContent = ({
                 document.activeElement?.matches("textarea[data-composer]") === true)
             }
             status={
-              item.resolved
+              block.resolved
                 ? answers
                   ? "answered"
                   : "skipped"
-                : item.decision
+                : block.decision
                   ? "submitting"
                   : "pending"
             }
             questions={questions.map((question) => ({
               id: question.id,
               title: question.question,
-              description: item.agent ? `Asked by ${item.agent}` : undefined,
+              description: block.agent ? `Asked by ${block.agent}` : undefined,
               options: question.options.map((option) => {
                 const choice = {
                   value: option.label,
@@ -2553,7 +2673,7 @@ const AgentBlockContent = ({
               customPlaceholder: "Something else…",
             }))}
             onSubmit={(chosen) =>
-              respondApproval(threadId, item.id, "allow", {
+              respondApproval(threadId, block.id, "allow", {
                 answers: Object.fromEntries(
                   questions.map((question) => {
                     const custom = chosen[question.id]?.custom?.trim();
@@ -2566,9 +2686,9 @@ const AgentBlockContent = ({
               })
             }
             onDismiss={
-              item.resolved || item.decision
+              block.resolved || block.decision
                 ? undefined
-                : () => respondApproval(threadId, item.id, "deny")
+                : () => respondApproval(threadId, block.id, "deny")
             }
             result={
               answers
@@ -2584,28 +2704,28 @@ const AgentBlockContent = ({
         );
       }
       // Once approved, the tool group shows what ran; only pending and denied requests stay visible.
-      if (item.resolved && item.decision !== "deny") return null;
+      if (block.resolved && block.decision !== "deny") return null;
       return (
         <ToolApproval
-          tool={item.title}
-          title={`Allow ${item.title}${item.agent ? ` for ${item.agent}` : ""}?`}
-          status={item.decision === "deny" ? "denied" : item.decision ? "approving" : "pending"}
+          tool={block.title}
+          title={`Allow ${block.title}${block.agent ? ` for ${block.agent}` : ""}?`}
+          status={block.decision === "deny" ? "denied" : block.decision ? "approving" : "pending"}
           defaultOpen
           parameters={[
             {
               id: "input",
               label: "Input",
-              value: <ToolApprovalCode code={item.detail} language="bash" />,
+              value: <ToolApprovalCode code={block.detail} language="bash" />,
             },
           ]}
-          onApprove={() => respondApproval(threadId, item.id, "allow")}
-          onAlwaysAllow={() => respondApproval(threadId, item.id, "allow-session")}
-          onDeny={() => respondApproval(threadId, item.id, "deny")}
+          onApprove={() => respondApproval(threadId, block.id, "allow")}
+          onAlwaysAllow={() => respondApproval(threadId, block.id, "allow-session")}
+          onDeny={() => respondApproval(threadId, block.id, "deny")}
         />
       );
     case "error":
-      return <div className="selectable text-xs text-destructive">{item.text}</div>;
+      return <div className="selectable text-xs text-destructive">{block.text}</div>;
     case "checkpoint":
-      return <CheckpointChip item={item} />;
+      return <CheckpointChip item={block} />;
   }
-};
+}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 /** A boolean UI preference (a folded section, say) remembered per window origin. */
-export const usePersistedFlag = (key: string, fallback: boolean) => {
+export function usePersistedFlag(key: string, fallback: boolean) {
   const [value, setValue] = useState(() => {
     try {
       const stored = localStorage.getItem(key);
@@ -10,11 +10,13 @@ export const usePersistedFlag = (key: string, fallback: boolean) => {
       return fallback;
     }
   });
-  const set = (next: boolean) => {
+
+  function set(next: boolean) {
     setValue(next);
     try {
       localStorage.setItem(key, next ? "1" : "0");
     } catch {}
-  };
+  }
+
   return [value, set] as const;
-};
+}

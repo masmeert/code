@@ -70,8 +70,9 @@ export function ThreadListMenu(props: {
   onChange: (patch: Partial<ThreadListView>) => void;
 }) {
   const { view } = props;
-  const settings = useStore((s) => s.settings);
-  const projectHosts = useStore((s) => s.projectHosts);
+  const settings = useStore((state) => state.settings);
+  const projectHosts = useStore((state) => state.projectHosts);
+
   const filtered =
     view.status !== "active" ||
     view.projects.length > 0 ||

@@ -104,6 +104,7 @@ export function isLocalUrl(url: string) {
 export function normalizeUrl(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed || /\s/.test(trimmed)) return null;
+
   const candidate = trimmed.includes("://")
     ? trimmed
     : `${isLocalUrl(`http://${trimmed}`) ? "http" : "https"}://${trimmed}`;
@@ -240,6 +241,7 @@ export function setSurface(threadId: string, rect: SurfaceRect) {
     current.rect.height === rect.height
   )
     return;
+
   setState({ ...state, surface: { threadId, rect } });
 }
 
@@ -272,8 +274,9 @@ export function tabForWebContents(webContentsId: number) {
     } catch {
       continue;
     }
+
     const threadId = Object.keys(state.threads).find((id) =>
-      state.threads[id]!.tabs.some((tab) => tab.id === tabId),
+      state.threads[id].tabs.some((tab) => tab.id === tabId),
     );
     return threadId ? { threadId, tabId } : null;
   }
@@ -302,19 +305,23 @@ export async function performBrowserAction(
 ): Promise<BrowserResult> {
   const desktop = window.desktop;
   if (!desktop) throw new Error("The browser is only available in the MassCode desktop app");
+
   const url = BrowserAction.guards.navigate(action) ? normalizeUrl(action.url) : null;
   if (BrowserAction.guards.navigate(action) && !url)
     throw new Error(`Not a web address: ${action.url}`);
   const current = activeTab(threadId);
   if (!current?.url && !url)
     throw new Error("No page is open in the browser; navigate to one first");
+
   if (!current) openTab(threadId, url!);
   else if (!current.url) updateTab(threadId, current.id, { url: url! });
   if (!threadBrowser(threadId).open)
     updateThread(threadId, (browser) => ({ ...browser, open: true }));
+
   const tab = activeTab(threadId)!;
   showTab(threadId, tab.id);
   updateActivity(tab.id, { automating: (state.activity[tab.id]?.automating ?? 0) + 1 });
+
   try {
     const webview = await attachedWebview(tab.id);
     return await desktop.automateBrowser(

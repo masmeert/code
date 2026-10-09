@@ -37,6 +37,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
         Math.min(width, (aside.current?.parentElement?.clientWidth ?? window.innerWidth) - 380),
       ),
   });
+
   const [setup, setSetup] = useState<Setup>({ status: "loading" });
   const [booting, setBooting] = useState<string | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -82,6 +83,117 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
     if (setup.status === "ready" && deviceId && !device?.streamId && !booting) void refresh(false);
   });
   useEffect(() => refreshForDevice(), [deviceId]);
+
+  function panelBody() {
+    if (setup.status === "loading") {
+      return (
+        <Message>
+          <LoaderCircle className="size-4 animate-spin" />
+          Starting the device hub…
+        </Message>
+      );
+    }
+
+    if (setup.status === "missing") {
+      return (
+        <Message>
+          <span>
+            Run iOS simulators and Android emulators here, for you and the agent. This installs
+            expo-device-hub and agent-device from npm into ~/.masscode/tools.
+          </span>
+          <ActionButton onClick={() => void load(true)}>Set up</ActionButton>
+        </Message>
+      );
+    }
+
+    if (setup.status === "installing") {
+      return (
+        <Message>
+          <LoaderCircle className="size-4 animate-spin" />
+          Installing the device tools. This can take a minute…
+        </Message>
+      );
+    }
+
+    if (setup.status === "failed") {
+      return (
+        <Message>
+          <span className="selectable">{setup.message}</span>
+          <ActionButton onClick={() => void load(false)}>Try again</ActionButton>
+        </Message>
+      );
+    }
+
+    if (booting) {
+      return (
+        <Message>
+          <LoaderCircle className="size-4 animate-spin" />
+          Starting {devices.find((candidate) => candidate.id === booting)?.name ?? "the device"}…
+        </Message>
+      );
+    }
+
+    if (bootError) {
+      return (
+        <Message>
+          <span className="selectable">{bootError}</span>
+          {deviceId ? (
+            <ActionButton onClick={() => void boot(deviceId)}>Try again</ActionButton>
+          ) : null}
+        </Message>
+      );
+    }
+
+    if (device?.streamId) {
+      return (
+        <DeviceScreen
+          key={`${device.id}:${device.streamId}`}
+          hub={setup.hub}
+          device={device}
+          streamId={device.streamId}
+        />
+      );
+    }
+
+    if (deviceId) {
+      return (
+        <Message>
+          <LoaderCircle className="size-4 animate-spin" />
+          Starting the device…
+        </Message>
+      );
+    }
+
+    if (devices.length === 0) {
+      return (
+        <Message>
+          This Mac has no iOS simulators or Android emulators. Add a simulator in Xcode → Settings →
+          Components, or an emulator in Android Studio's Device Manager, then try again.
+          <ActionButton onClick={() => void load(false)}>Try again</ActionButton>
+        </Message>
+      );
+    }
+
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">Choose a device to start</p>
+        {devices.map((candidate) => (
+          <button
+            key={candidate.id}
+            type="button"
+            onClick={() => void boot(candidate.id)}
+            className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-2 text-left text-sm transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="truncate">{candidate.name}</span>
+            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+              {candidate.version}
+              {candidate.booted ? " · Running" : ""}
+            </span>
+          </button>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <aside
@@ -137,78 +249,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
           <X className="size-3.5" />
         </IconButton>
       </div>
-      {setup.status === "loading" ? (
-        <Message>
-          <LoaderCircle className="size-4 animate-spin" />
-          Starting the device hub…
-        </Message>
-      ) : setup.status === "missing" ? (
-        <Message>
-          <span>
-            Run iOS simulators and Android emulators here, for you and the agent. This installs
-            expo-device-hub and agent-device from npm into ~/.masscode/tools.
-          </span>
-          <ActionButton onClick={() => void load(true)}>Set up</ActionButton>
-        </Message>
-      ) : setup.status === "installing" ? (
-        <Message>
-          <LoaderCircle className="size-4 animate-spin" />
-          Installing the device tools. This can take a minute…
-        </Message>
-      ) : setup.status === "failed" ? (
-        <Message>
-          <span className="selectable">{setup.message}</span>
-          <ActionButton onClick={() => void load(false)}>Try again</ActionButton>
-        </Message>
-      ) : booting ? (
-        <Message>
-          <LoaderCircle className="size-4 animate-spin" />
-          Starting {devices.find((candidate) => candidate.id === booting)?.name ?? "the device"}…
-        </Message>
-      ) : bootError ? (
-        <Message>
-          <span className="selectable">{bootError}</span>
-          {deviceId ? (
-            <ActionButton onClick={() => void boot(deviceId)}>Try again</ActionButton>
-          ) : null}
-        </Message>
-      ) : device?.streamId ? (
-        <DeviceScreen
-          key={`${device.id}:${device.streamId}`}
-          hub={setup.hub}
-          device={device}
-          streamId={device.streamId}
-        />
-      ) : deviceId ? (
-        <Message>
-          <LoaderCircle className="size-4 animate-spin" />
-          Starting the device…
-        </Message>
-      ) : devices.length === 0 ? (
-        <Message>
-          This Mac has no iOS simulators or Android emulators. Add a simulator in Xcode → Settings →
-          Components, or an emulator in Android Studio's Device Manager, then try again.
-          <ActionButton onClick={() => void load(false)}>Try again</ActionButton>
-        </Message>
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
-          <p className="px-2 py-1.5 text-xs text-muted-foreground">Choose a device to start</p>
-          {devices.map((candidate) => (
-            <button
-              key={candidate.id}
-              type="button"
-              onClick={() => void boot(candidate.id)}
-              className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-2 text-left text-sm transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <span className="truncate">{candidate.name}</span>
-              <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                {candidate.version}
-                {candidate.booted ? " · Running" : ""}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      {panelBody()}
     </aside>
   );
 }
@@ -237,12 +278,14 @@ function DeviceScreen({
       onMjpeg: setMjpegUrl,
     });
     stream.current = connected;
+
     return () => connected.stop();
   }, [hub, device.platform, streamId]);
 
   // A multipart image may never fire `load`, so watch for its first frame instead.
   useEffect(() => {
     if (!mjpegUrl) return;
+
     const poll = setInterval(() => {
       if (!fallback.current?.naturalWidth) return;
       setStreaming(true);
@@ -280,7 +323,7 @@ function DeviceScreen({
     },
   };
 
-  function key(phase: "down" | "up", event: React.KeyboardEvent) {
+  function sendKey(phase: "down" | "up", event: React.KeyboardEvent) {
     if (event.metaKey) {
       // Apple's Simulator shortcuts: ⌘⇧H for Home, ⌘→ to rotate.
       if (phase !== "down") return;
@@ -290,6 +333,7 @@ function DeviceScreen({
       event.preventDefault();
       return;
     }
+
     // Tab still moves focus out, so the screen never traps the keyboard.
     if (event.key === "Tab") return;
     event.preventDefault();
@@ -301,8 +345,8 @@ function DeviceScreen({
       ref={surface}
       tabIndex={0}
       aria-label="Device screen. Click to focus, then type to send keys."
-      onKeyDown={(event) => key("down", event)}
-      onKeyUp={(event) => key("up", event)}
+      onKeyDown={(event) => sendKey("down", event)}
+      onKeyUp={(event) => sendKey("up", event)}
       className="flex min-h-0 flex-1 flex-col items-center gap-3 p-4 outline-none"
     >
       <div className="relative flex min-h-0 w-full flex-1 items-center justify-center">

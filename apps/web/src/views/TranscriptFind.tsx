@@ -15,6 +15,7 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
   const input = useRef<HTMLInputElement>(null);
   // Streaming re-runs the search; only a new query or a step should move the view.
   const reveal = useRef(false);
+
   const current = Math.min(active, matches.length - 1);
 
   useKeybinding("thread.find", () => {
@@ -28,6 +29,7 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
     const root = scope.current;
     const needle = query.toLowerCase();
     if (!open || !root || !needle) return setMatches([]);
+
     let frame = 0;
     function search() {
       const found: Array<Range> = [];
@@ -46,6 +48,7 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
       }
       setMatches(found);
     }
+
     search();
     const observer = new MutationObserver(() => {
       cancelAnimationFrame(frame);
@@ -89,6 +92,7 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
   }
 
   if (!open) return null;
+
   return (
     <div
       role="search"

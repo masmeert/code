@@ -40,8 +40,10 @@ function percentOf(part: number, whole: number) {
 /** "Resets in 3 hr 21 min" within a day, else the weekday and time. */
 export function resetLabel(resetsAt: number, now: number) {
   const minutes = Math.max(0, Math.round((resetsAt - now) / 60_000));
-  if (minutes >= 24 * 60)
+  if (minutes >= 24 * 60) {
     return `Resets ${new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }).format(resetsAt)}`;
+  }
+
   const hours = Math.floor(minutes / 60);
   return `Resets in ${hours ? `${hours} hr ` : ""}${minutes % 60} min`;
 }
@@ -56,15 +58,18 @@ export function UsageMeter({
   provider: ProviderKind;
   busy: boolean;
 }) {
-  const usage = useStore((s) => s.threads[threadId]?.usage);
-  const reading = useStore((s) => s.readingUsage[threadId] ?? false);
+  const usage = useStore((state) => state.threads[threadId]?.usage);
+  const reading = useStore((state) => state.readingUsage[threadId] ?? false);
   const host = useThreadHost(threadId);
   const [open, setOpen] = useState(false);
   const missing = usage === undefined;
+
   useEffect(() => {
     if (missing) readUsage(threadId);
   }, [missing, threadId]);
+
   useKeybinding("usage.toggle", () => setOpen((wasOpen) => !wasOpen));
+
   useEffect(() => {
     if (open) readLimits(provider, host);
   }, [open, provider, host]);
@@ -72,6 +77,7 @@ export function UsageMeter({
   const context = usage?.context ?? null;
   const percent = context ? percentOf(context.usedTokens, context.maxTokens) : 0;
   const circumference = 2 * Math.PI * 6;
+
   return (
     <MorphPopover open={open} onOpenChange={setOpen}>
       <button
@@ -132,7 +138,7 @@ function ContextSection({
   reading: boolean;
   busy: boolean;
 }) {
-  if (!context)
+  if (!context) {
     return (
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {reading ? (
@@ -145,10 +151,13 @@ function ContextSection({
         )}
       </p>
     );
+  }
+
   // Harnesses that don't break the window down (Codex) get one "used" row.
   const categories = context.categories.length
     ? context.categories.filter((category) => category.tokens > 0)
     : [{ name: "Used", tokens: context.usedTokens, kind: "used" as const }];
+
   return (
     <div className="text-xs">
       <details className="group">
@@ -224,11 +233,12 @@ function ContextSection({
 }
 
 function LimitsSection({ provider, host }: { provider: ProviderKind; host: string | null }) {
-  const limits = useStore((s) =>
-    host === null ? s.limits[provider] : s.hosts[host]?.limits[provider],
+  const limits = useStore((state) =>
+    host === null ? state.limits[provider] : state.hosts[host]?.limits[provider],
   );
   const plan = useProviders(host).find((status) => status.kind === provider)?.plan;
   const now = useNow(60_000);
+
   return (
     <div className="mt-3 border-t border-border pt-3 text-xs">
       <div className="flex items-center justify-between">

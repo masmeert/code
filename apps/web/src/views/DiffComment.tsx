@@ -57,12 +57,14 @@ export function DiffCommentForm({
   const [text, setText] = useState(comment.text);
   const trimmed = text.trim();
   const input = useRef<HTMLTextAreaElement>(null);
+
   // Not autoFocus: inside the diff it left the caret before the text being edited.
   useEffect(() => {
     const node = input.current;
     node?.focus({ preventScroll: true });
     node?.setSelectionRange(node.value.length, node.value.length);
   }, []);
+
   return (
     <div
       onPointerDown={(event) => event.stopPropagation()}

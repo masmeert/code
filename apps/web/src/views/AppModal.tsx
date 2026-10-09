@@ -33,6 +33,7 @@ import {
   PermissionLevel,
   ProviderKind,
   SourceControlKind,
+  type SourceControlStatus,
   WritingStyle,
   HostStatus,
   type ProjectConfig,
@@ -94,11 +95,12 @@ import { useUpdateStatus } from "../lib/updates.ts";
 export type ModalView = "settings";
 
 /** One modal for the whole app; switching views morphs the panel between them. */
-export const AppModal = (props: {
+export function AppModal(props: {
   view: ModalView | null;
   onView: (view: ModalView | null) => void;
-}) => {
+}) {
   const { view, onView } = props;
+
   return (
     <MorphingModal
       viewId={view}
@@ -109,36 +111,34 @@ export const AppModal = (props: {
       {view === "settings" ? <SettingsView /> : null}
     </MorphingModal>
   );
-};
+}
 
-// ---------------------------------------------------------------------------
-
-const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <section className="mb-5 last:mb-0">
-    <h3 className="mb-2 px-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-      {title}
-    </h3>
-    {children}
-  </section>
-);
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mb-5 last:mb-0">
+      <h3 className="mb-2 px-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
 
 /** Grouped list: one rounded surface, rows separated by hairlines. No overflow clip, so selects can open out of it. */
-const SettingsGroup = ({ children }: { children: React.ReactNode }) => (
-  <div className="divide-y divide-rule rounded-xl border border-border bg-card">{children}</div>
-);
+function SettingsGroup({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="divide-y divide-rule rounded-xl border border-border bg-card">{children}</div>
+  );
+}
 
-const SettingsRow = ({
-  label,
-  children,
-}: {
-  label: React.ReactNode;
-  children?: React.ReactNode;
-}) => (
-  <div className="flex min-h-11 items-center justify-between gap-4 px-3 py-2">
-    <div className="min-w-0 flex-1">{label}</div>
-    {children ? <div className="shrink-0">{children}</div> : null}
-  </div>
-);
+function SettingsRow({ label, children }: { label: React.ReactNode; children?: React.ReactNode }) {
+  return (
+    <div className="flex min-h-11 items-center justify-between gap-4 px-3 py-2">
+      <div className="min-w-0 flex-1">{label}</div>
+      {children ? <div className="shrink-0">{children}</div> : null}
+    </div>
+  );
+}
 
 /** A settings dropdown; `label` is what the closed trigger shows when an option's content isn't plain text. */
 function SettingsSelect(props: {
@@ -188,8 +188,8 @@ function SettingsModelSelect(props: {
   fallback: string;
   className: string;
 }) {
-  const settings = useStore((s) => s.settings);
-  const providers = useStore((s) => s.providers);
+  const settings = useStore((state) => state.settings);
+  const providers = useStore((state) => state.providers);
   const [open, setOpen] = useState(false);
   const models = modelChoices(providers, settings);
   const current = models.find((option) => option.value === props.value);
@@ -277,8 +277,9 @@ const PAGES = [
 type SettingsPage = (typeof PAGES)[number]["page"];
 
 function SettingsView() {
-  const settings = useStore((s) => s.settings);
+  const settings = useStore((state) => state.settings);
   const [page, setPage] = useState<SettingsPage>("general");
+
   // Hosts are reached over SSH by the desktop app.
   const pages = PAGES.filter((entry) => entry.page !== "connections" || window.desktop);
 
@@ -289,18 +290,18 @@ function SettingsView() {
     <div className="-m-5 flex h-[min(36rem,calc(100vh-4rem))]">
       <nav
         aria-label="Settings"
-        onKeyDown={(e) => {
-          if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-          e.preventDefault();
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+          event.preventDefault();
           const next =
             pages[
               (pages.findIndex((entry) => entry.page === page) +
-                (e.key === "ArrowDown" ? 1 : -1) +
+                (event.key === "ArrowDown" ? 1 : -1) +
                 pages.length) %
                 pages.length
-            ]!.page;
+            ].page;
           setPage(next);
-          e.currentTarget.querySelector<HTMLElement>(`[data-page="${next}"]`)?.focus();
+          event.currentTarget.querySelector<HTMLElement>(`[data-page="${next}"]`)?.focus();
         }}
         className="flex w-48 shrink-0 flex-col border-r border-border bg-sidebar p-3"
       >
@@ -336,8 +337,8 @@ function SettingsView() {
                 <SettingsRow label="Theme">
                   <Tabs
                     value={settings.theme}
-                    onValueChange={(v) =>
-                      Schema.is(Theme)(v) && updateSettings({ ...settings, theme: v })
+                    onValueChange={(value) =>
+                      Schema.is(Theme)(value) && updateSettings({ ...settings, theme: value })
                     }
                   >
                     <TabsList>
@@ -366,12 +367,12 @@ function SettingsView() {
 }
 
 function GeneralPage() {
-  const settings = useStore((s) => s.settings);
-  const providers = useStore((s) => s.providers);
-  const linked = providers.filter((p) => p.linked && p.models.length);
+  const settings = useStore((state) => state.settings);
+  const providers = useStore((state) => state.providers);
+  const linked = providers.filter((provider) => provider.linked && provider.models.length);
   const savedModel = settings.newThreadModel;
   const effortProvider =
-    savedModel && modelChoices(providers, settings).some((o) => o.value === savedModel)
+    savedModel && modelChoices(providers, settings).some((option) => option.value === savedModel)
       ? decodeChoice(savedModel).provider
       : settings.lastProvider;
   const savedEffort = settings.newThreadEffort;
@@ -617,9 +618,11 @@ function GeneralPage() {
 function UpdatesSection() {
   const status = useUpdateStatus() ?? UpdateStatus.cases.idle.make({});
   const [version, setVersion] = useState<string | null>(null);
+
   useEffect(() => {
     window.desktop?.appVersion().then(setVersion, () => {});
   }, []);
+
   const ready = UpdateStatus.guards.ready(status);
   const available = UpdateStatus.guards.available(status);
 
@@ -693,12 +696,14 @@ const WRITING_STYLES: Array<{ value: WritingStyle; label: string }> = [
 ];
 
 function ProjectsPage() {
-  const projects = useStore((s) => s.projects);
-  const projectHosts = useStore((s) => s.projectHosts);
+  const projects = useStore((state) => state.projects);
+  const projectHosts = useStore((state) => state.projectHosts);
   const [projectId, setProjectId] = useState<string | null>(null);
   const project = projects.find((candidate) => candidate.id === projectId) ?? projects[0];
+
   if (!project)
     return <p className="px-1 text-sm text-muted-foreground">Add a project to set it up here.</p>;
+
   return (
     <>
       <Section title="Project">
@@ -740,6 +745,7 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
   const [error, setError] = useState<string | null>(null);
   // Leaving the setup box unchanged shouldn't rewrite the file.
   const savedSetup = useRef("");
+
   useEffect(() => {
     let cancelled = false;
     void readProjectConfig(host, path).then((frame) => {
@@ -748,6 +754,7 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
         return setError(
           "MassCode's daemon didn't answer, so the project's settings couldn't be read. Check it's running and open this page again.",
         );
+
       const worktree = frame.config.worktree;
       savedSetup.current = worktree?.setup ?? "";
       setDraft({
@@ -764,6 +771,7 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
             : null,
       );
     });
+
     return () => {
       cancelled = true;
     };
@@ -779,6 +787,7 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
       ...(setup && { setup }),
       ...(setup && !next.waitForSetup && { wait_for_setup: false }),
     };
+
     setError(
       await updateProjectConfig(host, path, ({ worktree: _replaced, ...rest }) =>
         Object.keys(worktree).length ? { ...rest, worktree } : rest,
@@ -872,8 +881,8 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
 }
 
 function GitPage() {
-  const settings = useStore((s) => s.settings);
-  const sourceControl = useStore((s) => s.sourceControl);
+  const settings = useStore((state) => state.settings);
+  const sourceControl = useStore((state) => state.sourceControl);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => send(ClientCommand.cases["sourceControl.refresh"].make({})), []);
@@ -954,13 +963,7 @@ function GitPage() {
                           : "bg-muted text-muted-foreground",
                     )}
                   >
-                    {status.authenticated
-                      ? "Signed in"
-                      : status.installed
-                        ? status.authenticated === null
-                          ? "Unknown"
-                          : "Not signed in"
-                        : "Not installed"}
+                    {signInLabel(status)}
                   </span>
                 ) : (
                   <Skeleton className="h-4 w-16" />
@@ -1018,23 +1021,30 @@ function GitPage() {
   );
 }
 
+function signInLabel(status: SourceControlStatus) {
+  if (status.authenticated) return "Signed in";
+  if (!status.installed) return "Not installed";
+  return status.authenticated === null ? "Unknown" : "Not signed in";
+}
+
 /** Rules for commit messages and pull requests, saved on blur; Esc reverts an edit. */
 function WritingInstructionsField() {
-  const settings = useStore((s) => s.settings);
+  const settings = useStore((state) => state.settings);
   const saved = settings.writingInstructions ?? "";
   const [draft, setDraft] = useState(saved);
+
   return (
     <div className="px-3 py-2">
       <Textarea
         aria-label="Writing instructions"
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(event) => setDraft(event.target.value)}
         onBlur={() =>
           draft !== saved && updateSettings({ ...settings, writingInstructions: draft })
         }
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && draft !== saved) {
-            e.stopPropagation();
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && draft !== saved) {
+            event.stopPropagation();
             setDraft(saved);
           }
         }}
@@ -1047,13 +1057,15 @@ function WritingInstructionsField() {
 
 /** Model writing commit messages left empty and pull requests; "auto" follows the last harness's default model. */
 function WriterModelSelect() {
-  const settings = useStore((s) => s.settings);
-  const providers = useStore((s) => s.providers);
-  const linked = providers.filter((p) => p.linked && p.models.length);
-  if (!linked.length && providers.some((p) => p.checking))
+  const settings = useStore((state) => state.settings);
+  const providers = useStore((state) => state.providers);
+  const linked = providers.filter((provider) => provider.linked && provider.models.length);
+
+  if (!linked.length && providers.some((provider) => provider.checking))
     return <Skeleton className="h-7 w-52 rounded-lg" />;
   if (!linked.length)
     return <span className="text-[13px] text-muted-foreground">Link a harness first</span>;
+
   return (
     <SettingsModelSelect
       value={settings.commitModel}
@@ -1071,12 +1083,18 @@ const CONFIG_DIR: Record<ProviderKind, { env: string; placeholder: string }> = {
 };
 
 function ConnectionsPage() {
-  const hosts = useStore((s) => s.hosts);
+  const hosts = useStore((state) => state.hosts);
   const [query, setQuery] = useState("");
   const [aliases, setAliases] = useState<ReadonlyArray<string>>([]);
+
   useEffect(() => void window.desktop?.sshAliases().then(setAliases), []);
+
   const typed = query.trim();
-  const matches = (name: string) => name.toLowerCase().includes(typed.toLowerCase());
+
+  function matches(name: string) {
+    return name.toLowerCase().includes(typed.toLowerCase());
+  }
+
   const added = Object.entries(hosts).filter(([name]) => matches(name));
   // Configs can list dozens, so they show once there's a search, or while there's no host yet.
   const suggestions =
@@ -1088,10 +1106,11 @@ function ConnectionsPage() {
     ...(typed && !hosts[typed] && suggestions.length === 0 && !/\s/.test(typed) ? [typed] : []),
     ...suggestions,
   ];
-  const add = (alias: string) => {
+
+  function add(alias: string) {
     void window.desktop?.addHost(alias);
     setQuery("");
-  };
+  }
 
   return (
     <>
@@ -1103,10 +1122,10 @@ function ConnectionsPage() {
         spellCheck={false}
         autoComplete="off"
         leftIcon={<Search />}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && addable.length === 1) add(addable[0]!);
-          if (e.key === "Escape" && query) {
-            e.stopPropagation();
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && addable.length === 1) add(addable[0]);
+          if (event.key === "Escape" && query) {
+            event.stopPropagation();
             setQuery("");
           }
         }}
@@ -1164,8 +1183,9 @@ function ConnectionsPage() {
 
 function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
   const [confirm, setConfirm] = useState<"remove" | "restart" | null>(null);
-  const settings = useStore((s) => s.settings);
+  const settings = useStore((state) => state.settings);
   const confirming = confirm !== null;
+
   return (
     <>
       <SettingsRow
@@ -1295,13 +1315,13 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
 const THIS_MAC = "\u0000this-mac";
 
 function HarnessesPage() {
-  const settings = useStore((s) => s.settings);
-  const hosts = useStore((s) => s.hosts);
+  const settings = useStore((state) => state.settings);
+  const hosts = useStore((state) => state.hosts);
   const [kind, setKind] = useState<ProviderKind>("claude");
   // The machine whose harnesses are on show: this Mac (null) or a remote host.
   const [machine, setMachine] = useState<string | null>(null);
   const providers = useProviders(machine);
-  const status = providers.find((p) => p.kind === kind);
+  const status = providers.find((provider) => provider.kind === kind);
 
   // Sign-in state can change outside the app, on a host too.
   useEffect(() => {
@@ -1311,7 +1331,10 @@ function HarnessesPage() {
   return (
     <>
       <div className="mb-5 flex items-center justify-between gap-3">
-        <Tabs value={kind} onValueChange={(v) => Schema.is(ProviderKind)(v) && setKind(v)}>
+        <Tabs
+          value={kind}
+          onValueChange={(value) => Schema.is(ProviderKind)(value) && setKind(value)}
+        >
           <TabsList>
             {ProviderKind.literals.map((entry) => {
               const Logo = PROVIDER_LOGO[entry];
@@ -1360,8 +1383,9 @@ function LocalHarnessSettings({
   kind: ProviderKind;
   status: ProviderStatus | undefined;
 }) {
-  const harness = useStore((s) => s.settings.providers[kind]);
-  const settings = useStore((s) => s.settings);
+  const harness = useStore((state) => state.settings.providers[kind]);
+  const settings = useStore((state) => state.settings);
+
   return (
     <>
       <Section title="Display">
@@ -1453,6 +1477,7 @@ function SettingsTextField(props: {
   onCommit: (value: string) => void;
 }) {
   const [draft, setDraft] = useState(props.value);
+
   return (
     <Input
       aria-label={props.label}
@@ -1462,10 +1487,10 @@ function SettingsTextField(props: {
       spellCheck={false}
       autoComplete="off"
       onBlur={() => draft.trim() !== props.value && props.onCommit(draft.trim())}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur();
-        if (e.key === "Escape" && draft !== props.value) {
-          e.stopPropagation();
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape" && draft !== props.value) {
+          event.stopPropagation();
           setDraft(props.value);
         }
       }}
@@ -1479,7 +1504,7 @@ function SettingsTextField(props: {
 }
 
 function VariablesField({ provider }: { provider: ProviderKind }) {
-  const env = useStore((s) => s.settings.providers[provider].env);
+  const env = useStore((state) => state.settings.providers[provider].env);
   const saved = Object.entries(env ?? {})
     .map(([key, value]) => `${key}=${value}`)
     .join("\n");
@@ -1499,7 +1524,7 @@ function VariablesField({ provider }: { provider: ProviderKind }) {
         aria-label="Variables"
         aria-invalid={invalidLine !== -1 || undefined}
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(event) => setDraft(event.target.value)}
         onBlur={() => {
           if (invalidLine !== -1 || draft === saved) return;
           updateHarness(provider, {
@@ -1511,9 +1536,9 @@ function VariablesField({ provider }: { provider: ProviderKind }) {
             ),
           });
         }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && draft !== saved) {
-            e.stopPropagation();
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && draft !== saved) {
+            event.stopPropagation();
             setDraft(saved);
           }
         }}
@@ -1532,19 +1557,19 @@ function VariablesField({ provider }: { provider: ProviderKind }) {
 
 /** Default model, then every model with its favorite, order and visibility; all of it shapes the model picker. */
 function ModelsSection({ status }: { status: ProviderStatus }) {
-  const settings = useStore((s) => s.settings);
+  const settings = useStore((state) => state.settings);
   const kind = status.kind;
   const harness = settings.providers[kind];
   const models = orderedModels(status.models, harness);
   const hidden = harness.hiddenModels ?? [];
   const favorites = harness.favoriteModels ?? [];
-  const shown = models.filter((m) => !hidden.includes(m.id));
+  const shown = models.filter((model) => !hidden.includes(model.id));
 
   function move(index: number, offset: number) {
     const target = index + offset;
     if (target < 0 || target >= models.length) return;
-    const ids = models.map((m) => m.id);
-    [ids[index], ids[target]] = [ids[target]!, ids[index]!];
+    const ids = models.map((model) => model.id);
+    [ids[index], ids[target]] = [ids[target], ids[index]];
     updateHarness(kind, { modelOrder: ids });
   }
 
@@ -1554,7 +1579,7 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
         <SettingsGroup>
           <SettingsRow label="Default model">
             <Select
-              value={defaultModel([status], settings, kind) ?? shown[0]!.id}
+              value={defaultModel([status], settings, kind) ?? shown[0].id}
               onValueChange={(model) => updateHarness(kind, { defaultModel: model })}
               className="w-52"
             >
@@ -1562,9 +1587,9 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
                 <SelectValue className="min-w-0 truncate" />
               </SelectTrigger>
               <SelectContent>
-                {shown.map((m) => (
-                  <SelectItem key={m.id} value={m.id} className="text-[13px]">
-                    {m.label}
+                {shown.map((model) => (
+                  <SelectItem key={model.id} value={model.id} className="text-[13px]">
+                    {model.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1578,10 +1603,11 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
             return (
               <div
                 key={model.id}
-                onKeyDown={(e) => {
-                  if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
-                  e.preventDefault();
-                  move(index, e.key === "ArrowUp" ? -1 : 1);
+                onKeyDown={(event) => {
+                  if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown"))
+                    return;
+                  event.preventDefault();
+                  move(index, event.key === "ArrowUp" ? -1 : 1);
                 }}
                 className="flex h-11 items-center gap-1 pr-3 pl-1.5"
               >
@@ -1652,9 +1678,17 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
 }
 
 /** CLIs report versions as e.g. "2.1.281 (Claude Code)" or "codex-cli 0.154.0"; keep just the number. */
-const shortVersion = (raw: string) => raw.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? raw;
+function shortVersion(raw: string) {
+  return raw.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? raw;
+}
 
-const ProviderCard = ({
+function statusLine(status: ProviderStatus | undefined) {
+  if (!status) return "Checking…";
+  if (!status.installed) return status.error ?? "Not installed";
+  return status.linked ? (status.account ?? "Signed in") : "Not signed in";
+}
+
+function ProviderCard({
   kind,
   status,
   host = null,
@@ -1663,82 +1697,87 @@ const ProviderCard = ({
   status: ProviderStatus | undefined;
   /** The remote host whose harness this is; this Mac's when left out. */
   host?: string | null;
-}) => {
-  const settings = useStore((s) => s.settings);
-  const flow = useStore((s) =>
-    host === null ? s.authFlows[kind] : s.hosts[host]?.authFlows[kind],
+}) {
+  const settings = useStore((state) => state.settings);
+  const flow = useStore((state) =>
+    host === null ? state.authFlows[kind] : state.hosts[host]?.authFlows[kind],
   );
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [code, setCode] = useState("");
+
   const inFlow =
     flow &&
     (flow.stage === "starting" || flow.stage === "browser" || flow.stage === "awaiting-code");
   const Logo = PROVIDER_LOGO[kind];
-
   const checking = !status || status.checking === true;
-  const statusLine = !status
-    ? "Checking…"
-    : !status.installed
-      ? (status.error ?? "Not installed")
-      : status.linked
-        ? (status.account ?? "Signed in")
-        : "Not signed in";
 
-  const action = checking ? (
-    <Skeleton className="h-7 w-16 rounded-lg" />
-  ) : !status?.installed ? null : inFlow ? (
-    <Button
-      size="sm"
-      variant="ghost"
-      className="h-7 rounded-lg"
-      onClick={() =>
-        send(ClientCommand.cases["provider.linkCancel"].make({ provider: kind }), host)
-      }
-    >
-      Cancel
-    </Button>
-  ) : status.linked ? (
-    confirmUnlink ? (
-      <div className="flex items-center gap-1">
+  function renderAction() {
+    if (checking) return <Skeleton className="h-7 w-16 rounded-lg" />;
+    if (!status?.installed) return null;
+
+    if (inFlow)
+      return (
         <Button
           size="sm"
           variant="ghost"
           className="h-7 rounded-lg"
-          onClick={() => setConfirmUnlink(false)}
+          onClick={() =>
+            send(ClientCommand.cases["provider.linkCancel"].make({ provider: kind }), host)
+          }
         >
-          Keep
+          Cancel
         </Button>
+      );
+
+    if (status.linked && confirmUnlink)
+      return (
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 rounded-lg"
+            onClick={() => setConfirmUnlink(false)}
+          >
+            Keep
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
+            onClick={() => {
+              setConfirmUnlink(false);
+              send(ClientCommand.cases["provider.unlink"].make({ provider: kind }), host);
+            }}
+          >
+            Sign out
+          </Button>
+        </div>
+      );
+
+    if (status.linked)
+      return (
         <Button
           size="sm"
-          variant="ghost"
-          className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
-          onClick={() => {
-            setConfirmUnlink(false);
-            send(ClientCommand.cases["provider.unlink"].make({ provider: kind }), host);
-          }}
+          variant="secondary"
+          className="h-7 rounded-lg"
+          onClick={() => setConfirmUnlink(true)}
         >
-          Sign out
+          Unlink
         </Button>
-      </div>
-    ) : (
+      );
+
+    if (host !== null && kind === "codex") return null;
+
+    return (
       <Button
         size="sm"
-        variant="secondary"
         className="h-7 rounded-lg"
-        onClick={() => setConfirmUnlink(true)}
+        onClick={() => send(ClientCommand.cases["provider.link"].make({ provider: kind }), host)}
       >
-        Unlink
+        Link
       </Button>
-    )
-  ) : host !== null && kind === "codex" ? null : (
-    <Button
-      size="sm"
-      className="h-7 rounded-lg"
-      onClick={() => send(ClientCommand.cases["provider.link"].make({ provider: kind }), host)}
-    >
-      Link
-    </Button>
-  );
+    );
+  }
 
   return (
     <SettingsGroup>
@@ -1781,14 +1820,14 @@ const ProviderCard = ({
                           : "bg-muted-foreground/40",
                     )}
                   />
-                  <span className="truncate">{statusLine}</span>
+                  <span className="truncate">{statusLine(status)}</span>
                 </div>
               )}
             </div>
           </div>
         }
       >
-        {action}
+        {renderAction()}
       </SettingsRow>
 
       {confirmUnlink ? (
@@ -1818,9 +1857,9 @@ const ProviderCard = ({
                   <input
                     autoFocus
                     value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && code.trim())
+                    onChange={(event) => setCode(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && code.trim())
                         send(
                           ClientCommand.cases["provider.linkCode"].make({ provider: kind, code }),
                           host,
@@ -1862,4 +1901,4 @@ const ProviderCard = ({
       ) : null}
     </SettingsGroup>
   );
-};
+}
