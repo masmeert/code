@@ -84,7 +84,6 @@ export function serve(port: number) {
     // What sockets start runs until the server's scope closes; each one's event stream ends with it.
     const runFork = yield* FiberSet.makeRuntime();
     const streams = yield* FiberMap.make<ServerWebSocket<ConnectionData>>();
-    const runStream = yield* FiberMap.runtime(streams)();
 
     function send(socket: ServerWebSocket<ConnectionData>, frame: ServerFrame) {
       if (socket.readyState !== WebSocket.OPEN) return;
@@ -349,7 +348,7 @@ export function serve(port: number) {
                 );
 
               socket.data.viewer = { send: (frame) => send(socket, frame) };
-              runStream(socket, streamToClient(socket));
+              runFork(FiberMap.run(streams, socket, streamToClient(socket)));
             },
             message(socket, raw) {
               if (socket.data.protocol !== String(PROTOCOL_VERSION)) return;

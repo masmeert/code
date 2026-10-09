@@ -684,24 +684,28 @@ const make = Effect.gen(function* () {
 
   // Idle threads shelve with time alone; the threshold is in days, so a check a minute is plenty.
   // Resuming at a usage limit's reset rides along: a minute late is fine, and it survives sleep.
-  const shelveAndResumeAtReset = Effect.sync(() => {
-    for (const entry of threads.values()) {
-      refreshShelved(entry);
-      const stop = entry.info.limitStop;
-      if (
-        stop?.resumeAtReset &&
-        stop.resetsAt !== null &&
-        Date.now() >= stop.resetsAt + LIMIT_RESET_GRACE_MS
-      )
-        runFork(
-          resumeAfterLimit(entry, stop.resumeAtReset).pipe(
-            reportErrorsIn(entry.info.id),
-            Effect.ignore,
-          ),
-        );
-    }
-  });
-  yield* Effect.forkScoped(Effect.schedule(shelveAndResumeAtReset, Schedule.spaced("1 minute")));
+  yield* Effect.forkScoped(
+    Effect.schedule(
+      Effect.sync(() => {
+        for (const entry of threads.values()) {
+          refreshShelved(entry);
+          const stop = entry.info.limitStop;
+          if (
+            stop?.resumeAtReset &&
+            stop.resetsAt !== null &&
+            Date.now() >= stop.resetsAt + LIMIT_RESET_GRACE_MS
+          )
+            runFork(
+              resumeAfterLimit(entry, stop.resumeAtReset).pipe(
+                reportErrorsIn(entry.info.id),
+                Effect.ignore,
+              ),
+            );
+        }
+      }),
+      Schedule.spaced("1 minute"),
+    ),
+  );
 
   function setShelveOverride(entry: ThreadEntry, override: ShelveOverride) {
     entry.shelveOverride = override;
