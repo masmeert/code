@@ -4,7 +4,7 @@ import { ProjectBadge } from "@/components/project-badge";
 import { addProject, getProjectKey } from "../lib/projects.ts";
 import { Button } from "@masscode/ui/motion/button/base";
 import { cn } from "@masscode/ui/lib/utils";
-import { type Project, repositoryOf } from "@masscode/contracts";
+import { type Project, parseRepository } from "@masscode/contracts";
 import { Check, FolderPlus, LoaderCircle, Monitor, Server } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { focusComposer } from "../lib/drafts.ts";
@@ -257,7 +257,7 @@ function CloneCopy({
         {isCloning ? <LoaderCircle className="size-4 animate-spin" /> : null}
         {isCloning
           ? "Cloning…"
-          : `Clone into ${[parent.replace(/\/$/, ""), project.folder ? repositoryOf(project.remote).split("/").at(-1) : project.name, project.folder].filter(Boolean).join("/")}`}
+          : `Clone into ${[parent.replace(/\/$/, ""), project.folder ? parseRepository(project.remote).split("/").at(-1) : project.name, project.folder].filter(Boolean).join("/")}`}
       </Button>
       {error ? <span className="max-w-md text-xs text-destructive">{error}</span> : null}
     </span>

@@ -1,4 +1,4 @@
-import { browserPartition, HostStatus, type RemoteHost } from "@masscode/contracts";
+import { getBrowserPartition, HostStatus, type RemoteHost } from "@masscode/contracts";
 import { type ChildProcess, spawn } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
@@ -297,7 +297,7 @@ function waitForPort(port: number, tunnel: ChildProcess) {
  * `localhost` is the host's. With no tunnel they go nowhere rather than to this Mac.
  */
 async function routeBrowser(alias: string, socksPort: number | null) {
-  const partition = session.fromPartition(browserPartition(alias));
+  const partition = session.fromPartition(getBrowserPartition(alias));
   configureBrowserSession(partition);
   // ponytail: port 9 (discard) is a dead end on any Mac; a PAC script that refuses would be exact
   await partition.setProxy({

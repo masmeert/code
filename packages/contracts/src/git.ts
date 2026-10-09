@@ -8,7 +8,7 @@ export type MergeMethod = typeof MergeMethod.Type;
  * `git@github.com:owner/repo.git`, `https://github.com/owner/repo`, `ssh://git@host:22/owner/repo`.
  * The host is left out: one server is often reached by different names, like a LAN and a public one.
  */
-export function repositoryOf(url: string) {
+export function parseRepository(url: string) {
   const match = url
     .trim()
     .match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?[^/:]+(?::\d+)?[/:](.+?)(?:\.git)?\/*$/i);

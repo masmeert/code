@@ -203,7 +203,7 @@ export type SearchHit = typeof SearchHit.Type;
  * Why rewinding a thread's files isn't allowed, or null when it is. Snapshots hold the whole
  * folder, so a restore is only safe in a worktree no other thread works in, around or inside.
  */
-export function fileRestoreBlocker(
+export function findFileRestoreBlocker(
   thread: ThreadInfo,
   others: Iterable<ThreadInfo>,
 ): string | null {

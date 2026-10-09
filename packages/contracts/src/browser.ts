@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 export const BROWSER_PARTITION = "persist:masscode-browser";
 
 /** Each remote host browses through its own SSH tunnel, so its `localhost` is the host's. */
-export function browserPartition(host: string | null) {
+export function getBrowserPartition(host: string | null) {
   return host === null ? BROWSER_PARTITION : `${BROWSER_PARTITION}:${host}`;
 }
 

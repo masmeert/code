@@ -35,7 +35,7 @@ import {
   type UsageLimit,
   type UserAnswers,
   type UserQuestion,
-  fileRestoreBlocker,
+  findFileRestoreBlocker,
   isTranscriptEvent,
   isTurnActive,
 } from "@masscode/contracts";
@@ -1549,7 +1549,7 @@ export function useFileRestoreBlocker(threadId: string) {
     if (!thread) return null;
 
     const host = getThreadHost(state, threadId);
-    return fileRestoreBlocker(
+    return findFileRestoreBlocker(
       thread,
       Object.values(state.threads).filter((other) => isOnHost(state, host, other.projectId)),
     );

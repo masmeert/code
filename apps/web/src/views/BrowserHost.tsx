@@ -1,4 +1,4 @@
-import { browserPartition, DesktopBrowserEvent } from "@masscode/contracts";
+import { getBrowserPartition, DesktopBrowserEvent } from "@masscode/contracts";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -60,7 +60,7 @@ export function BrowserHost() {
         <HostedTab
           key={tabId}
           threadId={threadId}
-          partition={browserPartition(projectHosts[thread.projectId] ?? null)}
+          partition={getBrowserPartition(projectHosts[thread.projectId] ?? null)}
           tab={tab}
           rect={shown === tabId && !activity[tabId]?.error ? (surface?.rect ?? null) : null}
           isAutomating={(activity[tabId]?.automating ?? 0) > 0}

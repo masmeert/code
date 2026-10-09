@@ -1,5 +1,5 @@
 /** Rewinding a thread to before one of its messages, and forking a new thread from one. */
-import { type ClientCommand, fileRestoreBlocker, RuntimeEvent } from "@masscode/contracts";
+import { type ClientCommand, findFileRestoreBlocker, RuntimeEvent } from "@masscode/contracts";
 import * as Effect from "effect/Effect";
 import { CommandError } from "../errors.ts";
 import { copyCheckpoints, deleteCheckpoints, hasCheckpoint, restoreCheckpoint } from "../git.ts";
@@ -53,7 +53,7 @@ export function createHistory({
       return yield* new CommandError({ message: "A message sent mid-turn can't be rewound to" });
 
     if (command.restoreFiles) {
-      const blocker = fileRestoreBlocker(
+      const blocker = findFileRestoreBlocker(
         entry.info,
         [...threads.values()].map((other) => other.info),
       );

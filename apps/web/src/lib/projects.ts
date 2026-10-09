@@ -1,4 +1,4 @@
-import { type Project, repositoryOf } from "@masscode/contracts";
+import { type Project, parseRepository } from "@masscode/contracts";
 import { useSyncExternalStore } from "react";
 import { addProjectOn, getHosts, getSettings } from "./store.ts";
 
@@ -54,5 +54,5 @@ export function addProject(): Promise<string | null> {
  * hold several projects. A folder outside git, or in a repo without a remote, is only itself.
  */
 export function getProjectKey(project: Pick<Project, "id" | "remote" | "folder">) {
-  return project.remote ? `${repositoryOf(project.remote)}#${project.folder ?? ""}` : project.id;
+  return project.remote ? `${parseRepository(project.remote)}#${project.folder ?? ""}` : project.id;
 }

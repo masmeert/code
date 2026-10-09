@@ -1,5 +1,5 @@
 import { execFile, type ExecFileException, type ExecFileOptions } from "node:child_process";
-import { repositoryOf } from "@masscode/contracts";
+import { parseRepository } from "@masscode/contracts";
 import * as Predicate from "effect/Predicate";
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -907,7 +907,7 @@ export async function cloneRepository(url: string, parent: string, folderName?: 
   const path = join(parent, name);
   // Cloned there before (say, from another thread's draft): that copy is the one to use.
   const existing = await readRemoteUrl(path).catch(() => null);
-  if (existing && repositoryOf(existing) === repositoryOf(url)) return { path, error: null };
+  if (existing && parseRepository(existing) === parseRepository(url)) return { path, error: null };
 
   const result = await execGit(parent, ["clone", "--", url.trim(), path], {
     timeout: 10 * 60 * 1000,
