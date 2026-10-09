@@ -28,16 +28,15 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
-import { readFile } from "node:fs/promises";
-import { extname } from "node:path";
 import {
-  IMAGE_TYPES,
   ProviderError,
   createApprovalBook,
   prefixErrorMessage,
   summarizeToolInput,
   tryProviderPromise,
   formatTextWithFiles,
+  listMcpEndpoints,
+  readImages,
   type ForkInput,
   type ProviderAdapter,
   type ProviderSession,
@@ -52,7 +51,6 @@ import {
   startPromptlessQuery,
   type HarnessLaunch,
 } from "./launch.ts";
-import { DEVICES_SUPPORTED } from "../devices.ts";
 import { findSkillMentions } from "../skills.ts";
 import { getErrorMessage } from "../errors.ts";
 
@@ -132,18 +130,23 @@ const PERMISSION_MODE = {
 } as const satisfies Record<PermissionLevel, PermissionMode>;
 
 /** Claude has no "minimal" or "ultra", so they take the nearest level; its two modes aren't levels. */
-function toEffortLevel(effort: Effort): EffortLevel | null {
-  if (effort === "minimal") return "low";
-  if (effort === "ultra") return "max";
-  if (effort === "ultracode" || effort === "ultrathink") return null;
-  return effort;
-}
+const EFFORT_LEVEL = {
+  minimal: "low",
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "xhigh",
+  max: "max",
+  ultra: "max",
+  ultracode: null,
+  ultrathink: null,
+} as const satisfies Record<Effort, EffortLevel | null>;
 
 /** Ultrathink keeps the model's default effort (a null level resets to it) and works through the keyword. */
 function toEffortSettings(effort: Effort): Parameters<Query["applyFlagSettings"]>[0] {
   return effort === "ultracode"
     ? { ultracode: true }
-    : { ultracode: null, effortLevel: toEffortLevel(effort) };
+    : { ultracode: null, effortLevel: EFFORT_LEVEL[effort] };
 }
 
 /** Claude Code looks for the "ultrathink" keyword in the message itself. */
@@ -179,26 +182,15 @@ function splitSkillBlocks(text: string, skills: ReadonlyArray<ProviderSkill>): A
 /** Images inline as base64 blocks, then the text (with other files listed as paths). */
 async function toContent(turn: TurnInput): Promise<SDKUserMessage["message"]["content"]> {
   const texts = splitSkillBlocks(formatTextWithFiles(turn), turn.skills);
-  const images = turn.attachments.flatMap((attachment) => {
-    const mediaType = IMAGE_TYPES.get(extname(attachment.path).toLowerCase());
-    return attachment.isImage && mediaType ? [{ path: attachment.path, mediaType }] : [];
-  });
+  const images = await readImages(turn);
   if (!images.length && texts.length <= 1 && !turn.handoff) return texts[0] ?? "";
-
-  const blocks = await Promise.all(
-    images.map(async (image) => ({
-      type: "image" as const,
-      source: {
-        type: "base64" as const,
-        media_type: image.mediaType,
-        data: (await readFile(image.path)).toString("base64"),
-      },
-    })),
-  );
 
   return [
     ...(turn.handoff ? [{ type: "text" as const, text: turn.handoff }] : []),
-    ...blocks,
+    ...images.map((image) => ({
+      type: "image" as const,
+      source: { type: "base64" as const, media_type: image.mediaType, data: image.data },
+    })),
     ...texts.map((text) => ({ type: "text" as const, text })),
   ];
 }
@@ -299,27 +291,12 @@ function openSession(
       ...(mcpServer && { MASSCODE_MCP_TOKEN: mcpServer.token }),
       CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
     },
-    mcpServers: mcpServer
-      ? {
-          browser: {
-            type: "http",
-            url: mcpServer.url,
-            headers: { Authorization: "Bearer ${MASSCODE_MCP_TOKEN}" },
-          },
-          masscode: {
-            type: "http",
-            url: `${mcpServer.url}/masscode`,
-            headers: { Authorization: "Bearer ${MASSCODE_MCP_TOKEN}" },
-          },
-          ...(DEVICES_SUPPORTED && {
-            device: {
-              type: "http",
-              url: `${mcpServer.url}/device`,
-              headers: { Authorization: "Bearer ${MASSCODE_MCP_TOKEN}" },
-            },
-          }),
-        }
-      : {},
+    mcpServers: Object.fromEntries(
+      (mcpServer ? listMcpEndpoints(mcpServer) : []).map(({ name, url }) => [
+        name,
+        { type: "http" as const, url, headers: { Authorization: "Bearer ${MASSCODE_MCP_TOKEN}" } },
+      ]),
+    ),
     allowedTools: [
       "mcp__browser__snapshot",
       "mcp__browser__console",
@@ -346,7 +323,7 @@ function openSession(
   };
   if (model) options.model = model;
   if (resumeToken) options.resume = resumeToken;
-  const initialLevel = initialEffort && toEffortLevel(initialEffort);
+  const initialLevel = initialEffort && EFFORT_LEVEL[initialEffort];
   if (initialLevel) options.effort = initialLevel;
 
   const conversation: Query = query({ prompt: inbox.iterable, options });
@@ -616,6 +593,17 @@ function openSession(
     }
   })();
 
+  async function pushTurn(turn: TurnInput, priority?: SDKUserMessage["priority"]) {
+    const content = await toContent(appendUltrathink(turn));
+    inbox.push({
+      type: "user",
+      message: { role: "user", content },
+      parent_tool_use_id: null,
+      uuid: turn.messageId,
+      ...(priority && { priority }),
+    });
+  }
+
   const session: ProviderSession = {
     send: (turn) =>
       tryProviderPromise("claude", async () => {
@@ -635,26 +623,10 @@ function openSession(
           isFastMode = turn.fast;
         }
 
-        const content = await toContent(appendUltrathink(turn));
-        inbox.push({
-          type: "user",
-          message: { role: "user", content },
-          parent_tool_use_id: null,
-          uuid: turn.messageId,
-        });
+        await pushTurn(turn);
       }),
     // Claude Code takes a message sent mid-turn in at its next step.
-    steer: (turn) =>
-      tryProviderPromise("claude", async () => {
-        const content = await toContent(appendUltrathink(turn));
-        inbox.push({
-          type: "user",
-          message: { role: "user", content },
-          parent_tool_use_id: null,
-          uuid: turn.messageId,
-          priority: "now",
-        });
-      }),
+    steer: (turn) => tryProviderPromise("claude", () => pushTurn(turn, "now")),
     compact: Effect.sync(() => {
       emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
       inbox.push({

@@ -10,6 +10,9 @@ import type { HarnessLaunch } from "./launch.ts";
 
 export type RpcId = number | string;
 
+/** How MassCode introduces itself in `initialize`. */
+export const CLIENT_INFO = { name: "masscode", title: "MassCode", version: "0.0.1" };
+
 /** The child exited, so the request goes unanswered. */
 export class RpcExited extends Schema.TaggedError<RpcExited>()("RpcExited", {
   message: Schema.String,

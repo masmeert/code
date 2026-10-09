@@ -16,6 +16,9 @@ import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { randomUUID, type UUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
+import { DEVICES_SUPPORTED } from "../devices.ts";
 import type { McpServerAccess } from "../mcp.ts";
 import { getErrorMessage } from "../errors.ts";
 
@@ -248,15 +251,64 @@ export function createApprovalBook<Entry>(
 }
 
 /** Image extensions models take, with their media types. */
-export const IMAGE_TYPES = new Map<string, "image/png" | "image/jpeg" | "image/gif" | "image/webp">(
-  [
-    [".png", "image/png"],
-    [".jpg", "image/jpeg"],
-    [".jpeg", "image/jpeg"],
-    [".gif", "image/gif"],
-    [".webp", "image/webp"],
-  ],
-);
+const IMAGE_TYPES = new Map<string, "image/png" | "image/jpeg" | "image/gif" | "image/webp">([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".gif", "image/gif"],
+  [".webp", "image/webp"],
+]);
+
+/** The turn's attached images that models take, read as base64, in the order they were attached. */
+export function readImages(turn: TurnInput) {
+  return Promise.all(
+    turn.attachments.flatMap((attachment) => {
+      const mediaType = IMAGE_TYPES.get(extname(attachment.path).toLowerCase());
+      return attachment.isImage && mediaType
+        ? [readFile(attachment.path).then((data) => ({ mediaType, data: data.toString("base64") }))]
+        : [];
+    }),
+  );
+}
+
+/** MassCode's MCP servers an agent can reach, for each adapter to hand over in its harness's format. */
+export function listMcpEndpoints(mcpServer: McpServerAccess) {
+  return [
+    { name: "browser", url: mcpServer.url },
+    { name: "masscode", url: `${mcpServer.url}/masscode` },
+    ...(DEVICES_SUPPORTED ? [{ name: "device", url: `${mcpServer.url}/device` }] : []),
+  ] as const;
+}
+
+/**
+ * Reports a session's harness process ending, as `name` (like "Codex"): a crash says why and how
+ * to recover; either way the thread's status follows.
+ */
+export function handleHarnessExit(
+  name: string,
+  threadId: string,
+  emit: (event: RuntimeEvent) => void,
+) {
+  return (code: number | null, stderrTail: string) => {
+    const hasCrashed = code !== 0 && code !== null;
+    if (hasCrashed) {
+      emit(
+        RuntimeEvent.cases.error.make({
+          threadId,
+          message: `${name} exited unexpectedly (code ${code})${
+            stderrTail.trim() ? `: ${stderrTail.trim().split("\n").at(-1)}` : ""
+          }. Send a message to pick the thread back up.`,
+        }),
+      );
+    }
+    emit(
+      RuntimeEvent.cases["thread.status"].make({
+        threadId,
+        status: hasCrashed ? "error" : "closed",
+      }),
+    );
+  };
+}
 
 /** One-line human summary of a tool input, for the transcript. */
 export function summarizeToolInput(input: Schema.Json): string {

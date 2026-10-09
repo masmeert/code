@@ -4,11 +4,9 @@
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { connectJsonRpc, type JsonRpc, type RpcId } from "./jsonRpc.ts";
+import { CLIENT_INFO, connectJsonRpc, type JsonRpc, type RpcId } from "./jsonRpc.ts";
 import type { HarnessLaunch } from "./launch.ts";
 import { tryProviderPromise } from "./ProviderAdapter.ts";
-
-export type { RpcId };
 
 const ErrorMessage = Schema.Struct({
   message: Schema.String,
@@ -227,14 +225,12 @@ interface CodexRpcHandlers {
   readonly onExit?: (code: number | null, stderrTail: string) => void;
 }
 
-export type CodexRpc = JsonRpc;
-
 /** Spawns `codex app-server` and completes the initialize handshake. */
 export async function connectCodex(
+  launch: HarnessLaunch,
   cwd: string | undefined,
   handlers: CodexRpcHandlers = {},
-  launch: HarnessLaunch,
-): Promise<CodexRpc> {
+): Promise<JsonRpc> {
   const rpc = connectJsonRpc("Codex", launch, ["app-server", ...launch.args], cwd, {
     onNotification: (method, params) => {
       const notification = decodeNotification({ method, params });
@@ -251,7 +247,7 @@ export async function connectCodex(
   await rpc.request(
     "initialize",
     {
-      clientInfo: { name: "masscode", title: "MassCode", version: "0.0.1" },
+      clientInfo: CLIENT_INFO,
       capabilities: null,
     },
     Schema.Unknown,
@@ -268,7 +264,7 @@ export function acquireCodexConnection(
   handlers: CodexRpcHandlers = {},
 ) {
   return Effect.acquireRelease(
-    tryProviderPromise("codex", () => connectCodex(cwd, handlers, launch)),
+    tryProviderPromise("codex", () => connectCodex(launch, cwd, handlers)),
     (rpc) => Effect.sync(() => rpc.close()),
   );
 }

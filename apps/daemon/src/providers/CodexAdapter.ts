@@ -14,7 +14,6 @@ import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { DEVICES_SUPPORTED } from "../devices.ts";
 import {
   acquireCodexConnection,
   CodexNotification,
@@ -25,13 +24,14 @@ import {
   StartedItem,
   ThreadResponse,
   type CodexElicitation,
-  type CodexRpc,
-  type RpcId,
   type TokenUsage,
 } from "./codexRpc.ts";
+import type { JsonRpc, RpcId } from "./jsonRpc.ts";
 import { resolveHarnessLaunch } from "./launch.ts";
 import {
   createApprovalBook,
+  handleHarnessExit,
+  listMcpEndpoints,
   prefixErrorMessage,
   summarizeToolInput,
   tryProviderPromise,
@@ -72,6 +72,14 @@ function toCodexSandboxPolicy(level: PermissionLevel, cwd: string) {
     })),
   );
 }
+
+/** Codex gives up on a tool after 60 s by default. */
+const MCP_TOOL_TIMEOUT_SEC = new Map([
+  // Waiting on another thread's agent takes minutes.
+  ["masscode", 1800],
+  // The first device_open installs the tools and boots a simulator.
+  ["device", 900],
+]);
 
 /** Ultracode and ultrathink are Claude's; Codex keeps its default effort for them. */
 function toCodexEffort(effort: Effort) {
@@ -521,66 +529,28 @@ function start({
     const launch = yield* resolveHarnessLaunch("codex", harness);
     const rpc = yield* tryProviderPromise("codex", () =>
       connectCodex(
-        cwd,
-        {
-          onNotification,
-          onServerRequest,
-          onExit: (code, stderrTail) => {
-            const hasCrashed = code !== 0 && code !== null;
-            if (hasCrashed) {
-              emit(
-                RuntimeEvent.cases.error.make({
-                  threadId,
-                  message: `Codex exited unexpectedly (code ${code})${
-                    stderrTail.trim() ? `: ${stderrTail.trim().split("\n").at(-1)}` : ""
-                  }. Send a message to pick the thread back up.`,
-                }),
-              );
-            }
-            emit(
-              RuntimeEvent.cases["thread.status"].make({
-                threadId,
-                status: hasCrashed ? "error" : "closed",
-              }),
-            );
-          },
-        },
         {
           ...launch,
           args: [
             ...launch.args,
-            ...(mcpServer
-              ? [
-                  "-c",
-                  `mcp_servers.browser.url="${mcpServer.url}"`,
-                  "-c",
-                  'mcp_servers.browser.bearer_token_env_var="MASSCODE_MCP_TOKEN"',
-                  "-c",
-                  `mcp_servers.masscode.url="${mcpServer.url}/masscode"`,
-                  "-c",
-                  'mcp_servers.masscode.bearer_token_env_var="MASSCODE_MCP_TOKEN"',
-                  // Waiting on another thread's agent takes minutes; Codex gives up on a tool after 60 s by default.
-                  "-c",
-                  "mcp_servers.masscode.tool_timeout_sec=1800",
-                  ...(DEVICES_SUPPORTED
-                    ? [
-                        "-c",
-                        `mcp_servers.device.url="${mcpServer.url}/device"`,
-                        "-c",
-                        'mcp_servers.device.bearer_token_env_var="MASSCODE_MCP_TOKEN"',
-                        // The first device_open installs the tools and boots a simulator.
-                        "-c",
-                        "mcp_servers.device.tool_timeout_sec=900",
-                      ]
-                    : []),
-                ]
-              : []),
+            ...(mcpServer ? listMcpEndpoints(mcpServer) : []).flatMap(({ name, url }) => {
+              const timeoutSec = MCP_TOOL_TIMEOUT_SEC.get(name);
+              return [
+                "-c",
+                `mcp_servers.${name}.url="${url}"`,
+                "-c",
+                `mcp_servers.${name}.bearer_token_env_var="MASSCODE_MCP_TOKEN"`,
+                ...(timeoutSec ? ["-c", `mcp_servers.${name}.tool_timeout_sec=${timeoutSec}`] : []),
+              ];
+            }),
             // Codex leaves its thinking out of the transcript unless asked for summaries.
             "-c",
             'model_reasoning_summary="auto"',
           ],
           env: { ...launch.env, ...(mcpServer && { MASSCODE_MCP_TOKEN: mcpServer.token }) },
         },
+        cwd,
+        { onNotification, onServerRequest, onExit: handleHarnessExit("Codex", threadId, emit) },
       ),
     );
 
@@ -716,7 +686,7 @@ function start({
 }
 
 /** `thread/revert` cuts history before a turn id, so look up the oldest of the last `dropTurns` turns. */
-async function dropLastTurns(rpc: CodexRpc, threadId: string, dropTurns: number) {
+async function dropLastTurns(rpc: JsonRpc, threadId: string, dropTurns: number) {
   if (dropTurns <= 0) return;
 
   const { data: turns } = await rpc.request(

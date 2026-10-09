@@ -9,8 +9,6 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { extname } from "node:path";
 import {
   ConfigOption,
   connectAcp,
@@ -20,23 +18,23 @@ import {
   SessionSetup,
   SessionUpdate,
   type AcpHandlers,
-  type RpcId,
   type ToolContent,
 } from "./acp.ts";
-import type { JsonRpc } from "./jsonRpc.ts";
+import type { JsonRpc, RpcId } from "./jsonRpc.ts";
 import { resolveHarnessLaunch, type HarnessLaunch } from "./launch.ts";
 import {
-  IMAGE_TYPES,
   ProviderError,
   createApprovalBook,
   formatTextWithFiles,
+  handleHarnessExit,
+  listMcpEndpoints,
+  readImages,
   tryProviderPromise,
   type ProviderAdapter,
   type ProviderSession,
   type StartSessionInput,
   type TurnInput,
 } from "./ProviderAdapter.ts";
-import { DEVICES_SUPPORTED } from "../devices.ts";
 import { findSkillMentions } from "../skills.ts";
 import { getErrorMessage } from "../errors.ts";
 
@@ -239,13 +237,9 @@ function start({
     let afterTurn: (() => void) | null = null;
 
     const mcpServers = mcpServer
-      ? [
-          { name: "browser", url: mcpServer.url },
-          { name: "masscode", url: `${mcpServer.url}/masscode` },
-          ...(DEVICES_SUPPORTED ? [{ name: "device", url: `${mcpServer.url}/device` }] : []),
-        ].map((server) => ({
+      ? listMcpEndpoints(mcpServer).map((endpoint) => ({
           type: "http",
-          ...server,
+          ...endpoint,
           headers: [{ name: "Authorization", value: `Bearer ${mcpServer.token}` }],
         }))
       : [];
@@ -450,25 +444,8 @@ function start({
         onUpdate,
         onRequest,
         onExit: (code, stderrTail) => {
-          if (launched !== generation) return;
-
-          const hasCrashed = code !== 0 && code !== null;
-          if (hasCrashed) {
-            emit(
-              RuntimeEvent.cases.error.make({
-                threadId,
-                message: `Cursor exited unexpectedly (code ${code})${
-                  stderrTail.trim() ? `: ${stderrTail.trim().split("\n").at(-1)}` : ""
-                }. Send a message to pick the thread back up.`,
-              }),
-            );
-          }
-          emit(
-            RuntimeEvent.cases["thread.status"].make({
-              threadId,
-              status: hasCrashed ? "error" : "closed",
-            }),
-          );
+          if (launched === generation)
+            handleHarnessExit("Cursor", threadId, emit)(code, stderrTail);
         },
       });
 
@@ -512,20 +489,7 @@ function start({
     }
 
     async function buildPromptBlocks(turn: TurnInput) {
-      const images = await Promise.all(
-        turn.attachments.flatMap((attachment) => {
-          const mimeType = IMAGE_TYPES.get(extname(attachment.path).toLowerCase());
-          return attachment.isImage && mimeType
-            ? [
-                readFile(attachment.path).then((data) => ({
-                  type: "image",
-                  mimeType,
-                  data: data.toString("base64"),
-                })),
-              ]
-            : [];
-        }),
-      );
+      const images = await readImages(turn);
 
       const written = formatTextWithFiles(turn);
       // Cursor takes a `/name` anywhere in the message as the skill to load.
@@ -536,7 +500,7 @@ function start({
 
       return [
         ...(turn.handoff ? [{ type: "text", text: turn.handoff }] : []),
-        ...images,
+        ...images.map((image) => ({ type: "image", mimeType: image.mediaType, data: image.data })),
         ...(text ? [{ type: "text", text }] : []),
       ];
     }

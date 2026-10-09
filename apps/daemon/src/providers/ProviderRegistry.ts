@@ -25,8 +25,8 @@ import {
   CODEX_FAST_TIER,
   CodexNotification,
   connectCodex,
-  type CodexRpc,
 } from "./codexRpc.ts";
+import type { JsonRpc } from "./jsonRpc.ts";
 import { readCursorModels } from "./CursorAdapter.ts";
 import {
   acquireClaudeQuery,
@@ -406,7 +406,7 @@ const make = Effect.gen(function* () {
   );
   let listener: ProviderListener = { onProviders: () => {}, onFlow: () => {} };
   /** In-flight sign-in per harness. */
-  const flows = new Map<ProviderKind, { child?: ChildProcess; rpc?: CodexRpc; loginId?: string }>();
+  const flows = new Map<ProviderKind, { child?: ChildProcess; rpc?: JsonRpc; loginId?: string }>();
 
   function reportLinkFlow(
     provider: ProviderKind,
@@ -434,32 +434,39 @@ const make = Effect.gen(function* () {
     reportLinkFlow(kind, isSuccess ? "done" : "failed", null, text);
   }
 
-  async function linkClaude() {
-    const launch = await resolveLaunch("claude");
-    const child = spawn(launch.bin, ["auth", "login", "--claudeai"], {
-      env: launch.env,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    flows.set("claude", { child });
+  /**
+   * Signs in with the CLI's own login command, which prints the page to open and exits once
+   * signed in. At "awaiting-code" the page shows a code for the user to paste back into it.
+   */
+  async function linkCli(
+    kind: ProviderKind,
+    args: ReadonlyArray<string>,
+    stage: "awaiting-code" | "browser",
+  ) {
+    const launch = await resolveLaunch(kind);
+    const child = spawn(launch.bin, args, { env: launch.env, stdio: ["pipe", "pipe", "pipe"] });
+    // Nothing to type in: the CLI reads end-of-input, as it would from /dev/null.
+    if (stage === "browser") child.stdin.end();
+    flows.set(kind, { child });
 
     let output = "";
     let hasAnnouncedUrl = false;
     function onData(chunk: Buffer) {
       output += chunk.toString();
-      // The CLI opens the browser itself and prints the URL wrapped in an OSC-8 hyperlink.
+      // Claude's CLI prints the URL wrapped in an OSC-8 hyperlink.
       const url = output.match(new RegExp(String.raw`https://[^\s\u0007\u001b]+`))?.[0];
       if (url && !hasAnnouncedUrl) {
         hasAnnouncedUrl = true;
-        reportLinkFlow("claude", "awaiting-code", url);
+        reportLinkFlow(kind, stage, url);
       }
     }
 
     child.stdout.on("data", onData);
     child.stderr.on("data", onData);
     child.on("exit", (code) => {
-      if (flows.get("claude")?.child !== child) return;
+      if (flows.get(kind)?.child !== child) return;
       void finishLink(
-        "claude",
+        kind,
         code === 0,
         code === 0 ? null : getFirstLine(output.slice(-500)) || `exited with ${code}`,
       );
@@ -467,18 +474,14 @@ const make = Effect.gen(function* () {
   }
 
   async function linkCodex() {
-    const rpc = await connectCodex(
-      undefined,
-      {
-        onNotification: (notification) => {
-          if (!CodexNotification.guards["account/login/completed"](notification)) return;
-          rpc.close();
-          const { success, error } = notification.params;
-          void finishLink("codex", success, success ? null : (error ?? "Sign-in failed"));
-        },
+    const rpc = await connectCodex(await resolveLaunch("codex"), undefined, {
+      onNotification: (notification) => {
+        if (!CodexNotification.guards["account/login/completed"](notification)) return;
+        rpc.close();
+        const { success, error } = notification.params;
+        void finishLink("codex", success, success ? null : (error ?? "Sign-in failed"));
       },
-      await resolveLaunch("codex"),
-    );
+    });
     flows.set("codex", { rpc });
 
     const login = await rpc.request(
@@ -495,42 +498,11 @@ const make = Effect.gen(function* () {
     reportLinkFlow("codex", "browser", login.authUrl);
   }
 
-  /** Cursor's login opens the browser itself and finishes when the page does. */
-  async function linkCursor() {
-    const launch = await resolveLaunch("cursor");
-    const child = spawn(launch.bin, ["login"], {
-      env: launch.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    flows.set("cursor", { child });
-
-    let output = "";
-    let hasAnnouncedUrl = false;
-    function onData(chunk: Buffer) {
-      output += chunk.toString();
-      const url = output.match(new RegExp(String.raw`https://[^\s\u0007\u001b]+`))?.[0];
-      if (url && !hasAnnouncedUrl) {
-        hasAnnouncedUrl = true;
-        reportLinkFlow("cursor", "browser", url);
-      }
-    }
-
-    child.stdout.on("data", onData);
-    child.stderr.on("data", onData);
-    child.on("exit", (code) => {
-      if (flows.get("cursor")?.child !== child) return;
-      void finishLink(
-        "cursor",
-        code === 0,
-        code === 0 ? null : getFirstLine(output.slice(-500)) || `exited with ${code}`,
-      );
-    });
-  }
-
   const LINK: Record<ProviderKind, () => Promise<void>> = {
-    claude: linkClaude,
+    claude: () => linkCli("claude", ["auth", "login", "--claudeai"], "awaiting-code"),
     codex: linkCodex,
-    cursor: linkCursor,
+    // Cursor's login opens the browser itself and finishes when the page does.
+    cursor: () => linkCli("cursor", ["login"], "browser"),
   };
 
   function cancelLinkFlow(kind: ProviderKind) {

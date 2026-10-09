@@ -4,10 +4,8 @@
  */
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { connectJsonRpc, type JsonRpc, type RpcId } from "./jsonRpc.ts";
+import { CLIENT_INFO, connectJsonRpc, type JsonRpc, type RpcId } from "./jsonRpc.ts";
 import type { HarnessLaunch } from "./launch.ts";
-
-export type { RpcId };
 
 /** A setting the session takes, like its mode, model or effort. */
 export const ConfigOption = Schema.Struct({
@@ -127,7 +125,7 @@ export async function connectAcp(
         // Cursor: models come with their effort and fast settings as config options of their own.
         _meta: { parameterizedModelPicker: true },
       },
-      clientInfo: { name: "masscode", title: "MassCode", version: "0.0.1" },
+      clientInfo: CLIENT_INFO,
     },
     Schema.Unknown,
   );
