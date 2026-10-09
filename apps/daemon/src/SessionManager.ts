@@ -7,8 +7,6 @@ import {
   ServerFrame,
   type SearchHit,
   type Settings,
-  type ThreadInfo,
-  WORKTREE_SETUP_TERMINAL_ID,
 } from "@masscode/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -19,44 +17,33 @@ import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { existsSync } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
-import {
-  addWorktree,
-  checkoutBranch,
-  createBranch,
-  listFiles,
-  readBranch,
-  readCheckpointDiff,
-  readRepoRoot,
-} from "./git.ts";
+import { join, resolve } from "node:path";
+import { checkoutBranch, createBranch, listFiles, readBranch, readCheckpointDiff } from "./git.ts";
 import { expandHome, listFolders } from "./folders.ts";
-import { generateThreadTitle } from "./writer.ts";
 import { ProviderError } from "./providers/ProviderAdapter.ts";
 import { ProviderRegistry } from "./providers/ProviderRegistry.ts";
-import { DATA_DIR } from "./storage/jsonFile.ts";
 import * as ProjectsStoreLive from "./storage/ProjectsStore.ts";
 import * as SettingsStoreLive from "./storage/SettingsStore.ts";
 import * as ThreadStoreLive from "./storage/ThreadStore.ts";
 import { type ProjectNotFound, ProjectsStore } from "./storage/ProjectsStore.ts";
 import { SettingsStore } from "./storage/SettingsStore.ts";
-import { type ThreadHome, ThreadStore } from "./storage/ThreadStore.ts";
+import { ThreadStore } from "./storage/ThreadStore.ts";
 import { type Browsers, createBrowsers } from "./browsers.ts";
 import { createDevices, type Devices } from "./devices.ts";
 import { createMcp, type Mcp, type SendMessageInput, type StartThreadInput } from "./mcp.ts";
 import { createTerminals, type Terminals } from "./terminals.ts";
-import { readProjectConfig } from "./projectConfig.ts";
 import { createSkillCatalog } from "./skills.ts";
 import { createRepoPanel } from "./repoPanel.ts";
 import { createAgents, formatCommandRun } from "./threads/agents.ts";
 import { createHistory } from "./threads/history.ts";
 import { createSideChats } from "./threads/sideChats.ts";
+import { createThreadOpener } from "./threads/opening.ts";
 import { createThreadRegistry, type SequencedEvent, type ThreadRead } from "./threads/registry.ts";
 import { CommandError } from "./errors.ts";
 import { coalesceLoads } from "./coalesceLoads.ts";
-import { ADAPTERS, buildWriterInput } from "./harnesses.ts";
+import { ADAPTERS } from "./harnesses.ts";
 import {
   buildThreadInfo,
-  createEntry,
   deriveRequestUuid,
   deriveTitle,
   getPermissionRank,
@@ -108,8 +95,6 @@ export class SessionManager extends Context.Service<
     readonly hasActiveTurns: () => boolean;
   }
 >()("masscode/SessionManager") {}
-
-const WORKTREES_DIR = join(DATA_DIR, "worktrees");
 
 const make = Effect.gen(function* () {
   // Every effect started from a callback runs here, so closing the daemon's scope interrupts it.
@@ -283,167 +268,18 @@ const make = Effect.gen(function* () {
     }),
   );
 
-  /**
-   * A worktree of the project's repo on a new branch named after the thread, under the
-   * data dir. Resolves to the thread's folder in it (the project may be a repo subfolder).
-   */
-  const createWorktree = Effect.fn("createWorktree")(function* (
-    projectPath: string,
-    title: string,
-    threadId: string,
-  ) {
-    const root = yield* Effect.promise(() => readRepoRoot(projectPath));
-    if (!root)
-      return yield* new CommandError({
-        message: "New worktrees need the project to be a git repo",
-      });
-
-    const slug = `${
-      title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "")
-        .slice(0, 40) || "thread"
-    }-${threadId.slice(0, 6)}`;
-    const path = join(WORKTREES_DIR, basename(root), slug);
-    const { worktreeFromOrigin } = yield* settingsStore.get;
-    const error = yield* Effect.promise(() =>
-      addWorktree(projectPath, path, `masscode/${slug}`, worktreeFromOrigin === true),
-    );
-    if (error) return yield* new CommandError({ message: `Couldn't create a worktree: ${error}` });
-
-    return join(path, relative(root, projectPath));
-  });
-
-  /**
-   * Runs `masscode.toml`'s worktree setup in the thread's new worktree; unless told not to wait,
-   * messages queue until it ends.
-   */
-  const setUpWorktree = Effect.fn("setUpWorktree")(function* (
-    entry: ThreadEntry,
-    projectPath: string,
-  ) {
-    const threadId = entry.info.id;
-    const config = yield* Effect.promise(() => readProjectConfig(projectPath));
-    if (config instanceof Error)
-      return publish(
-        RuntimeEvent.cases.error.make({
-          threadId,
-          message: `${config.message}. The worktree's setup didn't run; fix the file and start a new thread.`,
-        }),
-      );
-
-    const command = config.worktree?.setup?.trim();
-    if (!command) return;
-
-    const setupError = terminals.run(
-      threadId,
-      WORKTREE_SETUP_TERMINAL_ID,
-      command,
-      120,
-      30,
-      ({ exitCode, output, wasStopped }) => {
-        if (threads.get(threadId) !== entry) return;
-
-        publish(
-          RuntimeEvent.cases["worktree.setup"].make({
-            threadId,
-            run: { command, exitCode, output },
-            stopped: wasStopped,
-          }),
-        );
-        if (!entry.isSettingUp) return;
-
-        entry.isSettingUp = false;
-        const [next] = entry.info.queue ?? [];
-        if (next && entry.info.archivedAt === null) sendQueued(entry, next);
-      },
-      { MASSCODE_PROJECT_ROOT: projectPath },
-    );
-    if (setupError)
-      return publish(
-        RuntimeEvent.cases.error.make({
-          threadId,
-          message: `Couldn't run the worktree setup: ${setupError.message}`,
-        }),
-      );
-
-    entry.isSettingUp = config.worktree?.wait_for_setup !== false;
-  });
-
-  /**
-   * Adds a thread and announces it; the first line of `text` names it until the writer model's
-   * summary lands.
-   */
-  const openThread = Effect.fn("openThread")(function* (
-    info: ThreadInfo,
-    home: ThreadHome,
-    text: string,
-    requestId: string | null,
-  ) {
-    const entry = createEntry(info, home);
-    threads.set(info.id, entry);
-    store.insertThread(info, home);
-    publish(RuntimeEvent.cases["thread.created"].make({ thread: info, requestId }));
-
-    const { title } = info;
-    void generateThreadTitle({
-      ...buildWriterInput(info.cwd, yield* settingsStore.get, []),
-      text,
-    })
-      .then((summary) => {
-        // Unless it's been renamed meanwhile.
-        if (threads.get(info.id) === entry && entry.info.title === title)
-          setTitle(entry, deriveTitle(summary, title));
-      })
-      .catch(() => {});
-
-    return entry;
-  });
-
-  const createThread = Effect.fn("createThread")(function* (
-    command: Extract<ClientCommand, { _tag: "thread.create" }>,
-  ) {
-    const { project, isNew } = yield* projectsStore.ensure(command.path);
-    if (isNew) publish(RuntimeEvent.cases["project.added"].make({ project }));
-
-    const id = crypto.randomUUID();
-    const title = deriveTitle(command.text, project.name);
-    const cwd =
-      command.workspace === "worktree"
-        ? yield* createWorktree(project.path, title, id)
-        : project.path;
-
-    const entry = yield* openThread(
-      buildThreadInfo({
-        id,
-        projectId: project.id,
-        provider: command.provider,
-        model: command.model,
-        cwd,
-        title,
-        branch: yield* Effect.promise(() => readBranch(cwd)),
-        worktree: command.workspace === "worktree",
-      }),
-      { path: cwd, isWorktree: command.workspace === "worktree" },
-      command.text,
-      command.requestId,
-    );
-    if (command.workspace === "worktree") yield* setUpWorktree(entry, project.path);
-
-    // New chats preselect whichever harness was used last.
-    const settings = yield* settingsStore.get;
-    if (settings.lastProvider !== command.provider) {
-      yield* saveSettings({ ...settings, lastProvider: command.provider }).pipe(
-        reportErrorsIn(null),
-        Effect.ignore,
-      );
-    }
-
-    yield* send(entry, command.text, command.options).pipe(
-      reportErrorsIn(entry.info.id),
-      Effect.ignore,
-    );
+  const { createWorktree, setUpWorktree, openThread, createThread } = createThreadOpener({
+    store,
+    settingsStore,
+    projectsStore,
+    terminals,
+    threads,
+    publish,
+    reportErrorsIn,
+    setTitle,
+    saveSettings,
+    send,
+    sendQueued,
   });
 
   // --- orchestration: what agents do through MassCode's MCP tools -------------------------
