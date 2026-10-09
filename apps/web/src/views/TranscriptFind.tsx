@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { focusComposer } from "../lib/drafts.ts";
-import { describe, useKeybinding } from "../lib/keybindings.ts";
+import { formatKeybinding, useKeybinding } from "../lib/keybindings.ts";
 
 /**
  * ⌘F in the transcript. Matches are painted with the CSS Highlight API (`find` and `find-active`,
@@ -131,7 +131,7 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
       {(
         [
           ["Previous match (⇧↩)", ChevronUp, () => step(-1)],
-          [`Next match (↩ or ${describe("thread.findNext")})`, ChevronDown, () => step(1)],
+          [`Next match (↩ or ${formatKeybinding("thread.findNext")})`, ChevronDown, () => step(1)],
           ["Close (Esc)", X, close],
         ] as const
       ).map(([label, Icon, onClick]) => (

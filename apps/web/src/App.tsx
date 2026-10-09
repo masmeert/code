@@ -11,7 +11,7 @@ import {
 import { MotionConfig } from "motion/react";
 import { Activity, useCallback, useEffect, useState } from "react";
 import { toggleBrowser } from "./lib/browser.ts";
-import { describe, useKeybinding } from "./lib/keybindings.ts";
+import { formatKeybinding, useKeybinding } from "./lib/keybindings.ts";
 import "./lib/notifications.ts";
 import { toggleSimulator } from "./lib/simulator.ts";
 import { focusComposer } from "./lib/drafts.ts";
@@ -183,7 +183,7 @@ export function App() {
               {
                 id: "thread.new",
                 label: "New thread",
-                hint: describe("thread.new"),
+                hint: formatKeybinding("thread.new"),
                 icon: <SquarePen />,
                 run: () => draft(currentPath),
               },
@@ -192,7 +192,7 @@ export function App() {
                     {
                       id: "terminal.toggle",
                       label: "Toggle terminal",
-                      hint: describe("terminal.toggle"),
+                      hint: formatKeybinding("terminal.toggle"),
                       icon: <SquareTerminal />,
                       run: () => toggleTerminalPanel(view.id),
                     },
@@ -203,7 +203,7 @@ export function App() {
                     {
                       id: "browser.toggle",
                       label: "Toggle browser",
-                      hint: describe("browser.toggle"),
+                      hint: formatKeybinding("browser.toggle"),
                       icon: <Globe />,
                       run: () => toggleBrowser(view.id),
                     },
@@ -214,7 +214,7 @@ export function App() {
                     {
                       id: "simulator.toggle",
                       label: "Toggle simulator",
-                      hint: describe("simulator.toggle"),
+                      hint: formatKeybinding("simulator.toggle"),
                       icon: <Smartphone />,
                       run: () => toggleSimulator(view.id),
                     },
@@ -229,7 +229,7 @@ export function App() {
               {
                 id: "settings.open",
                 label: "Settings",
-                hint: describe("settings.open"),
+                hint: formatKeybinding("settings.open"),
                 icon: <SettingsIcon />,
                 run: () => setModal("settings"),
               },

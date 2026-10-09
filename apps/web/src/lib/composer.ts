@@ -9,7 +9,7 @@ import {
 } from "@masscode/contracts";
 import { useEffect, useEffectEvent, useRef, useSyncExternalStore } from "react";
 import { type DraftAttachment, getDraft, setDraft, useDraft } from "./drafts.ts";
-import { firstTurnOptions, respondApproval, useStore } from "./store.ts";
+import { findFirstTurnOptions, respondApproval, useStore } from "./store.ts";
 
 /** Efforts each harness can take, lowest first; a model's own list narrows it. */
 export const EFFORTS: Record<ProviderKind, ReadonlyArray<Effort>> = {
@@ -67,7 +67,7 @@ interface TurnPrefs {
 const perThread = new Map<string, Partial<TurnPrefs>>();
 const prefsListeners = new Set<() => void>();
 
-function onPrefsChange(listener: () => void) {
+function subscribeToPrefs(listener: () => void) {
   prefsListeners.add(listener);
   return () => prefsListeners.delete(listener);
 }
@@ -81,7 +81,11 @@ function setTurnPrefs(key: string, patch: Partial<TurnPrefs>) {
  * Drops what the harness doesn't take (e.g. "max" effort or plan mode after switching a draft to
  * Codex), and Full access on a root host that isn't allowed yet.
  */
-function fit(prefs: TurnPrefs, provider: ProviderKind, needsRootConsent: boolean): TurnPrefs {
+function fitToProvider(
+  prefs: TurnPrefs,
+  provider: ProviderKind,
+  needsRootConsent: boolean,
+): TurnPrefs {
   return {
     fast: prefs.fast,
     effort: prefs.effort && EFFORTS[provider].includes(prefs.effort) ? prefs.effort : null,
@@ -96,11 +100,11 @@ function fit(prefs: TurnPrefs, provider: ProviderKind, needsRootConsent: boolean
 
 /** Effort and permission level for the composer identified by `key` (a thread id, or a draft's path). */
 export function useTurnPrefs(key: string, provider: ProviderKind, host: string | null) {
-  const stored = useSyncExternalStore(onPrefsChange, () => perThread.get(key));
+  const stored = useSyncExternalStore(subscribeToPrefs, () => perThread.get(key));
   const settings = useStore((state) => state.settings);
   const needsRootConsent = useNeedsRootConsent(host);
-  const first = firstTurnOptions(key);
-  const prefs = fit(
+  const first = findFirstTurnOptions(key);
+  const prefs = fitToProvider(
     {
       effort: settings.newThreadEffort ?? null,
       fast: false,
@@ -120,7 +124,7 @@ export function useTurnPrefs(key: string, provider: ProviderKind, host: string |
 
 // A daemon running as root lets Full access change anything on its machine, so each such host
 // needs a one-time OK first.
-function rootConsentKey(host: string) {
+function getRootConsentKey(host: string) {
   return `masscode.fullAccessAsRoot.${host}`;
 }
 
@@ -128,19 +132,19 @@ function rootConsentKey(host: string) {
 export function useNeedsRootConsent(host: string | null) {
   const root = useStore((state) => host !== null && state.hosts[host]?.root === true);
   const allowed = useSyncExternalStore(
-    onPrefsChange,
-    () => host !== null && localStorage.getItem(rootConsentKey(host)) === "1",
+    subscribeToPrefs,
+    () => host !== null && localStorage.getItem(getRootConsentKey(host)) === "1",
   );
   return root && !allowed;
 }
 
 export function allowFullAccessAsRoot(host: string) {
-  localStorage.setItem(rootConsentKey(host), "1");
+  localStorage.setItem(getRootConsentKey(host), "1");
   for (const listener of prefsListeners) listener();
 }
 
 export function forgetFullAccessAsRoot(host: string) {
-  localStorage.removeItem(rootConsentKey(host));
+  localStorage.removeItem(getRootConsentKey(host));
 }
 
 /** Labels for approving a plan into each level it can be built with. */
@@ -163,7 +167,7 @@ export function approvePlan(
 
 const IMAGE_NAME = /\.(png|jpe?g|gif|webp)$/i;
 
-function fromPath(path: string): DraftAttachment {
+function createPathAttachment(path: string): DraftAttachment {
   return {
     id: crypto.randomUUID(),
     name: path.split(/[\\/]/).at(-1) ?? path,
@@ -181,7 +185,7 @@ function readBase64(file: File) {
   });
 }
 
-async function fromFile(file: File): Promise<DraftAttachment> {
+async function readFileAttachment(file: File): Promise<DraftAttachment> {
   const image = file.type.startsWith("image/");
   const name =
     file.name || (image ? `Pasted image.${file.type.split("/")[1] ?? "png"}` : "Pasted file");
@@ -199,8 +203,8 @@ async function fromFile(file: File): Promise<DraftAttachment> {
 }
 
 /** A sent message's files, back in a composer (they're on disk by then). */
-export function fromSent(attachment: Attachment): DraftAttachment {
-  return fromPath(attachment.path);
+export function toDraftAttachment(attachment: Attachment): DraftAttachment {
+  return createPathAttachment(attachment.path);
 }
 
 /** Past this, pasted text becomes an attached file instead of flooding the prompt (t3code uses 32 KiB too). */
@@ -216,7 +220,7 @@ function toBase64(text: string) {
 }
 
 /** Pasted text as a file the agent can read. */
-export function fromText(text: string): DraftAttachment {
+export function createTextAttachment(text: string): DraftAttachment {
   const name = `Pasted text (${Math.max(1, Math.round(text.length / 1024))} KB).txt`;
   return {
     id: crypto.randomUUID(),
@@ -227,8 +231,8 @@ export function fromText(text: string): DraftAttachment {
 }
 
 /** Picked or dropped files; a remote host can't read this Mac's paths, so they go as data. */
-async function fromPaths(paths: ReadonlyArray<string>, remote: boolean) {
-  if (!remote || !window.desktop) return paths.map(fromPath);
+async function readPathAttachments(paths: ReadonlyArray<string>, isRemote: boolean) {
+  if (!isRemote || !window.desktop) return paths.map(createPathAttachment);
   return (await window.desktop.readFiles(paths)).map((input): DraftAttachment => ({
     id: crypto.randomUUID(),
     name: input.name,
@@ -243,13 +247,13 @@ async function fromPaths(paths: ReadonlyArray<string>, remote: boolean) {
 /** Files queued for the next message of composer `key`: picked, pasted, or dropped onto the window. */
 export function useAttachments({
   key,
-  acceptDrops,
-  remote,
+  shouldAcceptDrops,
+  isRemote,
 }: {
   key: string;
-  acceptDrops: boolean;
+  shouldAcceptDrops: boolean;
   /** The composer's thread runs on a remote host. */
-  remote: boolean;
+  isRemote: boolean;
 }) {
   const attachments = useDraft(key).attachments;
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -260,19 +264,19 @@ export function useAttachments({
     setDraft(key, (draft) => ({ ...draft, attachments: update(draft.attachments) }));
   }
 
-  function add(next: ReadonlyArray<DraftAttachment>) {
+  function addAttachments(next: ReadonlyArray<DraftAttachment>) {
     setAttachments((prev) => [...prev, ...next]);
   }
 
-  function revoke(list: ReadonlyArray<DraftAttachment>) {
+  function revokePreviews(list: ReadonlyArray<DraftAttachment>) {
     for (const attachment of list) if (attachment.preview) URL.revokeObjectURL(attachment.preview);
   }
 
   async function addFiles(files: ReadonlyArray<File>) {
-    add(await Promise.all(files.map(fromFile)));
+    addAttachments(await Promise.all(files.map(readFileAttachment)));
   }
 
-  async function pick() {
+  async function pickFiles() {
     if (!window.desktop) {
       // Browsers can't hand out paths, so files travel as data.
       const input =
@@ -287,33 +291,35 @@ export function useAttachments({
       return;
     }
 
-    add(await fromPaths(await window.desktop.pickFiles("Attach files"), remote));
+    addAttachments(
+      await readPathAttachments(await window.desktop.pickFiles("Attach files"), isRemote),
+    );
   }
 
-  function remove(id: string) {
+  function removeAttachment(id: string) {
     setAttachments((prev) => {
-      revoke(prev.filter((attachment) => attachment.id === id));
+      revokePreviews(prev.filter((attachment) => attachment.id === id));
       return prev.filter((attachment) => attachment.id !== id);
     });
   }
 
   /** Hands the queue over for sending and empties it. */
-  function take(): ReadonlyArray<AttachmentInput> {
+  function takeAttachments(): ReadonlyArray<AttachmentInput> {
     const current = getDraft(key).attachments;
-    revoke(current);
+    revokePreviews(current);
     setAttachments(() => []);
     return current.map((attachment) => attachment.input);
   }
 
   const addDropped = useEffectEvent(async (paths: ReadonlyArray<string>) =>
-    add(await fromPaths(paths, remote)),
+    addAttachments(await readPathAttachments(paths, isRemote)),
   );
   useEffect(() => {
-    if (!acceptDrops) return;
+    if (!shouldAcceptDrops) return;
     return window.desktop?.onFileDrop((paths) => addDropped(paths));
-  }, [acceptDrops]);
+  }, [shouldAcceptDrops]);
 
-  return { attachments, add, pick, addFiles, remove, take };
+  return { attachments, addAttachments, pickFiles, addFiles, removeAttachment, takeAttachments };
 }
 
 /** Drops an effort or fast mode `model` can't take (a pick kept from another model), leaving its default. */

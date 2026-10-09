@@ -82,14 +82,14 @@ export function useBrowser<A>(select: (state: BrowserState) => A): A {
   );
 }
 
-function threadBrowser(threadId: string): ThreadBrowser {
+function getThreadBrowser(threadId: string): ThreadBrowser {
   return state.threads[threadId] ?? { open: false, tabs: [], activeTabId: null };
 }
 
 function updateThread(threadId: string, update: (browser: ThreadBrowser) => ThreadBrowser) {
   setState({
     ...state,
-    threads: { ...state.threads, [threadId]: update(threadBrowser(threadId)) },
+    threads: { ...state.threads, [threadId]: update(getThreadBrowser(threadId)) },
   });
 }
 
@@ -117,7 +117,7 @@ export function normalizeUrl(input: string): string | null {
 }
 
 export function toggleBrowser(threadId: string) {
-  const browser = threadBrowser(threadId);
+  const browser = getThreadBrowser(threadId);
   if (!browser.open && browser.tabs.length === 0) return openTab(threadId);
   updateThread(threadId, (current) => ({ ...current, open: !current.open }));
 }
@@ -133,13 +133,13 @@ export function openTab(threadId: string, url = "") {
 
 /** Shows `url` in the thread's browser: in the tab already on it, or a new one. */
 export function openPreview(threadId: string, url: string) {
-  const tab = threadBrowser(threadId).tabs.find((candidate) => candidate.url === url);
+  const tab = getThreadBrowser(threadId).tabs.find((candidate) => candidate.url === url);
   if (!tab) return openTab(threadId, url);
   updateThread(threadId, (current) => ({ ...current, open: true, activeTabId: tab.id }));
 }
 
 export function closeTab(threadId: string, tabId: string) {
-  const browser = threadBrowser(threadId);
+  const browser = getThreadBrowser(threadId);
   const index = browser.tabs.findIndex((tab) => tab.id === tabId);
   const tabs = browser.tabs.filter((tab) => tab.id !== tabId);
   const { [tabId]: _closed, ...activity } = state.activity;
@@ -267,7 +267,7 @@ export function focusAddress(threadId: string) {
   addressInputs.get(threadId)?.focus();
 }
 
-export function tabForWebContents(webContentsId: number) {
+export function findTabForWebContents(webContentsId: number) {
   for (const [tabId, webview] of webviews) {
     try {
       if (webview.getWebContentsId() !== webContentsId) continue;
@@ -283,12 +283,12 @@ export function tabForWebContents(webContentsId: number) {
   return null;
 }
 
-function activeTab(threadId: string) {
-  const browser = threadBrowser(threadId);
+function findActiveTab(threadId: string) {
+  const browser = getThreadBrowser(threadId);
   return browser.tabs.find((tab) => tab.id === browser.activeTabId);
 }
 
-async function attachedWebview(tabId: string) {
+async function waitForWebview(tabId: string) {
   for (let attempt = 0; attempt < 100; attempt++) {
     const webview = webviews.get(tabId);
     try {
@@ -309,21 +309,21 @@ export async function performBrowserAction(
   const url = BrowserAction.guards.navigate(action) ? normalizeUrl(action.url) : null;
   if (BrowserAction.guards.navigate(action) && !url)
     throw new Error(`Not a web address: ${action.url}`);
-  const current = activeTab(threadId);
+  const current = findActiveTab(threadId);
   if (!current?.url && !url)
     throw new Error("No page is open in the browser; navigate to one first");
 
   if (!current) openTab(threadId, url!);
   else if (!current.url) updateTab(threadId, current.id, { url: url! });
-  if (!threadBrowser(threadId).open)
+  if (!getThreadBrowser(threadId).open)
     updateThread(threadId, (browser) => ({ ...browser, open: true }));
 
-  const tab = activeTab(threadId)!;
+  const tab = findActiveTab(threadId)!;
   showTab(threadId, tab.id);
   updateActivity(tab.id, { automating: (state.activity[tab.id]?.automating ?? 0) + 1 });
 
   try {
-    const webview = await attachedWebview(tab.id);
+    const webview = await waitForWebview(tab.id);
     return await desktop.automateBrowser(
       webview.getWebContentsId(),
       !current?.url

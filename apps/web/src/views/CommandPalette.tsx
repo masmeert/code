@@ -1,4 +1,4 @@
-import { ProjectBadge, projectLabel } from "@/components/project-badge";
+import { ProjectBadge, formatProjectLabel } from "@/components/project-badge";
 import { searchCommands } from "@masscode/ui/lib/command-search";
 import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
 import { cn } from "@masscode/ui/lib/utils";
@@ -133,7 +133,7 @@ function Palette(props: PaletteProps) {
   const projectEntries = useMemo(
     () =>
       projects.map((project) => ({
-        label: projectLabel(project.name, projectHosts[project.id]),
+        label: formatProjectLabel(project.name, projectHosts[project.id]),
         project,
       })),
     [projects, projectHosts],
@@ -159,7 +159,7 @@ function Palette(props: PaletteProps) {
                 section: needle ? "Threads" : "Recent threads",
                 icon: project ? <ProjectBadge project={project} /> : <MessageSquare />,
                 label: thread.title,
-                detail: `${project ? projectLabel(project.name, projectHosts[project.id]) : thread.cwd.split("/").at(-1)}${thread.archivedAt ? ", archived" : ""}`,
+                detail: `${project ? formatProjectLabel(project.name, projectHosts[project.id]) : thread.cwd.split("/").at(-1)}${thread.archivedAt ? ", archived" : ""}`,
                 run: choose(latest, (latestProps) => latestProps.onOpenThread(thread.id)),
               };
             }),
@@ -187,7 +187,7 @@ function Palette(props: PaletteProps) {
             id: `project:${project.id}`,
             section: "New thread in",
             icon: <ProjectBadge project={project} />,
-            label: projectLabel(project.name, projectHosts[project.id]),
+            label: formatProjectLabel(project.name, projectHosts[project.id]),
             detail: project.path,
             run: choose(latest, (latestProps) => latestProps.onNewThreadIn(project.path)),
           })),

@@ -42,7 +42,7 @@ export function useThreadListView() {
     [stored, projects],
   );
 
-  function update(patch: Partial<ThreadListView>) {
+  function updateView(patch: Partial<ThreadListView>) {
     const next = { ...stored, ...patch };
     setStored(next);
     try {
@@ -50,5 +50,5 @@ export function useThreadListView() {
     } catch {}
   }
 
-  return [view, update] as const;
+  return [view, updateView] as const;
 }

@@ -8,7 +8,7 @@ import {
   openTab,
   registerWebview,
   type SurfaceRect,
-  tabForWebContents,
+  findTabForWebContents,
   updateActivity,
   updateTab,
   useBrowser,
@@ -27,7 +27,7 @@ export function BrowserHost() {
   useEffect(
     () =>
       window.desktop?.onBrowserEvent((event) => {
-        const owner = tabForWebContents(event.webContentsId);
+        const owner = findTabForWebContents(event.webContentsId);
         if (!owner) return;
         DesktopBrowserEvent.match(event, {
           "open-tab": ({ url }) => openTab(owner.threadId, url),

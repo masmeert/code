@@ -21,7 +21,7 @@ import { ScrollArea } from "@masscode/ui/components/scroll-area";
 import { Textarea } from "@masscode/ui/components/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@masscode/ui/motion/tabs";
 import { IconButton } from "@/components/icon-button";
-import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
+import { getHarnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import { SOURCE_CONTROL_LABEL, SOURCE_CONTROL_LOGO } from "@/components/source-control-logo";
 import { cn } from "@masscode/ui/lib/utils";
 import {
@@ -73,11 +73,11 @@ import {
 } from "../lib/composer.ts";
 import {
   decodeChoice,
-  defaultModel,
-  favoriteChoices,
-  harnessLabel,
-  modelChoices,
-  orderedModels,
+  findDefaultModel,
+  getFavoriteChoices,
+  formatHarnessLabel,
+  buildModelChoices,
+  orderModels,
 } from "../lib/models.ts";
 import {
   readProjectConfig,
@@ -191,7 +191,7 @@ function SettingsModelSelect(props: {
   const settings = useStore((state) => state.settings);
   const providers = useStore((state) => state.providers);
   const [open, setOpen] = useState(false);
-  const models = modelChoices(providers, settings);
+  const models = buildModelChoices(providers, settings);
   const current = models.find((option) => option.value === props.value);
 
   return (
@@ -240,7 +240,7 @@ function SettingsModelSelect(props: {
           value={current?.value}
           onChange={props.onChange}
           onClose={() => setOpen(false)}
-          favorites={favoriteChoices(settings)}
+          favorites={getFavoriteChoices(settings)}
           onToggleFavorite={toggleFavoriteModel}
         />
       </MorphPopoverContent>
@@ -372,7 +372,8 @@ function GeneralPage() {
   const linked = providers.filter((provider) => provider.linked && provider.models.length);
   const savedModel = settings.newThreadModel;
   const effortProvider =
-    savedModel && modelChoices(providers, settings).some((option) => option.value === savedModel)
+    savedModel &&
+    buildModelChoices(providers, settings).some((option) => option.value === savedModel)
       ? decodeChoice(savedModel).provider
       : settings.lastProvider;
   const savedEffort = settings.newThreadEffort;
@@ -1343,7 +1344,7 @@ function HarnessesPage() {
                 <TabsTrigger key={entry} value={entry}>
                   <span className="flex items-center gap-1.5">
                     <Logo className="size-3.5" />
-                    {harnessLabel(settings, entry)}
+                    {formatHarnessLabel(settings, entry)}
                   </span>
                 </TabsTrigger>
               );
@@ -1420,7 +1421,7 @@ function LocalHarnessSettings({
                     <span
                       className={cn(
                         "size-4 rounded-full",
-                        harnessTint(settings, kind, color).swatch,
+                        getHarnessTint(settings, kind, color).swatch,
                       )}
                     />
                   </button>
@@ -1561,7 +1562,7 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
   const settings = useStore((state) => state.settings);
   const kind = status.kind;
   const harness = settings.providers[kind];
-  const models = orderedModels(status.models, harness);
+  const models = orderModels(status.models, harness);
   const hidden = harness.hiddenModels ?? [];
   const favorites = harness.favoriteModels ?? [];
   const shown = models.filter((model) => !hidden.includes(model.id));
@@ -1580,7 +1581,7 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
         <SettingsGroup>
           <SettingsRow label="Default model">
             <Select
-              value={defaultModel([status], settings, kind) ?? shown[0]?.id}
+              value={findDefaultModel([status], settings, kind) ?? shown[0]?.id}
               onValueChange={(model) => updateHarness(kind, { defaultModel: model })}
               className="w-52"
             >
@@ -1788,14 +1789,14 @@ function ProviderCard({
             <span
               className={cn(
                 "flex size-8 shrink-0 items-center justify-center rounded-lg",
-                harnessTint(settings, kind).avatar,
+                getHarnessTint(settings, kind).avatar,
               )}
             >
               <Logo className="size-4" />
             </span>
             <div className="min-w-0">
               <div className="flex items-baseline gap-1.5">
-                <span className="font-medium">{harnessLabel(settings, kind)}</span>
+                <span className="font-medium">{formatHarnessLabel(settings, kind)}</span>
                 {status?.version ? (
                   <span className="text-xs text-muted-foreground tabular-nums">
                     v{shortVersion(status.version)}
@@ -1833,8 +1834,8 @@ function ProviderCard({
 
       {confirmUnlink ? (
         <p className="px-3 py-2.5 text-xs text-muted-foreground">
-          This signs {harnessLabel(settings, kind)} out on {host ?? "this Mac"}, including in your
-          terminal.
+          This signs {formatHarnessLabel(settings, kind)} out on {host ?? "this Mac"}, including in
+          your terminal.
         </p>
       ) : null}
 

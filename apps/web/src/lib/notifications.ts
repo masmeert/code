@@ -1,5 +1,5 @@
 import { isTurnActive, type ThreadStatus } from "@masscode/contracts";
-import { harnessLabel } from "./models.ts";
+import { formatHarnessLabel } from "./models.ts";
 import { watchState } from "./store.ts";
 
 function describeChange(was: ThreadStatus, status: ThreadStatus) {
@@ -31,7 +31,7 @@ watchState((prev, next) => {
       void desktop.notify({
         threadId: id,
         title: info.title,
-        body: `${harnessLabel(next.settings, info.provider)} ${body}`,
+        body: `${formatHarnessLabel(next.settings, info.provider)} ${body}`,
       });
   }
 });

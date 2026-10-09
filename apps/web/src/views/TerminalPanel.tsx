@@ -16,8 +16,8 @@ import { focusComposer } from "../lib/drafts.ts";
 import {
   attachTerminal,
   closeTerminal,
-  newTerminal,
-  scriptOf,
+  createTerminal,
+  findTerminalScript,
   sendIfConnected,
   showTerminal,
   toggleTerminalPanel,
@@ -147,12 +147,12 @@ export function TerminalPanel({
                 className="flex h-full items-center gap-1.5 rounded-lg pl-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <SquareTerminal className="size-3.5" />
-                {scriptOf(terminalId)?.name ?? `Terminal ${index + 1}`}
+                {findTerminalScript(terminalId)?.name ?? `Terminal ${index + 1}`}
               </button>
               <button
                 type="button"
                 title="Close terminal"
-                aria-label={`Close ${scriptOf(terminalId)?.name ?? `terminal ${index + 1}`}`}
+                aria-label={`Close ${findTerminalScript(terminalId)?.name ?? `terminal ${index + 1}`}`}
                 onClick={() => closeTerminal(threadId, terminalId)}
                 className={cn(
                   "grid size-6 place-items-center rounded-md transition-opacity outline-none hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring",
@@ -166,7 +166,7 @@ export function TerminalPanel({
             </div>
           ))}
         </div>
-        <IconButton label="New terminal" onClick={() => newTerminal(threadId)}>
+        <IconButton label="New terminal" onClick={() => createTerminal(threadId)}>
           <Plus className="size-3.5" />
         </IconButton>
         <IconButton

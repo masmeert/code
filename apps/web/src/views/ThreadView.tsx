@@ -36,8 +36,8 @@ import {
   type ToolCall,
   type ToolReveal,
 } from "@masscode/ui/agents/tool-group";
-import { ProjectBadge, projectLabel } from "@/components/project-badge";
-import { addProject, projectKey } from "../lib/projects.ts";
+import { ProjectBadge, formatProjectLabel } from "@/components/project-badge";
+import { addProject, getProjectKey } from "../lib/projects.ts";
 import { Button } from "@masscode/ui/motion/button/base";
 import { Drawer } from "@masscode/ui/motion/drawer";
 import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
@@ -123,13 +123,13 @@ import {
   approvePlan,
   BUILD_WITH_LABEL,
   PERMISSIONS,
-  fromSent,
+  toDraftAttachment,
   toTurnOptions,
   useNeedsRootConsent,
   useTurnPrefs,
 } from "../lib/composer.ts";
 import { appendToDraft, focusComposer, getDraft, setDraft } from "../lib/drafts.ts";
-import { describe, useKeybinding } from "../lib/keybindings.ts";
+import { formatKeybinding, useKeybinding } from "../lib/keybindings.ts";
 import { ScriptsEditor } from "./ScriptsEditor.tsx";
 import { TranscriptFind } from "./TranscriptFind.tsx";
 import {
@@ -138,17 +138,17 @@ import {
   type ReviewComment,
   takeReviewComments,
   useReviewComments,
-  withReviewComments,
+  buildReviewMessage,
 } from "../lib/reviewComments.ts";
 import { useNow } from "../lib/time.ts";
 import { resetLabel } from "./UsageMeter.tsx";
 import {
-  catalogModel,
+  findCatalogModel,
   decodeChoice,
-  defaultModel,
+  findDefaultModel,
   encodeChoice,
-  harnessLabel,
-  modelChoices,
+  formatHarnessLabel,
+  buildModelChoices,
 } from "../lib/models.ts";
 import {
   closeTerminal,
@@ -156,7 +156,7 @@ import {
   createThread,
   dismissForkError,
   forkThread,
-  imageUrl,
+  fetchImageUrl,
   openSideChat,
   askSideChat,
   closeSideChat,
@@ -379,7 +379,7 @@ function Header({
         <>
           <ProjectBadge project={project} className="translate-y-px" />
           <span className="shrink-0 text-sm text-muted-foreground @max-lg:hidden">
-            {projectLabel(project.name, host)}
+            {formatProjectLabel(project.name, host)}
           </span>
           <span className="shrink-0 text-sm text-muted-foreground/50 @max-lg:hidden">/</span>
         </>
@@ -417,11 +417,11 @@ function ProjectList({
 
   const copies = new Map<string, Array<Project>>();
   for (const project of projects) {
-    copies.set(projectKey(project), [...(copies.get(projectKey(project)) ?? []), project]);
+    copies.set(getProjectKey(project), [...(copies.get(getProjectKey(project)) ?? []), project]);
   }
 
   const current = projects.find((project) => project.path === cwd);
-  const currentKey = current && projectKey(current);
+  const currentKey = current && getProjectKey(current);
 
   function lastUsed(project: Project) {
     return Math.max(
@@ -664,7 +664,7 @@ export function DraftView({
       project &&
       projects.find(
         (candidate) =>
-          projectKey(candidate) === projectKey(project) &&
+          getProjectKey(candidate) === getProjectKey(project) &&
           (projectHosts[candidate.id] ?? null) === machine,
       )
     );
@@ -678,9 +678,9 @@ export function DraftView({
     onPickProject(arrivedPath);
   }, [arrivedPath, onPickProject]);
 
-  const choices = modelChoices(providers, settings);
+  const choices = buildModelChoices(providers, settings);
   const saved = settings.newThreadModel;
-  const lastModel = defaultModel(providers, settings, settings.lastProvider);
+  const lastModel = findDefaultModel(providers, settings, settings.lastProvider);
   const preferred =
     saved && choices.some((option) => option.value === saved)
       ? saved
@@ -745,7 +745,7 @@ export function DraftView({
     }
     if (extraModels.length)
       return `Ask ${extraModels.length + 1} models, each in its own worktree…`;
-    return `Ask ${harnessLabel(settings, decodeChoice(selected).provider)}…`;
+    return `Ask ${formatHarnessLabel(settings, decodeChoice(selected).provider)}…`;
   }
 
   return (
@@ -851,7 +851,7 @@ function AttachmentThumbnail({
 
   useEffect(() => {
     let current = true;
-    void imageUrl(threadId, attachment.path).then(
+    void fetchImageUrl(threadId, attachment.path).then(
       (signed) => current && setUrl(signed),
       () => current && setUrl(null),
     );
@@ -967,7 +967,7 @@ function QueuedFollowUp({
       ) : null}
       <button
         type="button"
-        title={`Send now, into the running turn${next ? ` (${describe("composer.steerQueued")})` : ""}`}
+        title={`Send now, into the running turn${next ? ` (${formatKeybinding("composer.steerQueued")})` : ""}`}
         onClick={() => sendQueuedNow(threadId, followUp.id)}
         className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
@@ -1012,7 +1012,7 @@ function LimitStopNotice({
       <div className="flex h-8 items-center gap-2 pl-1.5">
         <Gauge className="size-3.5 shrink-0 text-amber-500" />
         <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/80">
-          {harnessLabel(settings, stop.provider)} hit its usage limit
+          {formatHarnessLabel(settings, stop.provider)} hit its usage limit
           {stop.resetsAt === null ? null : (
             <span className="ml-1 text-muted-foreground">
               {" "}
@@ -1033,7 +1033,7 @@ function LimitStopNotice({
       <div className="flex items-center gap-1 pl-5">
         <button
           type="button"
-          title={`Continue with ${harnessLabel(settings, provider)} now`}
+          title={`Continue with ${formatHarnessLabel(settings, provider)} now`}
           onClick={() =>
             send(ClientCommand.cases["thread.resumeAfterLimit"].make({ threadId, options }))
           }
@@ -1099,7 +1099,7 @@ function LimitStopNotice({
                     }
                   >
                     <Logo className="size-3.5" />
-                    {harnessLabel(settings, other.kind)}
+                    {formatHarnessLabel(settings, other.kind)}
                   </DropdownMenuItem>
                 );
               })}
@@ -1260,10 +1260,10 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   const { status, provider } = info;
   const busy = isTurnActive(status);
   // Another harness's model switches the thread to it, which waits for the turn to end.
-  const choices = modelChoices(providers, settings, busy ? provider : undefined);
-  const current = info.model ?? defaultModel(providers, settings, provider);
+  const choices = buildModelChoices(providers, settings, busy ? provider : undefined);
+  const current = info.model ?? findDefaultModel(providers, settings, provider);
   const modelChoice = current ? encodeChoice(provider, current) : undefined;
-  const catalog = catalogModel(providers, modelChoice);
+  const catalog = findCatalogModel(providers, modelChoice);
   const lastItem = items.at(-1);
 
   // `/btw` asks about the newest reply whose turn is over.
@@ -1487,7 +1487,9 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                       >
                         <SquareTerminal />
                         Terminal
-                        <DropdownMenuShortcut>{describe("terminal.toggle")}</DropdownMenuShortcut>
+                        <DropdownMenuShortcut>
+                          {formatKeybinding("terminal.toggle")}
+                        </DropdownMenuShortcut>
                       </DropdownMenuCheckboxItem>
                       {window.desktop ? (
                         <DropdownMenuCheckboxItem
@@ -1496,7 +1498,9 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                         >
                           <Globe />
                           Browser
-                          <DropdownMenuShortcut>{describe("browser.toggle")}</DropdownMenuShortcut>
+                          <DropdownMenuShortcut>
+                            {formatKeybinding("browser.toggle")}
+                          </DropdownMenuShortcut>
                         </DropdownMenuCheckboxItem>
                       ) : null}
                       {simulatorAvailable ? (
@@ -1507,7 +1511,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                           <Smartphone />
                           Simulator
                           <DropdownMenuShortcut>
-                            {describe("simulator.toggle")}
+                            {formatKeybinding("simulator.toggle")}
                           </DropdownMenuShortcut>
                         </DropdownMenuCheckboxItem>
                       ) : null}
@@ -1640,12 +1644,12 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
               busy
                 ? followUpMode === "queue"
                   ? "Queue a follow-up (⌘↩ to send now)"
-                  : `Steer ${harnessLabel(settings, provider)} (⌘↩ to queue)`
-                : `Ask ${harnessLabel(settings, provider)}…`
+                  : `Steer ${formatHarnessLabel(settings, provider)} (⌘↩ to queue)`
+                : `Ask ${formatHarnessLabel(settings, provider)}…`
             }
             pendingContent={reviewComments.length > 0}
             onSubmit={(typed, options, how) => {
-              const text = withReviewComments(takeReviewComments(threadId), typed);
+              const text = buildReviewMessage(takeReviewComments(threadId), typed);
               // While the agent works, a message waits for the turn to end, or steers it; ⌘Enter flips that.
               const steer = (followUpMode === "steer") !== how.alternate;
               if (busy && !steer) queueMessage(threadId, text, options);
@@ -1959,8 +1963,9 @@ function HandoffNote({
         className="flex items-center gap-1.5 rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ArrowLeftRight className="size-3.5 shrink-0" />
-        Gave {harnessLabel(settings, to)} the {handoff.messages}{" "}
-        {handoff.messages === 1 ? "message" : "messages"} {harnessLabel(settings, handoff.from)} had
+        Gave {formatHarnessLabel(settings, to)} the {handoff.messages}{" "}
+        {handoff.messages === 1 ? "message" : "messages"}{" "}
+        {formatHarnessLabel(settings, handoff.from)} had
         <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
       </button>
       {open ? (
@@ -2004,7 +2009,7 @@ function EditFromHere({ item, threadId }: { item: UserItem; threadId: string }) 
           // An unsent draft stays, above the restored prompt.
           setDraft(threadId, (draft) => ({
             text: draft.text.trim() ? `${draft.text.trimEnd()}\n\n${item.text}` : item.text,
-            attachments: [...draft.attachments, ...item.attachments.map(fromSent)],
+            attachments: [...draft.attachments, ...item.attachments.map(toDraftAttachment)],
           }));
           send(
             ClientCommand.cases["thread.rewind"].make({
@@ -2097,7 +2102,7 @@ function SideChatDrawer({ threadId, provider }: { threadId: string; provider: Pr
   const sideChat = useStore((state) =>
     state.sideChat?.threadId === threadId ? state.sideChat : null,
   );
-  const label = useStore((state) => harnessLabel(state.settings, provider));
+  const label = useStore((state) => formatHarnessLabel(state.settings, provider));
   const [question, setQuestion] = useState("");
 
   useEffect(() => () => closeSideChat(threadId), [threadId]);
@@ -2530,7 +2535,7 @@ function AgentBlockContent({ block, threadId, live, streaming, showActions }: Ag
   const needsRootConsent = useNeedsRootConsent(host);
   const [confirmingRoot, setConfirmingRoot] = useState(false);
   const runReplyCommand = use(RunCommandContext);
-  const resolveImage = useCallback((src: string) => imageUrl(threadId, src), [threadId]);
+  const resolveImage = useCallback((src: string) => fetchImageUrl(threadId, src), [threadId]);
   const provider = useStore((state) => state.threads[threadId]?.provider);
 
   switch (block.kind) {

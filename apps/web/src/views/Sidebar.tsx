@@ -21,8 +21,8 @@ import {
 import { SPRING_LAYOUT, SPRING_SWAP } from "@masscode/ui/lib/ease";
 import { NumberTicker } from "@masscode/ui/motion/number-ticker";
 import { SharedLayoutBg } from "@masscode/ui/motion/shared-layout-bg";
-import { ProjectBadge, projectLabel } from "@/components/project-badge";
-import { harnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
+import { ProjectBadge, formatProjectLabel } from "@/components/project-badge";
+import { getHarnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import { cn } from "@masscode/ui/lib/utils";
 import { formatBinding, isMac } from "@masscode/ui/lib/keys";
 import {
@@ -70,10 +70,10 @@ import {
   useProjectHost,
   useStore,
 } from "../lib/store.ts";
-import { describe } from "../lib/keybindings.ts";
-import { projectKey } from "../lib/projects.ts";
+import { formatKeybinding } from "../lib/keybindings.ts";
+import { getProjectKey } from "../lib/projects.ts";
 import { useThreadListView } from "../lib/threadListView.ts";
-import { ago, useNow } from "../lib/time.ts";
+import { formatAge, useNow } from "../lib/time.ts";
 import { useUpdateStatus } from "../lib/updates.ts";
 import { usePersistedFlag } from "../lib/usePersistedFlag.ts";
 import type { ModalView } from "./AppModal.tsx";
@@ -134,7 +134,7 @@ export function Sidebar(props: {
 
     function keyOf(projectId: string) {
       const project = projectsById.get(projectId);
-      return project ? projectKey(project) : projectId;
+      return project ? getProjectKey(project) : projectId;
     }
 
     const infos = Object.values(threads)
@@ -196,7 +196,7 @@ export function Sidebar(props: {
   if (view.groupBy === "none") drawnInOrder = infos;
   else if (view.groupBy === "project")
     drawnInOrder = projectGroups.flatMap((group) => {
-      const key = projectKey(projectOf(group[0]));
+      const key = getProjectKey(projectOf(group[0]));
       return collapsedProjects.includes(key) && !query ? [] : shownOf(key, group);
     });
   else if (view.status === "archived") drawnInOrder = archived;
@@ -389,7 +389,7 @@ export function Sidebar(props: {
         <p className="px-3 pt-2 text-xs text-muted-foreground">
           {Object.keys(threads).length > 0
             ? "No matching threads."
-            : `No threads yet. Press ${describe("thread.new")} to start one.`}
+            : `No threads yet. Press ${formatKeybinding("thread.new")} to start one.`}
         </p>
       );
 
@@ -400,7 +400,7 @@ export function Sidebar(props: {
         <div className="flex flex-col gap-0.5">
           {projectGroups.map((group) => {
             const project = projectOf(group[0]);
-            const key = projectKey(project);
+            const key = getProjectKey(project);
             return renderFolding(
               key,
               project.name,
@@ -471,7 +471,7 @@ export function Sidebar(props: {
         </AnimatedSidebarTrigger>
         <div className="ml-auto [-webkit-app-region:no-drag]">
           <IconButton
-            label={`New thread ${describe("thread.new")}`}
+            label={`New thread ${formatKeybinding("thread.new")}`}
             onClick={() => props.onDraft(props.currentPath)}
           >
             <SquarePen className="size-4" />
@@ -599,7 +599,7 @@ function ProviderMark({ info }: { info: ThreadInfo }) {
       className={cn(
         "size-3.5 shrink-0 text-muted-foreground",
         running && "animate-spin [animation-duration:2.4s]",
-        running && harnessTint(settings, info.provider).active,
+        running && getHarnessTint(settings, info.provider).active,
       )}
     />
   );
@@ -612,7 +612,7 @@ function TrailingLabel({ info, now }: { info: ThreadInfo; now: number }) {
   if (info.status === "awaiting-answer")
     return <span className="font-medium text-warning">Needs an answer</span>;
   if (info.status === "error") return <span className="font-medium text-destructive">Error</span>;
-  return <span className="tabular-nums">{ago(info.updatedAt, now)}</span>;
+  return <span className="tabular-nums">{formatAge(info.updatedAt, now)}</span>;
 }
 
 interface CardAction {
@@ -927,7 +927,7 @@ const ThreadCard = memo(function ThreadCard(props: {
                   ) : (
                     <span className="flex min-w-0 flex-1 items-center gap-2">
                       <span className="max-w-full shrink-0 truncate">
-                        {projectLabel(project.name, host)}
+                        {formatProjectLabel(project.name, host)}
                       </span>
                       {info.branch ? (
                         <>

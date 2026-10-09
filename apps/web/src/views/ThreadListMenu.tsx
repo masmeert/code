@@ -13,12 +13,12 @@ import {
 } from "@masscode/ui/components/dropdown-menu";
 import { Button } from "@masscode/ui/motion/button";
 import { cn } from "@masscode/ui/lib/utils";
-import { ProjectBadge, projectLabel } from "@/components/project-badge";
+import { ProjectBadge, formatProjectLabel } from "@/components/project-badge";
 import type { Project } from "@masscode/contracts";
 import * as Match from "effect/Match";
 import { SlidersHorizontal } from "lucide-react";
 import type { ReactNode } from "react";
-import { harnessLabel } from "../lib/models.ts";
+import { formatHarnessLabel } from "../lib/models.ts";
 import { useStore } from "../lib/store.ts";
 import { DEFAULT_THREAD_LIST_VIEW, type ThreadListView } from "../lib/threadListView.ts";
 
@@ -132,7 +132,7 @@ export function ThreadListMenu(props: {
             >
               <ProjectBadge project={project} />
               <span className="min-w-0 truncate">
-                {projectLabel(project.name, projectHosts[project.id])}
+                {formatProjectLabel(project.name, projectHosts[project.id])}
               </span>
             </DropdownMenuCheckboxItem>
           ))}
@@ -142,9 +142,9 @@ export function ThreadListMenu(props: {
           value={view.provider}
           labels={{
             all: "All",
-            claude: harnessLabel(settings, "claude"),
-            codex: harnessLabel(settings, "codex"),
-            cursor: harnessLabel(settings, "cursor"),
+            claude: formatHarnessLabel(settings, "claude"),
+            codex: formatHarnessLabel(settings, "codex"),
+            cursor: formatHarnessLabel(settings, "cursor"),
           }}
           onChange={(provider) => props.onChange({ provider })}
         />

@@ -31,7 +31,7 @@ export const KEYBINDINGS = {
 export type KeybindingId = keyof typeof KEYBINDINGS;
 
 /** How a shortcut reads in the UI, e.g. ⌘⇧M. */
-export function describe(id: KeybindingId) {
+export function formatKeybinding(id: KeybindingId) {
   return formatBinding(KEYBINDINGS[id]);
 }
 

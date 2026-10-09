@@ -18,7 +18,7 @@ import {
   removeReviewComment,
   type ReviewComment,
   saveReviewComment,
-  selectRows,
+  findSelectedRows,
   useReviewComments,
 } from "../lib/reviewComments.ts";
 import { getSettings, send, updateSettings, useStore } from "../lib/store.ts";
@@ -244,7 +244,7 @@ export function DiffPanel({
   );
 
   const startComment = useCallback((range: SelectedLineRange, fileDiff: FileDiffMetadata) => {
-    const rows = selectRows(fileDiff, range);
+    const rows = findSelectedRows(fileDiff, range);
     if (!rows) return;
     setDraft({ id: crypto.randomUUID(), path: fileDiff.name, ...rows, text: "" });
   }, []);

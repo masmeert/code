@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 /** Compact age like the sidebar shows it: "now", "21m", "3h", "2d", "5w". */
-export function ago(ms: number, now: number) {
+export function formatAge(ms: number, now: number) {
   const minutes = Math.floor((now - ms) / 60_000);
   if (minutes < 1) return "now";
   if (minutes < 60) return `${minutes}m`;

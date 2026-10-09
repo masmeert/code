@@ -6,12 +6,12 @@ import { useEffect } from "react";
  * (A view-transition wipe was tried: it snapshots the page, dropping backdrop blur and letting
  * `transition-colors` elements fade in late.)
  */
-function applyDark(dark: boolean) {
+function applyDark(isDark: boolean) {
   const root = document.documentElement;
-  if (root.classList.contains("dark") === dark) return;
+  if (root.classList.contains("dark") === isDark) return;
 
   root.dataset.themeSwitching = "";
-  root.classList.toggle("dark", dark);
+  root.classList.toggle("dark", isDark);
   void root.offsetHeight; // commit the new colours while transitions are off
   requestAnimationFrame(() => delete root.dataset.themeSwitching);
 }

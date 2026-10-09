@@ -49,7 +49,7 @@ import {
   allowFullAccessAsRoot,
   EFFORT_LABEL,
   EFFORTS,
-  fromText,
+  createTextAttachment,
   LARGE_PASTE_BYTES,
   PERMISSION_DESCRIPTION,
   PERMISSION_LABEL,
@@ -61,22 +61,22 @@ import {
   useTurnPrefs,
 } from "../lib/composer.ts";
 import { restoreStash, setDraft, stashDraft, useDraft, useStashes } from "../lib/drafts.ts";
-import { describe, KEYBINDINGS, useKeybinding } from "../lib/keybindings.ts";
+import { formatKeybinding, KEYBINDINGS, useKeybinding } from "../lib/keybindings.ts";
 import {
-  catalogModel,
-  favoriteChoices,
-  type modelChoices,
-  recommendedBadge,
+  findCatalogModel,
+  getFavoriteChoices,
+  type buildModelChoices,
+  renderRecommendedBadge,
 } from "../lib/models.ts";
 import {
   send,
-  skillsKey,
+  getSkillsKey,
   toggleFavoriteModel,
   usePathHost,
   useProviders,
   useStore,
 } from "../lib/store.ts";
-import { ago, useNow } from "../lib/time.ts";
+import { formatAge, useNow } from "../lib/time.ts";
 import { UsageMeter } from "./UsageMeter.tsx";
 
 const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {
@@ -126,7 +126,7 @@ interface ComposerProps {
   pendingContent?: boolean;
   busy?: boolean;
   disabled?: boolean;
-  models: ReturnType<typeof modelChoices>;
+  models: ReturnType<typeof buildModelChoices>;
   model: string | undefined;
   onModelChange: (value: string) => void;
   extraModels?: string[];
@@ -179,8 +179,8 @@ export function Composer(props: ComposerProps) {
   const [confirmingRoot, setConfirmingRoot] = useState(false);
   const files = useAttachments({
     key: prefsKey,
-    acceptDrops: !props.disabled,
-    remote: host !== null,
+    shouldAcceptDrops: !props.disabled,
+    isRemote: host !== null,
   });
   const providers = useProviders(host);
   const settings = useStore((state) => state.settings);
@@ -188,7 +188,7 @@ export function Composer(props: ComposerProps) {
   const [stashSignal, setStashSignal] = useState(0);
   const worktree = useStore((state) => (threadId ? state.threads[threadId]?.worktree : undefined));
 
-  const catalog = catalogModel(providers, props.model);
+  const catalog = findCatalogModel(providers, props.model);
   // No pick means the model's own default, which the menu stars; picking the starred level keeps following it.
   const fallbackEffort = catalog?.defaultEffort;
   const efforts = catalog?.efforts ?? EFFORTS[props.provider];
@@ -196,7 +196,7 @@ export function Composer(props: ComposerProps) {
   const effortOptions = efforts.map((level) => ({
     value: level,
     label: EFFORT_LABEL[level],
-    badge: level === fallbackEffort ? recommendedBadge() : undefined,
+    badge: level === fallbackEffort ? renderRecommendedBadge() : undefined,
   }));
 
   function setText(text: string) {
@@ -305,7 +305,7 @@ export function Composer(props: ComposerProps) {
   const skillQuery =
     skillMention && dismissed !== draft.text ? skillMention[1].toLowerCase() : null;
   const skillList = useStore((state) =>
-    props.cwd ? state.skills[skillsKey(props.provider, props.cwd)] : undefined,
+    props.cwd ? state.skills[getSkillsKey(props.provider, props.cwd)] : undefined,
   );
   const skillMatches =
     skillList && skillQuery !== null
@@ -445,7 +445,7 @@ export function Composer(props: ComposerProps) {
       return;
     }
 
-    const options = toTurnOptions(prefs, catalog, files.take());
+    const options = toTurnOptions(prefs, catalog, files.takeAttachments());
     setDraft(prefsKey, { text: "", attachments: [] });
     props.onSubmit(text, options, how);
   }
@@ -490,7 +490,7 @@ export function Composer(props: ComposerProps) {
               onModelChange={props.onModelChange}
               extraModels={props.extraModels}
               onToggleModel={props.onToggleModel}
-              favorites={favoriteChoices(settings)}
+              favorites={getFavoriteChoices(settings)}
               onToggleFavorite={toggleFavoriteModel}
               efforts={effortOptions}
               effort={effort ?? fallbackEffort}
@@ -527,12 +527,12 @@ export function Composer(props: ComposerProps) {
             />,
           ]}
           attachments={[...files.attachments]}
-          onAttach={() => void files.pick()}
-          onRemoveAttachment={files.remove}
+          onAttach={() => void files.pickFiles()}
+          onRemoveAttachment={files.removeAttachment}
           onPasteFiles={(pasted) => void files.addFiles(pasted)}
           onPasteText={(text, plain) => {
             if (plain || new TextEncoder().encode(text).length < LARGE_PASTE_BYTES) return false;
-            files.add([fromText(text)]);
+            files.addAttachments([createTextAttachment(text)]);
             return true;
           }}
           onSubmit={submit}
@@ -732,12 +732,12 @@ function StashSelect({ prefsKey, openSignal }: { prefsKey: string; openSignal: n
 
   return (
     <PromptSelect
-      title={`Stashed prompts (${describe("composer.stash")} stashes the current one)`}
+      title={`Stashed prompts (${formatKeybinding("composer.stash")} stashes the current one)`}
       icon={<Archive />}
       options={stashes.map((stash) => ({
         value: stash.id,
         label: stash.text.split("\n")[0] || `${stash.attachments.length} files`,
-        description: `${ago(stash.at, now)}${stash.attachments.length ? `, ${stash.attachments.length} files` : ""}`,
+        description: `${formatAge(stash.at, now)}${stash.attachments.length ? `, ${stash.attachments.length} files` : ""}`,
       }))}
       value={undefined}
       placeholder={String(stashes.length)}

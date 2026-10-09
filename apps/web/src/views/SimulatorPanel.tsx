@@ -337,7 +337,7 @@ function DeviceScreen({
     // Tab still moves focus out, so the screen never traps the keyboard.
     if (event.key === "Tab") return;
     event.preventDefault();
-    stream.current?.key(event.nativeEvent, phase);
+    stream.current?.sendKey(event.nativeEvent, phase);
   }
 
   return (

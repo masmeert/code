@@ -24,7 +24,7 @@ export interface DeviceStream {
   readonly stop: () => void;
   /** 0..1 within the displayed screen. */
   readonly touch: (phase: "begin" | "move" | "end", x: number, y: number) => void;
-  readonly key: (event: KeyboardEvent, phase: "down" | "up") => void;
+  readonly sendKey: (event: KeyboardEvent, phase: "down" | "up") => void;
   readonly press: (button: "home" | "back") => void;
   /** A quarter turn clockwise; iOS only. */
   readonly rotate: () => void;
@@ -123,7 +123,7 @@ const ANDROID_KEYCODE_BY_KEY = new Map([
   ["Delete", 112],
 ]);
 
-function hidUsage(code: string): number | null {
+function findHidUsage(code: string): number | null {
   if (/^Key[A-Z]$/.test(code)) return 0x04 + code.charCodeAt(3) - 65;
   if (/^Digit[1-9]$/.test(code)) return 0x1e + code.charCodeAt(5) - 49;
   if (code === "Digit0") return 0x27;
@@ -137,7 +137,7 @@ type IosInput =
   | { readonly type: "down" | "up"; readonly usage: number }
   | { readonly orientation: Orientation };
 
-function taggedJson(tag: number, payload: IosInput) {
+function encodeTaggedJson(tag: number, payload: IosInput) {
   const json = new TextEncoder().encode(JSON.stringify(payload));
   const message = new Uint8Array(1 + json.length);
   message[0] = tag;
@@ -146,7 +146,7 @@ function taggedJson(tag: number, payload: IosInput) {
 }
 
 /** The WebCodecs `avc1.PPCCLL` codec string from an avcC record or an SPS NAL unit. */
-function avcCodec(bytes: Uint8Array) {
+function getAvcCodec(bytes: Uint8Array) {
   if (bytes.length < 4) return "avc1.42E01E";
   return `avc1.${[bytes[1], bytes[2], bytes[3]]
     .map((byte) => byte.toString(16).padStart(2, "0"))
@@ -173,7 +173,7 @@ function scanAccessUnit(buffer: Uint8Array) {
 }
 
 /** Splits a fragmented AVCC body into whole `[tag, payload]` envelopes. */
-function avccDemuxer() {
+function createAvccDemuxer() {
   let buffer: Uint8Array<ArrayBuffer> = new Uint8Array(64 * 1024);
   let length = 0;
 
@@ -220,46 +220,46 @@ export function connectDeviceStream(
   const mjpegUrl = `${vendor}/helper/${device}/stream.mjpeg?token=${hub.token}`;
   const context = canvas.getContext("2d");
   const timers = new Set<ReturnType<typeof setTimeout>>();
-  let stopped = false;
+  let isStopped = false;
   let socket: WebSocket | null = null;
   let video: AbortController | null = null;
   let decoder: VideoDecoder | null = null;
-  let awaitingKeyframe = true;
+  let isAwaitingKeyframe = true;
   let timestamp = 0;
   let screen: ScreenConfig | null = null;
-  let mjpeg = false;
-  let streaming = false;
+  let isShowingMjpeg = false;
+  let isStreaming = false;
 
-  function later(run: () => void, delayMs: number) {
+  function schedule(run: () => void, delayMs: number) {
     const timer = setTimeout(() => {
       timers.delete(timer);
-      if (!stopped) run();
+      if (!isStopped) run();
     }, delayMs);
     timers.add(timer);
     return timer;
   }
 
-  function cancel(timer: ReturnType<typeof setTimeout>) {
+  function cancelScheduled(timer: ReturnType<typeof setTimeout>) {
     clearTimeout(timer);
     timers.delete(timer);
   }
 
   function setStreaming(next: boolean) {
-    if (stopped || streaming === next) return;
-    streaming = next;
+    if (isStopped || isStreaming === next) return;
+    isStreaming = next;
     events.onStatus(next ? "streaming" : "connecting");
   }
 
   /** serve-sim streams the raw framebuffer, portrait even when the device lies on its side. */
-  function quarterTurns() {
+  function getQuarterTurns() {
     if (platform !== "ios" || !screen || screen.width > screen.height) return 0;
     return QUARTER_TURNS[screen.orientation];
   }
 
   function paint(source: CanvasImageSource, width: number, height: number) {
-    if (stopped || !context) return;
+    if (isStopped || !context) return;
 
-    const turns = quarterTurns();
+    const turns = getQuarterTurns();
     const [canvasWidth, canvasHeight] = turns % 2 ? [height, width] : [width, height];
     if (canvas.width !== canvasWidth) canvas.width = canvasWidth;
     if (canvas.height !== canvasHeight) canvas.height = canvasHeight;
@@ -274,15 +274,15 @@ export function connectDeviceStream(
   function closeDecoder() {
     if (decoder?.state !== "closed") decoder?.close();
     decoder = null;
-    awaitingKeyframe = true;
+    isAwaitingKeyframe = true;
   }
 
-  async function configure(config: VideoDecoderConfig) {
+  async function configureDecoder(config: VideoDecoderConfig) {
     const full = { ...config, optimizeForLatency: true };
     const { supported } = await VideoDecoder.isConfigSupported(full).catch(() => ({
       supported: false,
     }));
-    if (!supported || stopped) return false;
+    if (!supported || isStopped) return false;
 
     if (!decoder || decoder.state === "closed") {
       const current = new VideoDecoder({
@@ -303,8 +303,8 @@ export function connectDeviceStream(
 
   function decode(isKey: boolean, data: Uint8Array, pts: number | null = null) {
     if (decoder?.state !== "configured") return;
-    if (awaitingKeyframe && !isKey) return;
-    awaitingKeyframe = false;
+    if (isAwaitingKeyframe && !isKey) return;
+    isAwaitingKeyframe = false;
 
     if (decoder.decodeQueueSize > MAX_DECODE_QUEUE) return recover();
     decoder.decode(
@@ -323,8 +323,8 @@ export function connectDeviceStream(
   }
 
   function showMjpeg() {
-    if (mjpeg || stopped) return;
-    mjpeg = true;
+    if (isShowingMjpeg || isStopped) return;
+    isShowingMjpeg = true;
     video?.abort();
     closeDecoder();
     events.onMjpeg(mjpegUrl);
@@ -333,7 +333,7 @@ export function connectDeviceStream(
   async function readIosVideo() {
     const controller = new AbortController();
     video = controller;
-    const demux = avccDemuxer();
+    const demux = createAvccDemuxer();
     try {
       const response = await fetch(`${vendor}/helper/${device}/stream.avcc?token=${hub.token}`, {
         signal: controller.signal,
@@ -342,14 +342,14 @@ export function connectDeviceStream(
 
       const reader = response.body.getReader();
       for (;;) {
-        const stall = later(() => controller.abort(), STALL_MS);
-        const { done, value } = await reader.read().finally(() => cancel(stall));
-        if (done || stopped || mjpeg) break;
+        const stall = schedule(() => controller.abort(), STALL_MS);
+        const { done, value } = await reader.read().finally(() => cancelScheduled(stall));
+        if (done || isStopped || isShowingMjpeg) break;
 
         for (const { tag, payload } of demux(value)) {
           if (tag === 1) {
-            awaitingKeyframe = true;
-            if (!(await configure({ codec: avcCodec(payload), description: payload })))
+            isAwaitingKeyframe = true;
+            if (!(await configureDecoder({ codec: getAvcCodec(payload), description: payload })))
               return showMjpeg();
           } else if (tag === 2 || tag === 3) decode(tag === 2, payload);
           else if (tag === 4)
@@ -363,11 +363,11 @@ export function connectDeviceStream(
       // Retried below, unless stopped.
     }
 
-    if (stopped || mjpeg || video !== controller) return;
+    if (isStopped || isShowingMjpeg || video !== controller) return;
 
     closeDecoder();
     setStreaming(false);
-    later(() => void readIosVideo(), RETRY_MS);
+    schedule(() => void readIosVideo(), RETRY_MS);
   }
 
   /**
@@ -376,7 +376,7 @@ export function connectDeviceStream(
    */
   async function primeIosHelper() {
     const controller = new AbortController();
-    const timeout = later(() => controller.abort(), 2000);
+    const timeout = schedule(() => controller.abort(), 2000);
     try {
       const response = await fetch(mjpegUrl, { signal: controller.signal });
       await response.body?.getReader().read();
@@ -384,13 +384,13 @@ export function connectDeviceStream(
       // The socket retries if the helper isn't up yet.
     }
 
-    cancel(timeout);
+    cancelScheduled(timeout);
     controller.abort();
   }
 
   async function connectIosInput() {
     await primeIosHelper();
-    if (stopped) return;
+    if (isStopped) return;
 
     // The hub takes its token as a subprotocol, since a browser can't set WebSocket headers.
     const connection = new WebSocket(`${socketVendor}/helper/ws?device=${device}`, [
@@ -412,7 +412,7 @@ export function connectDeviceStream(
       }
     };
     connection.onclose = () => {
-      if (socket === connection) later(() => void connectIosInput(), RETRY_MS);
+      if (socket === connection) schedule(() => void connectIosInput(), RETRY_MS);
     };
   }
 
@@ -422,7 +422,7 @@ export function connectDeviceStream(
     ]);
     connection.binaryType = "arraybuffer";
     socket = connection;
-    let configuring = false;
+    let isConfiguring = false;
     connection.onmessage = (event) => {
       if (typeof event.data === "string") {
         // The encoder restarts at a new size when the device rotates; the next keyframe's SPS
@@ -439,24 +439,24 @@ export function connectDeviceStream(
 
       const raw = event.data;
       const header = new DataView(raw, 0, Math.min(SEMU_HEADER_BYTES, raw.byteLength));
-      const framed =
+      const isFramed =
         raw.byteLength > SEMU_HEADER_BYTES &&
         header.getUint32(0) === SEMU_MAGIC &&
         header.getUint8(4) === 1;
-      const data = new Uint8Array(raw, framed ? SEMU_HEADER_BYTES : 0);
-      const pts = framed ? Number(header.getBigUint64(8)) : null;
-      const configured = decoder?.state === "configured";
-      const scanned = !framed || !configured ? scanAccessUnit(data) : null;
-      const isKey = framed ? (header.getUint8(5) & 1) === 1 : (scanned?.isKey ?? false);
-      if (!configured) {
+      const data = new Uint8Array(raw, isFramed ? SEMU_HEADER_BYTES : 0);
+      const pts = isFramed ? Number(header.getBigUint64(8)) : null;
+      const isConfigured = decoder?.state === "configured";
+      const scanned = !isFramed || !isConfigured ? scanAccessUnit(data) : null;
+      const isKey = isFramed ? (header.getUint8(5) & 1) === 1 : (scanned?.isKey ?? false);
+      if (!isConfigured) {
         if (!scanned?.sps)
           return connection.send(JSON.stringify({ type: "reset-video", ack: false }));
-        if (configuring) return;
+        if (isConfiguring) return;
 
-        configuring = true;
-        void configure({ codec: avcCodec(scanned.sps) }).then(() => {
-          configuring = false;
-          awaitingKeyframe = true;
+        isConfiguring = true;
+        void configureDecoder({ codec: getAvcCodec(scanned.sps) }).then(() => {
+          isConfiguring = false;
+          isAwaitingKeyframe = true;
           connection.send(JSON.stringify({ type: "reset-video", ack: false }));
         });
         return;
@@ -469,7 +469,7 @@ export function connectDeviceStream(
 
       closeDecoder();
       setStreaming(false);
-      later(connectAndroid, RETRY_MS);
+      schedule(connectAndroid, RETRY_MS);
     };
   }
 
@@ -487,7 +487,7 @@ export function connectDeviceStream(
 
   return {
     stop() {
-      stopped = true;
+      isStopped = true;
       for (const timer of timers) clearTimeout(timer);
       video?.abort();
       const current = socket;
@@ -507,13 +507,13 @@ export function connectDeviceStream(
         );
 
       // Back from what the user sees to the raw framebuffer, undoing `paint`'s turns.
-      const [rawX, rawY] = RAW_POINT[mjpeg ? 0 : quarterTurns()](x, y);
-      send(taggedJson(IOS_TOUCH, { type: phase, x: rawX, y: rawY }));
+      const [rawX, rawY] = RAW_POINT[isShowingMjpeg ? 0 : getQuarterTurns()](x, y);
+      send(encodeTaggedJson(IOS_TOUCH, { type: phase, x: rawX, y: rawY }));
     },
-    key(event, phase) {
+    sendKey(event, phase) {
       if (platform === "ios") {
-        const usage = hidUsage(event.code);
-        if (usage !== null) send(taggedJson(IOS_KEY, { type: phase, usage }));
+        const usage = findHidUsage(event.code);
+        if (usage !== null) send(encodeTaggedJson(IOS_KEY, { type: phase, usage }));
         return;
       }
 
@@ -526,13 +526,13 @@ export function connectDeviceStream(
     },
     press(button) {
       if (platform === "android") send(JSON.stringify({ type: button }));
-      else if (button === "home") send(taggedJson(IOS_BUTTON, { button: "home" }));
+      else if (button === "home") send(encodeTaggedJson(IOS_BUTTON, { button: "home" }));
     },
     rotate() {
       if (platform !== "ios") return;
 
       const next = ORIENTATIONS[(ORIENTATIONS.indexOf(screen?.orientation ?? "portrait") + 1) % 4];
-      send(taggedJson(IOS_ORIENTATION, { orientation: next }));
+      send(encodeTaggedJson(IOS_ORIENTATION, { orientation: next }));
     },
   };
 }

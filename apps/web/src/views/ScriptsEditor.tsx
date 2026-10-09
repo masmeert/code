@@ -7,7 +7,7 @@ import { LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { IconButton } from "../components/icon-button.tsx";
 import { normalizeUrl } from "../lib/browser.ts";
-import { describe, KEYBINDINGS } from "../lib/keybindings.ts";
+import { formatKeybinding, KEYBINDINGS } from "../lib/keybindings.ts";
 import { readProjectConfig, updateProjectConfig } from "../lib/store.ts";
 
 interface ScriptsEditorProps {
@@ -261,7 +261,7 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
         <Button size="sm" disabled={scripts === null || saving} onClick={() => void save()}>
           {saving ? "Saving…" : "Save"}
           <kbd aria-hidden className="font-sans text-[10px] opacity-70">
-            {describe("scripts.save")}
+            {formatKeybinding("scripts.save")}
           </kbd>
         </Button>
       </div>

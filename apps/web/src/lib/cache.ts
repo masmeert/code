@@ -35,7 +35,7 @@ interface CachedTranscript {
 
 let database: Promise<IDBDatabase> | null = null;
 
-function open() {
+function openDatabase() {
   return (database ??= new Promise((resolve, reject) => {
     const request = indexedDB.open(DATABASE_NAME, VERSION);
     request.onupgradeneeded = () => {
@@ -49,9 +49,12 @@ function open() {
   }));
 }
 
-async function get<A extends { version: number }>(store: string, key: string): Promise<A | null> {
+async function readRecord<A extends { version: number }>(
+  store: string,
+  key: string,
+): Promise<A | null> {
   try {
-    const connection = await open();
+    const connection = await openDatabase();
     const value = await new Promise<unknown>((resolve, reject) => {
       const request = connection.transaction(store).objectStore(store).get(key);
       request.onsuccess = () => resolve(request.result);
@@ -65,16 +68,16 @@ async function get<A extends { version: number }>(store: string, key: string): P
   }
 }
 
-function threadKey(dataId: string, threadId: string) {
+function getThreadKey(dataId: string, threadId: string) {
   return `${dataId}:${threadId}`;
 }
 
 export function loadShell() {
-  return get<CachedShell>(SHELL, "shell");
+  return readRecord<CachedShell>(SHELL, "shell");
 }
 
 export function loadTranscript(dataId: string, threadId: string) {
-  return get<CachedTranscript>(THREADS, threadKey(dataId, threadId));
+  return readRecord<CachedTranscript>(THREADS, getThreadKey(dataId, threadId));
 }
 
 // Writes are debounced (streaming deltas arrive many times a second) and only the
@@ -85,14 +88,14 @@ const pending = new Map<
 >();
 let timer: ReturnType<typeof setTimeout> | null = null;
 
-async function flush() {
+async function flushWrites() {
   timer = null;
   if (pending.size === 0) return;
 
   const writes = [...pending];
   pending.clear();
   try {
-    const connection = await open();
+    const connection = await openDatabase();
     const transaction = connection.transaction([SHELL, THREADS], "readwrite");
     for (const [key, { store, value }] of writes) {
       const objects = transaction.objectStore(store);
@@ -103,13 +106,13 @@ async function flush() {
   } catch {}
 }
 
-function queue(store: string, id: string, value: CachedShell | CachedTranscript | undefined) {
+function queueWrite(store: string, id: string, value: CachedShell | CachedTranscript | undefined) {
   pending.set(`${store}:${id}`, { store, value });
-  timer ??= setTimeout(flush, 500);
+  timer ??= setTimeout(flushWrites, 500);
 }
 
 export function saveShell(shell: Omit<CachedShell, "version">) {
-  queue(SHELL, "shell", { version: VERSION, ...shell });
+  queueWrite(SHELL, "shell", { version: VERSION, ...shell });
 }
 
 export function saveTranscript(
@@ -117,15 +120,15 @@ export function saveTranscript(
   threadId: string,
   transcript: Omit<CachedTranscript, "version">,
 ) {
-  queue(THREADS, threadKey(dataId, threadId), { version: VERSION, ...transcript });
+  queueWrite(THREADS, getThreadKey(dataId, threadId), { version: VERSION, ...transcript });
 }
 
 export function removeTranscript(dataId: string, threadId: string) {
-  queue(THREADS, threadKey(dataId, threadId), undefined);
+  queueWrite(THREADS, getThreadKey(dataId, threadId), undefined);
 }
 
 // Don't lose the last half second on quit.
 window.addEventListener("pagehide", () => {
   if (timer) clearTimeout(timer);
-  void flush();
+  void flushWrites();
 });

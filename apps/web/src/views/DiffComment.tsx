@@ -3,7 +3,7 @@ import { Button } from "@masscode/ui/motion/button/base";
 import { Textarea } from "@masscode/ui/components/textarea";
 import { MessageSquare, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { describe, KEYBINDINGS } from "../lib/keybindings.ts";
+import { formatKeybinding, KEYBINDINGS } from "../lib/keybindings.ts";
 import { describeRange, type ReviewComment } from "../lib/reviewComments.ts";
 
 /** A saved comment under the lines it's about; clicking its text edits it. */
@@ -99,7 +99,7 @@ export function DiffCommentForm({
         <Button size="sm" disabled={!trimmed} onClick={() => onSave(trimmed)}>
           {comment.text ? "Save" : "Comment"}
           <kbd aria-hidden className="font-sans text-[10px] opacity-70">
-            {describe("diff.saveComment")}
+            {formatKeybinding("diff.saveComment")}
           </kbd>
         </Button>
       </div>

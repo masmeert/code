@@ -1,5 +1,5 @@
 import type { Project } from "@masscode/contracts";
-import { projectKey } from "../lib/projects.ts";
+import { getProjectKey } from "../lib/projects.ts";
 import { cn } from "@masscode/ui/lib/utils";
 
 const TINTS = [
@@ -12,13 +12,13 @@ const TINTS = [
 ];
 
 /** "my-app" → "MA", "APSchool" → "AP". */
-function initials(name: string) {
+function getInitials(name: string) {
   const words = name.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? name).slice(0, 2);
   return letters.toUpperCase();
 }
 
-function tint(key: string) {
+function getProjectTint(key: string) {
   let hash = 0;
   for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) | 0;
   return TINTS[Math.abs(hash) % TINTS.length];
@@ -37,16 +37,16 @@ export function ProjectBadge({
       aria-hidden="true"
       className={cn(
         "grid size-4 shrink-0 place-items-center rounded-[4px] text-[8.5px] leading-none font-semibold tracking-tight",
-        tint(projectKey(project)),
+        getProjectTint(getProjectKey(project)),
         className,
       )}
     >
-      {initials(project.name)}
+      {getInitials(project.name)}
     </span>
   );
 }
 
 /** A project's name, and the remote host it's on when it isn't on this Mac. */
-export function projectLabel(name: string, host: string | null | undefined) {
+export function formatProjectLabel(name: string, host: string | null | undefined) {
   return host ? `${name} on ${host}` : name;
 }

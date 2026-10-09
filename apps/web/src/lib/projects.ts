@@ -53,6 +53,6 @@ export function addProject(): Promise<string | null> {
  * Which project this is on every machine: its repo, and where it sits in it since a repo can
  * hold several projects. A folder outside git, or in a repo without a remote, is only itself.
  */
-export function projectKey(project: Pick<Project, "id" | "remote" | "folder">) {
+export function getProjectKey(project: Pick<Project, "id" | "remote" | "folder">) {
   return project.remote ? `${repositoryOf(project.remote)}#${project.folder ?? ""}` : project.id;
 }

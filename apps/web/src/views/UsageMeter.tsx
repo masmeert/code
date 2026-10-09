@@ -3,7 +3,7 @@ import { cn } from "@masscode/ui/lib/utils";
 import { ClientCommand, type ContextUsage, type ProviderKind } from "@masscode/contracts";
 import { ChevronRight, LoaderCircle, Minimize2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { describe, useKeybinding } from "../lib/keybindings.ts";
+import { formatKeybinding, useKeybinding } from "../lib/keybindings.ts";
 import {
   readLimits,
   readUsage,
@@ -83,7 +83,7 @@ export function UsageMeter({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        title={`${context ? `Context ${percent}% full` : "Context and usage"} (${describe("usage.toggle")})`}
+        title={`${context ? `Context ${percent}% full` : "Context and usage"} (${formatKeybinding("usage.toggle")})`}
         aria-label={context ? `Context ${percent}% full` : "Context and usage"}
         className={cn(
           "flex h-8 items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring @max-md:w-8 @max-md:justify-center @max-md:px-0",
