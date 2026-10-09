@@ -1,10 +1,12 @@
 /**
  * What `codex app-server` says over its JSON-RPC, decoded down to the fields MassCode reads.
  */
+import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { connectJsonRpc, type JsonRpc, type RpcId } from "./jsonRpc.ts";
 import type { HarnessLaunch } from "./launch.ts";
+import { tryProviderPromise } from "./ProviderAdapter.ts";
 
 export type { RpcId };
 
@@ -257,4 +259,16 @@ export async function connectCodex(
   rpc.notify("initialized");
 
   return rpc;
+}
+
+/** A short-lived `codex app-server`, closed with the scope. */
+export function acquireCodexConnection(
+  launch: HarnessLaunch,
+  cwd: string | undefined,
+  handlers: CodexRpcHandlers = {},
+) {
+  return Effect.acquireRelease(
+    tryProviderPromise("codex", () => connectCodex(cwd, handlers, launch)),
+    (rpc) => Effect.sync(() => rpc.close()),
+  );
 }

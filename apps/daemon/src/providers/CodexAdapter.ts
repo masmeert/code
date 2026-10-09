@@ -15,6 +15,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { DEVICES_SUPPORTED } from "../devices.ts";
 import {
+  acquireCodexConnection,
   CodexNotification,
   CodexServerRequest,
   CompletedItem,
@@ -730,16 +731,12 @@ async function dropLastTurns(rpc: CodexRpc, threadId: string, dropTurns: number)
 }
 
 /** Loads the thread in a short-lived app-server and drops its last turns. The thread id stays. */
-const rewind: ProviderAdapter["rewind"] = Effect.fn("CodexAdapter.rewind")(function* ({
-  cwd,
-  harness,
-  resumeToken,
-  dropTurns,
-}) {
-  const launch = yield* resolveHarnessLaunch("codex", harness);
-  return yield* tryProviderPromise("codex", async () => {
-    const rpc = await connectCodex(cwd, {}, launch);
-    try {
+const rewind: ProviderAdapter["rewind"] = Effect.fn("CodexAdapter.rewind")(
+  function* ({ cwd, harness, resumeToken, dropTurns }) {
+    const launch = yield* resolveHarnessLaunch("codex", harness);
+    const rpc = yield* acquireCodexConnection(launch, cwd);
+
+    return yield* tryProviderPromise("codex", async () => {
       await rpc.request(
         "thread/resume",
         { threadId: resumeToken, excludeTurns: true, cwd },
@@ -747,23 +744,19 @@ const rewind: ProviderAdapter["rewind"] = Effect.fn("CodexAdapter.rewind")(funct
       );
       await dropLastTurns(rpc, resumeToken, dropTurns);
       return resumeToken;
-    } finally {
-      rpc.close();
-    }
-  });
-}, prefixErrorMessage("Couldn't rewind"));
+    });
+  },
+  Effect.scoped,
+  prefixErrorMessage("Couldn't rewind"),
+);
 
 /** Forks the thread in a short-lived app-server and drops the fork's last turns. */
-const fork: ProviderAdapter["fork"] = Effect.fn("CodexAdapter.fork")(function* ({
-  cwd,
-  harness,
-  resumeToken,
-  dropTurns,
-}) {
-  const launch = yield* resolveHarnessLaunch("codex", harness);
-  return yield* tryProviderPromise("codex", async () => {
-    const rpc = await connectCodex(cwd, {}, launch);
-    try {
+const fork: ProviderAdapter["fork"] = Effect.fn("CodexAdapter.fork")(
+  function* ({ cwd, harness, resumeToken, dropTurns }) {
+    const launch = yield* resolveHarnessLaunch("codex", harness);
+    const rpc = yield* acquireCodexConnection(launch, cwd);
+
+    return yield* tryProviderPromise("codex", async () => {
       const { thread } = await rpc.request(
         "thread/fork",
         { threadId: resumeToken, excludeTurns: true, cwd },
@@ -771,38 +764,30 @@ const fork: ProviderAdapter["fork"] = Effect.fn("CodexAdapter.fork")(function* (
       );
       await dropLastTurns(rpc, thread.id, dropTurns);
       return thread.id;
-    } finally {
-      rpc.close();
-    }
-  });
-}, prefixErrorMessage("Couldn't fork"));
+    });
+  },
+  Effect.scoped,
+  prefixErrorMessage("Couldn't fork"),
+);
 
 /** Codex reports a thread's token usage as it loads it, so a short-lived app-server resumes it and waits for that. */
-const readUsage: ProviderAdapter["readUsage"] = Effect.fn("CodexAdapter.readUsage")(function* ({
-  cwd,
-  harness,
-  resumeToken,
-  model,
-}) {
-  const launch = yield* resolveHarnessLaunch("codex", harness);
-  return yield* tryProviderPromise("codex", async () => {
+const readUsage: ProviderAdapter["readUsage"] = Effect.fn("CodexAdapter.readUsage")(
+  function* ({ cwd, harness, resumeToken, model }) {
+    const launch = yield* resolveHarnessLaunch("codex", harness);
     let report: (usage: TokenUsage) => void = () => {};
     const reported = new Promise<TokenUsage>((resolve) => (report = resolve));
-    const rpc = await connectCodex(
-      cwd,
-      {
-        onNotification: (notification) => {
-          if (
-            CodexNotification.guards["thread/tokenUsage/updated"](notification) &&
-            notification.params.threadId === resumeToken
-          ) {
-            report(notification.params.tokenUsage);
-          }
-        },
+    const rpc = yield* acquireCodexConnection(launch, cwd, {
+      onNotification: (notification) => {
+        if (
+          CodexNotification.guards["thread/tokenUsage/updated"](notification) &&
+          notification.params.threadId === resumeToken
+        ) {
+          report(notification.params.tokenUsage);
+        }
       },
-      launch,
-    );
-    try {
+    });
+
+    return yield* tryProviderPromise("codex", async () => {
       const resumed = await rpc.request(
         "thread/resume",
         { threadId: resumeToken, excludeTurns: true, cwd },
@@ -816,48 +801,45 @@ const readUsage: ProviderAdapter["readUsage"] = Effect.fn("CodexAdapter.readUsag
       return usage
         ? await buildThreadUsage(usage, model ?? resumed.model)
         : { context: null, costUsd: null };
-    } finally {
-      rpc.close();
-    }
-  });
-}, prefixErrorMessage("Couldn't read usage"));
+    });
+  },
+  Effect.scoped,
+  prefixErrorMessage("Couldn't read usage"),
+);
 
 const listSkills: ProviderAdapter["listSkills"] = Effect.fn("CodexAdapter.listSkills")(function* ({
   cwd,
   harness,
 }) {
   const launch = yield* resolveHarnessLaunch("codex", harness);
-  return yield* tryProviderPromise("codex", async () => {
-    const rpc = await connectCodex(cwd, {}, launch);
-    try {
-      const { data } = await rpc.request(
-        "skills/list",
-        { cwds: [cwd] },
-        Schema.Struct({
-          data: Schema.Array(
-            Schema.Struct({
-              skills: Schema.Array(
-                Schema.Struct({
-                  name: Schema.String,
-                  description: Schema.String,
-                  path: Schema.String,
-                  enabled: Schema.Boolean,
-                }),
-              ),
-            }),
-          ),
-        }),
-      );
-      return data.flatMap((entry) =>
-        entry.skills.flatMap(({ name, description, path, enabled }) =>
-          enabled ? [{ name, description, path }] : [],
+  const rpc = yield* acquireCodexConnection(launch, cwd);
+
+  const { data } = yield* tryProviderPromise("codex", () =>
+    rpc.request(
+      "skills/list",
+      { cwds: [cwd] },
+      Schema.Struct({
+        data: Schema.Array(
+          Schema.Struct({
+            skills: Schema.Array(
+              Schema.Struct({
+                name: Schema.String,
+                description: Schema.String,
+                path: Schema.String,
+                enabled: Schema.Boolean,
+              }),
+            ),
+          }),
         ),
-      );
-    } finally {
-      rpc.close();
-    }
-  });
-});
+      }),
+    ),
+  );
+  return data.flatMap((entry) =>
+    entry.skills.flatMap(({ name, description, path, enabled }) =>
+      enabled ? [{ name, description, path }] : [],
+    ),
+  );
+}, Effect.scoped);
 
 export const CodexAdapter: ProviderAdapter = {
   kind: "codex",

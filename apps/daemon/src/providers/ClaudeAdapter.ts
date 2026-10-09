@@ -46,6 +46,7 @@ import {
   type TurnInput,
 } from "./ProviderAdapter.ts";
 import {
+  acquireClaudeQuery,
   toClaudeExtraArgs,
   resolveHarnessLaunch,
   startPromptlessQuery,
@@ -841,18 +842,14 @@ const fork: ProviderAdapter["fork"] = (input) =>
   forkBefore(input).pipe(prefixErrorMessage("Couldn't fork"));
 
 /** A prompt-less session resumed from the log answers as the live one would; the cost call is experimental, so it may come back empty. */
-const readUsage: ProviderAdapter["readUsage"] = Effect.fn("ClaudeAdapter.readUsage")(function* ({
-  cwd,
-  harness,
-  resumeToken,
-  model,
-}) {
-  const launch = yield* resolveHarnessLaunch("claude", harness);
-  return yield* tryProviderPromise("claude", async () => {
+const readUsage: ProviderAdapter["readUsage"] = Effect.fn("ClaudeAdapter.readUsage")(
+  function* ({ cwd, harness, resumeToken, model }) {
+    const launch = yield* resolveHarnessLaunch("claude", harness);
     const options: Options = { cwd, resume: resumeToken };
     if (model) options.model = model;
-    const conversation = startPromptlessQuery(launch, options);
-    try {
+    const conversation = yield* acquireClaudeQuery(() => startPromptlessQuery(launch, options));
+
+    return yield* tryProviderPromise("claude", async () => {
       const context = toContextUsage(await conversation.getContextUsage({ detail: "summary" }));
       const costUsd = await conversation
         .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
@@ -861,11 +858,11 @@ const readUsage: ProviderAdapter["readUsage"] = Effect.fn("ClaudeAdapter.readUsa
           () => null,
         );
       return { context, costUsd };
-    } finally {
-      conversation.close();
-    }
-  });
-}, prefixErrorMessage("Couldn't read usage"));
+    });
+  },
+  Effect.scoped,
+  prefixErrorMessage("Couldn't read usage"),
+);
 
 /** Bundled, plugin, user and project skills alike, as the session in `cwd` would load them. */
 const listSkills: ProviderAdapter["listSkills"] = Effect.fn("ClaudeAdapter.listSkills")(function* ({
@@ -873,23 +870,17 @@ const listSkills: ProviderAdapter["listSkills"] = Effect.fn("ClaudeAdapter.listS
   harness,
 }) {
   const launch = yield* resolveHarnessLaunch("claude", harness);
-  return yield* tryProviderPromise("claude", async () => {
-    const conversation = startPromptlessQuery(launch, {
-      cwd,
-      settingSources: ["user", "project", "local"],
-    });
-    try {
-      const { skills } = await conversation.reloadSkills();
-      return skills.map((skill) => ({
-        name: skill.name,
-        description: skill.description,
-        path: null,
-      }));
-    } finally {
-      conversation.close();
-    }
-  });
-});
+  const conversation = yield* acquireClaudeQuery(() =>
+    startPromptlessQuery(launch, { cwd, settingSources: ["user", "project", "local"] }),
+  );
+
+  const { skills } = yield* tryProviderPromise("claude", () => conversation.reloadSkills());
+  return skills.map((skill) => ({
+    name: skill.name,
+    description: skill.description,
+    path: null,
+  }));
+}, Effect.scoped);
 
 export const ClaudeAdapter: ProviderAdapter = {
   kind: "claude",

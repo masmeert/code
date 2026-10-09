@@ -7,11 +7,12 @@ import type { ProviderKind, ProviderSettings, Settings } from "@masscode/contrac
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { CodexNotification, connectCodex, ThreadResponse } from "./providers/codexRpc.ts";
+import { acquireCodexConnection, CodexNotification, ThreadResponse } from "./providers/codexRpc.ts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { buildCursorModelFlag } from "./providers/CursorAdapter.ts";
-import { toClaudeExtraArgs, resolveHarnessLaunch } from "./providers/launch.ts";
+import { acquireClaudeQuery, toClaudeExtraArgs, resolveHarnessLaunch } from "./providers/launch.ts";
+import { ProviderError, tryProviderPromise } from "./providers/ProviderAdapter.ts";
 
 /** Enough of the patch to describe it; the model doesn't need every line of a big change. */
 const MAX_PROMPT_PATCH = 60_000;
@@ -61,14 +62,13 @@ function stripCodeFences(text: string) {
     .trim();
 }
 
-async function writeWithClaude(
+const writeWithClaude = Effect.fn("writeWithClaude")(function* (
   cwd: string,
   harness: ProviderSettings,
   model: string | undefined,
   prompt: string,
-  signal: AbortSignal,
 ) {
-  const launch = await Effect.runPromise(resolveHarnessLaunch("claude", harness));
+  const launch = yield* resolveHarnessLaunch("claude", harness);
   const options: Options = {
     cwd,
     // Thinking is most of the wait on a message this short.
@@ -82,27 +82,23 @@ async function writeWithClaude(
     env: launch.env,
   };
   if (model) options.model = model;
+  const conversation = yield* acquireClaudeQuery(() => query({ prompt, options }));
 
-  const conversation = query({ prompt, options });
-  signal.addEventListener("abort", () => conversation.close());
-  try {
+  return yield* tryProviderPromise("claude", async () => {
     for await (const message of conversation) {
       if (message.type !== "result") continue;
       if (message.subtype !== "success") throw new Error(`Claude stopped: ${message.subtype}`);
       return message.result;
     }
     throw new Error("Claude returned nothing");
-  } finally {
-    conversation.close();
-  }
-}
+  });
+});
 
-async function writeWithCodex(
+const writeWithCodex = Effect.fn("writeWithCodex")(function* (
   cwd: string,
   harness: ProviderSettings,
   model: string | undefined,
   prompt: string,
-  signal: AbortSignal,
 ) {
   let finish: (text: string) => void = () => {};
   let abort: (error: Error) => void = () => {};
@@ -112,36 +108,30 @@ async function writeWithCodex(
   });
   let text = "";
 
-  const launch = await Effect.runPromise(resolveHarnessLaunch("codex", harness));
-  const rpc = await connectCodex(
-    cwd,
-    {
-      onNotification: (notification) =>
-        CodexNotification.matchOrElse(
-          notification,
-          {
-            "item/completed": ({ params }) => {
-              if (params.item.type === "agentMessage") text = params.item.text;
-            },
-            "turn/completed": ({ params }) => {
-              if (params.turn.status === "failed")
-                abort(new Error(params.turn.error?.message ?? "Codex turn failed"));
-              else finish(text);
-            },
-            error: ({ params }) => {
-              if (!params.willRetry) abort(new Error(params.error.message));
-            },
+  const launch = yield* resolveHarnessLaunch("codex", harness);
+  const rpc = yield* acquireCodexConnection(launch, cwd, {
+    onNotification: (notification) =>
+      CodexNotification.matchOrElse(
+        notification,
+        {
+          "item/completed": ({ params }) => {
+            if (params.item.type === "agentMessage") text = params.item.text;
           },
-          () => {},
-        ),
-      onExit: (code, stderr) => abort(new Error(`codex exited (${code}): ${stderr}`)),
-    },
-    launch,
-  );
-  signal.addEventListener("abort", () => rpc.close());
+          "turn/completed": ({ params }) => {
+            if (params.turn.status === "failed")
+              abort(new Error(params.turn.error?.message ?? "Codex turn failed"));
+            else finish(text);
+          },
+          error: ({ params }) => {
+            if (!params.willRetry) abort(new Error(params.error.message));
+          },
+        },
+        () => {},
+      ),
+    onExit: (code, stderr) => abort(new Error(`codex exited (${code}): ${stderr}`)),
+  });
 
-  try {
-    signal.throwIfAborted();
+  return yield* tryProviderPromise("codex", async () => {
     const started = await rpc.request(
       "thread/start",
       {
@@ -162,39 +152,39 @@ async function writeWithCodex(
       Schema.Unknown,
     );
     return await done;
-  } finally {
-    rpc.close();
-  }
-}
+  });
+});
 
 /** Cursor's print mode, read-only ("ask"); `--trust` skips the prompt for a folder it hasn't seen. */
-async function writeWithCursor(
+const writeWithCursor = Effect.fn("writeWithCursor")(function* (
   cwd: string,
   harness: ProviderSettings,
   model: string | undefined,
   prompt: string,
-  signal: AbortSignal,
 ) {
-  const launch = await Effect.runPromise(resolveHarnessLaunch("cursor", harness));
-  const { stdout } = await promisify(execFile)(
-    launch.bin,
-    [
-      ...launch.args,
-      "--print",
-      "--output-format",
-      "text",
-      "--mode",
-      "ask",
-      "--trust",
-      ...buildCursorModelFlag(model),
-      prompt,
-    ],
-    { cwd, env: launch.env, maxBuffer: 10 * 1024 * 1024, signal },
+  const launch = yield* resolveHarnessLaunch("cursor", harness);
+  // Interrupting the run (the timeout) aborts the signal, which kills the CLI.
+  const { stdout } = yield* tryProviderPromise("cursor", (signal) =>
+    promisify(execFile)(
+      launch.bin,
+      [
+        ...launch.args,
+        "--print",
+        "--output-format",
+        "text",
+        "--mode",
+        "ask",
+        "--trust",
+        ...buildCursorModelFlag(model),
+        prompt,
+      ],
+      { cwd, env: launch.env, maxBuffer: 10 * 1024 * 1024, signal },
+    ),
   );
   return stdout;
-}
+});
 
-const WRITE: Record<ProviderKind, typeof writeWithCursor> = {
+const WRITE: Record<ProviderKind, typeof writeWithClaude> = {
   claude: writeWithClaude,
   codex: writeWithCodex,
   cursor: writeWithCursor,
@@ -209,29 +199,19 @@ interface WriterInput {
   readonly recent: ReadonlyArray<string>;
 }
 
-async function writeWithHarness(input: WriterInput, prompt: string) {
-  const run = WRITE[input.provider];
-  const controller = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  // Losing the race doesn't stop the run; aborting closes the harness it started.
-  const timeout = new Promise<never>(
-    (_, reject) =>
-      (timer = setTimeout(() => {
-        reject(new Error("Timed out"));
-        controller.abort();
-      }, TIMEOUT_MS)),
+/** Timing out interrupts the run, which closes the harness it started. */
+function writeWithHarness(input: WriterInput, prompt: string) {
+  return Effect.runPromise(
+    WRITE[input.provider](input.cwd, input.harness, input.model, prompt).pipe(
+      Effect.scoped,
+      Effect.timeoutOrElse({
+        duration: TIMEOUT_MS,
+        orElse: () =>
+          Effect.fail(new ProviderError({ provider: input.provider, message: "Timed out" })),
+      }),
+      Effect.map(stripCodeFences),
+    ),
   );
-
-  try {
-    return stripCodeFences(
-      await Promise.race([
-        run(input.cwd, input.harness, input.model, prompt, controller.signal),
-        timeout,
-      ]),
-    );
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 /** Resolves to the message, or rejects with why it couldn't be written. */

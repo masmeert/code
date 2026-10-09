@@ -1,4 +1,4 @@
-import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
+import { query, type Options, type Query } from "@anthropic-ai/claude-agent-sdk";
 import type { ProviderKind, ProviderSettings } from "@masscode/contracts";
 import * as Effect from "effect/Effect";
 import { existsSync } from "node:fs";
@@ -81,7 +81,7 @@ export function toClaudeExtraArgs(args: ReadonlyArray<string>) {
   return flags;
 }
 
-/** A Claude session with no prompt: it answers control requests without ever starting a turn. Close it when done. */
+/** A Claude session with no prompt: it answers control requests without ever starting a turn. */
 export function startPromptlessQuery(launch: HarnessLaunch, options: Options = {}) {
   return query({
     prompt: { [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => {}) }) },
@@ -92,4 +92,15 @@ export function startPromptlessQuery(launch: HarnessLaunch, options: Options = {
       env: launch.env,
     },
   });
+}
+
+/** A short-lived Claude query, closed with the scope. */
+export function acquireClaudeQuery(start: () => Query) {
+  return Effect.acquireRelease(
+    Effect.try({
+      try: start,
+      catch: (error) => new ProviderError({ provider: "claude", message: getErrorMessage(error) }),
+    }),
+    (conversation) => Effect.sync(() => conversation.close()),
+  );
 }

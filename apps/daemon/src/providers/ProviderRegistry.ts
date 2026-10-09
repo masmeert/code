@@ -20,9 +20,21 @@ import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
-import { CODEX_FAST_TIER, CodexNotification, connectCodex, type CodexRpc } from "./codexRpc.ts";
+import {
+  acquireCodexConnection,
+  CODEX_FAST_TIER,
+  CodexNotification,
+  connectCodex,
+  type CodexRpc,
+} from "./codexRpc.ts";
 import { readCursorModels } from "./CursorAdapter.ts";
-import { resolveHarnessLaunch, startPromptlessQuery, type HarnessLaunch } from "./launch.ts";
+import {
+  acquireClaudeQuery,
+  resolveHarnessLaunch,
+  startPromptlessQuery,
+  type HarnessLaunch,
+} from "./launch.ts";
+import { tryProviderPromise, type ProviderError } from "./ProviderAdapter.ts";
 import { getErrorMessage } from "../errors.ts";
 
 const exec = promisify(execFile);
@@ -46,65 +58,73 @@ function getFirstLine(text: string) {
 
 // --- probes ------------------------------------------------------------------
 
-async function probeClaude(launch: HarnessLaunch): Promise<ProviderStatus> {
-  const version = getFirstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
-  const status = JSON.parse(
-    (
-      await exec(launch.bin, ["auth", "status"], { env: launch.env }).catch((error) => ({
-        stdout: error.stdout ?? "{}",
-      }))
-    ).stdout || "{}",
+function readVersion(kind: ProviderKind, launch: HarnessLaunch) {
+  return tryProviderPromise(kind, async () =>
+    getFirstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout),
+  );
+}
+
+const readClaudeModels = Effect.fn("readClaudeModels")(function* (launch: HarnessLaunch) {
+  const session = yield* acquireClaudeQuery(() => startPromptlessQuery(launch));
+
+  return yield* tryProviderPromise("claude", async () => {
+    // Drop the "Default (recommended)" alias row and star the concrete model it resolves to instead.
+    const catalog = await session.supportedModels();
+    const fallback = catalog.find((model) => model.value === "default")?.resolvedModel;
+    const rows = catalog.filter((model) => model.value !== "default");
+    const starred = rows.find((model) => fallback && model.resolvedModel === fallback);
+
+    const models: Array<ModelOption> = [];
+    // The catalog doesn't carry default efforts; the session reports the one it would apply after each model switch.
+    // `getSettings` is untyped in the SDK, so its answer is decoded and failures just leave the default unknown.
+    for (const model of rows) {
+      const effort = await session
+        .setModel(model.value)
+        .then(() =>
+          "getSettings" in session && Predicate.isFunction(session.getSettings)
+            ? // Awaited before decoding: a request left pending rejects unhandled on close() and kills the daemon.
+              Promise.resolve(session.getSettings()).then(
+                Schema.decodeUnknownPromise(
+                  Schema.Struct({
+                    applied: Schema.optional(Schema.Struct({ effort: Schema.optional(Effort) })),
+                  }),
+                ),
+              )
+            : undefined,
+        )
+        .then((settings) => settings?.applied?.effort)
+        .catch(() => undefined);
+      const levels = model.supportedEffortLevels ?? [];
+      models.push({
+        id: model.value,
+        label: model.displayName,
+        recommended: model === starred || undefined,
+        defaultEffort: effort,
+        efforts: [
+          ...levels,
+          // Ultracode runs at xhigh, so only models with it can take it.
+          ...(levels.includes("xhigh") ? (["ultracode"] as const) : []),
+          ...(model.supportsAdaptiveThinking ? (["ultrathink"] as const) : []),
+        ],
+        fast: model.supportsFastMode || undefined,
+      });
+    }
+    return models;
+  });
+}, Effect.scoped);
+
+const probeClaude = Effect.fn("probeClaude")(function* (launch: HarnessLaunch) {
+  const version = yield* readVersion("claude", launch);
+  const status = yield* tryProviderPromise("claude", async () =>
+    JSON.parse(
+      (
+        await exec(launch.bin, ["auth", "status"], { env: launch.env }).catch((error) => ({
+          stdout: error.stdout ?? "{}",
+        }))
+      ).stdout || "{}",
+    ),
   );
   const linked = status.loggedIn === true;
-
-  let models: Array<ModelOption> = [];
-  if (linked) {
-    const session = startPromptlessQuery(launch);
-    try {
-      // Drop the "Default (recommended)" alias row and star the concrete model it resolves to instead.
-      const catalog = await session.supportedModels();
-      const fallback = catalog.find((model) => model.value === "default")?.resolvedModel;
-      const rows = catalog.filter((model) => model.value !== "default");
-      const starred = rows.find((model) => fallback && model.resolvedModel === fallback);
-
-      // The catalog doesn't carry default efforts; the session reports the one it would apply after each model switch.
-      // `getSettings` is untyped in the SDK, so its answer is decoded and failures just leave the default unknown.
-      for (const model of rows) {
-        const effort = await session
-          .setModel(model.value)
-          .then(() =>
-            "getSettings" in session && Predicate.isFunction(session.getSettings)
-              ? // Awaited before decoding: a request left pending rejects unhandled on close() and kills the daemon.
-                Promise.resolve(session.getSettings()).then(
-                  Schema.decodeUnknownPromise(
-                    Schema.Struct({
-                      applied: Schema.optional(Schema.Struct({ effort: Schema.optional(Effort) })),
-                    }),
-                  ),
-                )
-              : undefined,
-          )
-          .then((settings) => settings?.applied?.effort)
-          .catch(() => undefined);
-        const levels = model.supportedEffortLevels ?? [];
-        models.push({
-          id: model.value,
-          label: model.displayName,
-          recommended: model === starred || undefined,
-          defaultEffort: effort,
-          efforts: [
-            ...levels,
-            // Ultracode runs at xhigh, so only models with it can take it.
-            ...(levels.includes("xhigh") ? (["ultracode"] as const) : []),
-            ...(model.supportsAdaptiveThinking ? (["ultrathink"] as const) : []),
-          ],
-          fast: model.supportsFastMode || undefined,
-        });
-      }
-    } finally {
-      session.close();
-    }
-  }
 
   return {
     kind: "claude",
@@ -113,15 +133,16 @@ async function probeClaude(launch: HarnessLaunch): Promise<ProviderStatus> {
     linked,
     account: status.email ?? null,
     plan: status.subscriptionType ?? null,
-    models,
+    models: linked ? yield* readClaudeModels(launch) : [],
     error: null,
-  };
-}
+  } satisfies ProviderStatus;
+});
 
-async function probeCodex(launch: HarnessLaunch): Promise<ProviderStatus> {
-  const version = getFirstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
-  const rpc = await connectCodex(undefined, {}, launch);
-  try {
+const probeCodex = Effect.fn("probeCodex")(function* (launch: HarnessLaunch) {
+  const version = yield* readVersion("codex", launch);
+  const rpc = yield* acquireCodexConnection(launch, undefined);
+
+  return yield* tryProviderPromise("codex", async (): Promise<ProviderStatus> => {
     const { account } = await rpc.request(
       "account/read",
       {},
@@ -183,16 +204,16 @@ async function probeCodex(launch: HarnessLaunch): Promise<ProviderStatus> {
       models,
       error: null,
     };
-  } finally {
-    rpc.close();
-  }
-}
+  });
+}, Effect.scoped);
 
-async function probeCursor(launch: HarnessLaunch): Promise<ProviderStatus> {
-  const version = getFirstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
-  const { stdout } = await exec(launch.bin, ["status"], { env: launch.env }).catch((error) => ({
-    stdout: String(error.stdout ?? ""),
-  }));
+const probeCursor = Effect.fn("probeCursor")(function* (launch: HarnessLaunch) {
+  const version = yield* readVersion("cursor", launch);
+  const { stdout } = yield* tryProviderPromise("cursor", () =>
+    exec(launch.bin, ["status"], { env: launch.env }).catch((error) => ({
+      stdout: String(error.stdout ?? ""),
+    })),
+  );
   const account = stdout.match(new RegExp(String.raw`Logged in as ([^\s\u001b]+)`))?.[1] ?? null;
 
   return {
@@ -202,12 +223,15 @@ async function probeCursor(launch: HarnessLaunch): Promise<ProviderStatus> {
     linked: account !== null,
     account,
     plan: null,
-    models: account === null ? [] : await readCursorModels(launch),
+    models: account === null ? [] : yield* readCursorModels(launch),
     error: null,
-  };
-}
+  } satisfies ProviderStatus;
+});
 
-const PROBE: Record<ProviderKind, (launch: HarnessLaunch) => Promise<ProviderStatus>> = {
+const PROBE: Record<
+  ProviderKind,
+  (launch: HarnessLaunch) => Effect.Effect<ProviderStatus, ProviderError>
+> = {
   claude: probeClaude,
   codex: probeCodex,
   cursor: probeCursor,
@@ -235,39 +259,37 @@ const ClaudeUsage = Schema.Struct({
 });
 
 /** The plan's windows as `/usage` shows them; none for API-key logins. Decoded, since the SDK marks this call experimental. */
-async function readClaudeLimits(launch: HarnessLaunch): Promise<Array<UsageLimit>> {
-  const session = startPromptlessQuery(launch);
-  try {
-    const { rate_limits: limits } = await session
+const readClaudeLimits = Effect.fn("readClaudeLimits")(function* (launch: HarnessLaunch) {
+  const session = yield* acquireClaudeQuery(() => startPromptlessQuery(launch));
+  const { rate_limits: limits } = yield* tryProviderPromise("claude", () =>
+    session
       .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
-      .then(Schema.decodeUnknownPromise(ClaudeUsage));
-    if (!limits) return [];
+      .then(Schema.decodeUnknownPromise(ClaudeUsage)),
+  );
+  if (!limits) return [];
 
-    return (
-      [
-        ["5-hour limit", limits.five_hour],
-        ["Weekly, all models", limits.seven_day],
-        ["Weekly, Opus", limits.seven_day_opus],
-        ["Weekly, Sonnet", limits.seven_day_sonnet],
-        ...(limits.model_scoped ?? []).map(
-          (window) => [`Weekly, ${window.display_name}`, window] as const,
-        ),
-      ] as const
-    ).flatMap(([label, window]) =>
-      window && window.utilization !== null
-        ? [
-            {
-              label,
-              usedPercent: window.utilization,
-              resetsAt: Date.parse(window.resets_at ?? "") || null,
-            },
-          ]
-        : [],
-    );
-  } finally {
-    session.close();
-  }
-}
+  return (
+    [
+      ["5-hour limit", limits.five_hour],
+      ["Weekly, all models", limits.seven_day],
+      ["Weekly, Opus", limits.seven_day_opus],
+      ["Weekly, Sonnet", limits.seven_day_sonnet],
+      ...(limits.model_scoped ?? []).map(
+        (window) => [`Weekly, ${window.display_name}`, window] as const,
+      ),
+    ] as const
+  ).flatMap(([label, window]): Array<UsageLimit> =>
+    window && window.utilization !== null
+      ? [
+          {
+            label,
+            usedPercent: window.utilization,
+            resetsAt: Date.parse(window.resets_at ?? "") || null,
+          },
+        ]
+      : [],
+  );
+}, Effect.scoped);
 
 const CodexWindow = Schema.NullOr(
   Schema.Struct({
@@ -284,38 +306,39 @@ function formatCodexWindowLabel(minutes: number | null) {
   return `${Math.round(minutes / 60)}-hour limit`;
 }
 
-async function readCodexLimits(launch: HarnessLaunch): Promise<Array<UsageLimit>> {
-  const rpc = await connectCodex(undefined, {}, launch);
-  try {
-    const { rateLimits } = await rpc.request(
+const readCodexLimits = Effect.fn("readCodexLimits")(function* (launch: HarnessLaunch) {
+  const rpc = yield* acquireCodexConnection(launch, undefined);
+  const { rateLimits } = yield* tryProviderPromise("codex", () =>
+    rpc.request(
       "account/rateLimits/read",
       { excludeResetCreditDetails: true },
       Schema.Struct({
         rateLimits: Schema.Struct({ primary: CodexWindow, secondary: CodexWindow }),
       }),
-    );
+    ),
+  );
 
-    return [rateLimits.primary, rateLimits.secondary].flatMap((window) =>
-      window
-        ? [
-            {
-              label: formatCodexWindowLabel(window.windowDurationMins),
-              usedPercent: window.usedPercent,
-              resetsAt: window.resetsAt === null ? null : window.resetsAt * 1000,
-            },
-          ]
-        : [],
-    );
-  } finally {
-    rpc.close();
-  }
-}
+  return [rateLimits.primary, rateLimits.secondary].flatMap((window): Array<UsageLimit> =>
+    window
+      ? [
+          {
+            label: formatCodexWindowLabel(window.windowDurationMins),
+            usedPercent: window.usedPercent,
+            resetsAt: window.resetsAt === null ? null : window.resetsAt * 1000,
+          },
+        ]
+      : [],
+  );
+}, Effect.scoped);
 
 // Cursor's CLI doesn't report its plan's limits.
-const READ_LIMITS: Record<ProviderKind, (launch: HarnessLaunch) => Promise<Array<UsageLimit>>> = {
+const READ_LIMITS: Record<
+  ProviderKind,
+  (launch: HarnessLaunch) => Effect.Effect<ReadonlyArray<UsageLimit>, ProviderError>
+> = {
   claude: readClaudeLimits,
   codex: readCodexLimits,
-  cursor: async () => [],
+  cursor: () => Effect.succeed([]),
 };
 
 const LOGOUT_ARGS: Record<ProviderKind, ReadonlyArray<string>> = {
@@ -363,7 +386,7 @@ const make = Effect.gen(function* () {
 
   function probeHarness(kind: ProviderKind) {
     return resolveLaunch(kind)
-      .then((launch) => PROBE[kind](launch))
+      .then((launch) => Effect.runPromise(PROBE[kind](launch)))
       .catch((error) => {
         const text = getErrorMessage(error);
         return buildUnknownStatus(kind, text.includes("Could not find") ? null : text);
@@ -563,7 +586,7 @@ const make = Effect.gen(function* () {
     readLimits: (kind) =>
       Effect.promise(() =>
         resolveLaunch(kind)
-          .then((launch) => READ_LIMITS[kind](launch))
+          .then((launch) => Effect.runPromise(READ_LIMITS[kind](launch)))
           .then(
             (limits) => ({ limits, error: null }),
             (error) => ({

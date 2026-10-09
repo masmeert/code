@@ -81,7 +81,7 @@ export const PromptResponse = Schema.Struct({ stopReason: Schema.String });
 
 const decodeUpdate = Schema.decodeUnknownOption(Schema.Struct({ update: SessionUpdate }));
 
-interface AcpHandlers {
+export interface AcpHandlers {
   readonly onUpdate?: (update: SessionUpdate) => void;
   /** Requests the agent makes of us, permission and extensions; unhandled ones get method-not-found. */
   readonly onRequest?: (id: RpcId, method: string, params: Schema.Json | undefined) => boolean;

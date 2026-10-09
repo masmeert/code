@@ -18,6 +18,7 @@ import {
   PromptResponse,
   SessionSetup,
   SessionUpdate,
+  type AcpHandlers,
   type RpcId,
   type ToolContent,
 } from "./acp.ts";
@@ -80,28 +81,40 @@ const ListedModels = Schema.Struct({
 });
 
 /** The models the account can use, with each one's efforts and fast mode. */
-export async function readCursorModels(launch: HarnessLaunch): Promise<Array<ModelOption>> {
-  const rpc = await connectAcp("Cursor", launch, buildAcpArgs(launch, null), undefined);
-  try {
-    const { models } = await rpc.request("cursor/list_available_models", {}, ListedModels);
-
-    return models.map((model) => {
-      const effort = findEffortOption(model.configOptions);
-      return {
-        id: model.value,
-        label: model.name,
-        recommended: model.value === AUTO || undefined,
-        defaultEffort: Predicate.isString(effort?.currentValue)
-          ? toEffort(effort.currentValue)
-          : undefined,
-        efforts: (effort?.options ?? []).flatMap((option) => toEffort(option.value) ?? []),
-        fast: model.configOptions.some((option) => option.id === "fast") || undefined,
-      };
-    });
-  } finally {
-    rpc.close();
-  }
+/** A short-lived `cursor-agent acp` on the CLI's default model, closed with the scope. */
+function acquireCursorConnection(
+  launch: HarnessLaunch,
+  cwd: string | undefined,
+  handlers: AcpHandlers = {},
+) {
+  return Effect.acquireRelease(
+    tryProviderPromise("cursor", () =>
+      connectAcp("Cursor", launch, buildAcpArgs(launch, null), cwd, handlers),
+    ),
+    (rpc) => Effect.sync(() => rpc.close()),
+  );
 }
+
+export const readCursorModels = Effect.fn("readCursorModels")(function* (launch: HarnessLaunch) {
+  const rpc = yield* acquireCursorConnection(launch, undefined);
+  const { models } = yield* tryProviderPromise("cursor", () =>
+    rpc.request("cursor/list_available_models", {}, ListedModels),
+  );
+
+  return models.map((model): ModelOption => {
+    const effort = findEffortOption(model.configOptions);
+    return {
+      id: model.value,
+      label: model.name,
+      recommended: model.value === AUTO || undefined,
+      defaultEffort: Predicate.isString(effort?.currentValue)
+        ? toEffort(effort.currentValue)
+        : undefined,
+      efforts: (effort?.options ?? []).flatMap((option) => toEffort(option.value) ?? []),
+      fast: model.configOptions.some((option) => option.id === "fast") || undefined,
+    };
+  });
+}, Effect.scoped);
 
 const CreatePlan = Schema.Struct({ plan: Schema.String });
 
@@ -693,36 +706,33 @@ const listSkills: ProviderAdapter["listSkills"] = Effect.fn("CursorAdapter.listS
   harness,
 }) {
   const launch = yield* resolveHarnessLaunch("cursor", harness);
-  return yield* tryProviderPromise("cursor", async () => {
-    let report: (commands: ReadonlyArray<{ name: string; description: string }>) => void = () => {};
-    const reported = new Promise<ReadonlyArray<{ name: string; description: string }>>(
-      (resolve) => (report = resolve),
-    );
-    const rpc = await connectAcp("Cursor", launch, buildAcpArgs(launch, null), cwd, {
-      onUpdate: (update) => {
-        if (SessionUpdate.guards.available_commands_update(update)) {
-          report(update.availableCommands);
-        }
-      },
-    });
-    try {
-      await rpc.request("session/new", { cwd, mcpServers: [] }, SessionSetup);
-      const commands = await Promise.race([
-        reported,
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
-      ]);
-      if (commands === null) throw new Error("Cursor didn't list its skills within 15 s");
-
-      return commands.flatMap(({ name, description }) =>
-        SKILL_NOTE.test(description)
-          ? [{ name, description: description.replace(SKILL_NOTE, ""), path: null }]
-          : [],
-      );
-    } finally {
-      rpc.close();
-    }
+  let report: (commands: ReadonlyArray<{ name: string; description: string }>) => void = () => {};
+  const reported = new Promise<ReadonlyArray<{ name: string; description: string }>>(
+    (resolve) => (report = resolve),
+  );
+  const rpc = yield* acquireCursorConnection(launch, cwd, {
+    onUpdate: (update) => {
+      if (SessionUpdate.guards.available_commands_update(update)) {
+        report(update.availableCommands);
+      }
+    },
   });
-});
+
+  return yield* tryProviderPromise("cursor", async () => {
+    await rpc.request("session/new", { cwd, mcpServers: [] }, SessionSetup);
+    const commands = await Promise.race([
+      reported,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
+    ]);
+    if (commands === null) throw new Error("Cursor didn't list its skills within 15 s");
+
+    return commands.flatMap(({ name, description }) =>
+      SKILL_NOTE.test(description)
+        ? [{ name, description: description.replace(SKILL_NOTE, ""), path: null }]
+        : [],
+    );
+  });
+}, Effect.scoped);
 
 function failUnsupported(action: string) {
   return () => Effect.fail(createError(`Cursor can't ${action} a conversation yet.`));
