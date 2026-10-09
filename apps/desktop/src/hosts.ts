@@ -5,7 +5,7 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { Readable, Transform } from "node:stream";
+import { pipeline as pipeStreams, Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { app, BrowserWindow, net, session } from "electron";
 import { configureBrowserSession } from "./browser.ts";
@@ -159,7 +159,14 @@ function ssh(alias: string, command: string, input: string | Readable) {
     );
 
     if (typeof input === "string") child.stdin.end(input);
-    else input.pipe(child.stdin).on("error", () => {});
+    else
+      input
+        .on("error", (error) => {
+          child.kill();
+          reject(error);
+        })
+        .pipe(child.stdin)
+        .on("error", () => {});
   });
 }
 
@@ -248,13 +255,16 @@ async function upload(host: Host, arch: string, version: string) {
   await ssh(
     host.alias,
     `sh -c 'd="$HOME/.masscode/remote/bin"; mkdir -p "$d" && gzip -dc > "$d/.upload" && chmod +x "$d/.upload" && mv "$d/.upload" "$d/masscode-daemon-${version}"'`,
-    createReadStream(archive).pipe(
+    // Forwards a read error to the progress stream, so ssh sees it and rejects.
+    pipeStreams(
+      createReadStream(archive),
       progress(size, (percent) =>
         setStatus(
           host,
           HostStatus.cases.connecting.make({ step: `Installing MassCode (${percent}%)` }),
         ),
       ),
+      () => {},
     ),
   );
 }
