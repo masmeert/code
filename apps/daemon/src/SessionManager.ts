@@ -1396,7 +1396,10 @@ const make = Effect.gen(function* () {
       const started = session
         ? { session, handoff: null }
         : yield* startSideChat(source, messageId, sideChatId);
-      if (!started) return;
+      if (!started)
+        return publishSideChat(
+          RuntimeEvent.cases["thread.status"].make({ threadId: sideChatId, status: "idle" }),
+        );
 
       yield* started.session.send({
         // SAFETY: from crypto.randomUUID() above.
