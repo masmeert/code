@@ -441,7 +441,7 @@ export function GitMenu({
                 disabled={!canCommit}
                 className="h-7 rounded-lg bg-foreground px-2.5 text-xs font-medium text-background transition-opacity outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               >
-                {pending && pending !== "push" ? pendingLabel : "Commit"}
+                {pending === "commit" || pending === "commit-push" ? pendingLabel : "Commit"}
               </button>
             </div>
           </form>
