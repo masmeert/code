@@ -1682,7 +1682,7 @@ export async function cloneProject(
   return (
     cloned ?? {
       path: null,
-      error: "The host stopped answering. Check its connection, then scheduleReconnect.",
+      error: "The host stopped answering. Check its connection, then retry.",
     }
   );
 }

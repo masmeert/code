@@ -39,11 +39,11 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
   });
 
   const [setup, setSetup] = useState<Setup>({ status: "loading" });
-  const [booting, setBooting] = useState<string | null>(null);
+  const [bootingDeviceId, setBootingDeviceId] = useState<string | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
 
   /** Lists the devices again; false when that failed. */
-  async function refresh(install: boolean) {
+  async function refreshDevices(install: boolean) {
     const listed = await listDevices(install);
     if (!listed) setSetup({ status: "failed", message: "MassCode didn't answer. Try again." });
     else if (listed.error) setSetup({ status: "failed", message: listed.error });
@@ -52,39 +52,40 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
     return Boolean(listed?.hub && !listed.error);
   }
 
-  async function load(install: boolean) {
+  async function loadDevices(install: boolean) {
     setSetup({ status: install ? "installing" : "loading" });
     // The hub forgets its streams when it restarts, so reattach the thread's device.
-    if ((await refresh(install)) && deviceId) await boot(deviceId);
+    if ((await refreshDevices(install)) && deviceId) await bootDevice(deviceId);
   }
 
-  async function boot(id: string) {
-    setBooting(id);
+  async function bootDevice(id: string) {
+    setBootingDeviceId(id);
     setBootError(null);
     const error = await attachDevice(threadId, id);
     // A booted emulator has a serial to stream by now.
-    if (!error) await refresh(false);
-    setBooting(null);
+    if (!error) await refreshDevices(false);
+    setBootingDeviceId(null);
     setBootError(error);
   }
 
   // Loads once the daemon answers, and again after it restarts, which also restarts the hub.
-  const connected = useStore((state) => state.connected);
-  const loadOnConnect = useEffectEvent(() => void load(false));
+  const isConnected = useStore((state) => state.connected);
+  const loadOnConnect = useEffectEvent(() => void loadDevices(false));
   useEffect(() => {
-    if (connected) loadOnConnect();
-  }, [connected]);
+    if (isConnected) loadOnConnect();
+  }, [isConnected]);
 
   const devices = setup.status === "ready" ? setup.devices : [];
   const device = devices.find((candidate) => candidate.id === deviceId);
 
   // An agent may attach a device this list hasn't seen started.
   const refreshForDevice = useEffectEvent(() => {
-    if (setup.status === "ready" && deviceId && !device?.streamId && !booting) void refresh(false);
+    if (setup.status === "ready" && deviceId && !device?.streamId && !bootingDeviceId)
+      void refreshDevices(false);
   });
   useEffect(() => refreshForDevice(), [deviceId]);
 
-  function panelBody() {
+  function renderPanelBody() {
     if (setup.status === "loading") {
       return (
         <Message>
@@ -101,7 +102,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
             Run iOS simulators and Android emulators here, for you and the agent. This installs
             expo-device-hub and agent-device from npm into ~/.masscode/tools.
           </span>
-          <ActionButton onClick={() => void load(true)}>Set up</ActionButton>
+          <ActionButton onClick={() => void loadDevices(true)}>Set up</ActionButton>
         </Message>
       );
     }
@@ -119,16 +120,17 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
       return (
         <Message>
           <span className="selectable">{setup.message}</span>
-          <ActionButton onClick={() => void load(false)}>Try again</ActionButton>
+          <ActionButton onClick={() => void loadDevices(false)}>Try again</ActionButton>
         </Message>
       );
     }
 
-    if (booting) {
+    if (bootingDeviceId) {
       return (
         <Message>
           <LoaderCircle className="size-4 animate-spin" />
-          Starting {devices.find((candidate) => candidate.id === booting)?.name ?? "the device"}…
+          Starting{" "}
+          {devices.find((candidate) => candidate.id === bootingDeviceId)?.name ?? "the device"}…
         </Message>
       );
     }
@@ -138,7 +140,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
         <Message>
           <span className="selectable">{bootError}</span>
           {deviceId ? (
-            <ActionButton onClick={() => void boot(deviceId)}>Try again</ActionButton>
+            <ActionButton onClick={() => void bootDevice(deviceId)}>Try again</ActionButton>
           ) : null}
         </Message>
       );
@@ -169,7 +171,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
         <Message>
           This Mac has no iOS simulators or Android emulators. Add a simulator in Xcode → Settings →
           Components, or an emulator in Android Studio's Device Manager, then try again.
-          <ActionButton onClick={() => void load(false)}>Try again</ActionButton>
+          <ActionButton onClick={() => void loadDevices(false)}>Try again</ActionButton>
         </Message>
       );
     }
@@ -181,7 +183,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
           <button
             key={candidate.id}
             type="button"
-            onClick={() => void boot(candidate.id)}
+            onClick={() => void bootDevice(candidate.id)}
             className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-2 text-left text-sm transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className="truncate">{candidate.name}</span>
@@ -224,7 +226,10 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
             collisionPadding={8}
             className="max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto"
           >
-            <DropdownMenuRadioGroup value={deviceId ?? ""} onValueChange={(id) => void boot(id)}>
+            <DropdownMenuRadioGroup
+              value={deviceId ?? ""}
+              onValueChange={(id) => void bootDevice(id)}
+            >
               {devices.map((candidate) => (
                 <DropdownMenuRadioItem key={candidate.id} value={candidate.id}>
                   <span className="truncate">{candidate.name}</span>
@@ -249,7 +254,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
           <X className="size-3.5" />
         </IconButton>
       </div>
-      {panelBody()}
+      {renderPanelBody()}
     </aside>
   );
 }
@@ -268,18 +273,18 @@ function DeviceScreen({
   const surface = useRef<HTMLDivElement>(null);
   const fallback = useRef<HTMLImageElement>(null);
   const stream = useRef<DeviceStream | null>(null);
-  const touching = useRef(false);
-  const [streaming, setStreaming] = useState(false);
+  const isTouching = useRef(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [mjpegUrl, setMjpegUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const connected = connectDeviceStream(hub, device.platform, streamId, canvas.current!, {
-      onStatus: (status) => setStreaming(status === "streaming"),
+    const deviceStream = connectDeviceStream(hub, device.platform, streamId, canvas.current!, {
+      onStatus: (status) => setIsStreaming(status === "streaming"),
       onMjpeg: setMjpegUrl,
     });
-    stream.current = connected;
+    stream.current = deviceStream;
 
-    return () => connected.stop();
+    return () => deviceStream.stop();
   }, [hub, device.platform, streamId]);
 
   // A multipart image may never fire `load`, so watch for its first frame instead.
@@ -288,13 +293,13 @@ function DeviceScreen({
 
     const poll = setInterval(() => {
       if (!fallback.current?.naturalWidth) return;
-      setStreaming(true);
+      setIsStreaming(true);
       clearInterval(poll);
     }, 250);
     return () => clearInterval(poll);
   }, [mjpegUrl]);
 
-  function touch(type: "begin" | "move" | "end", event: React.PointerEvent<HTMLElement>) {
+  function sendTouch(type: "begin" | "move" | "end", event: React.PointerEvent<HTMLElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     stream.current?.touch(
       type,
@@ -307,19 +312,19 @@ function DeviceScreen({
     onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
       event.currentTarget.setPointerCapture(event.pointerId);
       surface.current?.focus();
-      touching.current = true;
-      touch("begin", event);
+      isTouching.current = true;
+      sendTouch("begin", event);
     },
     onPointerMove: (event: React.PointerEvent<HTMLElement>) => {
-      if (touching.current) touch("move", event);
+      if (isTouching.current) sendTouch("move", event);
     },
     onPointerUp: (event: React.PointerEvent<HTMLElement>) => {
-      touching.current = false;
-      touch("end", event);
+      isTouching.current = false;
+      sendTouch("end", event);
     },
     onPointerCancel: (event: React.PointerEvent<HTMLElement>) => {
-      touching.current = false;
-      touch("end", event);
+      isTouching.current = false;
+      sendTouch("end", event);
     },
   };
 
@@ -368,7 +373,7 @@ function DeviceScreen({
             className="max-h-full max-w-full touch-none rounded-[2rem] select-none"
           />
         ) : null}
-        {streaming ? null : (
+        {isStreaming ? null : (
           <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <LoaderCircle className="size-4 animate-spin" />
             Connecting…

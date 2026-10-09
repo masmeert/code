@@ -87,17 +87,17 @@ export function GitMenu({
   cwd,
   refreshKey,
   threadId,
-  worktree,
+  isWorktree,
 }: {
   cwd: string;
   refreshKey: string;
   threadId: string;
-  worktree: boolean;
+  isWorktree: boolean;
 }) {
   const repo = useStore((state) => state.repos[cwd]);
   const defaultMergeMethod = useStore((state) => state.settings.mergeMethod);
-  const confirmDelete = useStore((state) => state.settings.confirmDelete !== false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const shouldConfirmDelete = useStore((state) => state.settings.confirmDelete !== false);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
   const [mergeMethod, setMergeMethod] = useState<MergeMethod>("merge");
   const [message, setMessage] = useState("");
@@ -116,7 +116,7 @@ export function GitMenu({
   }, [cwd, refreshKey]);
 
   // Any update carrying an action answers the one in flight (only one runs per repo at a time).
-  const answerPending = useEffectEvent(() => {
+  const resolvePendingAction = useEffectEvent(() => {
     if (!repo?.action || !pending) return;
 
     setPending(null);
@@ -131,12 +131,12 @@ export function GitMenu({
     }
   });
 
-  useEffect(() => answerPending(), [repo]);
+  useEffect(() => resolvePendingAction(), [repo]);
 
   useEffect(() => {
     if (panel === "commit") requestAnimationFrame(() => textarea.current?.focus());
     if (panel === "merge-into-base") requestAnimationFrame(() => mergeButton.current?.focus());
-    setConfirmingDelete(false);
+    setIsConfirmingDelete(false);
     if (panel === "merge") setMergeMethod(defaultMergeMethod ?? readLastMergeMethod());
     if (panel) send(ClientCommand.cases["git.status"].make({ path: cwd }));
   }, [panel, cwd, defaultMergeMethod]);
@@ -148,7 +148,7 @@ export function GitMenu({
   const canPush = status.hasRemote && !status.detached && status.ahead > 0 && !pending;
   const pushHint = status.upstream ? `↑${status.ahead}` : status.ahead ? "new branch" : undefined;
   const pullRequest = status.pullRequest;
-  const pullRequestOpen = pullRequest?.state === "open" || pullRequest?.state === "draft";
+  const isPullRequestOpen = pullRequest?.state === "open" || pullRequest?.state === "draft";
   // GitLab calls them merge requests.
   const pullRequestName = status.sourceControl === "gitlab" ? "MR" : "PR";
   const canCreatePullRequest =
@@ -158,11 +158,11 @@ export function GitMenu({
     status.changes === 0 &&
     status.behind === 0 &&
     status.aheadOfDefault > 0 &&
-    !pullRequestOpen &&
+    !isPullRequestOpen &&
     // A squash or rebase merge leaves the branch's commits off the default branch; only new work needs another.
     (pullRequest?.state !== "merged" || status.ahead > 0) &&
     !pending;
-  const base = worktree ? status.base : null;
+  const base = isWorktree ? status.base : null;
   const canMergeIntoBase =
     !!base &&
     !base.merged &&
@@ -171,7 +171,7 @@ export function GitMenu({
     status.changes === 0 &&
     !pending;
 
-  function run(action: GitAction) {
+  function runGitAction(action: GitAction) {
     setError(null);
     setPending(action);
     if (action === "push") {
@@ -203,14 +203,14 @@ export function GitMenu({
   const primaryPushes = status.changes === 0 && canPush && !primaryOpensPullRequest;
   // Nothing left to do locally: the main button shows the pull request.
   const primaryViewsPullRequest =
-    status.changes === 0 && !canPush && !primaryOpensPullRequest && pullRequestOpen;
+    status.changes === 0 && !canPush && !primaryOpensPullRequest && isPullRequestOpen;
   // Without a pull request to go through, a worktree's next step is merging it locally.
   const primaryMerges =
     canMergeIntoBase && !primaryOpensPullRequest && !primaryPushes && !primaryViewsPullRequest;
 
-  function primary() {
-    if (primaryOpensPullRequest) run("pull-request");
-    else if (primaryPushes) run("push");
+  function runPrimaryAction() {
+    if (primaryOpensPullRequest) runGitAction("pull-request");
+    else if (primaryPushes) runGitAction("push");
     else if (primaryViewsPullRequest) window.open(pullRequest!.url, "_blank", "noreferrer");
     else if (primaryMerges) setPanel(panel === "merge-into-base" ? null : "merge-into-base");
     else setPanel(panel === "commit" ? null : "commit");
@@ -241,11 +241,11 @@ export function GitMenu({
   ) : null;
 
   return (
-    <MorphPopover open={panel !== null} onOpenChange={(open) => !open && setPanel(null)}>
+    <MorphPopover open={panel !== null} onOpenChange={(isOpen) => !isOpen && setPanel(null)}>
       <div className="flex h-7 items-stretch overflow-hidden rounded-lg border border-border text-muted-foreground">
         <button
           type="button"
-          onClick={primary}
+          onClick={runPrimaryAction}
           disabled={
             !!pending ||
             (!canCommit &&
@@ -319,7 +319,7 @@ export function GitMenu({
             className="flex flex-col gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              if (canMergeIntoBase) run("merge-into-base");
+              if (canMergeIntoBase) runGitAction("merge-into-base");
             }}
           >
             <p className="px-0.5 text-sm text-foreground">
@@ -355,7 +355,7 @@ export function GitMenu({
             className="flex flex-col gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!pending) run("merge");
+              if (!pending) runGitAction("merge");
             }}
           >
             <p className="px-0.5 text-sm text-foreground">
@@ -401,7 +401,7 @@ export function GitMenu({
             className="flex flex-col gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              if (canCommit) run("commit");
+              if (canCommit) runGitAction("commit");
             }}
           >
             <textarea
@@ -411,7 +411,7 @@ export function GitMenu({
               onKeyDown={(event) => {
                 if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && canCommit) {
                   event.preventDefault();
-                  run(event.shiftKey && status.hasRemote ? "commit-push" : "commit");
+                  runGitAction(event.shiftKey && status.hasRemote ? "commit-push" : "commit");
                 }
               }}
               placeholder="Commit message, or leave empty to generate one"
@@ -429,7 +429,7 @@ export function GitMenu({
                   type="button"
                   title="⌘⇧↩"
                   disabled={!canCommit}
-                  onClick={() => run("commit-push")}
+                  onClick={() => runGitAction("commit-push")}
                   className="h-7 rounded-lg border border-border px-2.5 text-xs font-medium text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                 >
                   Commit & push
@@ -456,7 +456,7 @@ export function GitMenu({
               Commit…
             </MenuItem>
             <MenuItem
-              onClick={() => run("push")}
+              onClick={() => runGitAction("push")}
               disabled={!canPush}
               hint={canPush ? pushHint : undefined}
             >
@@ -467,15 +467,15 @@ export function GitMenu({
               base.merged ? (
                 <MenuItem
                   onClick={() =>
-                    confirmDelete && !confirmingDelete
-                      ? setConfirmingDelete(true)
+                    shouldConfirmDelete && !isConfirmingDelete
+                      ? setIsConfirmingDelete(true)
                       : send(ClientCommand.cases["thread.close"].make({ threadId }))
                   }
                   disabled={status.changes > 0 || !!pending}
                   hint={status.changes > 0 ? "uncommitted" : undefined}
                 >
                   <Trash2 />
-                  {confirmingDelete ? "Click again to delete" : "Delete thread & worktree"}
+                  {isConfirmingDelete ? "Click again to delete" : "Delete thread & worktree"}
                 </MenuItem>
               ) : (
                 <MenuItem
@@ -497,7 +497,7 @@ export function GitMenu({
               )
             ) : null}
             {status.sourceControl ? (
-              pullRequestOpen && pullRequest ? (
+              isPullRequestOpen && pullRequest ? (
                 <>
                   <a
                     role="menuitem"
@@ -523,13 +523,16 @@ export function GitMenu({
                   </MenuItem>
                 </>
               ) : (
-                <MenuItem onClick={() => run("pull-request")} disabled={!canCreatePullRequest}>
+                <MenuItem
+                  onClick={() => runGitAction("pull-request")}
+                  disabled={!canCreatePullRequest}
+                >
                   <GitPullRequestArrow />
                   Create {pullRequestName}
                 </MenuItem>
               )
             ) : null}
-            {pullRequest && !pullRequestOpen ? (
+            {pullRequest && !isPullRequestOpen ? (
               <a
                 href={pullRequest.url}
                 target="_blank"

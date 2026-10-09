@@ -27,18 +27,18 @@ const CATEGORY_COLOR = new Map([
   ["Custom agents", "bg-[#4a3aa7] dark:bg-[#9085e9]"],
 ]);
 
-function categoryColor(category: ContextUsage["categories"][number]) {
+function getCategoryColor(category: ContextUsage["categories"][number]) {
   if (category.kind === "free") return "bg-muted";
   if (category.kind !== "used") return "bg-muted-foreground/40";
   return CATEGORY_COLOR.get(category.name) ?? "bg-muted-foreground";
 }
 
-function percentOf(part: number, whole: number) {
+function getPercent(part: number, whole: number) {
   return whole > 0 ? Math.round((part / whole) * 100) : 0;
 }
 
 /** "Resets in 3 hr 21 min" within a day, else the weekday and time. */
-export function resetLabel(resetsAt: number, now: number) {
+export function formatResetLabel(resetsAt: number, now: number) {
   const minutes = Math.max(0, Math.round((resetsAt - now) / 60_000));
   if (minutes >= 24 * 60) {
     return `Resets ${new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }).format(resetsAt)}`;
@@ -59,30 +59,30 @@ export function UsageMeter({
   busy: boolean;
 }) {
   const usage = useStore((state) => state.threads[threadId]?.usage);
-  const reading = useStore((state) => state.readingUsage[threadId] ?? false);
+  const isReading = useStore((state) => state.readingUsage[threadId] ?? false);
   const host = useThreadHost(threadId);
-  const [open, setOpen] = useState(false);
-  const missing = usage === undefined;
+  const [isOpen, setIsOpen] = useState(false);
+  const isMissing = usage === undefined;
 
   useEffect(() => {
-    if (missing) readUsage(threadId);
-  }, [missing, threadId]);
+    if (isMissing) readUsage(threadId);
+  }, [isMissing, threadId]);
 
-  useKeybinding("usage.toggle", () => setOpen((wasOpen) => !wasOpen));
+  useKeybinding("usage.toggle", () => setIsOpen((wasOpen) => !wasOpen));
 
   useEffect(() => {
-    if (open) readLimits(provider, host);
-  }, [open, provider, host]);
+    if (isOpen) readLimits(provider, host);
+  }, [isOpen, provider, host]);
 
   const context = usage?.context ?? null;
-  const percent = context ? percentOf(context.usedTokens, context.maxTokens) : 0;
+  const percent = context ? getPercent(context.usedTokens, context.maxTokens) : 0;
   const circumference = 2 * Math.PI * 6;
 
   return (
-    <MorphPopover open={open} onOpenChange={setOpen}>
+    <MorphPopover open={isOpen} onOpenChange={setIsOpen}>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => setIsOpen(!isOpen)}
         title={`${context ? `Context ${percent}% full` : "Context and usage"} (${formatKeybinding("usage.toggle")})`}
         aria-label={context ? `Context ${percent}% full` : "Context and usage"}
         className={cn(
@@ -90,10 +90,10 @@ export function UsageMeter({
           percent >= 90 && "text-destructive hover:text-destructive",
         )}
       >
-        {reading ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+        {isReading ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}
         <svg
           viewBox="0 0 16 16"
-          className={cn("size-3.5 -rotate-90", reading && "hidden")}
+          className={cn("size-3.5 -rotate-90", isReading && "hidden")}
           aria-hidden="true"
         >
           <circle cx="8" cy="8" r="6" fill="none" strokeWidth="2.5" className="stroke-border" />
@@ -116,7 +116,7 @@ export function UsageMeter({
           threadId={threadId}
           context={context}
           costUsd={usage?.costUsd ?? null}
-          reading={reading}
+          isReading={isReading}
           busy={busy}
         />
         <LimitsSection provider={provider} host={host} />
@@ -129,19 +129,19 @@ function ContextSection({
   threadId,
   context,
   costUsd,
-  reading,
+  isReading,
   busy,
 }: {
   threadId: string;
   context: ContextUsage | null;
   costUsd: number | null;
-  reading: boolean;
+  isReading: boolean;
   busy: boolean;
 }) {
   if (!context) {
     return (
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        {reading ? (
+        {isReading ? (
           <>
             <LoaderCircle className="size-3.5 animate-spin" />
             Reading context usage…
@@ -166,7 +166,7 @@ function ContextSection({
             <span className="text-muted-foreground">Context window</span>
             <span className="flex items-center gap-1 tabular-nums">
               {tokens.format(context.usedTokens)} / {tokens.format(context.maxTokens)} (
-              {percentOf(context.usedTokens, context.maxTokens)}%)
+              {getPercent(context.usedTokens, context.maxTokens)}%)
               <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
             </span>
           </div>
@@ -177,7 +177,7 @@ function ContextSection({
                 <div
                   key={category.name}
                   title={`${category.name}: ${tokens.format(category.tokens)}`}
-                  className={cn("h-full", categoryColor(category))}
+                  className={cn("h-full", getCategoryColor(category))}
                   style={{ width: `${(category.tokens / context.maxTokens) * 100}%` }}
                 />
               ))}
@@ -192,7 +192,7 @@ function ContextSection({
                 category.kind === "deferred" && "text-muted-foreground",
               )}
             >
-              <span className={cn("size-2 shrink-0 rounded-sm", categoryColor(category))} />
+              <span className={cn("size-2 shrink-0 rounded-sm", getCategoryColor(category))} />
               <span className="min-w-0 flex-1 truncate">{category.name}</span>
               <span className="text-muted-foreground tabular-nums">
                 {tokens.format(category.tokens)}
@@ -200,7 +200,7 @@ function ContextSection({
               <span className="w-10 text-right tabular-nums">
                 {category.kind === "deferred"
                   ? "—"
-                  : `${percentOf(category.tokens, context.maxTokens)}%`}
+                  : `${getPercent(category.tokens, context.maxTokens)}%`}
               </span>
             </li>
           ))}
@@ -272,7 +272,9 @@ function LimitsSection({ provider, host }: { provider: ProviderKind; host: strin
             <div className="flex items-baseline gap-2">
               <span className="min-w-0 flex-1 truncate">{limit.label}</span>
               {limit.resetsAt === null ? null : (
-                <span className="text-muted-foreground">{resetLabel(limit.resetsAt, now)}</span>
+                <span className="text-muted-foreground">
+                  {formatResetLabel(limit.resetsAt, now)}
+                </span>
               )}
               <span className="w-9 text-right tabular-nums">{Math.round(limit.usedPercent)}%</span>
             </div>

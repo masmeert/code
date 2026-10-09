@@ -63,7 +63,7 @@ export function BrowserHost() {
           partition={browserPartition(projectHosts[thread.projectId] ?? null)}
           tab={tab}
           rect={shown === tabId && !activity[tabId]?.error ? (surface?.rect ?? null) : null}
-          automating={(activity[tabId]?.automating ?? 0) > 0}
+          isAutomating={(activity[tabId]?.automating ?? 0) > 0}
         />,
       ];
     }),
@@ -85,14 +85,14 @@ function HostedTab({
   partition,
   tab,
   rect,
-  automating,
+  isAutomating,
 }: {
   threadId: string;
   /** The thread's host's: its `localhost` is that host's. */
   partition: string;
   tab: BrowserTab;
   rect: SurfaceRect | null;
-  automating: boolean;
+  isAutomating: boolean;
 }) {
   const [initialUrl] = useState(tab.url);
   const [generation, setGeneration] = useState(0);
@@ -176,7 +176,7 @@ function HostedTab({
       style={
         rect
           ? { left: rect.x, top: rect.y, width: rect.width, height: rect.height }
-          : automating
+          : isAutomating
             ? { left: 0, top: 0, zIndex: -1, pointerEvents: "none", ...hiddenSize }
             : { left: -100_000, top: 0, ...hiddenSize }
       }

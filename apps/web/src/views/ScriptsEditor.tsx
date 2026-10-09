@@ -24,19 +24,19 @@ interface ScriptDraft {
   readonly previewUrl: string;
 }
 
-function blankScript(): ScriptDraft {
+function createBlankScript(): ScriptDraft {
   return { id: crypto.randomUUID(), name: "", command: "", previewUrl: "" };
 }
 
 /** Rows left blank are dropped on save rather than refused. */
-function filledScripts(scripts: ReadonlyArray<ScriptDraft>) {
+function getFilledScripts(scripts: ReadonlyArray<ScriptDraft>) {
   return scripts.filter(
     (script) => script.name.trim() || script.command.trim() || script.previewUrl.trim(),
   );
 }
 
 /** What keeps `script` from saving, in plain words; empty when it can. */
-function problemsOf(script: ScriptDraft, filled: ReadonlyArray<ScriptDraft>) {
+function describeProblems(script: ScriptDraft, filled: ReadonlyArray<ScriptDraft>) {
   const name = script.name.trim();
   return [
     name ? null : "Name it, like Dev server.",
@@ -51,15 +51,15 @@ function problemsOf(script: ScriptDraft, filled: ReadonlyArray<ScriptDraft>) {
 }
 
 /** The project's scripts as a list to edit; saving writes them to its `masscode.toml`. */
-export function ScriptsEditor({ open, ...props }: ScriptsEditorProps & { open: boolean }) {
+export function ScriptsEditor({ isOpen, ...props }: ScriptsEditorProps & { isOpen: boolean }) {
   return (
     <MorphingModal
-      viewId={open ? "scripts" : null}
+      viewId={isOpen ? "scripts" : null}
       onClose={props.onClose}
       placement="center"
       className="max-w-2xl"
     >
-      {open ? <ScriptsForm {...props} /> : null}
+      {isOpen ? <ScriptsForm {...props} /> : null}
     </MorphingModal>
   );
 }
@@ -68,15 +68,15 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
   const [scripts, setScripts] = useState<ReadonlyArray<ScriptDraft> | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   // Problems show once a save is tried, not while a row is still being filled in.
-  const [showProblems, setShowProblems] = useState(false);
+  const [shouldShowProblems, setShouldShowProblems] = useState(false);
   const [addedId, setAddedId] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    let isCancelled = false;
     void readProjectConfig(host, path).then((frame) => {
-      if (cancelled) return;
+      if (isCancelled) return;
       if (!frame) {
         return setError(
           "MassCode's daemon didn't answer, so the scripts couldn't be read. Check it's running and open this again.",
@@ -92,7 +92,7 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
               command: script.command,
               previewUrl: script.preview_url ?? "",
             }))
-          : [blankScript()],
+          : [createBlankScript()],
       );
       setNotice(
         frame.error
@@ -103,7 +103,7 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
       );
     });
     return () => {
-      cancelled = true;
+      isCancelled = true;
     };
   }, [host, path]);
 
@@ -115,15 +115,15 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
     setError(null);
   }
 
-  async function save() {
-    if (!scripts || saving) return;
+  async function saveScripts() {
+    if (!scripts || isSaving) return;
 
-    const filled = filledScripts(scripts);
-    if (filled.some((script) => problemsOf(script, filled).length > 0)) {
-      return setShowProblems(true);
+    const filled = getFilledScripts(scripts);
+    if (filled.some((script) => describeProblems(script, filled).length > 0)) {
+      return setShouldShowProblems(true);
     }
 
-    setSaving(true);
+    setIsSaving(true);
     const failed = await updateProjectConfig(host, path, ({ scripts: _replaced, ...rest }) =>
       filled.length
         ? {
@@ -138,7 +138,7 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
           }
         : rest,
     );
-    setSaving(false);
+    setIsSaving(false);
     if (failed) setError(failed);
     else onSaved();
   }
@@ -149,7 +149,7 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
       onKeyDown={(event) => {
         if (!matches(event, KEYBINDINGS["scripts.save"])) return;
         event.preventDefault();
-        void save();
+        void saveScripts();
       }}
     >
       <div className="min-w-0">
@@ -174,7 +174,9 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
         <div className="-mx-1 max-h-[65vh] overflow-y-auto px-1">
           <div className="divide-y divide-rule rounded-xl border border-border bg-card">
             {scripts.map((script) => {
-              const problems = showProblems ? problemsOf(script, filledScripts(scripts)) : [];
+              const problems = shouldShowProblems
+                ? describeProblems(script, getFilledScripts(scripts))
+                : [];
 
               return (
                 <div key={script.id} className="flex flex-col gap-2 px-3 py-3">
@@ -236,7 +238,7 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
             <button
               type="button"
               onClick={() => {
-                const script = blankScript();
+                const script = createBlankScript();
                 setAddedId(script.id);
                 setScripts([...scripts, script]);
               }}
@@ -258,8 +260,12 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
             esc
           </kbd>
         </Button>
-        <Button size="sm" disabled={scripts === null || saving} onClick={() => void save()}>
-          {saving ? "Saving…" : "Save"}
+        <Button
+          size="sm"
+          disabled={scripts === null || isSaving}
+          onClick={() => void saveScripts()}
+        >
+          {isSaving ? "Saving…" : "Save"}
           <kbd aria-hidden className="font-sans text-[10px] opacity-70">
             {formatKeybinding("scripts.save")}
           </kbd>

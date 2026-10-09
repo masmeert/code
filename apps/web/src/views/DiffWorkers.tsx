@@ -51,19 +51,21 @@ const HIGHLIGHTER_OPTIONS = {
 export function useDiffWorkersReady() {
   const pool = useWorkerPool();
   const [, setStarted] = useState(0);
-  const ready = !pool || pool.isInitialized() || !pool.isWorkingPool();
+  const isReady = !pool || pool.isInitialized() || !pool.isWorkingPool();
 
   useEffect(() => {
-    if (ready || !pool) return;
-    let mounted = true;
-    const done = () => mounted && setStarted((count) => count + 1);
-    void pool.initialize().then(done, done);
+    if (isReady || !pool) return;
+    let isMounted = true;
+    function markStarted() {
+      if (isMounted) setStarted((count) => count + 1);
+    }
+    void pool.initialize().then(markStarted, markStarted);
     return () => {
-      mounted = false;
+      isMounted = false;
     };
-  }, [pool, ready]);
+  }, [pool, isReady]);
 
-  return ready;
+  return isReady;
 }
 
 /** Mount once near the root: the pool (and its render cache) outlives any one panel. */

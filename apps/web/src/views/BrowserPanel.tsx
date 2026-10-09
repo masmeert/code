@@ -25,7 +25,7 @@ import {
   useBrowser,
 } from "../lib/browser.ts";
 
-function hostOf(url: string) {
+function getUrlHost(url: string) {
   try {
     return new URL(url).host;
   } catch {
@@ -79,7 +79,7 @@ export function BrowserPanel({ threadId }: { threadId: string }) {
               key={candidate.id}
               threadId={threadId}
               tab={candidate}
-              active={candidate.id === tab?.id}
+              isActive={candidate.id === tab?.id}
             />
           ))}
         </div>
@@ -100,7 +100,7 @@ export function BrowserPanel({ threadId }: { threadId: string }) {
       ) : activity?.error ? (
         <Message>
           <span>
-            Couldn't load {hostOf(tab.url)}{" "}
+            Couldn't load {getUrlHost(tab.url)}{" "}
             <span className="font-mono text-xs">({activity.error})</span>
           </span>
           <button
@@ -121,20 +121,20 @@ export function BrowserPanel({ threadId }: { threadId: string }) {
 function TabButton({
   threadId,
   tab,
-  active,
+  isActive,
 }: {
   threadId: string;
   tab: BrowserTab;
-  active: boolean;
+  isActive: boolean;
 }) {
   const favicon = useBrowser((state) => state.activity[tab.id]?.favicon ?? null);
-  const label = tab.title || hostOf(tab.url) || "New tab";
+  const label = tab.title || getUrlHost(tab.url) || "New tab";
 
   return (
     <div
       className={cn(
         "group/tab flex h-7 max-w-44 shrink-0 items-center rounded-lg pr-0.5 text-xs transition-colors",
-        active
+        isActive
           ? "bg-muted/60 text-foreground"
           : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
       )}
@@ -142,7 +142,7 @@ function TabButton({
       <button
         type="button"
         role="tab"
-        aria-selected={active}
+        aria-selected={isActive}
         title={tab.url || label}
         onClick={() => selectTab(threadId, tab.id)}
         className="flex h-full min-w-0 items-center gap-1.5 rounded-lg pl-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -166,7 +166,7 @@ function TabButton({
         onClick={() => closeTab(threadId, tab.id)}
         className={cn(
           "grid size-6 shrink-0 place-items-center rounded-md transition-opacity outline-none hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring",
-          active ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100",
+          isActive ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100",
         )}
       >
         <X className="size-3" />
@@ -186,12 +186,12 @@ function AddressBar({
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(tab.url);
-  const [editing, setEditing] = useState(false);
-  const [invalid, setInvalid] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isInvalid, setIsInvalid] = useState(false);
 
   useEffect(() => {
-    if (!editing) setDraft(tab.url);
-  }, [tab.url, editing]);
+    if (!isEditing) setDraft(tab.url);
+  }, [tab.url, isEditing]);
 
   useEffect(() => registerAddressInput(threadId, input.current!), [threadId]);
 
@@ -199,8 +199,8 @@ function AddressBar({
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        if (!navigate(threadId, tab.id, draft)) return setInvalid(true);
-        setInvalid(false);
+        if (!navigate(threadId, tab.id, draft)) return setIsInvalid(true);
+        setIsInvalid(false);
         input.current?.blur();
       }}
       className="flex h-10 shrink-0 items-center gap-0.5 border-b border-border px-2"
@@ -235,19 +235,19 @@ function AddressBar({
         value={draft}
         onChange={(value) => {
           setDraft(value);
-          setInvalid(false);
+          setIsInvalid(false);
         }}
         onFocus={(event) => {
-          setEditing(true);
+          setIsEditing(true);
           event.currentTarget.select();
         }}
-        onBlur={() => setEditing(false)}
+        onBlur={() => setIsEditing(false)}
         onKeyDown={(event) => {
           if (event.key !== "Escape") return;
           setDraft(tab.url);
           event.currentTarget.blur();
         }}
-        error={invalid}
+        error={isInvalid}
         placeholder="Enter address"
         aria-label="Address"
         spellCheck={false}
@@ -275,7 +275,7 @@ function BrowserSurface({ threadId }: { threadId: string }) {
   useLayoutEffect(() => {
     const element = slot.current!;
 
-    function publish() {
+    function publishSurface() {
       const rect = element.getBoundingClientRect();
       setSurface(threadId, {
         x: Math.round(rect.x),
@@ -285,13 +285,13 @@ function BrowserSurface({ threadId }: { threadId: string }) {
       });
     }
 
-    publish();
-    const observer = new ResizeObserver(publish);
+    publishSurface();
+    const observer = new ResizeObserver(publishSurface);
     observer.observe(element);
-    window.addEventListener("resize", publish);
+    window.addEventListener("resize", publishSurface);
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", publish);
+      window.removeEventListener("resize", publishSurface);
       clearSurface(threadId);
     };
   }, [threadId]);

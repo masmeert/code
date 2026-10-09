@@ -4,7 +4,7 @@ import { App } from "./App.tsx";
 import { ready } from "./lib/store.ts";
 import "./styles.css";
 
-function render() {
+function renderApp() {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <App />
@@ -13,4 +13,4 @@ function render() {
 }
 
 // Wait (briefly) for the cached threads so the first frame isn't an empty app.
-void Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 300))]).then(render);
+void Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 300))]).then(renderApp);

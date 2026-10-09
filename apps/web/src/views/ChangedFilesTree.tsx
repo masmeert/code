@@ -31,8 +31,8 @@ export function ChangedFilesTree({
   );
 
   // The model reads its options once; later callbacks go through a ref.
-  const pick = useRef(onPick);
-  pick.current = onPick;
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
 
   const { model } = useFileTree({
     preparedInput: prepared,
@@ -43,7 +43,7 @@ export function ChangedFilesTree({
     density: "compact",
     onSelectionChange: (selected) => {
       const path = selected.at(-1);
-      if (path && !path.endsWith("/")) pick.current(path);
+      if (path && !path.endsWith("/")) onPickRef.current(path);
     },
   });
 

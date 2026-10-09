@@ -141,7 +141,7 @@ import {
   buildReviewMessage,
 } from "../lib/reviewComments.ts";
 import { useNow } from "../lib/time.ts";
-import { resetLabel } from "./UsageMeter.tsx";
+import { formatResetLabel } from "./UsageMeter.tsx";
 import {
   findCatalogModel,
   decodeChoice,
@@ -1016,7 +1016,7 @@ function LimitStopNotice({
           {stop.resetsAt === null ? null : (
             <span className="ml-1 text-muted-foreground">
               {" "}
-              {waiting ? resetLabel(stop.resetsAt, now) : "It has reset"}
+              {waiting ? formatResetLabel(stop.resetsAt, now) : "It has reset"}
             </span>
           )}
         </span>
@@ -1379,7 +1379,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
         <div ref={scrollArea} className="relative flex min-h-0 min-w-95 flex-1 flex-col">
           {project ? (
             <ScriptsEditor
-              open={editingScripts}
+              isOpen={editingScripts}
               host={host}
               path={project.path}
               onClose={() => setEditingScripts(false)}
@@ -1411,7 +1411,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                   cwd={info.cwd}
                   refreshKey={diffKey}
                   threadId={threadId}
-                  worktree={info.worktree}
+                  isWorktree={info.worktree}
                 />
                 <span className="flex items-center gap-0.5">
                   {project ? (

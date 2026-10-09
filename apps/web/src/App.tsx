@@ -36,7 +36,7 @@ type View =
   | { readonly kind: "draft"; readonly path: string | null };
 
 /** Windows opened with Ctrl+N carry their starting point in the URL. */
-function initialView(): View | null {
+function readInitialView(): View | null {
   const params = new URLSearchParams(location.search);
   const path = params.get("path");
   if (path) return { kind: "draft", path };
@@ -48,7 +48,7 @@ export function App() {
   const order = useStore((state) => state.order);
   const threads = useStore((state) => state.threads);
   const projects = useStore((state) => state.projects);
-  const connected = useStore((state) => state.connected);
+  const isConnected = useStore((state) => state.connected);
   const incompatible = useStore(
     (state) =>
       state.incompatible ??
@@ -57,18 +57,18 @@ export function App() {
   const source = useStore((state) => state.source);
   // A cold start takes a moment and the cached threads are already on screen, so
   // only speak up if it's slow. Losing a live daemon is worth saying right away.
-  const [slowStart, setSlowStart] = useState(false);
+  const [isSlowStart, setIsSlowStart] = useState(false);
   useEffect(() => {
-    const timer = setTimeout(() => setSlowStart(true), 2500);
+    const timer = setTimeout(() => setIsSlowStart(true), 2500);
     return () => clearTimeout(timer);
   }, []);
 
   const theme = useStore((state) => state.settings.theme);
   const switchTo = useStore((state) => state.switchTo);
-  const [chosen, setView] = useState<View | null>(initialView);
+  const [chosen, setView] = useState<View | null>(readInitialView);
   const [modal, setModal] = useState<ModalView | null>(null);
-  const [palette, setPalette] = useState(false);
-  useKeybinding("palette.open", () => setPalette((open) => !open));
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  useKeybinding("palette.open", () => setIsPaletteOpen((open) => !open));
   useTheme(theme);
 
   // Stable, so sidebar rows (memoized) don't all redraw on every render.
@@ -101,16 +101,16 @@ export function App() {
   }, [activeThread]);
 
   // Simulators run on this Mac only; a remote thread's agent couldn't reach them.
-  const simulatorAvailable =
+  const isSimulatorAvailable =
     useThreadHost(view.kind === "thread" ? view.id : "") === null &&
     window.desktop !== undefined &&
     navigator.userAgent.includes("Mac");
 
-  function draft(path: string | null) {
+  function openDraft(path: string | null) {
     setView({ kind: "draft", path });
   }
 
-  function projectPath(threadId: string | undefined) {
+  function findProjectPath(threadId: string | undefined) {
     return (
       projects.find((project) => project.id === threads[threadId ?? ""]?.projectId)?.path ?? null
     );
@@ -119,10 +119,10 @@ export function App() {
   // Where a new thread starts: the project on screen, else the latest thread's. A worktree
   // thread's cwd is its worktree, so this goes by the thread's project instead.
   const currentPath =
-    (view.kind === "thread" ? projectPath(view.id) : view.path) ?? projectPath(order[0]);
+    (view.kind === "thread" ? findProjectPath(view.id) : view.path) ?? findProjectPath(order[0]);
 
   // Like Claude Code: a new thread starts in the project on screen, if any.
-  useShortcut("n", () => draft(currentPath));
+  useShortcut("n", () => openDraft(currentPath));
   useShortcut(",", () => setModal("settings"));
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -145,14 +145,14 @@ export function App() {
             currentPath={currentPath}
             onSelect={selectThread}
             onModal={setModal}
-            onDraft={draft}
+            onDraft={openDraft}
           />
           <AnimatedSidebarInset className="relative min-h-0 bg-background">
             {incompatible ? (
               <div className="absolute top-16 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1 text-[11px] text-destructive shadow-panel">
                 {incompatible}
               </div>
-            ) : connected || (source !== "daemon" && !slowStart) ? null : (
+            ) : isConnected || (source !== "daemon" && !isSlowStart) ? null : (
               <div className="absolute top-16 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1 text-[11px] text-muted-foreground shadow-panel">
                 {source === "daemon" ? "Reconnecting to daemon…" : "Starting daemon…"}
               </div>
@@ -168,24 +168,24 @@ export function App() {
               ))}
             {view.kind === "draft" ? (
               // One key for every draft, so text typed before picking a project survives the pick.
-              <DraftView key="draft" path={view.path} onPickProject={draft} />
+              <DraftView key="draft" path={view.path} onPickProject={openDraft} />
             ) : null}
           </AnimatedSidebarInset>
           <AppModal view={modal} onView={setModal} />
           <AddProjectDialog />
           <BrowserHost />
           <CommandPalette
-            open={palette}
-            onClose={() => setPalette(false)}
+            isOpen={isPaletteOpen}
+            onClose={() => setIsPaletteOpen(false)}
             onOpenThread={(id) => setView({ kind: "thread", id })}
-            onNewThreadIn={(path) => draft(path)}
+            onNewThreadIn={(path) => openDraft(path)}
             actions={[
               {
                 id: "thread.new",
                 label: "New thread",
                 hint: formatKeybinding("thread.new"),
                 icon: <SquarePen />,
-                run: () => draft(currentPath),
+                run: () => openDraft(currentPath),
               },
               ...(view.kind === "thread"
                 ? [
@@ -209,7 +209,7 @@ export function App() {
                     },
                   ]
                 : []),
-              ...(view.kind === "thread" && simulatorAvailable
+              ...(view.kind === "thread" && isSimulatorAvailable
                 ? [
                     {
                       id: "simulator.toggle",

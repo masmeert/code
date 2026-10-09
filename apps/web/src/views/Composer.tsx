@@ -87,7 +87,7 @@ const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {
   "full-access": LockOpen,
 };
 
-function permissionOption(level: PermissionLevel) {
+function buildPermissionOption(level: PermissionLevel) {
   const Icon = PERMISSION_ICON[level];
   return {
     value: level,
@@ -158,13 +158,15 @@ const MAX_FILE_MATCHES = 50;
 
 /** Paths containing `query`, file-name matches first, then shallower paths. */
 function matchFiles(files: ReadonlyArray<string>, query: string) {
-  function rank(path: string) {
+  function getMatchRank(path: string) {
     const name = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
     return name.startsWith(query) ? 0 : name.includes(query) ? 1 : 2;
   }
 
   return files
-    .flatMap((path) => (path.toLowerCase().includes(query) ? [{ path, rank: rank(path) }] : []))
+    .flatMap((path) =>
+      path.toLowerCase().includes(query) ? [{ path, rank: getMatchRank(path) }] : [],
+    )
     .sort((first, second) => first.rank - second.rank || first.path.length - second.path.length)
     .slice(0, MAX_FILE_MATCHES)
     .map(({ path }) => path);
@@ -176,7 +178,7 @@ export function Composer(props: ComposerProps) {
   const host = usePathHost(props.cwd);
   const [prefs, setPrefs] = useTurnPrefs(prefsKey, props.provider, host);
   const needsRootConsent = useNeedsRootConsent(host);
-  const [confirmingRoot, setConfirmingRoot] = useState(false);
+  const [isConfirmingRoot, setIsConfirmingRoot] = useState(false);
   const files = useAttachments({
     key: prefsKey,
     shouldAcceptDrops: !props.disabled,
@@ -186,7 +188,9 @@ export function Composer(props: ComposerProps) {
   const settings = useStore((state) => state.settings);
   const stashes = useStashes();
   const [stashSignal, setStashSignal] = useState(0);
-  const worktree = useStore((state) => (threadId ? state.threads[threadId]?.worktree : undefined));
+  const isWorktree = useStore((state) =>
+    threadId ? state.threads[threadId]?.worktree : undefined,
+  );
 
   const catalog = findCatalogModel(providers, props.model);
   // No pick means the model's own default, which the menu stars; picking the starred level keeps following it.
@@ -207,7 +211,7 @@ export function Composer(props: ComposerProps) {
   const recall = useRef<{ index: number; text: string } | null>(null);
   const history = props.history ?? [];
 
-  function recallTo(index: number) {
+  function recallPrompt(index: number) {
     const text = history[index] ?? "";
     recall.current = index < history.length ? { index, text } : null;
     setText(text);
@@ -245,13 +249,14 @@ export function Composer(props: ComposerProps) {
               hint: command.argumentHint,
             })),
         ].filter((item) => item.name.toLowerCase().startsWith(slashQuery));
-  const slashTyped = slashQuery !== null;
+  const isSlashTyped = slashQuery !== null;
 
   useEffect(() => {
-    if (slashTyped && threadId) send(ClientCommand.cases["thread.listCommands"].make({ threadId }));
-  }, [slashTyped, threadId]);
+    if (isSlashTyped && threadId)
+      send(ClientCommand.cases["thread.listCommands"].make({ threadId }));
+  }, [isSlashTyped, threadId]);
 
-  function pickSlash(item: SlashItem) {
+  function pickSlashCommand(item: SlashItem) {
     if (item.run) {
       setText("");
       item.run();
@@ -274,15 +279,15 @@ export function Composer(props: ComposerProps) {
     () => (repoFiles && mentionQuery !== null ? matchFiles(repoFiles, mentionQuery) : []),
     [repoFiles, mentionQuery],
   );
-  const mentionTyped = mention !== null;
+  const isMentionTyped = mention !== null;
 
   useEffect(() => {
-    if (mentionTyped && props.cwd)
+    if (isMentionTyped && props.cwd)
       send(ClientCommand.cases["git.listFiles"].make({ path: props.cwd }));
-  }, [mentionTyped, props.cwd]);
+  }, [isMentionTyped, props.cwd]);
 
   /** Swaps the word at the caret, `typedLength` characters of which are before it, for `token`. */
-  function replaceTyped(typedLength: number, token: string) {
+  function replaceTypedWord(typedLength: number, token: string) {
     const start = caret - typedLength;
     const end = caret + /^\S*/.exec(draft.text.slice(caret))![0].length;
     const rest = draft.text.slice(end).replace(/^ +/, "");
@@ -294,7 +299,7 @@ export function Composer(props: ComposerProps) {
 
   function pickFile(path: string) {
     // Quoted so a path with spaces still reads as one mention.
-    replaceTyped(mention![1].length + 1, /\s/.test(path) ? `@"${path}" ` : `@${path} `);
+    replaceTypedWord(mention![1].length + 1, /\s/.test(path) ? `@"${path}" ` : `@${path} `);
   }
 
   // $ skills: "$" at the start or after whitespace offers the skills the harness loads here.
@@ -317,12 +322,12 @@ export function Composer(props: ComposerProps) {
               Number(!second.name.toLowerCase().startsWith(skillQuery)),
           )
       : [];
-  const skillTyped = skillMention !== null;
+  const isSkillTyped = skillMention !== null;
 
   useEffect(() => {
-    if (skillTyped && props.cwd)
+    if (isSkillTyped && props.cwd)
       send(ClientCommand.cases["skills.list"].make({ provider: props.provider, path: props.cwd }));
-  }, [skillTyped, props.cwd, props.provider]);
+  }, [isSkillTyped, props.cwd, props.provider]);
 
   let menu: {
     label: string;
@@ -339,7 +344,7 @@ export function Composer(props: ComposerProps) {
         hint: item.hint,
         description: item.description,
       })),
-      pick: (index) => pickSlash(slashItems[index]),
+      pick: (index) => pickSlashCommand(slashItems[index]),
       empty: null,
     };
   }
@@ -352,7 +357,8 @@ export function Composer(props: ComposerProps) {
         name: `$${skill.name}`,
         description: skill.description,
       })),
-      pick: (index) => replaceTyped(skillMention![1].length + 1, `$${skillMatches[index].name} `),
+      pick: (index) =>
+        replaceTypedWord(skillMention![1].length + 1, `$${skillMatches[index].name} `),
       empty: !skillList
         ? "Loading skills…"
         : (skillList.error ??
@@ -371,10 +377,10 @@ export function Composer(props: ComposerProps) {
     };
   }
 
-  const reduceMotion = useReducedMotion();
+  const shouldReduceMotion = useReducedMotion();
   const {
     activeIndex: menuIndex,
-    pointed,
+    pointed: isPointed,
     moveTo,
     moveActive,
   } = useRowCursor(menu?.items ?? [], slashQuery ?? skillQuery ?? mentionQuery ?? "", {
@@ -402,17 +408,17 @@ export function Composer(props: ComposerProps) {
     }
     const textarea = event.currentTarget;
     const text = textarea.value;
-    const untouched = text === "" || text === recall.current?.text;
+    const isUntouched = text === "" || text === recall.current?.text;
     if (
       event.key === "ArrowUp" &&
-      untouched &&
+      isUntouched &&
       history.length &&
       !text.slice(0, textarea.selectionStart).includes("\n")
     ) {
       const index = recall.current ? recall.current.index - 1 : history.length - 1;
       if (index < 0) return;
       event.preventDefault();
-      recallTo(index);
+      recallPrompt(index);
     } else if (
       event.key === "ArrowDown" &&
       recall.current &&
@@ -420,7 +426,7 @@ export function Composer(props: ComposerProps) {
       !text.slice(textarea.selectionEnd).includes("\n")
     ) {
       event.preventDefault();
-      recallTo(recall.current.index + 1);
+      recallPrompt(recall.current.index + 1);
     }
   }
 
@@ -431,7 +437,7 @@ export function Composer(props: ComposerProps) {
     else if (stashes.length > 1) setStashSignal((signal) => signal + 1);
   });
 
-  function submit(text: string, how: { alternate: boolean }) {
+  function submitPrompt(text: string, how: { alternate: boolean }) {
     if (props.onNeedProject && !props.cwd) {
       props.onNeedProject();
       return;
@@ -458,9 +464,9 @@ export function Composer(props: ComposerProps) {
             label={menu.label}
             items={menu.items}
             empty={menu.empty}
-            active={menuIndex}
+            activeIndex={menuIndex}
             // Glides after the pointer only, like the command palette: arrow keys want each step at once.
-            glide={pointed && !reduceMotion}
+            shouldGlide={isPointed && !shouldReduceMotion}
             onPoint={moveTo}
             onPick={menu.pick}
           />
@@ -510,11 +516,11 @@ export function Composer(props: ComposerProps) {
             <PromptSelect
               key="permission"
               title="Permissions"
-              options={PERMISSIONS[props.provider].map(permissionOption)}
+              options={PERMISSIONS[props.provider].map(buildPermissionOption)}
               value={prefs.permission}
               onChange={(value) => {
                 if (!Schema.is(PermissionLevel)(value)) return;
-                if (value === "full-access" && needsRootConsent) setConfirmingRoot(true);
+                if (value === "full-access" && needsRootConsent) setIsConfirmingRoot(true);
                 else setPrefs({ permission: value });
               }}
               disabled={props.disabled}
@@ -535,7 +541,7 @@ export function Composer(props: ComposerProps) {
             files.addAttachments([createTextAttachment(text)]);
             return true;
           }}
-          onSubmit={submit}
+          onSubmit={submitPrompt}
           onStop={props.onStop}
           minRows={2}
           maxRows={10}
@@ -569,14 +575,14 @@ export function Composer(props: ComposerProps) {
                 ) : null}
                 {props.workspace ? (
                   <WorkspaceSelect {...props.workspace} disabled={props.disabled} />
-                ) : worktree === undefined ? null : (
+                ) : isWorktree === undefined ? null : (
                   <span className="flex min-w-0 items-center gap-1.5 px-2 text-[11px]">
-                    {worktree ? (
+                    {isWorktree ? (
                       <FolderTree className="size-3.5 shrink-0" />
                     ) : (
                       <Folder className="size-3.5 shrink-0" />
                     )}
-                    {worktree ? "Worktree" : "Local checkout"}
+                    {isWorktree ? "Worktree" : "Local checkout"}
                   </span>
                 )}
               </span>
@@ -587,7 +593,7 @@ export function Composer(props: ComposerProps) {
                 {props.cwd ? (
                   <BranchPicker
                     cwd={props.cwd}
-                    worktree={props.workspace?.value === "worktree"}
+                    isWorktree={props.workspace?.value === "worktree"}
                     disabled={(props.disabled || props.busy) ?? false}
                   />
                 ) : (
@@ -599,11 +605,11 @@ export function Composer(props: ComposerProps) {
           autoFocus
         />
       </div>
-      {confirmingRoot && host ? (
+      {isConfirmingRoot && host ? (
         <RootFullAccessDialog
           host={host}
           onAllow={() => setPrefs({ permission: "full-access" })}
-          onClose={() => setConfirmingRoot(false)}
+          onClose={() => setIsConfirmingRoot(false)}
         />
       ) : null}
     </div>
@@ -621,7 +627,7 @@ export function RootFullAccessDialog({
   onClose: () => void;
 }) {
   return (
-    <AlertDialog open onOpenChange={(open) => open || onClose()}>
+    <AlertDialog open onOpenChange={(isOpen) => isOpen || onClose()}>
       <AlertDialogContent className="gap-4 bg-popover p-4 data-[size=default]:sm:max-w-sm">
         <div className="flex items-center gap-3">
           <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-warning/10 text-warning">
@@ -659,8 +665,8 @@ function SuggestionMenu({
   label,
   items,
   empty,
-  active,
-  glide,
+  activeIndex,
+  shouldGlide,
   onPoint,
   onPick,
 }: {
@@ -668,9 +674,9 @@ function SuggestionMenu({
   items: ReadonlyArray<MenuItem>;
   /** Shown when there are no items. */
   empty: string | null;
-  active: number;
+  activeIndex: number;
   /** Whether the highlight glides to the active row, rather than appearing there. */
-  glide: boolean;
+  shouldGlide: boolean;
   onPoint: (id: string) => void;
   onPick: (index: number) => void;
 }) {
@@ -694,22 +700,26 @@ function SuggestionMenu({
           type="button"
           role="option"
           tabIndex={-1}
-          aria-selected={index === active}
-          ref={index === active ? (node) => node?.scrollIntoView({ block: "nearest" }) : undefined}
+          aria-selected={index === activeIndex}
+          ref={
+            index === activeIndex ? (node) => node?.scrollIntoView({ block: "nearest" }) : undefined
+          }
           // Not mouseenter: rows scrolling under a resting pointer would take the highlight from the keyboard.
-          onMouseMove={index === active ? undefined : () => onPoint(item.id)}
+          onMouseMove={index === activeIndex ? undefined : () => onPoint(item.id)}
           // Keep focus in the textarea.
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => onPick(index)}
           className={cn(
             "relative flex w-full items-baseline gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] outline-none",
-            index === active ? "text-foreground" : "text-muted-foreground",
+            index === activeIndex ? "text-foreground" : "text-muted-foreground",
           )}
         >
-          {index === active ? (
+          {index === activeIndex ? (
             <motion.span
               layoutId={highlightId}
-              transition={glide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }}
+              transition={
+                shouldGlide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }
+              }
               className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-muted"
             />
           ) : null}
@@ -792,16 +802,16 @@ function WorkspaceSelect({
 /** Current branch of the project folder; picking another checks it out. */
 function BranchPicker({
   cwd,
-  worktree,
+  isWorktree,
   disabled,
 }: {
   cwd: string;
   /** A new worktree will start from this branch, so it reads "From main". */
-  worktree: boolean;
+  isWorktree: boolean;
   disabled: boolean;
 }) {
   const list = useStore((state) => state.branches[cwd]);
-  const fromOrigin = useStore((state) => state.settings.worktreeFromOrigin === true);
+  const isFromOrigin = useStore((state) => state.settings.worktreeFromOrigin === true);
 
   useEffect(() => send(ClientCommand.cases["git.listBranches"].make({ path: cwd })), [cwd]);
 
@@ -810,7 +820,7 @@ function BranchPicker({
     return <span className="px-1.5 text-muted-foreground/70">Not a git repo</span>;
   return (
     <PromptSelect
-      title={worktree ? "Start the worktree from" : "Switch branch"}
+      title={isWorktree ? "Start the worktree from" : "Switch branch"}
       icon={<GitBranch />}
       searchPlaceholder="Find or create a branch…"
       onCreate={(branch) =>
@@ -823,7 +833,7 @@ function BranchPicker({
       )}
       options={list.branches.map((branch) => ({
         value: branch,
-        label: worktree ? `From ${fromOrigin ? "origin/" : ""}${branch}` : branch,
+        label: isWorktree ? `From ${isFromOrigin ? "origin/" : ""}${branch}` : branch,
       }))}
       value={list.current ?? undefined}
       placeholder="Detached"
@@ -831,8 +841,8 @@ function BranchPicker({
         branch !== list.current &&
         send(ClientCommand.cases["git.checkout"].make({ path: cwd, branch }))
       }
-      onOpenChange={(open) =>
-        open && send(ClientCommand.cases["git.listBranches"].make({ path: cwd }))
+      onOpenChange={(isOpen) =>
+        isOpen && send(ClientCommand.cases["git.listBranches"].make({ path: cwd }))
       }
       disabled={disabled}
       shortcut={KEYBINDINGS["picker.branch"]}

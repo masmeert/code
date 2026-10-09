@@ -8,30 +8,30 @@ import { formatKeybinding, useKeybinding } from "../lib/keybindings.ts";
  * styled by the scroller), so React's DOM is never touched.
  */
 export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null> }) {
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<Array<Range>>([]);
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   // Streaming re-runs the search; only a new query or a step should move the view.
-  const reveal = useRef(false);
+  const shouldReveal = useRef(false);
 
   const current = Math.min(active, matches.length - 1);
 
   useKeybinding("thread.find", () => {
-    setOpen(true);
+    setIsOpen(true);
     input.current?.focus();
     input.current?.select();
   });
-  useKeybinding(open ? "thread.findNext" : undefined, () => step(1));
+  useKeybinding(isOpen ? "thread.findNext" : undefined, () => moveToMatch(1));
 
   useEffect(() => {
     const root = scope.current;
     const needle = query.toLowerCase();
-    if (!open || !root || !needle) return setMatches([]);
+    if (!isOpen || !root || !needle) return setMatches([]);
 
     let frame = 0;
-    function search() {
+    function findMatches() {
       const found: Array<Range> = [];
       const walker = document.createTreeWalker(root!, NodeFilter.SHOW_TEXT);
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -49,10 +49,10 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
       setMatches(found);
     }
 
-    search();
+    findMatches();
     const observer = new MutationObserver(() => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(search);
+      frame = requestAnimationFrame(findMatches);
     });
     observer.observe(root, {
       childList: true,
@@ -64,34 +64,35 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
       observer.disconnect();
       cancelAnimationFrame(frame);
     };
-  }, [open, query, scope]);
+  }, [isOpen, query, scope]);
 
   useEffect(() => {
     CSS.highlights.set("find", new Highlight(...matches));
     const range = matches[current];
     if (range) {
       CSS.highlights.set("find-active", new Highlight(range));
-      if (reveal.current) range.startContainer.parentElement?.scrollIntoView({ block: "center" });
+      if (shouldReveal.current)
+        range.startContainer.parentElement?.scrollIntoView({ block: "center" });
     }
-    reveal.current = false;
+    shouldReveal.current = false;
     return () => {
       CSS.highlights.delete("find");
       CSS.highlights.delete("find-active");
     };
   }, [matches, current]);
 
-  function step(direction: number) {
+  function moveToMatch(direction: number) {
     if (!matches.length) return;
-    reveal.current = true;
+    shouldReveal.current = true;
     setActive((current + direction + matches.length) % matches.length);
   }
 
-  function close() {
-    setOpen(false);
+  function closeFind() {
+    setIsOpen(false);
     focusComposer();
   }
 
-  if (!open) return null;
+  if (!isOpen) return null;
 
   return (
     <div
@@ -109,7 +110,7 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
         spellCheck={false}
         onFocus={(event) => event.currentTarget.select()}
         onChange={(event) => {
-          reveal.current = true;
+          shouldReveal.current = true;
           setQuery(event.target.value);
           setActive(0);
         }}
@@ -117,10 +118,10 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
           if (event.nativeEvent.isComposing) return;
           if (event.key === "Enter") {
             event.preventDefault();
-            step(event.shiftKey ? -1 : 1);
+            moveToMatch(event.shiftKey ? -1 : 1);
           } else if (event.key === "Escape") {
             event.preventDefault();
-            close();
+            closeFind();
           }
         }}
         className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
@@ -130,9 +131,13 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
       </span>
       {(
         [
-          ["Previous match (⇧↩)", ChevronUp, () => step(-1)],
-          [`Next match (↩ or ${formatKeybinding("thread.findNext")})`, ChevronDown, () => step(1)],
-          ["Close (Esc)", X, close],
+          ["Previous match (⇧↩)", ChevronUp, () => moveToMatch(-1)],
+          [
+            `Next match (↩ or ${formatKeybinding("thread.findNext")})`,
+            ChevronDown,
+            () => moveToMatch(1),
+          ],
+          ["Close (Esc)", X, closeFind],
         ] as const
       ).map(([label, Icon, onClick]) => (
         <button

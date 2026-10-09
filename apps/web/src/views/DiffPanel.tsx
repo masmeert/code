@@ -36,7 +36,7 @@ const MIN_SPLIT_DIFF = 720;
 
 const TREE_KEY = "masscode.diffTree";
 
-function readTree() {
+function readIsTreeShown() {
   try {
     return localStorage.getItem(TREE_KEY) !== "0";
   } catch {
@@ -77,7 +77,7 @@ interface CommentSlot {
 }
 
 /** Comments grouped under the last line each covers, the one being written included. */
-function commentAnnotations(
+function buildCommentAnnotations(
   comments: ReadonlyArray<ReviewComment>,
   draft: ReviewComment | null,
 ): Array<DiffLineAnnotation<CommentSlot>> {
@@ -147,7 +147,7 @@ export function DiffPanel({
   const turnKey = turn ? `${turn.threadId}:${turn.messageId}` : null;
   const diff = useStore((state) => (turnKey ? state.turnDiffs[turnKey] : state.diffs[cwd]));
 
-  const refresh = useCallback(
+  const refreshDiff = useCallback(
     () =>
       send(
         turnThreadId !== undefined && turnMessageId !== undefined
@@ -160,9 +160,9 @@ export function DiffPanel({
     [cwd, turnThreadId, turnMessageId],
   );
 
-  const workersReady = useDiffWorkersReady();
+  const isWorkerPoolReady = useDiffWorkersReady();
   const preferredStyle = useStore((state) => state.settings.diffLayout ?? "unified");
-  const [showTree, setShowTree] = useState(readTree);
+  const [isTreeShown, setIsTreeShown] = useState(readIsTreeShown);
   const viewer = useRef<CodeViewHandle<CommentSlot, undefined>>(null);
   const comments = useReviewComments(threadId);
   // The comment being written or edited; it only reaches the thread's comments once saved.
@@ -200,10 +200,10 @@ export function DiffPanel({
     return () => observer.disconnect();
   }, []);
 
-  const splitFits = asideWidth - (showTree ? tree.width : 0) >= MIN_SPLIT_DIFF;
-  const style = splitFits ? preferredStyle : "unified";
+  const canSplit = asideWidth - (isTreeShown ? tree.width : 0) >= MIN_SPLIT_DIFF;
+  const style = canSplit ? preferredStyle : "unified";
 
-  const jumpTo = useCallback(
+  const scrollToFile = useCallback(
     (path: string) =>
       viewer.current?.scrollTo({ type: "item", id: path, align: "start", behavior: "instant" }),
     [],
@@ -213,9 +213,9 @@ export function DiffPanel({
   const changesKey = turnKey ? null : refreshKey;
 
   useEffect(() => {
-    const timer = window.setTimeout(refresh, turnKey ? 0 : 250);
+    const timer = window.setTimeout(refreshDiff, turnKey ? 0 : 250);
     return () => window.clearTimeout(timer);
-  }, [refresh, turnKey, changesKey]);
+  }, [refreshDiff, turnKey, changesKey]);
 
   const files = useMemo(() => parseFiles(diff?.patch ?? ""), [diff?.patch]);
   // CodeView reconciles by id; a file whose content or comments changed keeps its id, so its version must go up.
@@ -223,7 +223,7 @@ export function DiffPanel({
   const items = useMemo(
     () =>
       files.map((file): CodeViewItem<CommentSlot> => {
-        const annotations = commentAnnotations(
+        const annotations = buildCommentAnnotations(
           comments.filter((comment) => comment.path === file.name && isAnchoredIn(comment, file)),
           draft?.path === file.name ? draft : null,
         );
@@ -296,7 +296,7 @@ export function DiffPanel({
     onRevealed();
   }, [reveal, items, onRevealed]);
 
-  const writing = draft !== null;
+  const isWriting = draft !== null;
   // Matches the worker pool's options (see DiffWorkers), so its cached highlighting is used as is.
   // A fixed themeType: changing it rebuilds every diff. CSS picks the theme instead (see className).
   const options = useMemo(
@@ -309,8 +309,8 @@ export function DiffPanel({
       layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
       // Hovering a line offers a comment button in its gutter; dragging it covers several lines.
       // Off while one is being written, so a stray click doesn't throw that one away.
-      enableGutterUtility: !writing,
-      enableLineSelection: !writing,
+      enableGutterUtility: !isWriting,
+      enableLineSelection: !isWriting,
       onGutterUtilityClick: (
         range: SelectedLineRange,
         context: { item: CodeViewItem<CommentSlot> },
@@ -318,26 +318,26 @@ export function DiffPanel({
         if (context.item.type === "diff") startComment(range, context.item.fileDiff);
       },
     }),
-    [style, writing, startComment],
+    [style, isWriting, startComment],
   );
 
-  const truncated = diff?.truncated ?? false;
+  const isTruncated = diff?.truncated ?? false;
   const renderFooter = useCallback(
     () =>
-      truncated ? (
+      isTruncated ? (
         <p className="p-3 text-center text-xs text-muted-foreground">
           Some files were left out to keep the diff small.
         </p>
       ) : null,
-    [truncated],
+    [isTruncated],
   );
 
   const { additions, deletions } = useMemo(() => countLines(files), [files]);
 
   // The thread view re-renders on every streamed delta; these subtrees only change with the diff.
   const fileTree = useMemo(
-    () => <ChangedFilesTree files={files} onPick={jumpTo} />,
-    [files, jumpTo],
+    () => <ChangedFilesTree files={files} onPick={scrollToFile} />,
+    [files, scrollToFile],
   );
 
   const codeView = useMemo(
@@ -357,14 +357,14 @@ export function DiffPanel({
   );
 
   function toggleTree() {
-    setShowTree(!showTree);
+    setIsTreeShown(!isTreeShown);
     try {
-      localStorage.setItem(TREE_KEY, showTree ? "0" : "1");
+      localStorage.setItem(TREE_KEY, isTreeShown ? "0" : "1");
     } catch {}
   }
 
-  function panelBody() {
-    if (!diff || !workersReady) return <Empty>Loading changes…</Empty>;
+  function renderPanelBody() {
+    if (!diff || !isWorkerPoolReady) return <Empty>Loading changes…</Empty>;
 
     if (diff.error) return <Empty>{diff.error}</Empty>;
 
@@ -374,7 +374,7 @@ export function DiffPanel({
 
     return (
       <>
-        {showTree ? (
+        {isTreeShown ? (
           <div
             style={{ width: tree.width, maxWidth: `calc(100% - ${MIN_DIFF}px)` }}
             // Below MIN_TREE + MIN_DIFF the tree would be squeezed to icons; give the diff the room instead.
@@ -436,7 +436,7 @@ export function DiffPanel({
         <span className="ml-auto flex items-center gap-0.5">
           <IconButton
             label="File tree"
-            active={showTree}
+            isActive={isTreeShown}
             onClick={toggleTree}
             className="@max-[480px]:hidden"
           >
@@ -444,20 +444,20 @@ export function DiffPanel({
           </IconButton>
           <IconButton
             label="Stacked"
-            active={style === "unified"}
+            isActive={style === "unified"}
             onClick={() => updateSettings({ ...getSettings(), diffLayout: "unified" })}
           >
             <Rows2 className="size-3.5" />
           </IconButton>
           <IconButton
-            label={splitFits ? "Split" : "Split (widen the panel to use it)"}
-            active={style === "split"}
-            disabled={!splitFits}
+            label={canSplit ? "Split" : "Split (widen the panel to use it)"}
+            isActive={style === "split"}
+            disabled={!canSplit}
             onClick={() => updateSettings({ ...getSettings(), diffLayout: "split" })}
           >
             <Columns2 className="size-3.5" />
           </IconButton>
-          <IconButton label="Refresh" onClick={refresh}>
+          <IconButton label="Refresh" onClick={refreshDiff}>
             <RefreshCw className="size-3.5" />
           </IconButton>
           <IconButton label="Close changes" onClick={onClose}>
@@ -466,7 +466,7 @@ export function DiffPanel({
         </span>
       </div>
 
-      <div className="selectable flex min-h-0 flex-1">{panelBody()}</div>
+      <div className="selectable flex min-h-0 flex-1">{renderPanelBody()}</div>
     </aside>
   );
 }

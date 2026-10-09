@@ -28,8 +28,8 @@ import { useResizableSize } from "@masscode/ui/hooks/use-resizable";
 const symbolsFont = new FontFace("Symbols Nerd Font Mono", `url(${symbolsFontUrl})`);
 document.fonts.add(symbolsFont);
 
-function terminalTheme(dark: boolean): ITheme {
-  return dark
+function getTerminalTheme(isDark: boolean): ITheme {
+  return isDark
     ? {
         background: "#101010",
         foreground: "#ffffff",
@@ -199,13 +199,13 @@ export function TerminalView({
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    let isCancelled = false;
     let dispose = () => {};
     void symbolsFont
       .load()
       .catch(() => symbolsFont)
       .then(() => {
-        if (cancelled || !host.current) return;
+        if (isCancelled || !host.current) return;
 
         const terminal = new Terminal({
           allowProposedApi: true,
@@ -216,7 +216,7 @@ export function TerminalView({
           scrollback: 5000,
           macOptionClickForcesSelection: true,
           minimumContrastRatio: 4.5,
-          theme: terminalTheme(document.documentElement.classList.contains("dark")),
+          theme: getTerminalTheme(document.documentElement.classList.contains("dark")),
         });
         const fitAddon = new FitAddon();
         terminal.loadAddon(fitAddon);
@@ -239,7 +239,7 @@ export function TerminalView({
 
         fitAddon.fit();
 
-        let replaying = false;
+        let isReplaying = false;
         function acknowledge(characters: number) {
           sendIfConnected(
             ClientCommand.cases["terminal.acknowledge"].make({ threadId, terminalId, characters }),
@@ -251,10 +251,10 @@ export function TerminalView({
           terminalId,
           size: () => ({ columns: terminal.cols, rows: terminal.rows }),
           reset: (data) => {
-            replaying = true;
+            isReplaying = true;
             terminal.reset();
             terminal.write(data, () => {
-              replaying = false;
+              isReplaying = false;
               acknowledge(data.length);
             });
           },
@@ -263,7 +263,7 @@ export function TerminalView({
         });
 
         terminal.onData((data) => {
-          if (!replaying) {
+          if (!isReplaying) {
             sendIfConnected(
               ClientCommand.cases["terminal.write"].make({ threadId, terminalId, data }),
             );
@@ -288,7 +288,7 @@ export function TerminalView({
         sizeObserver.observe(host.current);
 
         const themeObserver = new MutationObserver(() => {
-          terminal.options.theme = terminalTheme(
+          terminal.options.theme = getTerminalTheme(
             document.documentElement.classList.contains("dark"),
           );
         });
@@ -309,7 +309,7 @@ export function TerminalView({
       });
 
     return () => {
-      cancelled = true;
+      isCancelled = true;
       dispose();
     };
   }, [threadId, terminalId, autoFocus]);

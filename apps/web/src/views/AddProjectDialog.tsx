@@ -13,16 +13,16 @@ const THIS_MAC = "\u0000this-mac";
 
 /** Where a new project lives once there are remote hosts: this Mac, or a folder on one of them. */
 export function AddProjectDialog() {
-  const open = useAddProjectOpen();
+  const isOpen = useAddProjectOpen();
 
   return (
     <MorphingModal
-      viewId={open ? "add-project" : null}
+      viewId={isOpen ? "add-project" : null}
       onClose={() => finishAddProject(null)}
       placement="center"
       className="max-w-lg"
     >
-      {open ? <AddProject /> : null}
+      {isOpen ? <AddProject /> : null}
     </MorphingModal>
   );
 }
@@ -86,11 +86,11 @@ function AddProject() {
   );
 }
 
-function parentOf(path: string) {
+function getParentPath(path: string) {
   return path.slice(0, path.lastIndexOf("/")) || "/";
 }
 
-function nameOf(path: string) {
+function getFolderName(path: string) {
   return path.split("/").at(-1) || path;
 }
 
@@ -108,18 +108,18 @@ function RemoteFolders({
   host: string;
   onFolder: (path: string | null) => void;
 }) {
-  const connected = useStore((state) => state.hosts[host]?.connected ?? false);
+  const isConnected = useStore((state) => state.hosts[host]?.connected ?? false);
   const projectsFolder = useStore((state) => state.settings.hostProjectFolders?.[host] || "~");
   const [path, setPath] = useState(projectsFolder);
   const [typed, setTyped] = useState(projectsFolder);
   const [listing, setListing] = useState<FolderList | null>(null);
 
   useEffect(() => {
-    if (!connected) return;
-    let current = true;
+    if (!isConnected) return;
+    let isCurrent = true;
     setListing(null);
     void listFolders(host, path).then((result) => {
-      if (!current) return;
+      if (!isCurrent) return;
       setListing(
         result ?? {
           path,
@@ -131,14 +131,14 @@ function RemoteFolders({
       onFolder(result && !result.error ? result.path : null);
     });
     return () => {
-      current = false;
+      isCurrent = false;
     };
-  }, [host, path, connected, onFolder]);
+  }, [host, path, isConnected, onFolder]);
 
-  if (!connected) {
+  if (!isConnected) {
     return (
       <p className="text-xs text-muted-foreground">
-        {host} isn't connected yet. Its status is in Settings → Connections.
+        {host} isn't isConnected yet. Its status is in Settings → Connections.
       </p>
     );
   }
@@ -152,7 +152,7 @@ function RemoteFolders({
           aria-label="Parent folder"
           className="size-8 shrink-0 rounded-lg"
           disabled={!listing || listing.path === "/"}
-          onClick={() => listing && setPath(parentOf(listing.path))}
+          onClick={() => listing && setPath(getParentPath(listing.path))}
         >
           <ArrowUp className="size-4" />
         </Button>
@@ -181,7 +181,7 @@ function RemoteFolders({
           finishAddProject(listing.path);
         }}
       >
-        Add {listing && !listing.error ? nameOf(listing.path) : "folder"}
+        Add {listing && !listing.error ? getFolderName(listing.path) : "folder"}
       </Button>
     </div>
   );
@@ -229,15 +229,15 @@ function FolderListing({
 /** Clones a repository into a new folder under `parent` and adds that as the project. */
 function CloneRepository({ host, parent }: { host: string | null; parent: string | null }) {
   const [url, setUrl] = useState("");
-  const [cloning, setCloning] = useState(false);
+  const [isCloning, setIsCloning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function clone() {
-    if (!parent || !url.trim() || cloning) return;
-    setCloning(true);
+  async function cloneRepository() {
+    if (!parent || !url.trim() || isCloning) return;
+    setIsCloning(true);
     setError(null);
     const cloned = await cloneProject(host, url.trim(), parent);
-    setCloning(false);
+    setIsCloning(false);
     if (cloned.path) finishAddProject(cloned.path);
     else setError(cloned.error);
   }
@@ -257,21 +257,21 @@ function CloneRepository({ host, parent }: { host: string | null; parent: string
           placeholder="https://github.com/owner/repo or git@…"
           spellCheck={false}
           autoComplete="off"
-          disabled={cloning}
+          disabled={isCloning}
           onKeyDown={(event) => {
-            if (event.key === "Enter") void clone();
+            if (event.key === "Enter") void cloneRepository();
           }}
           className="min-w-0 flex-1"
           classNames={{ field: "h-8 rounded-lg bg-background", input: "pl-2.5 font-mono text-xs" }}
         />
         <Button
           variant="secondary"
-          className={cn("h-8 rounded-lg", cloning && "pointer-events-none")}
-          disabled={!parent || !url.trim() || cloning}
-          onClick={() => void clone()}
+          className={cn("h-8 rounded-lg", isCloning && "pointer-events-none")}
+          disabled={!parent || !url.trim() || isCloning}
+          onClick={() => void cloneRepository()}
         >
-          {cloning ? <LoaderCircle className="size-4 animate-spin" /> : null}
-          {cloning ? "Cloning…" : "Clone"}
+          {isCloning ? <LoaderCircle className="size-4 animate-spin" /> : null}
+          {isCloning ? "Cloning…" : "Clone"}
         </Button>
       </div>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
