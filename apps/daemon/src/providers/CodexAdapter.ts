@@ -28,18 +28,18 @@ import {
   type RpcId,
   type TokenUsage,
 } from "./codexRpc.ts";
-import { harnessLaunch } from "./launch.ts";
+import { resolveHarnessLaunch } from "./launch.ts";
 import {
   ProviderError,
   summarizeToolInput,
-  textWithFiles,
+  formatTextWithFiles,
   type ProviderAdapter,
   type ProviderSession,
   type StartSessionInput,
   type TurnInput,
 } from "./ProviderAdapter.ts";
 
-function fail(message: string) {
+function createError(message: string) {
   return new ProviderError({ provider: "codex", message });
 }
 
@@ -60,7 +60,7 @@ const CODEX_DECISION = {
 } as const satisfies Record<ApprovalDecision, string>;
 
 /** The per-turn form of `PERMISSION[level].sandbox`. */
-function codexSandboxPolicy(level: PermissionLevel, cwd: string) {
+function toCodexSandboxPolicy(level: PermissionLevel, cwd: string) {
   return Match.value(PERMISSION[level].sandbox).pipe(
     Match.when("danger-full-access", () => ({ type: "dangerFullAccess" })),
     Match.when("read-only", () => ({ type: "readOnly" })),
@@ -89,7 +89,7 @@ const ModelPrice = Schema.Struct({
 let prices: Promise<ReadonlyMap<string, typeof ModelPrice.Type>> | undefined;
 
 /** Codex doesn't say what a thread cost, so it's priced from its tokens at API list prices. */
-async function apiCostUsd(
+async function estimateApiCostUsd(
   model: string,
   usage: { inputTokens: number; cachedInputTokens: number; outputTokens: number },
 ) {
@@ -125,7 +125,7 @@ async function apiCostUsd(
   );
 }
 
-async function threadUsage(
+async function buildThreadUsage(
   { total, last, modelContextWindow }: TokenUsage,
   model: string,
 ): Promise<ThreadUsage> {
@@ -134,11 +134,11 @@ async function threadUsage(
       modelContextWindow === null
         ? null
         : { usedTokens: last.totalTokens, maxTokens: modelContextWindow, categories: [] },
-    costUsd: await apiCostUsd(model, total),
+    costUsd: await estimateApiCostUsd(model, total),
   };
 }
 
-function elicitationResponse(elicitation: CodexElicitation, decision: ApprovalDecision) {
+function buildElicitationResponse(elicitation: CodexElicitation, decision: ApprovalDecision) {
   if (decision === "deny" || elicitation.mode === "url") return { action: "decline" };
 
   const content = Object.fromEntries(
@@ -195,7 +195,7 @@ function start({
     let startedModel = "";
     let activeTurnId: string | null = null;
     // The plan's limit refused the turn; Codex says so in an error before the turn fails.
-    let limited = false;
+    let isLimited = false;
     // Subagents run as Codex threads of their own, and their notifications arrive here tagged with
     // that thread's id. Each maps to the Agent row it shows under, `open` until it ends; a subagent's
     // own subagents are `nested` and fold into the same row.
@@ -204,8 +204,8 @@ function start({
       {
         readonly toolId: string;
         readonly name: string;
-        readonly nested: boolean;
-        open: boolean;
+        readonly isNested: boolean;
+        isOpen: boolean;
         lastMessage: string;
       }
     >();
@@ -215,13 +215,13 @@ function start({
 
     /** Ends a subagent's row, once: its turn ending, an error, or Codex's own report can each do it. */
     function closeSubagent(
-      subagent: { readonly toolId: string; readonly nested: boolean; open: boolean },
+      subagent: { readonly toolId: string; readonly isNested: boolean; isOpen: boolean },
       output: string,
       isError: boolean,
     ) {
-      if (subagent.nested || !subagent.open) return;
+      if (subagent.isNested || !subagent.isOpen) return;
 
-      subagent.open = false;
+      subagent.isOpen = false;
       emit(
         RuntimeEvent.cases["tool.completed"].make({
           threadId,
@@ -230,13 +230,13 @@ function start({
           isError,
         }),
       );
-      if (activeTurnId === null && !subagentsRunning())
+      if (activeTurnId === null && !hasRunningSubagents())
         emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
     }
 
     /** The main agent can end its turn while subagents it started keep working; the thread isn't idle until they're done. */
-    function subagentsRunning() {
-      return [...subagents.values()].some((subagent) => !subagent.nested && subagent.open);
+    function hasRunningSubagents() {
+      return [...subagents.values()].some((subagent) => !subagent.isNested && subagent.isOpen);
     }
 
     let currentModel = model ?? null;
@@ -338,8 +338,8 @@ function start({
                   subagents.set(item.agentThreadId, {
                     toolId: subagent?.toolId ?? item.id,
                     name,
-                    nested: subagent !== undefined,
-                    open: true,
+                    isNested: subagent !== undefined,
+                    isOpen: true,
                     lastMessage: "",
                   });
                   if (subagent) return null;
@@ -414,7 +414,7 @@ function start({
             // Codex doesn't say when the limit resets; the session manager asks for the windows.
             if (
               params.turn.status === "failed" &&
-              (limited || params.turn.error?.codexErrorInfo === "usageLimitExceeded")
+              (isLimited || params.turn.error?.codexErrorInfo === "usageLimitExceeded")
             ) {
               emit(
                 RuntimeEvent.cases["thread.limitStop"].make({
@@ -423,7 +423,7 @@ function start({
                 }),
               );
             }
-            limited = false;
+            isLimited = false;
 
             if (params.turn.status === "failed") {
               emit(
@@ -439,14 +439,14 @@ function start({
                 durationMs: params.turn.durationMs,
               }),
             );
-            if (!subagentsRunning())
+            if (!hasRunningSubagents())
               emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
           },
           error: ({ params }) => {
             if (params.willRetry) return;
 
             if (params.threadId === codexThreadId) {
-              limited ||= params.error.codexErrorInfo === "usageLimitExceeded";
+              isLimited ||= params.error.codexErrorInfo === "usageLimitExceeded";
               emit(RuntimeEvent.cases.error.make({ threadId, message: params.error.message }));
             } else {
               // A subagent's error is its own: it ends its row instead of showing on the thread.
@@ -456,14 +456,14 @@ function start({
           },
           "thread/tokenUsage/updated": ({ params }) => {
             if (params.threadId === codexThreadId) {
-              void threadUsage(params.tokenUsage, currentModel ?? startedModel).then((usage) =>
+              void buildThreadUsage(params.tokenUsage, currentModel ?? startedModel).then((usage) =>
                 emit(RuntimeEvent.cases["thread.usage"].make({ threadId, usage })),
               );
               return;
             }
 
             const subagent = subagents.get(params.threadId);
-            if (!subagent || subagent.nested) return;
+            if (!subagent || subagent.isNested) return;
 
             emit(
               RuntimeEvent.cases["tool.progress"].make({
@@ -532,15 +532,15 @@ function start({
 
     const rpc = yield* Effect.tryPromise({
       try: () => {
-        const launch = harnessLaunch("codex", harness);
+        const launch = resolveHarnessLaunch("codex", harness);
         return connectCodex(
           cwd,
           {
             onNotification,
             onServerRequest,
             onExit: (code, stderrTail) => {
-              const crashed = code !== 0 && code !== null;
-              if (crashed) {
+              const hasCrashed = code !== 0 && code !== null;
+              if (hasCrashed) {
                 emit(
                   RuntimeEvent.cases.error.make({
                     threadId,
@@ -553,7 +553,7 @@ function start({
               emit(
                 RuntimeEvent.cases["thread.status"].make({
                   threadId,
-                  status: crashed ? "error" : "closed",
+                  status: hasCrashed ? "error" : "closed",
                 }),
               );
             },
@@ -596,14 +596,14 @@ function start({
           },
         );
       },
-      catch: (error) => fail(error instanceof Error ? error.message : String(error)),
+      catch: (error) => createError(error instanceof Error ? error.message : String(error)),
     });
 
-    function request<A>(method: string, params: Schema.Json, response: Schema.Decoder<A>) {
+    function sendRequest<A>(method: string, params: Schema.Json, response: Schema.Decoder<A>) {
       return Effect.tryPromise({
         try: () => rpc.request(method, params, response),
         catch: (error) =>
-          fail(`${method}: ${error instanceof Error ? error.message : String(error)}`),
+          createError(`${method}: ${error instanceof Error ? error.message : String(error)}`),
       });
     }
 
@@ -618,18 +618,18 @@ function start({
       sandbox,
     };
     const started = resumeToken
-      ? yield* request(
+      ? yield* sendRequest(
           "thread/resume",
           { threadId: resumeToken, excludeTurns: true, ...threadParams },
           ThreadResponse,
         )
-      : yield* request("thread/start", threadParams, ThreadResponse);
+      : yield* sendRequest("thread/start", threadParams, ThreadResponse);
     codexThreadId = started.thread.id;
     startedModel = started.model;
     onResumeToken(codexThreadId);
 
-    function input(turn: TurnInput) {
-      const text = textWithFiles(turn);
+    function buildTurnInput(turn: TurnInput) {
+      const text = formatTextWithFiles(turn);
       return [
         ...(turn.handoff ? [{ type: "text", text: turn.handoff, text_elements: [] }] : []),
         ...turn.attachments
@@ -647,23 +647,23 @@ function start({
         Effect.gen(function* () {
           emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
           // Overrides stick for later turns, so only send what changed (keeps config.toml's sandbox details otherwise).
-          const permissionChanged = turn.permission !== permission;
+          const hasPermissionChanged = turn.permission !== permission;
           const effortOverride =
             turn.effort !== null && turn.effort !== effort ? toCodexEffort(turn.effort) : null;
           permission = turn.permission;
           if (turn.effort) effort = turn.effort;
 
-          const response = yield* request(
+          const response = yield* sendRequest(
             "turn/start",
             {
               threadId: codexThreadId,
-              input: input(turn),
+              input: buildTurnInput(turn),
               model: currentModel,
               effort: effortOverride,
               serviceTierForTurn:
                 turn.fast === undefined ? null : turn.fast ? CODEX_FAST_TIER : "default",
-              approvalPolicy: permissionChanged ? PERMISSION[permission].approvalPolicy : null,
-              sandboxPolicy: permissionChanged ? codexSandboxPolicy(permission, cwd) : null,
+              approvalPolicy: hasPermissionChanged ? PERMISSION[permission].approvalPolicy : null,
+              sandboxPolicy: hasPermissionChanged ? toCodexSandboxPolicy(permission, cwd) : null,
             },
             Schema.Struct({ turn: Schema.Struct({ id: Schema.String }) }),
           );
@@ -673,18 +673,24 @@ function start({
       steer: (turn) =>
         Effect.suspend(() =>
           activeTurnId
-            ? request(
+            ? sendRequest(
                 "turn/steer",
-                { threadId: codexThreadId, input: input(turn), expectedTurnId: activeTurnId },
+                {
+                  threadId: codexThreadId,
+                  input: buildTurnInput(turn),
+                  expectedTurnId: activeTurnId,
+                },
                 Schema.Unknown,
               ).pipe(Effect.asVoid)
             : session.send(turn),
         ),
       compact: Effect.suspend(() => {
         emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
-        return request("thread/compact/start", { threadId: codexThreadId }, Schema.Unknown).pipe(
-          Effect.asVoid,
-        );
+        return sendRequest(
+          "thread/compact/start",
+          { threadId: codexThreadId },
+          Schema.Unknown,
+        ).pipe(Effect.asVoid);
       }),
       commands: Effect.succeed([]),
       // Subagents are threads with turns of their own: interrupting only the parent would leave them
@@ -692,12 +698,12 @@ function start({
       interrupt: Effect.suspend(() =>
         Effect.forEach(
           [...childTurns].map(([childThreadId, turnId]) => ({ threadId: childThreadId, turnId })),
-          (turn) => request("turn/interrupt", turn, Schema.Unknown).pipe(Effect.ignore),
+          (turn) => sendRequest("turn/interrupt", turn, Schema.Unknown).pipe(Effect.ignore),
           { concurrency: "unbounded", discard: true },
         ).pipe(
           Effect.andThen(
             activeTurnId
-              ? request(
+              ? sendRequest(
                   "turn/interrupt",
                   { threadId: codexThreadId, turnId: activeTurnId },
                   Schema.Unknown,
@@ -710,13 +716,13 @@ function start({
         Effect.suspend(() => {
           const pending = pendingApprovals.get(requestId);
           if (pending === undefined)
-            return Effect.fail(fail(`Unknown approval request ${requestId}`));
+            return Effect.fail(createError(`Unknown approval request ${requestId}`));
 
           pendingApprovals.delete(requestId);
           rpc.respond(
             pending.rpcId,
             pending.elicitation
-              ? elicitationResponse(pending.elicitation, decision)
+              ? buildElicitationResponse(pending.elicitation, decision)
               : { decision: CODEX_DECISION[decision] },
           );
           emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
@@ -753,7 +759,7 @@ async function dropLastTurns(rpc: CodexRpc, threadId: string, dropTurns: number)
 const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, dropTurns }) =>
   Effect.tryPromise({
     try: async () => {
-      const rpc = await connectCodex(cwd, {}, harnessLaunch("codex", harness));
+      const rpc = await connectCodex(cwd, {}, resolveHarnessLaunch("codex", harness));
       try {
         await rpc.request(
           "thread/resume",
@@ -767,14 +773,14 @@ const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, dropTurn
       }
     },
     catch: (error) =>
-      fail(`Couldn't rewind: ${error instanceof Error ? error.message : String(error)}`),
+      createError(`Couldn't rewind: ${error instanceof Error ? error.message : String(error)}`),
   });
 
 /** Forks the thread in a short-lived app-server and drops the fork's last turns. */
 const fork: ProviderAdapter["fork"] = ({ cwd, harness, resumeToken, dropTurns }) =>
   Effect.tryPromise({
     try: async () => {
-      const rpc = await connectCodex(cwd, {}, harnessLaunch("codex", harness));
+      const rpc = await connectCodex(cwd, {}, resolveHarnessLaunch("codex", harness));
       try {
         const { thread } = await rpc.request(
           "thread/fork",
@@ -788,7 +794,7 @@ const fork: ProviderAdapter["fork"] = ({ cwd, harness, resumeToken, dropTurns })
       }
     },
     catch: (error) =>
-      fail(`Couldn't fork: ${error instanceof Error ? error.message : String(error)}`),
+      createError(`Couldn't fork: ${error instanceof Error ? error.message : String(error)}`),
   });
 
 /** Codex reports a thread's token usage as it loads it, so a short-lived app-server resumes it and waits for that. */
@@ -809,7 +815,7 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
             }
           },
         },
-        harnessLaunch("codex", harness),
+        resolveHarnessLaunch("codex", harness),
       );
       try {
         const resumed = await rpc.request(
@@ -823,20 +829,20 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
         ]);
 
         return usage
-          ? await threadUsage(usage, model ?? resumed.model)
+          ? await buildThreadUsage(usage, model ?? resumed.model)
           : { context: null, costUsd: null };
       } finally {
         rpc.close();
       }
     },
     catch: (error) =>
-      fail(`Couldn't read usage: ${error instanceof Error ? error.message : String(error)}`),
+      createError(`Couldn't read usage: ${error instanceof Error ? error.message : String(error)}`),
   });
 
 const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
   Effect.tryPromise({
     try: async () => {
-      const rpc = await connectCodex(cwd, {}, harnessLaunch("codex", harness));
+      const rpc = await connectCodex(cwd, {}, resolveHarnessLaunch("codex", harness));
       try {
         const { data } = await rpc.request(
           "skills/list",
@@ -865,7 +871,7 @@ const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
         rpc.close();
       }
     },
-    catch: (error) => fail(error instanceof Error ? error.message : String(error)),
+    catch: (error) => createError(error instanceof Error ? error.message : String(error)),
   });
 
 export const CodexAdapter: ProviderAdapter = {

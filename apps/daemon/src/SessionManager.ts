@@ -454,9 +454,9 @@ const make = Effect.gen(function* () {
 
   // --- event flow ----------------------------------------------------------
   registry.setListener({
-    providers: (providers) =>
+    onProviders: (providers) =>
       publish(RuntimeEvent.cases["providers.updated"].make({ providers: [...providers] })),
-    flow: (flow) => publish(RuntimeEvent.cases["auth.flow"].make({ flow })),
+    onFlow: (flow) => publish(RuntimeEvent.cases["auth.flow"].make({ flow })),
   });
 
   /** Re-reads the branch (a turn may have switched it) and announces the thread's current meta. */

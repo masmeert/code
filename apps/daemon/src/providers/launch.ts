@@ -29,7 +29,10 @@ const CLI: Record<
   },
 };
 
-export function harnessLaunch(kind: ProviderKind, settings: ProviderSettings): HarnessLaunch {
+export function resolveHarnessLaunch(
+  kind: ProviderKind,
+  settings: ProviderSettings,
+): HarnessLaunch {
   const cli = CLI[kind];
   const bin = settings.binaryPath?.trim()
     ? expandHome(settings.binaryPath)
@@ -50,7 +53,7 @@ export function harnessLaunch(kind: ProviderKind, settings: ProviderSettings): H
  * The Claude SDK takes extra CLI flags as a record: `--flag value`, `--flag=value`, or a bare `--flag`.
  * ponytail: short flags, positionals and repeated flags are dropped; pass them through a wrapper binary if needed.
  */
-export function claudeExtraArgs(args: ReadonlyArray<string>) {
+export function toClaudeExtraArgs(args: ReadonlyArray<string>) {
   const flags: Record<string, string | null> = {};
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!;
@@ -68,13 +71,13 @@ export function claudeExtraArgs(args: ReadonlyArray<string>) {
 }
 
 /** A Claude session with no prompt: it answers control requests without ever starting a turn. Close it when done. */
-export function promptlessQuery(launch: HarnessLaunch, options: Options = {}) {
+export function startPromptlessQuery(launch: HarnessLaunch, options: Options = {}) {
   return query({
     prompt: { [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => {}) }) },
     options: {
       ...options,
       pathToClaudeCodeExecutable: launch.bin,
-      extraArgs: claudeExtraArgs(launch.args),
+      extraArgs: toClaudeExtraArgs(launch.args),
       env: launch.env,
     },
   });

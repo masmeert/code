@@ -35,7 +35,7 @@ import {
   IMAGE_TYPES,
   ProviderError,
   summarizeToolInput,
-  textWithFiles,
+  formatTextWithFiles,
   type ForkInput,
   type ProviderAdapter,
   type ProviderSession,
@@ -43,15 +43,15 @@ import {
   type StartSessionInput,
   type TurnInput,
 } from "./ProviderAdapter.ts";
-import { claudeExtraArgs, harnessLaunch, promptlessQuery } from "./launch.ts";
+import { toClaudeExtraArgs, resolveHarnessLaunch, startPromptlessQuery } from "./launch.ts";
 import { DEVICES_SUPPORTED } from "../devices.ts";
 import { skillMentions } from "../skills.ts";
 
 /** Minimal push-based async iterable used as the SDK's streaming prompt input. */
-function makeInbox<A>() {
+function createInbox<A>() {
   const buffer: Array<A> = [];
   let wake: (() => void) | undefined;
-  let done = false;
+  let isEnded = false;
 
   const iterable: AsyncIterable<A> = {
     async *[Symbol.asyncIterator]() {
@@ -61,7 +61,7 @@ function makeInbox<A>() {
           continue;
         }
 
-        if (done) return;
+        if (isEnded) return;
 
         await new Promise<void>((resolve) => (wake = resolve));
         wake = undefined;
@@ -76,7 +76,7 @@ function makeInbox<A>() {
       wake?.();
     },
     end: () => {
-      done = true;
+      isEnded = true;
       wake?.();
     },
   };
@@ -110,7 +110,7 @@ const decodeAskUserQuestion = Schema.decodeUnknownOption(
   }),
 );
 
-function fail(message: string) {
+function createError(message: string) {
   return new ProviderError({ provider: "claude", message });
 }
 
@@ -131,14 +131,14 @@ function toEffortLevel(effort: Effort): EffortLevel | null {
 }
 
 /** Ultrathink keeps the model's default effort (a null level resets to it) and works through the keyword. */
-function effortSettings(effort: Effort): Parameters<Query["applyFlagSettings"]>[0] {
+function toEffortSettings(effort: Effort): Parameters<Query["applyFlagSettings"]>[0] {
   return effort === "ultracode"
     ? { ultracode: true }
     : { ultracode: null, effortLevel: toEffortLevel(effort) };
 }
 
 /** Claude Code looks for the "ultrathink" keyword in the message itself. */
-function withUltrathink(turn: TurnInput): TurnInput {
+function appendUltrathink(turn: TurnInput): TurnInput {
   return turn.effort === "ultrathink" ? { ...turn, text: `${turn.text}\n\nultrathink` } : turn;
 }
 
@@ -151,7 +151,7 @@ const decodeToolInput = Schema.decodeUnknownOption(Schema.Json);
  * that block, and earlier ones become `/name` in the text before it, which the model reads as
  * asking it to start them itself.
  */
-function skillBlocks(text: string, skills: ReadonlyArray<ProviderSkill>): Array<string> {
+function splitSkillBlocks(text: string, skills: ReadonlyArray<ProviderSkill>): Array<string> {
   const mentions = skillMentions(text, skills);
   const last = mentions.at(-1);
   if (!last) return text ? [text] : [];
@@ -169,7 +169,7 @@ function skillBlocks(text: string, skills: ReadonlyArray<ProviderSkill>): Array<
 
 /** Images inline as base64 blocks, then the text (with other files listed as paths). */
 async function toContent(turn: TurnInput): Promise<SDKUserMessage["message"]["content"]> {
-  const texts = skillBlocks(textWithFiles(turn), turn.skills);
+  const texts = splitSkillBlocks(formatTextWithFiles(turn), turn.skills);
   const images = turn.attachments.flatMap((attachment) => {
     const mediaType = IMAGE_TYPES.get(extname(attachment.path).toLowerCase());
     return attachment.isImage && mediaType ? [{ path: attachment.path, mediaType }] : [];
@@ -194,7 +194,7 @@ async function toContent(turn: TurnInput): Promise<SDKUserMessage["message"]["co
   ];
 }
 
-function contextUsage(usage: SDKControlGetContextUsageResponse) {
+function toContextUsage(usage: SDKControlGetContextUsageResponse) {
   return {
     usedTokens: usage.totalTokens,
     maxTokens: usage.rawMaxTokens,
@@ -222,8 +222,8 @@ function start({
 }: StartSessionInput) {
   return Effect.try({
     try: () => {
-      const launch = harnessLaunch("claude", harness);
-      const inbox = makeInbox<SDKUserMessage>();
+      const launch = resolveHarnessLaunch("claude", harness);
+      const inbox = createInbox<SDKUserMessage>();
       const pending = new Map<string, PendingApproval>();
 
       const canUseTool: CanUseTool = (toolName, input, { signal, suggestions, agentID }) =>
@@ -283,7 +283,7 @@ function start({
         allowDangerouslySkipPermissions: true,
         pathToClaudeCodeExecutable: launch.bin,
         // Thinking streams empty unless shown summarized; launch arguments can still say otherwise.
-        extraArgs: { "thinking-display": "summarized", ...claudeExtraArgs(launch.args) },
+        extraArgs: { "thinking-display": "summarized", ...toClaudeExtraArgs(launch.args) },
         settingSources: ["user", "project", "local"],
         includePartialMessages: true,
         agentProgressSummaries: true,
@@ -364,13 +364,13 @@ function start({
       const questionTools = new Set<string>();
       // Claude Code's own running/idle, which covers turns it starts itself and waits out background
       // agents. CLIs too old to send it get idle at the end of each turn instead.
-      let reportsSessionState = false;
+      let hasSessionStateEvents = false;
       let sessionId = resumeToken;
       let permission = initialPermission;
       // Ultracode and ultrathink can't be start options; the first turn applies them.
       let effort = initialLevel ? initialEffort : null;
       // Unknown until a turn sets it, so the user's own Claude Code setting can't linger unseen.
-      let fast: boolean | undefined;
+      let isFastMode: boolean | undefined;
       // The plan's limit refused a request this turn: when it resets (epoch ms, null if unsaid),
       // undefined while it hasn't. Told only if the turn then fails, since extra usage can pay on.
       let limitResetsAt: number | null | undefined;
@@ -379,12 +379,12 @@ function start({
       async function reportUsage(costUsd: number) {
         const context = await conversation
           .getContextUsage({ detail: "summary" })
-          .then(contextUsage)
+          .then(toContextUsage)
           .catch(() => null);
         emit(RuntimeEvent.cases["thread.usage"].make({ threadId, usage: { context, costUsd } }));
       }
 
-      function handle(message: SDKMessage) {
+      function handleMessage(message: SDKMessage) {
         if (message.session_id !== undefined && message.session_id !== sessionId) {
           sessionId = message.session_id;
           onResumeToken(sessionId);
@@ -520,7 +520,7 @@ function start({
               // A resumed session goes back into the worktree it was in, or not, after a rewind to before it.
               onCwd(message.cwd);
             } else if (message.subtype === "session_state_changed") {
-              reportsSessionState = true;
+              hasSessionStateEvents = true;
               if (message.state !== "requires_action")
                 emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: message.state }));
             } else if (
@@ -588,7 +588,7 @@ function start({
                 durationMs: message.duration_ms,
               }),
             );
-            if (!reportsSessionState)
+            if (!hasSessionStateEvents)
               emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
             void reportUsage(message.total_cost_usd);
             return;
@@ -600,7 +600,7 @@ function start({
 
       void (async () => {
         try {
-          for await (const message of conversation) handle(message);
+          for await (const message of conversation) handleMessage(message);
           emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "closed" }));
         } catch (error) {
           emit(
@@ -624,16 +624,16 @@ function start({
               }
 
               if (turn.effort && turn.effort !== effort) {
-                await conversation.applyFlagSettings(effortSettings(turn.effort));
+                await conversation.applyFlagSettings(toEffortSettings(turn.effort));
                 effort = turn.effort;
               }
 
-              if (turn.fast !== undefined && turn.fast !== fast) {
+              if (turn.fast !== undefined && turn.fast !== isFastMode) {
                 await conversation.applyFlagSettings({ fastMode: turn.fast });
-                fast = turn.fast;
+                isFastMode = turn.fast;
               }
 
-              const content = await toContent(withUltrathink(turn));
+              const content = await toContent(appendUltrathink(turn));
               inbox.push({
                 type: "user",
                 message: { role: "user", content },
@@ -641,13 +641,13 @@ function start({
                 uuid: turn.messageId,
               });
             },
-            catch: (error) => fail(error instanceof Error ? error.message : String(error)),
+            catch: (error) => createError(error instanceof Error ? error.message : String(error)),
           }),
         // Claude Code takes a message sent mid-turn in at its next step.
         steer: (turn) =>
           Effect.tryPromise({
             try: async () => {
-              const content = await toContent(withUltrathink(turn));
+              const content = await toContent(appendUltrathink(turn));
               inbox.push({
                 type: "user",
                 message: { role: "user", content },
@@ -656,7 +656,7 @@ function start({
                 priority: "now",
               });
             },
-            catch: (error) => fail(error instanceof Error ? error.message : String(error)),
+            catch: (error) => createError(error instanceof Error ? error.message : String(error)),
           }),
         compact: Effect.sync(() => {
           emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
@@ -673,7 +673,7 @@ function start({
               description: command.description,
               argumentHint: command.argumentHint,
             })),
-          catch: (error) => fail(String(error)),
+          catch: (error) => createError(String(error)),
         }),
         interrupt: Effect.tryPromise({
           try: () =>
@@ -683,7 +683,7 @@ function start({
                 backgroundAgents.has(toolId) ? [conversation.stopTask(taskId)] : [],
               ),
             ]),
-          catch: (error) => fail(String(error)),
+          catch: (error) => createError(String(error)),
         }).pipe(Effect.asVoid),
         stopAgent: (toolId) =>
           Effect.tryPromise({
@@ -692,7 +692,7 @@ function start({
               // Already finished: its notification is on the way.
               if (taskId) await conversation.stopTask(taskId);
             },
-            catch: (error) => fail(`Couldn't stop the subagent: ${String(error)}`),
+            catch: (error) => createError(`Couldn't stop the subagent: ${String(error)}`),
           }),
         respondApproval: (
           requestId,
@@ -701,7 +701,7 @@ function start({
         ) =>
           Effect.suspend(() => {
             const entry = pending.get(requestId);
-            if (!entry) return Effect.fail(fail(`Unknown approval request ${requestId}`));
+            if (!entry) return Effect.fail(createError(`Unknown approval request ${requestId}`));
 
             pending.delete(requestId);
             const answered = entry.questions && decision !== "deny" ? answers : undefined;
@@ -771,7 +771,7 @@ function start({
         setModel: (next) =>
           Effect.tryPromise({
             try: () => conversation.setModel(next ?? undefined),
-            catch: (error) => fail(String(error)),
+            catch: (error) => createError(String(error)),
           }),
         close: Effect.sync(() => {
           inbox.end();
@@ -781,7 +781,7 @@ function start({
 
       return session;
     },
-    catch: (error) => fail(error instanceof Error ? error.message : String(error)),
+    catch: (error) => createError(error instanceof Error ? error.message : String(error)),
   });
 }
 
@@ -816,7 +816,7 @@ async function forkBefore({ cwd, harness, resumeToken, messageId, keep }: ForkIn
 
   // The SDK's session-log helpers read CLAUDE_CONFIG_DIR from our own env, not from options.
   // ponytail: swaps process.env for the call; a CLI spawned meanwhile without its own config dir would see it.
-  const configDir = harnessLaunch("claude", harness).env.CLAUDE_CONFIG_DIR;
+  const configDir = resolveHarnessLaunch("claude", harness).env.CLAUDE_CONFIG_DIR;
   const previous = process.env.CLAUDE_CONFIG_DIR;
   if (configDir !== undefined) process.env.CLAUDE_CONFIG_DIR = configDir;
   try {
@@ -845,14 +845,14 @@ const rewind: ProviderAdapter["rewind"] = (input) =>
   Effect.tryPromise({
     try: () => forkBefore(input),
     catch: (error) =>
-      fail(`Couldn't rewind: ${error instanceof Error ? error.message : String(error)}`),
+      createError(`Couldn't rewind: ${error instanceof Error ? error.message : String(error)}`),
   });
 
 const fork: ProviderAdapter["fork"] = (input) =>
   Effect.tryPromise({
     try: () => forkBefore(input),
     catch: (error) =>
-      fail(`Couldn't fork: ${error instanceof Error ? error.message : String(error)}`),
+      createError(`Couldn't fork: ${error instanceof Error ? error.message : String(error)}`),
   });
 
 /** A prompt-less session resumed from the log answers as the live one would; the cost call is experimental, so it may come back empty. */
@@ -861,9 +861,9 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
     try: async () => {
       const options: Options = { cwd, resume: resumeToken };
       if (model) options.model = model;
-      const conversation = promptlessQuery(harnessLaunch("claude", harness), options);
+      const conversation = startPromptlessQuery(resolveHarnessLaunch("claude", harness), options);
       try {
-        const context = contextUsage(await conversation.getContextUsage({ detail: "summary" }));
+        const context = toContextUsage(await conversation.getContextUsage({ detail: "summary" }));
         const costUsd = await conversation
           .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
           .then(
@@ -876,14 +876,14 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
       }
     },
     catch: (error) =>
-      fail(`Couldn't read usage: ${error instanceof Error ? error.message : String(error)}`),
+      createError(`Couldn't read usage: ${error instanceof Error ? error.message : String(error)}`),
   });
 
 /** Bundled, plugin, user and project skills alike, as the session in `cwd` would load them. */
 const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
   Effect.tryPromise({
     try: async () => {
-      const conversation = promptlessQuery(harnessLaunch("claude", harness), {
+      const conversation = startPromptlessQuery(resolveHarnessLaunch("claude", harness), {
         cwd,
         settingSources: ["user", "project", "local"],
       });
@@ -898,7 +898,7 @@ const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
         conversation.close();
       }
     },
-    catch: (error) => fail(error instanceof Error ? error.message : String(error)),
+    catch: (error) => createError(error instanceof Error ? error.message : String(error)),
   });
 
 export const ClaudeAdapter: ProviderAdapter = {

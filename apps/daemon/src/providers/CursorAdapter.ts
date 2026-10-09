@@ -19,7 +19,7 @@ import { extname } from "node:path";
 import {
   ConfigOption,
   connectAcp,
-  contentText,
+  getContentText,
   PermissionRequest,
   PromptResponse,
   SessionSetup,
@@ -28,11 +28,11 @@ import {
   type ToolContent,
 } from "./acp.ts";
 import type { JsonRpc } from "./jsonRpc.ts";
-import { harnessLaunch, type HarnessLaunch } from "./launch.ts";
+import { resolveHarnessLaunch, type HarnessLaunch } from "./launch.ts";
 import {
   IMAGE_TYPES,
   ProviderError,
-  textWithFiles,
+  formatTextWithFiles,
   type ProviderAdapter,
   type ProviderSession,
   type StartSessionInput,
@@ -41,11 +41,11 @@ import {
 import { DEVICES_SUPPORTED } from "../devices.ts";
 import { skillMentions } from "../skills.ts";
 
-function fail(message: string) {
+function createError(message: string) {
   return new ProviderError({ provider: "cursor", message });
 }
 
-function message(cause: unknown) {
+function getErrorMessage(cause: unknown) {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
@@ -56,12 +56,12 @@ const AUTO = "default";
  * Model is only picked at launch: switching it over ACP is accepted and then ignored, which also
  * leaves the model's effort and fast settings unknown to the session.
  */
-function acpArgs(launch: HarnessLaunch, model: string | null) {
-  return [...launch.args, ...cursorModelFlag(model), "acp"];
+function buildAcpArgs(launch: HarnessLaunch, model: string | null) {
+  return [...launch.args, ...buildCursorModelFlag(model), "acp"];
 }
 
 /** The CLI flag that picks `model`; none leaves the CLI's own default. */
-export function cursorModelFlag(model: string | null | undefined) {
+export function buildCursorModelFlag(model: string | null | undefined) {
   return model ? ["--model", model === AUTO ? "auto" : model] : [];
 }
 
@@ -72,7 +72,7 @@ function toEffort(value: string) {
 }
 
 /** The setting a model takes its effort from: `effort`, `reasoning` or `reasoning_effort`, by model. */
-function effortOption(options: ReadonlyArray<ConfigOption>) {
+function findEffortOption(options: ReadonlyArray<ConfigOption>) {
   return options.find((option) => option.category === "thought_level" && option.id !== "thinking");
 }
 
@@ -88,12 +88,12 @@ const ListedModels = Schema.Struct({
 
 /** The models the account can use, with each one's efforts and fast mode. */
 export async function readCursorModels(launch: HarnessLaunch): Promise<Array<ModelOption>> {
-  const rpc = await connectAcp("Cursor", launch, acpArgs(launch, null), undefined);
+  const rpc = await connectAcp("Cursor", launch, buildAcpArgs(launch, null), undefined);
   try {
     const { models } = await rpc.request("cursor/list_available_models", {}, ListedModels);
 
     return models.map((model) => {
-      const effort = effortOption(model.configOptions);
+      const effort = findEffortOption(model.configOptions);
       return {
         id: model.value,
         label: model.name,
@@ -160,11 +160,11 @@ function decodeToolRaw(raw: Schema.Json | undefined): typeof ToolRaw.Type {
 }
 
 /** What a finished tool printed or changed. */
-function toolOutput(update: {
+function formatToolOutput(update: {
   readonly content?: ReadonlyArray<ToolContent> | null | undefined;
   readonly rawOutput?: Schema.Json | undefined;
 }) {
-  const text = contentText(update.content);
+  const text = getContentText(update.content);
   if (text) return text;
   if (update.rawOutput === undefined || update.rawOutput === null) return "";
   if (Predicate.isString(update.rawOutput)) return update.rawOutput;
@@ -205,8 +205,8 @@ function start({
 }: StartSessionInput) {
   return Effect.gen(function* () {
     const launch = yield* Effect.try({
-      try: () => harnessLaunch("cursor", harness),
-      catch: (error) => fail(message(error)),
+      try: () => resolveHarnessLaunch("cursor", harness),
+      catch: (error) => createError(getErrorMessage(error)),
     });
 
     let rpc: JsonRpc | undefined;
@@ -219,7 +219,7 @@ function start({
     let configOptions: ReadonlyArray<ConfigOption> = [];
     let commands: ReadonlyArray<SlashCommand> = [];
     /** Set while `session/load` replays the conversation, which the transcript already has. */
-    let replaying = false;
+    let isReplaying = false;
     let reply: { readonly id: string; text: string } | null = null;
     let thought: { readonly id: string; text: string } | null = null;
     const runningTools = new Set<string>();
@@ -228,7 +228,7 @@ function start({
     const commandOf = new Map<string, string>();
     const pending = new Map<string, Pending>();
     const allowedForSession = new Set<string>();
-    let prompting = false;
+    let isPrompting = false;
     /** Messages sent while a turn runs: ACP can't add to a turn, so each starts the next one. */
     const steered: Array<TurnInput> = [];
     /** Runs once the turn ends, in place of going idle: building an approved plan. */
@@ -283,7 +283,7 @@ function start({
     // the commands and options it reports alongside aren't.
     function onUpdate(update: SessionUpdate) {
       if (
-        replaying &&
+        isReplaying &&
         !SessionUpdate.isAnyOf(["available_commands_update", "config_option_update"])(update)
       ) {
         return;
@@ -334,23 +334,23 @@ function start({
           }
         },
         tool_call_update: (update) => {
-          const done = update.status === "completed" || update.status === "failed";
+          const isDone = update.status === "completed" || update.status === "failed";
           const unnamed = unnamedEdits.get(update.toolCallId);
           const path =
             update.locations?.[0]?.path ??
             update.content?.flatMap((part) => (part.type === "diff" ? [part.path] : []))[0];
-          if (unnamed !== undefined && (path !== undefined || done)) {
+          if (unnamed !== undefined && (path !== undefined || isDone)) {
             unnamedEdits.delete(update.toolCallId);
             startTool(update.toolCallId, unnamed, path ?? update.title ?? "");
           }
 
-          if (!done || !runningTools.delete(update.toolCallId)) return;
+          if (!isDone || !runningTools.delete(update.toolCallId)) return;
 
           emit(
             RuntimeEvent.cases["tool.completed"].make({
               threadId,
               toolId: update.toolCallId,
-              output: toolOutput(update),
+              output: formatToolOutput(update),
               isError: update.status === "failed",
             }),
           );
@@ -368,7 +368,7 @@ function start({
       });
     }
 
-    function ask(
+    function requestApproval(
       rpcId: RpcId,
       entry: Pending,
       title: string,
@@ -411,11 +411,11 @@ function start({
           return true;
         }
 
-        ask(
+        requestApproval(
           rpcId,
           { kind: "permission", rpcId, request, key },
           toolCall.kind === "execute" ? "Run command" : (toolCall.title ?? "Allow this?"),
-          command ?? contentText(toolCall.content),
+          command ?? getContentText(toolCall.content),
         );
         return true;
       }
@@ -426,7 +426,7 @@ function start({
 
         // Outside plan mode a plan is the agent's own outline: nothing to approve.
         if (permission !== "plan") rpc?.respond(rpcId, { outcome: { outcome: "accepted" } });
-        else ask(rpcId, { kind: "plan", rpcId }, "ExitPlanMode", plan.plan);
+        else requestApproval(rpcId, { kind: "plan", rpcId }, "ExitPlanMode", plan.plan);
         return true;
       }
 
@@ -434,7 +434,7 @@ function start({
         const asked = Option.getOrUndefined(Schema.decodeUnknownOption(AskQuestion)(params));
         if (!asked) return false;
 
-        ask(
+        requestApproval(
           rpcId,
           { kind: "question", rpcId, questions: asked.questions },
           "AskUserQuestion",
@@ -463,18 +463,18 @@ function start({
       );
     }
 
-    async function connect() {
+    async function launchAgent() {
       const launched = ++generation;
       rpc?.close();
       launchedModel = model;
-      rpc = await connectAcp("Cursor", launch, acpArgs(launch, model), cwd, {
+      rpc = await connectAcp("Cursor", launch, buildAcpArgs(launch, model), cwd, {
         onUpdate,
         onRequest,
         onExit: (code, stderrTail) => {
           if (launched !== generation) return;
 
-          const crashed = code !== 0 && code !== null;
-          if (crashed) {
+          const hasCrashed = code !== 0 && code !== null;
+          if (hasCrashed) {
             emit(
               RuntimeEvent.cases.error.make({
                 threadId,
@@ -487,7 +487,7 @@ function start({
           emit(
             RuntimeEvent.cases["thread.status"].make({
               threadId,
-              status: crashed ? "error" : "closed",
+              status: hasCrashed ? "error" : "closed",
             }),
           );
         },
@@ -495,7 +495,7 @@ function start({
 
       const resumed = sessionId
         ? await (async () => {
-            replaying = true;
+            isReplaying = true;
             try {
               return await rpc.request(
                 "session/load",
@@ -506,7 +506,7 @@ function start({
               // Gone from Cursor's store (or another machine's): carry on in a new conversation.
               return null;
             } finally {
-              replaying = false;
+              isReplaying = false;
             }
           })()
         : null;
@@ -520,7 +520,7 @@ function start({
       configOptions = setup.configOptions ?? configOptions;
     }
 
-    async function setOption(configId: string, value: string) {
+    async function setConfigOption(configId: string, value: string) {
       const current = configOptions.find((option) => option.id === configId);
       if (!current || current.currentValue === value) return;
 
@@ -532,7 +532,7 @@ function start({
       configOptions = result.configOptions ?? configOptions;
     }
 
-    async function prompt(turn: TurnInput) {
+    async function buildPromptBlocks(turn: TurnInput) {
       const images = await Promise.all(
         turn.attachments.flatMap((attachment) => {
           const mimeType = IMAGE_TYPES.get(extname(attachment.path).toLowerCase());
@@ -548,7 +548,7 @@ function start({
         }),
       );
 
-      const written = textWithFiles(turn);
+      const written = formatTextWithFiles(turn);
       // Cursor takes a `/name` anywhere in the message as the skill to load.
       const text = skillMentions(written, turn.skills).reduce(
         (result, mention) => `${result.slice(0, mention.start)}/${result.slice(mention.start + 1)}`,
@@ -563,41 +563,42 @@ function start({
     }
 
     /** Applies the turn's settings and starts it; resolves once Cursor has it, not when it ends. */
-    async function begin(turn: TurnInput) {
+    async function beginTurn(turn: TurnInput) {
       emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
       permission = turn.permission;
-      if (!rpc || model !== launchedModel) await connect();
+      if (!rpc || model !== launchedModel) await launchAgent();
 
-      await setOption("mode", permission === "plan" ? "plan" : "agent");
-      const effort = effortOption(configOptions);
+      await setConfigOption("mode", permission === "plan" ? "plan" : "agent");
+      const effort = findEffortOption(configOptions);
       const effortValue = effort?.options?.find(
         (option) => turn.effort !== null && toEffort(option.value) === turn.effort,
       )?.value;
-      if (effort && effortValue) await setOption(effort.id, effortValue);
-      if (turn.fast !== undefined) await setOption("fast", String(turn.fast));
+      if (effort && effortValue) await setConfigOption(effort.id, effortValue);
+      if (turn.fast !== undefined) await setConfigOption("fast", String(turn.fast));
 
-      const blocks = await prompt(turn);
+      const blocks = await buildPromptBlocks(turn);
       const startedAt = Date.now();
       const launched = generation;
-      prompting = true;
+      isPrompting = true;
       void rpc!
         .request("session/prompt", { sessionId, prompt: blocks }, PromptResponse)
         .then(
           ({ stopReason }) => {
             finishText();
-            const stopped = STOPPED_EARLY.get(stopReason);
-            if (stopped) emit(RuntimeEvent.cases.error.make({ threadId, message: stopped }));
+            const stopMessage = STOPPED_EARLY.get(stopReason);
+            if (stopMessage)
+              emit(RuntimeEvent.cases.error.make({ threadId, message: stopMessage }));
           },
           (error) => {
             finishText();
             // A process that exited has said so already.
-            if (launched === generation && !message(error).startsWith("Cursor exited")) {
-              emit(RuntimeEvent.cases.error.make({ threadId, message: message(error) }));
+            if (launched === generation && !getErrorMessage(error).startsWith("Cursor exited")) {
+              emit(RuntimeEvent.cases.error.make({ threadId, message: getErrorMessage(error) }));
             }
           },
         )
         .then(() => {
-          prompting = false;
+          isPrompting = false;
           // Tools still open when the turn ends were cut off: stopped, or the process went.
           for (const toolId of runningTools) {
             emit(
@@ -618,34 +619,40 @@ function start({
             }),
           );
 
-          const next = afterTurn ?? (steered.length ? () => void run(steered.shift()!) : null);
+          const next = afterTurn ?? (steered.length ? () => void runTurn(steered.shift()!) : null);
           afterTurn = null;
           if (next) next();
           else emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
         });
     }
 
-    function run(turn: TurnInput) {
-      begin(turn).catch((error) => {
-        emit(RuntimeEvent.cases.error.make({ threadId, message: message(error) }));
+    function runTurn(turn: TurnInput) {
+      beginTurn(turn).catch((error) => {
+        emit(RuntimeEvent.cases.error.make({ threadId, message: getErrorMessage(error) }));
         emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
       });
     }
 
-    yield* Effect.tryPromise({ try: connect, catch: (error) => fail(message(error)) });
+    yield* Effect.tryPromise({
+      try: launchAgent,
+      catch: (error) => createError(getErrorMessage(error)),
+    });
 
     const session: ProviderSession = {
       send: (turn) =>
-        Effect.tryPromise({ try: () => begin(turn), catch: (error) => fail(message(error)) }),
+        Effect.tryPromise({
+          try: () => beginTurn(turn),
+          catch: (error) => createError(getErrorMessage(error)),
+        }),
       steer: (turn) =>
         Effect.suspend(() => {
-          if (!prompting) return session.send(turn);
+          if (!isPrompting) return session.send(turn);
 
           steered.push(turn);
           return Effect.void;
         }),
       compact: Effect.fail(
-        fail("Cursor can't compact a conversation. Start a new thread to free up context."),
+        createError("Cursor can't compact a conversation. Start a new thread to free up context."),
       ),
       commands: Effect.sync(() => commands),
       interrupt: Effect.sync(() => {
@@ -661,7 +668,7 @@ function start({
       respondApproval: (requestId, decision, { permission: buildPermission, answers } = {}) =>
         Effect.suspend(() => {
           const entry = pending.get(requestId);
-          if (!entry) return Effect.fail(fail(`Unknown approval request ${requestId}`));
+          if (!entry) return Effect.fail(createError(`Unknown approval request ${requestId}`));
 
           pending.delete(requestId);
           switch (entry.kind) {
@@ -681,7 +688,7 @@ function start({
               if (decision !== "deny") {
                 permission = buildPermission ?? "auto-edit";
                 afterTurn = () =>
-                  run({
+                  runTurn({
                     messageId: randomUUID(),
                     text: "The user approved the plan. Implement it now.",
                     attachments: [],
@@ -744,8 +751,8 @@ const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
       const reported = new Promise<ReadonlyArray<{ name: string; description: string }>>(
         (resolve) => (report = resolve),
       );
-      const launch = harnessLaunch("cursor", harness);
-      const rpc = await connectAcp("Cursor", launch, acpArgs(launch, null), cwd, {
+      const launch = resolveHarnessLaunch("cursor", harness);
+      const rpc = await connectAcp("Cursor", launch, buildAcpArgs(launch, null), cwd, {
         onUpdate: (update) => {
           if (SessionUpdate.guards.available_commands_update(update)) {
             report(update.availableCommands);
@@ -769,18 +776,18 @@ const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
         rpc.close();
       }
     },
-    catch: (error) => fail(message(error)),
+    catch: (error) => createError(getErrorMessage(error)),
   });
 
-function unsupported(action: string) {
-  return () => Effect.fail(fail(`Cursor can't ${action} a conversation yet.`));
+function failUnsupported(action: string) {
+  return () => Effect.fail(createError(`Cursor can't ${action} a conversation yet.`));
 }
 
 export const CursorAdapter: ProviderAdapter = {
   kind: "cursor",
   start,
-  rewind: unsupported("rewind"),
-  fork: unsupported("fork"),
+  rewind: failUnsupported("rewind"),
+  fork: failUnsupported("fork"),
   readUsage: () => Effect.succeed({ context: null, costUsd: null }),
   listSkills,
 };

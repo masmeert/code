@@ -59,7 +59,7 @@ export function connectJsonRpc(
   args: ReadonlyArray<string>,
   cwd: string | undefined,
   handlers: JsonRpcHandlers,
-  { versioned = false } = {},
+  { isVersioned = false } = {},
 ): JsonRpc {
   const child = spawn(launch.bin, args, { cwd, env: launch.env, stdio: ["pipe", "pipe", "pipe"] });
 
@@ -69,8 +69,10 @@ export function connectJsonRpc(
     { readonly resolve: (reply: RpcMessage) => void; readonly reject: (error: Error) => void }
   >();
 
-  function write(message: Schema.JsonObject) {
-    child.stdin.write(`${JSON.stringify(versioned ? { jsonrpc: "2.0", ...message } : message)}\n`);
+  function writeMessage(message: Schema.JsonObject) {
+    child.stdin.write(
+      `${JSON.stringify(isVersioned ? { jsonrpc: "2.0", ...message } : message)}\n`,
+    );
   }
 
   createInterface({ input: child.stdout }).on("line", (line) => {
@@ -80,7 +82,10 @@ export function connectJsonRpc(
     const { id, method, params } = message;
     if (method !== undefined && id !== undefined && id !== null) {
       if (!(handlers.onRequest?.(id, method, params) ?? false))
-        write({ id, error: { code: -32601, message: `MassCode does not handle ${method}` } });
+        writeMessage({
+          id,
+          error: { code: -32601, message: `MassCode does not handle ${method}` },
+        });
       return;
     }
 
@@ -125,15 +130,16 @@ export function connectJsonRpc(
         new Promise<RpcMessage>((resolve, reject) => {
           const id = ++nextId;
           inflight.set(id, { resolve, reject });
-          write({ id, method, params });
+          writeMessage({ id, method, params });
         }),
       ]).then((reply) =>
         reply.error
           ? Promise.reject(new Error(reply.error.data?.message ?? reply.error.message))
           : Schema.decodeUnknownPromise(response)(reply.result),
       ),
-    notify: (method, params) => write(params === undefined ? { method } : { method, params }),
-    respond: (id, result) => write({ id, result }),
+    notify: (method, params) =>
+      writeMessage(params === undefined ? { method } : { method, params }),
+    respond: (id, result) => writeMessage({ id, result }),
     close: () => {
       child.stdin.end();
       child.kill();

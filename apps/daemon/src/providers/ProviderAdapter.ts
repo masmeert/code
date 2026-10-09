@@ -183,7 +183,7 @@ export function summarizeToolInput(input: Schema.Json): string {
 }
 
 /** The message text with non-image attachments listed as paths for the agent to read. */
-export function textWithFiles(turn: TurnInput) {
+export function formatTextWithFiles(turn: TurnInput) {
   const files = turn.attachments.filter((attachment) => !attachment.isImage);
   if (!files.length) return turn.text;
 

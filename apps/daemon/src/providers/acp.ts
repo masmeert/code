@@ -114,7 +114,7 @@ export async function connectAcp(
       onRequest: handlers.onRequest,
       onExit: handlers.onExit,
     },
-    { versioned: true },
+    { isVersioned: true },
   );
 
   await rpc.request(
@@ -136,7 +136,7 @@ export async function connectAcp(
 }
 
 /** The text an update or tool result carries, for the transcript. */
-export function contentText(content: ReadonlyArray<ToolContent> | null | undefined) {
+export function getContentText(content: ReadonlyArray<ToolContent> | null | undefined) {
   return (content ?? [])
     .flatMap((part) => {
       switch (part.type) {

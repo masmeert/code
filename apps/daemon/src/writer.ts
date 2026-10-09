@@ -9,8 +9,8 @@ import * as Schema from "effect/Schema";
 import { CodexNotification, connectCodex, ThreadResponse } from "./providers/codexRpc.ts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { cursorModelFlag } from "./providers/CursorAdapter.ts";
-import { claudeExtraArgs, harnessLaunch } from "./providers/launch.ts";
+import { buildCursorModelFlag } from "./providers/CursorAdapter.ts";
+import { toClaudeExtraArgs, resolveHarnessLaunch } from "./providers/launch.ts";
 
 /** Enough of the patch to describe it; the model doesn't need every line of a big change. */
 const MAX_PROMPT_PATCH = 60_000;
@@ -67,7 +67,7 @@ async function withClaude(
   prompt: string,
   signal: AbortSignal,
 ) {
-  const launch = harnessLaunch("claude", harness);
+  const launch = resolveHarnessLaunch("claude", harness);
   const options: Options = {
     cwd,
     // Thinking is most of the wait on a message this short.
@@ -77,7 +77,7 @@ async function withClaude(
     settingSources: [],
     persistSession: false,
     pathToClaudeCodeExecutable: launch.bin,
-    extraArgs: claudeExtraArgs(launch.args),
+    extraArgs: toClaudeExtraArgs(launch.args),
     env: launch.env,
   };
   if (model) options.model = model;
@@ -111,7 +111,7 @@ async function withCodex(
   });
   let text = "";
 
-  const launch = harnessLaunch("codex", harness);
+  const launch = resolveHarnessLaunch("codex", harness);
   const rpc = await connectCodex(
     cwd,
     {
@@ -174,7 +174,7 @@ async function withCursor(
   prompt: string,
   signal: AbortSignal,
 ) {
-  const launch = harnessLaunch("cursor", harness);
+  const launch = resolveHarnessLaunch("cursor", harness);
   const { stdout } = await promisify(execFile)(
     launch.bin,
     [
@@ -185,7 +185,7 @@ async function withCursor(
       "--mode",
       "ask",
       "--trust",
-      ...cursorModelFlag(model),
+      ...buildCursorModelFlag(model),
       prompt,
     ],
     { cwd, env: launch.env, maxBuffer: 10 * 1024 * 1024, signal },

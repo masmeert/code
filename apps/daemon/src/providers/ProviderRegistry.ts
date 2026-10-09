@@ -22,11 +22,11 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { CODEX_FAST_TIER, CodexNotification, connectCodex, type CodexRpc } from "./codexRpc.ts";
 import { readCursorModels } from "./CursorAdapter.ts";
-import { harnessLaunch, promptlessQuery, type HarnessLaunch } from "./launch.ts";
+import { resolveHarnessLaunch, startPromptlessQuery, type HarnessLaunch } from "./launch.ts";
 
 const exec = promisify(execFile);
 
-function unknownStatus(kind: ProviderKind, error: string | null = null): ProviderStatus {
+function buildUnknownStatus(kind: ProviderKind, error: string | null = null): ProviderStatus {
   return {
     kind,
     installed: false,
@@ -39,18 +39,18 @@ function unknownStatus(kind: ProviderKind, error: string | null = null): Provide
   };
 }
 
-function firstLine(text: string) {
+function getFirstLine(text: string) {
   return text.trim().split("\n")[0] ?? "";
 }
 
-function message(cause: unknown) {
+function getErrorMessage(cause: unknown) {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
 // --- probes ------------------------------------------------------------------
 
 async function probeClaude(launch: HarnessLaunch): Promise<ProviderStatus> {
-  const version = firstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
+  const version = getFirstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
   const status = JSON.parse(
     (
       await exec(launch.bin, ["auth", "status"], { env: launch.env }).catch((error) => ({
@@ -62,7 +62,7 @@ async function probeClaude(launch: HarnessLaunch): Promise<ProviderStatus> {
 
   let models: Array<ModelOption> = [];
   if (linked) {
-    const session = promptlessQuery(launch);
+    const session = startPromptlessQuery(launch);
     try {
       // Drop the "Default (recommended)" alias row and star the concrete model it resolves to instead.
       const catalog = await session.supportedModels();
@@ -122,7 +122,7 @@ async function probeClaude(launch: HarnessLaunch): Promise<ProviderStatus> {
 }
 
 async function probeCodex(launch: HarnessLaunch): Promise<ProviderStatus> {
-  const version = firstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
+  const version = getFirstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
   const rpc = await connectCodex(undefined, {}, launch);
   try {
     const { account } = await rpc.request(
@@ -192,7 +192,7 @@ async function probeCodex(launch: HarnessLaunch): Promise<ProviderStatus> {
 }
 
 async function probeCursor(launch: HarnessLaunch): Promise<ProviderStatus> {
-  const version = firstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
+  const version = getFirstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
   const { stdout } = await exec(launch.bin, ["status"], { env: launch.env }).catch((error) => ({
     stdout: String(error.stdout ?? ""),
   }));
@@ -239,7 +239,7 @@ const ClaudeUsage = Schema.Struct({
 
 /** The plan's windows as `/usage` shows them; none for API-key logins. Decoded, since the SDK marks this call experimental. */
 async function readClaudeLimits(launch: HarnessLaunch): Promise<Array<UsageLimit>> {
-  const session = promptlessQuery(launch);
+  const session = startPromptlessQuery(launch);
   try {
     const { rate_limits: limits } = await session
       .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
@@ -280,7 +280,7 @@ const CodexWindow = Schema.NullOr(
   }),
 );
 
-function codexWindowLabel(minutes: number | null) {
+function formatCodexWindowLabel(minutes: number | null) {
   if (minutes === null) return "Usage limit";
   if (minutes === 7 * 24 * 60) return "Weekly limit";
   if (minutes % (24 * 60) === 0) return `${minutes / (24 * 60)}-day limit`;
@@ -302,7 +302,7 @@ async function readCodexLimits(launch: HarnessLaunch): Promise<Array<UsageLimit>
       window
         ? [
             {
-              label: codexWindowLabel(window.windowDurationMins),
+              label: formatCodexWindowLabel(window.windowDurationMins),
               usedPercent: window.usedPercent,
               resetsAt: window.resetsAt === null ? null : window.resetsAt * 1000,
             },
@@ -331,8 +331,8 @@ const LOGOUT_ARGS: Record<ProviderKind, ReadonlyArray<string>> = {
 
 /** Single listener (the session manager) that fans changes out to clients. */
 interface ProviderListener {
-  readonly providers: (providers: ReadonlyArray<ProviderStatus>) => void;
-  readonly flow: (flow: AuthFlow) => void;
+  readonly onProviders: (providers: ReadonlyArray<ProviderStatus>) => void;
+  readonly onFlow: (flow: AuthFlow) => void;
 }
 
 export class ProviderRegistry extends Context.Service<
@@ -356,16 +356,16 @@ const make = Effect.gen(function* () {
   const settingsStore = yield* SettingsStore;
 
   /** Throws when the CLI can't be found, like the spawns it feeds. */
-  async function launchFor(kind: ProviderKind) {
-    return harnessLaunch(kind, (await Effect.runPromise(settingsStore.get)).providers[kind]);
+  async function resolveLaunch(kind: ProviderKind) {
+    return resolveHarnessLaunch(kind, (await Effect.runPromise(settingsStore.get)).providers[kind]);
   }
 
-  function probe(kind: ProviderKind) {
-    return launchFor(kind)
+  function probeHarness(kind: ProviderKind) {
+    return resolveLaunch(kind)
       .then((launch) => PROBE[kind](launch))
       .catch((error) => {
-        const text = message(error);
-        return unknownStatus(kind, text.includes("Could not find") ? null : text);
+        const text = getErrorMessage(error);
+        return buildUnknownStatus(kind, text.includes("Could not find") ? null : text);
       });
   }
 
@@ -376,42 +376,42 @@ const make = Effect.gen(function* () {
   let providers = ProviderKind.literals.map(
     (kind) =>
       checked.find((provider) => provider.kind === kind) ?? {
-        ...unknownStatus(kind),
+        ...buildUnknownStatus(kind),
         checking: true,
       },
   );
-  let listener: ProviderListener = { providers: () => {}, flow: () => {} };
+  let listener: ProviderListener = { onProviders: () => {}, onFlow: () => {} };
   /** In-flight sign-in per harness. */
   const flows = new Map<ProviderKind, { child?: ChildProcess; rpc?: CodexRpc; loginId?: string }>();
 
-  function flow(
+  function reportLinkFlow(
     provider: ProviderKind,
     stage: AuthFlow["stage"],
     url: string | null = null,
     text: string | null = null,
   ) {
-    listener.flow({ provider, stage, url, message: text });
+    listener.onFlow({ provider, stage, url, message: text });
   }
 
-  async function refreshOne(kind: ProviderKind) {
-    const next = await probe(kind);
+  async function refreshProvider(kind: ProviderKind) {
+    const next = await probeHarness(kind);
     providers = providers.map((provider) => (provider.kind === kind ? next : provider));
-    listener.providers(providers);
+    listener.onProviders(providers);
     await Effect.runPromise(lastChecked.set(providers));
   }
 
-  async function refreshAll() {
-    await Promise.all(ProviderKind.literals.map(refreshOne));
+  async function refreshProviders() {
+    await Promise.all(ProviderKind.literals.map(refreshProvider));
   }
 
-  async function finish(kind: ProviderKind, ok: boolean, text: string | null) {
+  async function finishLink(kind: ProviderKind, isSuccess: boolean, text: string | null) {
     flows.delete(kind);
-    await refreshOne(kind);
-    flow(kind, ok ? "done" : "failed", null, text);
+    await refreshProvider(kind);
+    reportLinkFlow(kind, isSuccess ? "done" : "failed", null, text);
   }
 
   async function linkClaude() {
-    const launch = await launchFor("claude");
+    const launch = await resolveLaunch("claude");
     const child = spawn(launch.bin, ["auth", "login", "--claudeai"], {
       env: launch.env,
       stdio: ["pipe", "pipe", "pipe"],
@@ -419,14 +419,14 @@ const make = Effect.gen(function* () {
     flows.set("claude", { child });
 
     let output = "";
-    let announced = false;
+    let hasAnnouncedUrl = false;
     function onData(chunk: Buffer) {
       output += chunk.toString();
       // The CLI opens the browser itself and prints the URL wrapped in an OSC-8 hyperlink.
       const url = output.match(new RegExp(String.raw`https://[^\s\u0007\u001b]+`))?.[0];
-      if (url && !announced) {
-        announced = true;
-        flow("claude", "awaiting-code", url);
+      if (url && !hasAnnouncedUrl) {
+        hasAnnouncedUrl = true;
+        reportLinkFlow("claude", "awaiting-code", url);
       }
     }
 
@@ -434,10 +434,10 @@ const make = Effect.gen(function* () {
     child.stderr.on("data", onData);
     child.on("exit", (code) => {
       if (flows.get("claude")?.child !== child) return;
-      void finish(
+      void finishLink(
         "claude",
         code === 0,
-        code === 0 ? null : firstLine(output.slice(-500)) || `exited with ${code}`,
+        code === 0 ? null : getFirstLine(output.slice(-500)) || `exited with ${code}`,
       );
     });
   }
@@ -450,10 +450,10 @@ const make = Effect.gen(function* () {
           if (!CodexNotification.guards["account/login/completed"](notification)) return;
           rpc.close();
           const { success, error } = notification.params;
-          void finish("codex", success, success ? null : (error ?? "Sign-in failed"));
+          void finishLink("codex", success, success ? null : (error ?? "Sign-in failed"));
         },
       },
-      await launchFor("codex"),
+      await resolveLaunch("codex"),
     );
     flows.set("codex", { rpc });
 
@@ -468,12 +468,12 @@ const make = Effect.gen(function* () {
     // remote host) the app opens it, and the callback only lands when the browser runs there too.
     if (process.platform === "darwin")
       spawn("open", [login.authUrl], { stdio: "ignore", detached: true }).unref();
-    flow("codex", "browser", login.authUrl);
+    reportLinkFlow("codex", "browser", login.authUrl);
   }
 
   /** Cursor's login opens the browser itself and finishes when the page does. */
   async function linkCursor() {
-    const launch = await launchFor("cursor");
+    const launch = await resolveLaunch("cursor");
     const child = spawn(launch.bin, ["login"], {
       env: launch.env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -481,13 +481,13 @@ const make = Effect.gen(function* () {
     flows.set("cursor", { child });
 
     let output = "";
-    let announced = false;
+    let hasAnnouncedUrl = false;
     function onData(chunk: Buffer) {
       output += chunk.toString();
       const url = output.match(new RegExp(String.raw`https://[^\s\u0007\u001b]+`))?.[0];
-      if (url && !announced) {
-        announced = true;
-        flow("cursor", "browser", url);
+      if (url && !hasAnnouncedUrl) {
+        hasAnnouncedUrl = true;
+        reportLinkFlow("cursor", "browser", url);
       }
     }
 
@@ -495,10 +495,10 @@ const make = Effect.gen(function* () {
     child.stderr.on("data", onData);
     child.on("exit", (code) => {
       if (flows.get("cursor")?.child !== child) return;
-      void finish(
+      void finishLink(
         "cursor",
         code === 0,
-        code === 0 ? null : firstLine(output.slice(-500)) || `exited with ${code}`,
+        code === 0 ? null : getFirstLine(output.slice(-500)) || `exited with ${code}`,
       );
     });
   }
@@ -509,7 +509,7 @@ const make = Effect.gen(function* () {
     cursor: linkCursor,
   };
 
-  function cancel(kind: ProviderKind) {
+  function cancelLinkFlow(kind: ProviderKind) {
     const active = flows.get(kind);
     flows.delete(kind);
     active?.child?.kill();
@@ -521,51 +521,54 @@ const make = Effect.gen(function* () {
     active?.rpc?.close();
   }
 
-  function background(run: () => Promise<void>) {
+  function runInBackground(run: () => Promise<void>) {
     return Effect.sync(() => {
       void run().catch((error) =>
-        Effect.runFork(Effect.logWarning("provider task failed", message(error))),
+        Effect.runFork(Effect.logWarning("provider task failed", getErrorMessage(error))),
       );
     });
   }
 
   // Initial status, without blocking startup.
-  yield* background(refreshAll);
+  yield* runInBackground(refreshProviders);
 
   return ProviderRegistry.of({
     list: Effect.sync(() => providers),
-    refresh: background(refreshAll),
+    refresh: runInBackground(refreshProviders),
     link: (kind) =>
-      background(async () => {
-        cancel(kind);
-        flow(kind, "starting");
+      runInBackground(async () => {
+        cancelLinkFlow(kind);
+        reportLinkFlow(kind, "starting");
         try {
           await LINK[kind]();
         } catch (error) {
-          cancel(kind);
-          flow(kind, "failed", null, message(error));
+          cancelLinkFlow(kind);
+          reportLinkFlow(kind, "failed", null, getErrorMessage(error));
         }
       }),
     submitCode: (kind, code) =>
       Effect.sync(() => {
         flows.get(kind)?.child?.stdin?.write(`${code.trim()}\n`);
       }),
-    cancelLink: (kind) => Effect.sync(() => cancel(kind)),
+    cancelLink: (kind) => Effect.sync(() => cancelLinkFlow(kind)),
     unlink: (kind) =>
-      background(async () => {
-        const launch = await launchFor(kind);
+      runInBackground(async () => {
+        const launch = await resolveLaunch(kind);
         await exec(launch.bin, [...LOGOUT_ARGS[kind]], {
           env: launch.env,
         }).catch(() => {});
-        await refreshOne(kind);
+        await refreshProvider(kind);
       }),
     readLimits: (kind) =>
       Effect.promise(() =>
-        launchFor(kind)
+        resolveLaunch(kind)
           .then((launch) => READ_LIMITS[kind](launch))
           .then(
             (limits) => ({ limits, error: null }),
-            (error) => ({ limits: [], error: `Couldn't read usage limits: ${message(error)}` }),
+            (error) => ({
+              limits: [],
+              error: `Couldn't read usage limits: ${getErrorMessage(error)}`,
+            }),
           ),
       ),
     setListener: (next) => {
