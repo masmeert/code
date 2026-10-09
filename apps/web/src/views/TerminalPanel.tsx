@@ -152,7 +152,7 @@ export function TerminalPanel({
               <button
                 type="button"
                 title="Close terminal"
-                aria-label={`Close terminal ${index + 1}`}
+                aria-label={`Close ${scriptOf(terminalId)?.name ?? `terminal ${index + 1}`}`}
                 onClick={() => closeTerminal(threadId, terminalId)}
                 className={cn(
                   "grid size-6 place-items-center rounded-md transition-opacity outline-none hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring",
