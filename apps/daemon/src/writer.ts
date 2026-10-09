@@ -65,6 +65,7 @@ async function withClaude(
   harness: ProviderSettings,
   model: string | undefined,
   prompt: string,
+  signal: AbortSignal,
 ) {
   const launch = harnessLaunch("claude", harness);
   const options: Options = {
@@ -82,6 +83,7 @@ async function withClaude(
   if (model) options.model = model;
 
   const conversation = query({ prompt, options });
+  signal.addEventListener("abort", () => conversation.close());
   try {
     for await (const message of conversation) {
       if (message.type !== "result") continue;
@@ -99,6 +101,7 @@ async function withCodex(
   harness: ProviderSettings,
   model: string | undefined,
   prompt: string,
+  signal: AbortSignal,
 ) {
   let finish: (text: string) => void = () => {};
   let abort: (error: Error) => void = () => {};
@@ -134,8 +137,10 @@ async function withCodex(
     },
     launch,
   );
+  signal.addEventListener("abort", () => rpc.close());
 
   try {
+    signal.throwIfAborted();
     const started = await rpc.request(
       "thread/start",
       {
@@ -167,6 +172,7 @@ async function withCursor(
   harness: ProviderSettings,
   model: string | undefined,
   prompt: string,
+  signal: AbortSignal,
 ) {
   const launch = harnessLaunch("cursor", harness);
   const { stdout } = await promisify(execFile)(
@@ -182,7 +188,7 @@ async function withCursor(
       ...cursorModelFlag(model),
       prompt,
     ],
-    { cwd, env: launch.env, maxBuffer: 10 * 1024 * 1024 },
+    { cwd, env: launch.env, maxBuffer: 10 * 1024 * 1024, signal },
   );
   return stdout;
 }
@@ -204,13 +210,24 @@ interface WriterInput {
 
 async function write(input: WriterInput, prompt: string) {
   const run = WRITE[input.provider];
+  const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // Losing the race doesn't stop the run; aborting closes the harness it started.
   const timeout = new Promise<never>(
-    (_, reject) => (timer = setTimeout(() => reject(new Error("Timed out")), TIMEOUT_MS)),
+    (_, reject) =>
+      (timer = setTimeout(() => {
+        reject(new Error("Timed out"));
+        controller.abort();
+      }, TIMEOUT_MS)),
   );
 
   try {
-    return clean(await Promise.race([run(input.cwd, input.harness, input.model, prompt), timeout]));
+    return clean(
+      await Promise.race([
+        run(input.cwd, input.harness, input.model, prompt, controller.signal),
+        timeout,
+      ]),
+    );
   } finally {
     clearTimeout(timer);
   }
