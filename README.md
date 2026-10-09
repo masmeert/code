@@ -36,6 +36,6 @@ Two places set up a project, and both save to `masscode.toml` in its folder, so 
 - **Scripts** (a thread's ▷ menu → Edit scripts…): commands that run in a terminal tab of their own in the thread's folder (picking one again shows its tab). A preview URL opens in the Browser panel.
 - **Settings → Projects**: where the project's new threads start (over General's default), and a worktree setup command that runs in each new worktree before its agent starts, with `MASSCODE_PROJECT_ROOT` set to the project's own checkout for linking ignored files like `.env`. Setup shows live in the thread; messages wait for it unless Wait for setup is off, and Stop skips it.
 
-State lives in `~/.masscode/` (`settings.json`, `projects.json`, `masscode.db` for threads and transcripts); override with `MASSCODE_DATA_DIR`.
+State lives in `~/.masscode/` (`settings.toml`, `projects.toml`, `masscode.db` for threads and transcripts; older builds' `.json` files move over on first launch); override with `MASSCODE_DATA_DIR`.
 
 Override CLI paths with `MASSCODE_CLAUDE_PATH` / `MASSCODE_CODEX_PATH`, and the port with `MASSCODE_PORT`.

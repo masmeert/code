@@ -14,7 +14,7 @@ import { CommandError } from "../errors.ts";
 import { addWorktree, readBranch, readRepoRoot } from "../git.ts";
 import { buildWriterInput } from "../harnesses.ts";
 import { readProjectConfig } from "../projectConfig.ts";
-import { DATA_DIR } from "../storage/jsonFile.ts";
+import { DATA_DIR } from "../storage/tomlFile.ts";
 import type { ProjectsStore } from "../storage/ProjectsStore.ts";
 import type { SettingsStore } from "../storage/SettingsStore.ts";
 import type { ThreadHome, ThreadStore } from "../storage/ThreadStore.ts";

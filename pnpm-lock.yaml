@@ -37,7 +37,7 @@ importers:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.3.281
-        version: 0.3.281(@anthropic-ai/sdk@0.128.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.31.0(supports-color@8.1.1)(zod@4.6.5))(zod@4.6.5)
+        version: 0.3.281(@anthropic-ai/sdk@0.128.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.31.0(supports-color@7.2.0)(zod@4.6.5))(zod@4.6.5)
       '@effect/platform-bun':
         specifier: 'catalog:'
         version: 4.0.0-rc.117(effect@4.0.0-rc.117)
@@ -46,7 +46,7 @@ importers:
         version: link:../../packages/contracts
       '@modelcontextprotocol/sdk':
         specifier: ^1.31.0
-        version: 1.31.0(supports-color@8.1.1)(zod@4.6.5)
+        version: 1.31.0(supports-color@7.2.0)(zod@4.6.5)
       '@xterm/addon-serialize':
         specifier: ^0.14.0
         version: 0.14.0
@@ -59,6 +59,9 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.117
+      smol-toml:
+        specifier: ^1.9.0
+        version: 1.9.0
       zod:
         specifier: ^4.6.5
         version: 4.6.5
@@ -71,6 +74,10 @@ importers:
         version: 7.0.2
 
   apps/desktop:
+    dependencies:
+      smol-toml:
+        specifier: ^1.9.0
+        version: 1.9.0
     devDependencies:
       '@masscode/contracts':
         specifier: workspace:*
@@ -4960,8 +4967,8 @@ packages:
   node-int64@0.4.0:
     resolution: {integrity: sha512-O5lz91xSOeoXP6DulyHfllpq+Eg00MWitZIbtPfoSEvqIHdl5gfcY6hYzDWnj0qD5tz52PI08u9qUvSVeUBeHw==}
 
-  node-releases@2.0.57:
-    resolution: {integrity: sha512-kQK9LGGFiHtrWiNhZtA7Qbw17AQz+dmsEKODRIVTXA9+e5MS/2gZEBhYJt13GrAz5/IOZKddH/0Z3TP/Zgo+yw==}
+  node-releases@2.0.58:
+    resolution: {integrity: sha512-BdiKAgbfRlvfMq/XzO/AF9NPmaA8a+YpLAyAFTVFBj3gARrAIfWvNq7Q7NE4se3KgFu0KkrvQMxTS0XVnsGzHg==}
     engines: {node: '>=18'}
 
   nopt@9.0.0:
@@ -5644,6 +5651,10 @@ packages:
     resolution: {integrity: sha512-vZ7rfeehZui7wQs438JXBckYLkIIdfHOXsaVEUMyS5fHo1483l1bMdo0EDSWYclY0yZKFOipDy4KHuKs6ssvdg==}
     engines: {node: '>=8.0.0'}
 
+  smol-toml@1.9.0:
+    resolution: {integrity: sha512-hpd+HLON7HdZXqYchMM/+LaTTbdK0AU3NngIJ4KVyWbY9bfQqdL9cD+4yf6dUoU2Ap4VsU0JkQi6FxAI1B2mXQ==}
+    engines: {node: '>= 18'}
+
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
@@ -6224,10 +6235,10 @@ snapshots:
   '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.281':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk@0.3.281(@anthropic-ai/sdk@0.128.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.31.0(supports-color@8.1.1)(zod@4.6.5))(zod@4.6.5)':
+  '@anthropic-ai/claude-agent-sdk@0.3.281(@anthropic-ai/sdk@0.128.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.31.0(supports-color@7.2.0)(zod@4.6.5))(zod@4.6.5)':
     dependencies:
       '@anthropic-ai/sdk': 0.128.0(zod@4.6.5)
-      '@modelcontextprotocol/sdk': 1.31.0(supports-color@8.1.1)(zod@4.6.5)
+      '@modelcontextprotocol/sdk': 1.31.0(supports-color@7.2.0)(zod@4.6.5)
       zod: 4.6.5
     optionalDependencies:
       '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.281
@@ -6779,7 +6790,7 @@ snapshots:
 
   '@electron/get@5.1.0(supports-color@8.1.1)':
     dependencies:
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3(supports-color@7.2.0)
       env-paths: 3.0.0
       graceful-fs: 4.2.11
       progress: 2.0.3
@@ -7306,7 +7317,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@modelcontextprotocol/sdk@1.31.0(supports-color@8.1.1)(zod@4.6.5)':
+  '@modelcontextprotocol/sdk@1.31.0(supports-color@7.2.0)(zod@4.6.5)':
     dependencies:
       '@hono/node-server': 2.1.3(hono@4.13.13)
       ajv: 8.20.0
@@ -7317,7 +7328,7 @@ snapshots:
       eventsource: 3.0.7
       eventsource-parser: 3.1.1
       express: 5.2.1(supports-color@8.1.1)
-      express-rate-limit: 8.7.1(express@5.2.1(supports-color@8.1.1))(supports-color@8.1.1)
+      express-rate-limit: 8.7.1(express@5.2.1(supports-color@8.1.1))(supports-color@7.2.0)
       hono: 4.13.13
       jose: 6.2.12
       json-schema-typed: 8.0.2
@@ -9065,11 +9076,11 @@ snapshots:
 
   bluebird@3.7.2: {}
 
-  body-parser@2.3.0(supports-color@8.1.1):
+  body-parser@2.3.0(supports-color@7.2.0):
     dependencies:
       bytes: 3.1.2
       content-type: 2.1.0
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3(supports-color@7.2.0)
       http-errors: 2.0.1
       iconv-lite: 0.7.3
       on-finished: 2.4.1
@@ -9118,7 +9129,7 @@ snapshots:
       baseline-browser-mapping: 2.11.27
       caniuse-lite: 1.0.30001815
       electron-to-chromium: 1.5.451
-      node-releases: 2.0.57
+      node-releases: 2.0.58
       update-browserslist-db: 1.3.4(browserslist@4.29.3)
 
   bser@2.1.1:
@@ -9415,6 +9426,12 @@ snapshots:
       ms: 2.1.3
     optionalDependencies:
       supports-color: 8.1.1
+
+  debug@4.4.3(supports-color@7.2.0):
+    dependencies:
+      ms: 2.1.3
+    optionalDependencies:
+      supports-color: 7.2.0
 
   debug@4.4.3(supports-color@8.1.1):
     dependencies:
@@ -9894,9 +9911,9 @@ snapshots:
 
   exponential-backoff@3.1.3: {}
 
-  express-rate-limit@8.7.1(express@5.2.1(supports-color@8.1.1))(supports-color@8.1.1):
+  express-rate-limit@8.7.1(express@5.2.1(supports-color@8.1.1))(supports-color@7.2.0):
     dependencies:
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3(supports-color@7.2.0)
       express: 5.2.1(supports-color@8.1.1)
       ip-address: 10.7.3
     transitivePeerDependencies:
@@ -9905,17 +9922,17 @@ snapshots:
   express@5.2.1(supports-color@8.1.1):
     dependencies:
       accepts: 2.0.0
-      body-parser: 2.3.0(supports-color@8.1.1)
+      body-parser: 2.3.0(supports-color@7.2.0)
       content-disposition: 1.1.0
       content-type: 1.0.5
       cookie: 0.7.2
       cookie-signature: 1.2.2
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3(supports-color@7.2.0)
       depd: 2.0.0
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
-      finalhandler: 2.1.1(supports-color@8.1.1)
+      finalhandler: 2.1.1(supports-color@7.2.0)
       fresh: 2.0.0
       http-errors: 2.0.1
       merge-descriptors: 2.0.0
@@ -9926,8 +9943,8 @@ snapshots:
       proxy-addr: 2.0.8
       qs: 6.16.0
       range-parser: 1.3.0
-      router: 2.2.0(supports-color@8.1.1)
-      send: 1.2.1(supports-color@8.1.1)
+      router: 2.2.0(supports-color@7.2.0)
+      send: 1.2.1(supports-color@7.2.0)
       serve-static: 2.2.1(supports-color@8.1.1)
       statuses: 2.0.2
       type-is: 2.1.0
@@ -9975,9 +9992,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  finalhandler@2.1.1(supports-color@8.1.1):
+  finalhandler@2.1.1(supports-color@7.2.0):
     dependencies:
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3(supports-color@7.2.0)
       encodeurl: 2.0.0
       escape-html: 1.0.3
       on-finished: 2.4.1
@@ -11273,7 +11290,7 @@ snapshots:
 
   node-int64@0.4.0: {}
 
-  node-releases@2.0.57: {}
+  node-releases@2.0.58: {}
 
   nopt@9.0.0:
     dependencies:
@@ -12004,9 +12021,9 @@ snapshots:
       '@rolldown/binding-win32-arm64-msvc': 1.2.9
       '@rolldown/binding-win32-x64-msvc': 1.2.9
 
-  router@2.2.0(supports-color@8.1.1):
+  router@2.2.0(supports-color@7.2.0):
     dependencies:
-      debug: 4.4.3(supports-color@8.1.1)
+      debug: 4.4.3(supports-color@7.2.0)
       depd: 2.0.0
       is-promise: 4.0.0
       parseurl: 1.3.3
@@ -12055,6 +12072,22 @@ snapshots:
       ms: 2.1.3
       on-finished: 2.4.1
       range-parser: 1.2.1
+      statuses: 2.0.2
+    transitivePeerDependencies:
+      - supports-color
+
+  send@1.2.1(supports-color@7.2.0):
+    dependencies:
+      debug: 4.4.3(supports-color@7.2.0)
+      encodeurl: 2.0.0
+      escape-html: 1.0.3
+      etag: 1.8.1
+      fresh: 2.0.0
+      http-errors: 2.0.1
+      mime-types: 3.0.2
+      ms: 2.1.3
+      on-finished: 2.4.1
+      range-parser: 1.3.0
       statuses: 2.0.2
     transitivePeerDependencies:
       - supports-color
@@ -12172,6 +12205,8 @@ snapshots:
   sisteransi@1.0.5: {}
 
   slugify@1.6.9: {}
+
+  smol-toml@1.9.0: {}
 
   source-map-js@1.2.1: {}
 

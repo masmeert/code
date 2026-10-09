@@ -1,7 +1,8 @@
 import { getBrowserPartition, HostStatus, type RemoteHost } from "@masscode/contracts";
 import { type ChildProcess, spawn } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { parse, stringify } from "smol-toml";
 import { connect } from "node:net";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -36,7 +37,7 @@ interface Host {
 const hosts = new Map<string, Host>();
 
 function getHostListPath() {
-  return join(app.getPath("userData"), "hosts.json");
+  return join(app.getPath("userData"), "hosts.toml");
 }
 
 /** Never asks for a password (there's no terminal to type it in), and gives up on a dead link. */
@@ -452,11 +453,19 @@ function ensureConnected(host: Host, mode: "start" | "restart" = "start") {
 
 async function saveHostList() {
   await mkdir(app.getPath("userData"), { recursive: true });
-  await writeFile(getHostListPath(), JSON.stringify([...hosts.keys()]));
+  await writeFile(getHostListPath(), `${stringify({ hosts: [...hosts.keys()] })}\n`);
 }
 
 export async function loadHosts() {
-  const saved: unknown = JSON.parse(await readFile(getHostListPath(), "utf8").catch(() => "[]"));
+  const legacyPath = join(app.getPath("userData"), "hosts.json");
+  const text = await readFile(getHostListPath(), "utf8").catch(() => null);
+
+  // Older builds kept a JSON list; it moves over once, below.
+  const saved: unknown = await (
+    text === null
+      ? readFile(legacyPath, "utf8").then(JSON.parse)
+      : Promise.resolve(text).then((toml) => parse(toml).hosts)
+  ).catch(() => []);
 
   if (!Array.isArray(saved)) return;
 
@@ -469,6 +478,11 @@ export async function loadHosts() {
       tunnel: null,
     });
     await routeBrowser(alias, null);
+  }
+
+  if (text === null && hosts.size > 0) {
+    await saveHostList();
+    await rm(legacyPath, { force: true });
   }
 }
 

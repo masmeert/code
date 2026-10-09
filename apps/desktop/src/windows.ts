@@ -1,10 +1,13 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { app, BrowserWindow, Menu, nativeTheme, type Rectangle, screen, shell } from "electron";
+import { parse, stringify } from "smol-toml";
 import { enableBrowserTabs } from "./browser.ts";
 import { APP_URL } from "./renderer.ts";
 
-const BOUNDS_PATH = join(app.getPath("userData"), "window-bounds.json");
+const BOUNDS_PATH = join(app.getPath("userData"), "window-bounds.toml");
+
+const LEGACY_BOUNDS_PATH = join(app.getPath("userData"), "window-bounds.json");
 
 function getBackgroundColor() {
   return nativeTheme.shouldUseDarkColors ? "#101010" : "#fcfcfc";
@@ -24,7 +27,13 @@ function isOnScreen(bounds: Rectangle) {
 
 function readSavedBounds(): Partial<Rectangle> {
   try {
-    const bounds: Rectangle = JSON.parse(readFileSync(BOUNDS_PATH, "utf8"));
+    // Older builds kept them as JSON; the next close writes TOML and drops it.
+    // SAFETY: only ever written below, from a window's bounds.
+    const bounds = (
+      existsSync(BOUNDS_PATH)
+        ? parse(readFileSync(BOUNDS_PATH, "utf8"))
+        : JSON.parse(readFileSync(LEGACY_BOUNDS_PATH, "utf8"))
+    ) as Rectangle;
 
     return isOnScreen(bounds) ? bounds : { width: 1200, height: 800 };
   } catch {
@@ -67,7 +76,8 @@ export function createWindow(url: string, bounds = readSavedBounds()) {
 
   window.on("close", () => {
     try {
-      writeFileSync(BOUNDS_PATH, JSON.stringify(window.getNormalBounds()));
+      writeFileSync(BOUNDS_PATH, `${stringify(window.getNormalBounds())}\n`);
+      rmSync(LEGACY_BOUNDS_PATH, { force: true });
     } catch {}
   });
 

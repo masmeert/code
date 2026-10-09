@@ -5,7 +5,7 @@ import * as Layer from "effect/Layer";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CommandError } from "../errors.ts";
-import { DATA_DIR, openJsonFile } from "./jsonFile.ts";
+import { DATA_DIR, openTomlFile } from "./tomlFile.ts";
 
 export class SettingsStore extends Context.Service<
   SettingsStore,
@@ -26,7 +26,7 @@ const make = Effect.gen(function* () {
       await writeFile(path, text.replace(/"autoSettle(Days)?"/g, '"autoShelve$1"'));
   }).pipe(Effect.ignore);
 
-  const file = yield* openJsonFile("settings.json", Settings, DEFAULT_SETTINGS);
+  const file = yield* openTomlFile("settings", Settings, DEFAULT_SETTINGS);
 
   return SettingsStore.of({
     get: file.get,

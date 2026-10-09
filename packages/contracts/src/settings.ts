@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { MergeMethod } from "./git.ts";
-import { Effort, ProviderKind } from "./providers.ts";
+import { Effort, NullableString, ProviderKind } from "./providers.ts";
 import { PermissionLevel, Workspace } from "./threads.ts";
 
 export const Theme = Schema.Literals(["system", "light", "dark"]);
@@ -28,7 +28,7 @@ export type WritingStyle = typeof WritingStyle.Type;
 
 export const ProviderSettings = Schema.Struct({
   /** Model for new threads; null uses the harness's own default. */
-  defaultModel: Schema.NullOr(Schema.String),
+  defaultModel: NullableString,
   /** Shown in place of the harness's own name. The fields below are optional so older settings files still load. */
   displayName: Schema.optional(Schema.String),
   color: Schema.optional(HarnessColor),

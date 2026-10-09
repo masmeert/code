@@ -27,7 +27,7 @@ import { ProviderRegistry } from "../../src/providers/ProviderRegistry.ts";
 import { serve } from "../../src/server.ts";
 import * as SessionManagerLive from "../../src/SessionManager.ts";
 import { SessionManager } from "../../src/SessionManager.ts";
-import { DATA_DIR } from "../../src/storage/jsonFile.ts";
+import { DATA_DIR } from "../../src/storage/tomlFile.ts";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";

@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { DevicePlatform } from "./devices.ts";
 
@@ -8,8 +9,10 @@ export const PairedPhone = Schema.Struct({
   name: Schema.String,
   platform: DevicePlatform,
   pairedAt: Schema.Number,
-  /** When it last connected; null until its first connection after pairing. */
-  lastSeenAt: Schema.NullOr(Schema.Number),
+  /** When it last connected; null (missing in the daemon's TOML) until its first connection after pairing. */
+  lastSeenAt: Schema.NullOr(Schema.Number).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(null)),
+  ),
 });
 
 export type PairedPhone = typeof PairedPhone.Type;

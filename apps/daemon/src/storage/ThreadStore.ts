@@ -18,7 +18,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { DATA_DIR } from "./jsonFile.ts";
+import { DATA_DIR } from "./tomlFile.ts";
 
 /** A Shelve/Unshelve from the thread menu, kept until the thread's next turn starts. */
 export type ShelveOverride = "shelved" | "active" | null;

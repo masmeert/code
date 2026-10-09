@@ -8,7 +8,7 @@ import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { DATA_DIR } from "./storage/jsonFile.ts";
+import { DATA_DIR } from "./storage/tomlFile.ts";
 
 /** Pinned: the hub's stream and input protocols change between releases. */
 const TOOLS = { "expo-device-hub": "0.15.2", "agent-device": "0.21.23" } as const;

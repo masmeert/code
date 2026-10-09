@@ -1,4 +1,10 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+
+/** A string or null; a missing key reads as null, since the daemon's TOML files leave nulls out. */
+export const NullableString = Schema.NullOr(Schema.String).pipe(
+  Schema.withDecodingDefaultKey(Effect.succeed(null)),
+);
 
 export const ProviderKind = Schema.Literals(["claude", "codex", "cursor"]);
 
@@ -48,14 +54,14 @@ export type ModelOption = typeof ModelOption.Type;
 export const ProviderStatus = Schema.Struct({
   kind: ProviderKind,
   installed: Schema.Boolean,
-  version: Schema.NullOr(Schema.String),
+  version: NullableString,
   linked: Schema.Boolean,
   /** Signed-in identity, usually an email. */
-  account: Schema.NullOr(Schema.String),
+  account: NullableString,
   /** Subscription tier as the CLI reports it, e.g. "max", "plus". */
-  plan: Schema.NullOr(Schema.String),
+  plan: NullableString,
   models: Schema.Array(ModelOption),
-  error: Schema.NullOr(Schema.String),
+  error: NullableString,
   /** Not checked yet, so nothing above is known: the first check after launch is still running. */
   checking: Schema.optional(Schema.Boolean),
 });
