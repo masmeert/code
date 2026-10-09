@@ -262,7 +262,7 @@ async function readClaudeLimits(launch: HarnessLaunch): Promise<Array<UsageLimit
             {
               label,
               usedPercent: window.utilization,
-              resetsAt: window.resets_at === null ? null : Date.parse(window.resets_at),
+              resetsAt: Date.parse(window.resets_at ?? "") || null,
             },
           ]
         : [],
