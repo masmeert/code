@@ -32,7 +32,7 @@ export default function PairScreen() {
     setError(null);
 
     try {
-      await addHost(await pairWithHost(offer));
+      addHost(await pairWithHost(offer));
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // Back to the thread list, however this screen was opened.
       router.dismissTo("/");
@@ -70,7 +70,7 @@ export default function PairScreen() {
   return (
     <ScrollView
       className="flex-1 bg-background"
-      contentContainerClassName="gap-5 p-5"
+      contentContainerClassName="gap-4 p-5"
       keyboardShouldPersistTaps="handled"
     >
       <Stack.Screen
@@ -83,10 +83,9 @@ export default function PairScreen() {
         }}
       />
       <Text className="text-sm leading-6 text-muted-foreground">
-        On your computer, open MassCode → Settings → Phone, turn on access and choose Pair a phone.
-        Then scan the code it shows.
+        In MassCode on your computer, open Settings → Phone → Pair a phone, then scan the code.
       </Text>
-      <View className="aspect-square overflow-hidden rounded-2xl border border-border bg-card">
+      <View className="h-64 overflow-hidden rounded-2xl border border-border bg-card">
         {permission?.granted ? (
           <CameraView
             className="flex-1"
@@ -124,29 +123,31 @@ export default function PairScreen() {
       </View>
       {error ? <Text className="text-sm text-destructive">{error}</Text> : null}
       <View className="gap-3">
-        <Text className="text-xs font-medium text-muted-foreground">Or enter it</Text>
-        <View className="gap-1.5">
-          <Text className="text-sm font-medium">Computer's Tailscale address</Text>
-          <Input
-            value={address}
-            onChangeText={setAddress}
-            placeholder="100.64.0.1"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="numbers-and-punctuation"
-          />
-        </View>
-        <View className="gap-1.5">
-          <Text className="text-sm font-medium">Code</Text>
-          <Input
-            value={code}
-            onChangeText={(text) => setCode(text.replace(/\D/g, "").slice(0, 6))}
-            placeholder="6 digits"
-            keyboardType="number-pad"
-          />
+        <Text className="text-xs font-medium text-muted-foreground">Or type what it shows</Text>
+        <View className="flex-row gap-2">
+          <View className="flex-1 gap-1.5">
+            <Text className="text-xs text-muted-foreground">Tailscale address</Text>
+            <Input
+              value={address}
+              onChangeText={setAddress}
+              placeholder="100.64.0.1"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="numbers-and-punctuation"
+            />
+          </View>
+          <View className="w-28 gap-1.5">
+            <Text className="text-xs text-muted-foreground">Code</Text>
+            <Input
+              value={code}
+              onChangeText={(text) => setCode(text.replace(/\D/g, "").slice(0, 6))}
+              placeholder="000000"
+              keyboardType="number-pad"
+              className="font-mono"
+            />
+          </View>
         </View>
         <Button
-          className="mt-1"
           disabled={!address.trim() || code.length !== 6 || pairingWith !== null}
           // 47822 is the host's phone port, as its pairing code carries it.
           onPress={() =>

@@ -1,6 +1,5 @@
 import { PairingGrant, type PairingRequest } from "@masscode/contracts";
 import Constants from "expo-constants";
-import * as SecureStore from "expo-secure-store";
 import * as Schema from "effect/Schema";
 import { Platform } from "react-native";
 
@@ -18,23 +17,6 @@ export const PairedHost = Schema.Struct({
 });
 
 export type PairedHost = typeof PairedHost.Type;
-
-/** The keychain holds the tokens; anyone with one can steer that host's agents. */
-const STORAGE_KEY = "paired-hosts";
-
-const decodeHosts = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(PairedHost)));
-
-export async function loadHosts(): Promise<ReadonlyArray<PairedHost>> {
-  try {
-    return decodeHosts((await SecureStore.getItemAsync(STORAGE_KEY)) ?? "[]");
-  } catch {
-    return [];
-  }
-}
-
-export function saveHosts(hosts: ReadonlyArray<PairedHost>) {
-  return SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(hosts));
-}
 
 /** What the host's pairing QR code carries; null for any other code. */
 export function parsePairingLink(link: string) {

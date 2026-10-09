@@ -13,3 +13,5 @@ export * from "./projects.ts";
 export * from "./threadStatus.ts";
 
 export * from "./models.ts";
+
+export * from "./threads.ts";

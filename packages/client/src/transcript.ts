@@ -5,6 +5,7 @@ import {
   type PageInfo,
   type ProviderKind,
   RuntimeEvent,
+  type ServerFrame,
   type StoredEvent,
   type UserAnswers,
   type UserQuestion,
@@ -341,4 +342,52 @@ export function applyStreaming(
     next = upsert(next, messageId, () => ({ kind, id: messageId, text }));
 
   return next;
+}
+
+type TranscriptFrame<Tag extends ServerFrame["_tag"]> = Extract<ServerFrame, { _tag: Tag }>;
+
+/** A transcript from scratch: the latest turns, plus any message still streaming. */
+export function snapshotTranscript(snapshot: TranscriptFrame<"thread.snapshot">): Transcript {
+  return {
+    items: applyStreaming(applyStoredEvents([], snapshot.events, 0), snapshot.streaming),
+    cursor: snapshot.cursor,
+    page: snapshot.page,
+    status: "live",
+    loadingOlder: false,
+  };
+}
+
+/** Catches a kept transcript up with what it missed while away. */
+export function replayTranscript(
+  previous: Transcript | undefined,
+  replay: TranscriptFrame<"thread.replay">,
+): Transcript {
+  return {
+    items: applyStreaming(
+      applyStoredEvents(previous?.items ?? [], replay.events, previous?.cursor ?? 0),
+      replay.streaming,
+    ),
+    cursor: Math.max(previous?.cursor ?? 0, replay.cursor),
+    page: previous?.page ?? null,
+    status: "live",
+    loadingOlder: false,
+  };
+}
+
+/** Puts older turns ahead of the ones already loaded. */
+export function prependPage(
+  previous: Transcript,
+  page: TranscriptFrame<"thread.page">,
+): Transcript {
+  const known = new Set(previous.items.map((item) => item.id));
+
+  return {
+    ...previous,
+    items: [
+      ...applyStoredEvents([], page.events, 0).filter((item) => !known.has(item.id)),
+      ...previous.items,
+    ],
+    page: page.page,
+    loadingOlder: false,
+  };
 }

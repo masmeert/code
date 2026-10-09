@@ -61,7 +61,7 @@ export default function HostsScreen() {
                     {
                       text: "Forget",
                       style: "destructive",
-                      onPress: () => void removeHost(host.id),
+                      onPress: () => removeHost(host.id),
                     },
                   ],
                 )

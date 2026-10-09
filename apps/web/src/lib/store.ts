@@ -36,9 +36,11 @@ import {
   isTurnActive,
 } from "@masscode/contracts";
 import {
-  applyStoredEvents,
-  applyStreaming,
+  prependPage,
   reduceItems,
+  reduceThreads,
+  replayTranscript,
+  snapshotTranscript,
   type Transcript,
   type TranscriptItem,
 } from "@masscode/client";
@@ -380,30 +382,6 @@ function reduceShell(state: State, event: RuntimeEvent): State {
         };
       },
       "terminal.closed": ({ threadId, terminalId }) => removeTerminal(state, threadId, terminalId),
-      "thread.status": ({ threadId, status }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, status })),
-      "thread.model": ({ threadId, provider, model }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, provider, model })),
-      "thread.archived": ({ threadId, archivedAt }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, archivedAt })),
-      "thread.shelved": ({ threadId, shelved }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, shelved })),
-      "thread.seen": ({ threadId, seenRev }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, seenRev })),
-      "thread.activity": ({ threadId, activity }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, activity: activity ?? undefined })),
-      "thread.request": ({ threadId, request }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, request: request ?? undefined })),
-      "thread.limitStop": ({ threadId, limitStop }) =>
-        updateThreadInfo(state, threadId, (info) => ({
-          ...info,
-          limitStop: limitStop ?? undefined,
-        })),
-      "thread.queue": ({ threadId, queue }) =>
-        updateThreadInfo(state, threadId, (info) => ({
-          ...info,
-          queue: queue.length > 0 ? queue : undefined,
-        })),
       "thread.usage": ({ threadId, usage }) => {
         const { [threadId]: _reading, ...readingUsage } = state.readingUsage;
         const next = { ...state, readingUsage };
@@ -414,17 +392,12 @@ function reduceShell(state: State, event: RuntimeEvent): State {
         ...state,
         limits: { ...state.limits, [provider]: { limits, error, loading: false } },
       }),
-      "thread.meta": ({ threadId, title, updatedAt, branch, cwd, worktree }) =>
-        updateThreadInfo(state, threadId, (info) => ({
-          ...info,
-          title,
-          updatedAt,
-          branch,
-          cwd,
-          worktree,
-        })),
     },
-    () => state,
+    () => {
+      const threads = reduceThreads(state.threads, event);
+
+      return threads === state.threads ? state : { ...state, threads };
+    },
   );
 }
 
@@ -861,53 +834,20 @@ function sendRequest<const ReplyTag extends Extract<ServerFrame, { requestId: st
 function onFrame(connection: Connection, frame: ServerFrame) {
   return ServerFrame.match(frame, {
     shell: (shell) => onShell(connection, shell),
-    "thread.snapshot": (snapshot) => {
-      const items = applyStreaming(applyStoredEvents([], snapshot.events, 0), snapshot.streaming);
+    "thread.snapshot": (snapshot) =>
+      setState(setTranscript(state, snapshot.threadId, snapshotTranscript(snapshot))),
+    "thread.replay": (replay) =>
       setState(
-        setTranscript(state, snapshot.threadId, {
-          items,
-          cursor: snapshot.cursor,
-          page: snapshot.page,
-          status: "live",
-          loadingOlder: false,
-        }),
-      );
-    },
-    "thread.replay": (replay) => {
-      const prev = state.transcripts[replay.threadId];
-      const base = prev?.items ?? [];
-
-      const items = applyStreaming(
-        applyStoredEvents(base, replay.events, prev?.cursor ?? 0),
-        replay.streaming,
-      );
-
-      const cursor = Math.max(prev?.cursor ?? 0, replay.cursor);
-      setState(
-        setTranscript(state, replay.threadId, {
-          items,
-          cursor,
-          page: prev?.page ?? null,
-          status: "live",
-          loadingOlder: false,
-        }),
-      );
-    },
+        setTranscript(
+          state,
+          replay.threadId,
+          replayTranscript(state.transcripts[replay.threadId], replay),
+        ),
+      ),
     "thread.page": (page) => {
-      const prev = state.transcripts[page.threadId];
+      const previous = state.transcripts[page.threadId];
 
-      if (!prev) return;
-
-      const known = new Set(prev.items.map((item) => item.id));
-      const older = applyStoredEvents([], page.events, 0).filter((item) => !known.has(item.id));
-      setState(
-        setTranscript(state, page.threadId, {
-          ...prev,
-          items: [...older, ...prev.items],
-          page: page.page,
-          loadingOlder: false,
-        }),
-      );
+      if (previous) setState(setTranscript(state, page.threadId, prependPage(previous, page)));
     },
     "search.results": resolveReply,
     "folder.entries": resolveReply,
