@@ -4,6 +4,7 @@
  * lookup rules (scopes, plugins, overrides), which change with every release.
  */
 import { PROVIDER_NAME, type ProviderKind } from "@masscode/contracts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import type { ProviderError, ProviderSkill } from "./providers/ProviderAdapter.ts";
 
@@ -57,12 +58,16 @@ export function createSkillCatalog(options: {
 
     const next = Effect.runPromise(
       options.read(provider, cwd).pipe(
-        Effect.match({
+        // A defect would reject, leaving the key's in-flight read stuck on it.
+        Effect.matchCause({
           onSuccess: (skills) => ({ skills, error: null }),
-          onFailure: (error) => ({
-            skills: listings.get(key)?.skills ?? [],
-            error: `Couldn't read ${PROVIDER_NAME[provider]}'s skills: ${error.message}`,
-          }),
+          onFailure: (cause) => {
+            const error = Cause.squash(cause);
+            return {
+              skills: listings.get(key)?.skills ?? [],
+              error: `Couldn't read ${PROVIDER_NAME[provider]}'s skills: ${error instanceof Error ? error.message : String(error)}`,
+            };
+          },
         }),
       ),
     ).then((result) => {
