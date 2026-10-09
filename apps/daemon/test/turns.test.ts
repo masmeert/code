@@ -10,6 +10,7 @@ import {
 } from "./replay/daemon.ts";
 
 let daemon: Daemon | null = null;
+
 afterEach(async () => {
   await daemon?.stop();
   daemon = null;
@@ -33,6 +34,7 @@ for (const provider of ["claude", "codex"] as const) {
     const answers = daemon
       .readTranscript(thread.id)
       .flatMap((event) => (RuntimeEvent.guards["assistant.completed"](event) ? [event.text] : []));
+
     expect(answers.join("\n")).toContain("pong");
     expect(answers.at(-1)).toContain("pong again");
     expect(readPeerLog(folder, provider).filter((entry) => entry.spawn !== undefined)).toHaveLength(
@@ -46,10 +48,12 @@ for (const provider of ["claude", "codex"] as const) {
     daemon = await startDaemon();
     const folder = createProject({ [provider]: readFixture(`${provider}-approval`) });
     const thread = await daemon.createThread(folder, "Run a command", { provider });
+
     const request = await daemon.waitFor(
       (event): event is Extract<RuntimeEvent, { _tag: "approval.requested" }> =>
         RuntimeEvent.guards["approval.requested"](event) && event.threadId === thread.id,
     );
+
     await daemon.dispatch(
       ClientCommand.cases["approval.respond"].make({
         threadId: thread.id,

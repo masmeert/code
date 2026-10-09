@@ -304,12 +304,14 @@ const initial: State = {
 /** The remote host a thread runs on; null for this Mac. */
 function getThreadHost(state: State, threadId: string): string | null {
   const projectId = state.threads[threadId]?.projectId;
+
   return (projectId && state.projectHosts[projectId]) || null;
 }
 
 /** The database a thread's cached transcript belongs to: its host's. */
 function getDataId(state: State, threadId: string) {
   const host = getThreadHost(state, threadId);
+
   return host === null ? state.dataId : (state.hosts[host]?.dataId ?? null);
 }
 
@@ -326,6 +328,7 @@ const ownRequests = new Map<
   string,
   { readonly shouldOpen: boolean; readonly options?: TurnOptions }
 >();
+
 /** What threads created here sent their first message with, so their composer starts from the draft's picks. */
 const firstOptions = new Map<string, TurnOptions>();
 
@@ -343,11 +346,14 @@ function upsert(
   next: (prev: TranscriptItem | undefined) => TranscriptItem,
 ) {
   let index = items.length - 1;
+
   while (index >= 0 && items[index].id !== id) index--;
+
   if (index === -1) return [...items, next(undefined)];
 
   const copy = items.slice();
   copy[index] = next(items[index]);
+
   return copy;
 }
 
@@ -380,15 +386,18 @@ function reduceItems(
           additions,
           deletions,
         };
+
         // Worked out after the turn ends, by which time a queued message may have started the next
         // turn: it goes at the end of its own turn, before the next prompt.
         const start = items.findIndex((item) => item.id === messageId);
+
         const next =
           start === -1
             ? -1
             : items.findIndex(
                 (item, index) => index > start && item.kind === "user" && !item.steer,
               );
+
         if (next === -1) return upsert(items, checkpoint.id, () => checkpoint);
 
         return [
@@ -415,6 +424,7 @@ function reduceItems(
         upsert(items, "setup", () => ({ kind: "setup", id: "setup", run, stopped })),
       "thread.rewound": (rewound) => {
         const index = items.findIndex((item) => item.id === rewound.messageId);
+
         return index === -1 ? items : items.slice(0, index);
       },
       "assistant.delta": (delta) =>
@@ -449,9 +459,12 @@ function reduceItems(
           output: null,
           isError: false,
         };
+
         const parent = items.findLast((item) => item.id === tool.parentToolId);
+
         if (parent?.kind !== "tool")
           return upsert(items, tool.toolId, () => ({ kind: "tool", ...call }));
+
         return upsert(items, parent.id, () => ({
           ...parent,
           children: [...(parent.children ?? []).filter((child) => child.id !== call.id), call],
@@ -474,9 +487,12 @@ function reduceItems(
       "tool.completed": (tool) =>
         items.map((item) => {
           if (item.kind !== "tool") return item;
+
           if (item.id === tool.toolId)
             return { ...item, output: tool.output, isError: tool.isError };
+
           if (!item.children?.some((child) => child.id === tool.toolId)) return item;
+
           return {
             ...item,
             children: item.children.map((child) =>
@@ -505,6 +521,7 @@ function reduceItems(
         ),
       error: (error) => {
         const key = id === null ? crypto.randomUUID() : `error:${id}`;
+
         return upsert(items, key, () => ({ kind: "error", id: key, text: error.message }));
       },
     },
@@ -518,13 +535,16 @@ function applyStoredEvents(
   after: number,
 ) {
   let next = items;
+
   for (const { id, event } of events) if (id > after) next = reduceItems(next, event, id);
+
   return next;
 }
 
 /** Text of messages still streaming, sent whole with a snapshot or replay: it replaces what the cache had. */
 function applyStreaming(items: ReadonlyArray<TranscriptItem>, deltas: ReadonlyArray<RuntimeEvent>) {
   const texts = new Map<string, { kind: "assistant" | "reasoning"; text: string }>();
+
   for (const event of deltas) {
     if (RuntimeEvent.isAnyOf(["assistant.delta", "reasoning.delta"])(event))
       texts.set(event.messageId, {
@@ -534,8 +554,10 @@ function applyStreaming(items: ReadonlyArray<TranscriptItem>, deltas: ReadonlyAr
   }
 
   let next = items;
+
   for (const [messageId, { kind, text }] of texts)
     next = upsert(next, messageId, () => ({ kind, id: messageId, text }));
+
   return next;
 }
 
@@ -555,6 +577,7 @@ function reduceShell(state: State, event: RuntimeEvent): State {
       }),
       "project.removed": ({ projectId }) => {
         const { [projectId]: _host, ...projectHosts } = state.projectHosts;
+
         return {
           ...state,
           projects: state.projects.filter((project) => project.id !== projectId),
@@ -597,7 +620,9 @@ function reduceShell(state: State, event: RuntimeEvent): State {
       }),
       "thread.created": ({ thread, requestId, hasTranscript }) => {
         const request = requestId === null ? undefined : ownRequests.get(requestId);
+
         if (requestId !== null) ownRequests.delete(requestId);
+
         if (request?.options) firstOptions.set(thread.id, request.options);
 
         const next = {
@@ -607,8 +632,10 @@ function reduceShell(state: State, event: RuntimeEvent): State {
           order: [thread.id, ...state.order.filter((id) => id !== thread.id)],
           threads: { ...state.threads, [thread.id]: thread },
         };
+
         // A fork's transcript loads like any other's once it's opened.
         if (hasTranscript) return next;
+
         return {
           ...next,
           // Brand new: nothing to fetch, it's live from its first event.
@@ -631,6 +658,7 @@ function reduceShell(state: State, event: RuntimeEvent): State {
         const { [threadId]: _activeTerminal, ...activeTerminals } = state.activeTerminals;
         const { [threadId]: _runs, ...runs } = state.runs;
         const dataId = getDataId(state, threadId);
+
         if (dataId) removeTranscript(dataId, threadId);
 
         return {
@@ -646,7 +674,9 @@ function reduceShell(state: State, event: RuntimeEvent): State {
       "terminal.opened": ({ threadId, terminalId, command }) => {
         if (command !== undefined) {
           const running = state.runs[threadId] ?? [];
+
           if (running.some((run) => run.terminalId === terminalId)) return state;
+
           return {
             ...state,
             runs: { ...state.runs, [threadId]: [...running, { terminalId, command }] },
@@ -654,7 +684,9 @@ function reduceShell(state: State, event: RuntimeEvent): State {
         }
 
         const terminalIds = state.terminals[threadId] ?? [];
+
         if (terminalIds.includes(terminalId)) return state;
+
         return {
           ...state,
           terminals: { ...state.terminals, [threadId]: [...terminalIds, terminalId] },
@@ -688,6 +720,7 @@ function reduceShell(state: State, event: RuntimeEvent): State {
       "thread.usage": ({ threadId, usage }) => {
         const { [threadId]: _reading, ...readingUsage } = state.readingUsage;
         const next = { ...state, readingUsage };
+
         return usage ? updateThreadInfo(next, threadId, (info) => ({ ...info, usage })) : next;
       },
       "provider.limits": ({ provider, limits, error }) => ({
@@ -714,6 +747,7 @@ function updateThreadInfo(
   update: (info: ThreadInfo) => ThreadInfo,
 ): State {
   const info = state.threads[threadId];
+
   if (!info) return state;
 
   return { ...state, threads: { ...state.threads, [threadId]: update(info) } };
@@ -727,10 +761,12 @@ function removeTerminal(state: State, threadId: string, terminalId: string): Sta
   const terminalIds = state.terminals[threadId] ?? [];
   const remaining = terminalIds.filter((id) => id !== terminalId);
   const { [threadId]: active, ...activeTerminals } = state.activeTerminals;
+
   const nextActive =
     active === terminalId
       ? (remaining[terminalIds.indexOf(terminalId)] ?? remaining.at(-1))
       : active;
+
   return {
     ...state,
     terminals: { ...state.terminals, [threadId]: remaining },
@@ -743,12 +779,15 @@ function removeTerminal(state: State, threadId: string, terminalId: string): Sta
 }
 
 let state = initial;
+
 const listeners = new Set<() => void>();
+
 /** Called on every change, frame or not: hidden windows get no animation frames, so no renders. */
 const watchers = new Set<(prev: State, next: State) => void>();
 
 export function watchState(watcher: (prev: State, next: State) => void) {
   watchers.add(watcher);
+
   return () => watchers.delete(watcher);
 }
 
@@ -756,12 +795,14 @@ let isNotifyScheduled = false;
 
 function notifyListeners() {
   isNotifyScheduled = false;
+
   for (const listener of listeners) listener();
 }
 
 function setState(next: State) {
   const prev = state;
   state = next;
+
   for (const watcher of watchers) watcher(prev, next);
 
   // Deltas can arrive faster than frames: re-render at most once per frame.
@@ -781,9 +822,11 @@ function setState(next: State) {
   ) {
     // ponytail: only this Mac's shell is cached; remote hosts' threads appear once they connect
     const { dataId, settings, providers } = next;
+
     const threads = Object.fromEntries(
       Object.entries(next.threads).filter(([, info]) => isOnHost(next, null, info.projectId)),
     );
+
     saveShell({
       dataId,
       settings,
@@ -797,13 +840,16 @@ function setState(next: State) {
   if (prev.transcripts !== next.transcripts || prev.threads !== next.threads) {
     for (const [threadId, transcript] of Object.entries(next.transcripts)) {
       if (transcript.status !== "live") continue;
+
       // Persist once a turn settles, not on every delta: encoding the whole transcript
       // mid-stream is wasted work (t3code does the same). Saved when the turn ends.
       if (next.threads[threadId]?.status === "running") continue;
+
       if (transcript === prev.transcripts[threadId] && prev.threads[threadId]?.status !== "running")
         continue;
 
       const dataId = getDataId(next, threadId);
+
       if (!dataId) continue;
 
       const { items, cursor, page } = transcript;
@@ -814,19 +860,23 @@ function setState(next: State) {
 
 /** Threads with an open view, counted (a thread can be open in several places). */
 const wanted = new Map<string, number>();
+
 /** Threads whose cached transcript is still being read; subscribing waits for it, to know the cursor. */
 const readingCache = new Set<string>();
+
 /** Closed threads' pending drops from memory, cancelled if a view opens them again. */
 const evictions = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** Puts a thread's cached transcript in memory, if it isn't there yet. */
 async function loadCachedTranscript(threadId: string) {
   const dataId = getDataId(state, threadId);
+
   if (!dataId || state.transcripts[threadId] || readingCache.has(threadId)) return;
 
   readingCache.add(threadId);
   const cached = await loadTranscript(dataId, threadId);
   readingCache.delete(threadId);
+
   // The daemon may have answered meanwhile, or a new shell may be from another database.
   if (!cached || getDataId(state, threadId) !== dataId || state.transcripts[threadId]) return;
 
@@ -846,6 +896,7 @@ export const ready: Promise<void> = loadShell().then(async (cached) => {
 
   const { dataId, settings, projects, providers, order, threads } = cached;
   setState({ ...state, source: "cache", dataId, settings, projects, providers, order, threads });
+
   if (order[0]) await loadCachedTranscript(order[0]);
 });
 
@@ -865,6 +916,7 @@ const connections = new Map<string | null, Connection>();
 
 function findOpenSocket(host: string | null) {
   const socket = connections.get(host)?.socket;
+
   return socket?.readyState === WebSocket.OPEN ? socket : null;
 }
 
@@ -876,9 +928,11 @@ function hasShell(host: string | null) {
 /** Asks for a thread's transcript: a replay after the cursor when we have one, else the latest turns. */
 function subscribeToTranscript(threadId: string) {
   const host = getThreadHost(state, threadId);
+
   if (!findOpenSocket(host) || !hasShell(host) || readingCache.has(threadId)) return;
 
   const transcript = state.transcripts[threadId];
+
   if (transcript) {
     if (transcript.status === "cached")
       setState(setTranscript(state, threadId, { ...transcript, status: "loading" }));
@@ -920,6 +974,7 @@ function createHostState(status: HostStatus): HostState {
 
 function updateHost(state: State, host: string, update: (current: HostState) => HostState): State {
   const current = state.hosts[host];
+
   return current ? { ...state, hosts: { ...state.hosts, [host]: update(current) } } : state;
 }
 
@@ -942,10 +997,12 @@ function markIncompatible(host: string | null) {
 /** Replaces one host's threads and projects with what its daemon sent; other hosts' stay. */
 function onShell(connection: Connection, frame: Extract<ServerFrame, { _tag: "shell" }>) {
   const { host } = connection;
+
   // A daemon older than the check doesn't say, and may not understand what this window sends.
   if (frame.protocol !== PROTOCOL_VERSION) {
     markIncompatible(host);
     connection.socket?.close();
+
     return;
   }
 
@@ -953,27 +1010,33 @@ function onShell(connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
   const previousDataId = host === null ? state.dataId : (state.hosts[host]?.dataId ?? null);
   const sameData = frame.dataId === previousDataId;
   const incoming = Object.fromEntries(frame.threads.map((info) => [info.id, info]));
+
   const others = Object.fromEntries(
     Object.entries(state.threads).filter(([, info]) => !isOnHost(state, host, info.projectId)),
   );
+
   const threads = { ...others, ...incoming };
 
   // Keep transcripts of threads that still exist; they resume from their cursor.
   const transcripts: Record<string, Transcript> = {};
+
   for (const [threadId, transcript] of Object.entries(state.transcripts)) {
     if (others[threadId] || (sameData && incoming[threadId])) transcripts[threadId] = transcript;
     else if (sameData) removeTranscript(frame.dataId, threadId);
   }
 
   const terminals: Record<string, Array<string>> = {};
+
   for (const [threadId, terminalIds] of Object.entries(state.terminals)) {
     if (others[threadId]) terminals[threadId] = [...terminalIds];
   }
 
   const runs: Record<string, Array<RunningCommand>> = {};
+
   for (const [threadId, running] of Object.entries(state.runs)) {
     if (others[threadId]) runs[threadId] = [...running];
   }
+
   for (const { threadId, terminalId, command } of frame.terminals) {
     if (command !== undefined) (runs[threadId] ??= []).push({ terminalId, command });
   }
@@ -984,6 +1047,7 @@ function onShell(connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
       incoming[screen.threadId] &&
       !state.runs[screen.threadId]?.some((run) => run.terminalId === screen.terminalId),
   );
+
   for (const { threadId, terminalId } of [
     ...frame.terminals.filter((terminal) => terminal.command === undefined),
     ...ownScreens,
@@ -1000,6 +1064,7 @@ function onShell(connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
           ),
           ...Object.fromEntries(frame.projects.map((project) => [project.id, host])),
         };
+
   const merged: State = {
     ...state,
     projects: [
@@ -1019,10 +1084,12 @@ function onShell(connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
         const active = terminals[threadId]?.includes(terminalId)
           ? terminalId
           : terminals[threadId]?.at(-1);
+
         return active ? [[threadId, active]] : [];
       }),
     ),
   };
+
   setState(
     host === null
       ? {
@@ -1047,6 +1114,7 @@ function onShell(connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
 
   for (const threadId of wanted.keys()) {
     if (getThreadHost(state, threadId) !== host) continue;
+
     if (transcripts[threadId] || !sameData) {
       subscribeToTranscript(threadId);
     } else {
@@ -1056,6 +1124,7 @@ function onShell(connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
       );
     }
   }
+
   for (const screen of ownScreens) openScreen(screen);
 
   if (host !== null) {
@@ -1088,6 +1157,7 @@ function sendRequest<const ReplyTag extends Extract<ServerFrame, { requestId: st
 ) {
   return new Promise<Extract<ServerFrame, { _tag: ReplyTag }> | null>((resolve) => {
     const socket = findOpenSocket(host);
+
     if (!socket) return resolve(null);
 
     replies.set(command.requestId, (frame) =>
@@ -1118,10 +1188,12 @@ function onFrame(connection: Connection, frame: ServerFrame) {
     "thread.replay": (replay) => {
       const prev = state.transcripts[replay.threadId];
       const base = prev?.items ?? [];
+
       const items = applyStreaming(
         applyStoredEvents(base, replay.events, prev?.cursor ?? 0),
         replay.streaming,
       );
+
       const cursor = Math.max(prev?.cursor ?? 0, replay.cursor);
       setState(
         setTranscript(state, replay.threadId, {
@@ -1135,6 +1207,7 @@ function onFrame(connection: Connection, frame: ServerFrame) {
     },
     "thread.page": (page) => {
       const prev = state.transcripts[page.threadId];
+
       if (!prev) return;
 
       const known = new Set(prev.items.map((item) => item.id));
@@ -1181,6 +1254,7 @@ function onFrame(connection: Connection, frame: ServerFrame) {
       ),
     event: ({ event, id }) => {
       const { sideChat } = state;
+
       if (sideChat && "threadId" in event && event.threadId === sideChat.id)
         return setState({
           ...state,
@@ -1199,9 +1273,11 @@ function onFrame(connection: Connection, frame: ServerFrame) {
 
       if (RuntimeEvent.guards["thread.device"](event))
         return showDevice(event.threadId, event.deviceId);
+
       if (!isTranscriptEvent(event)) return applyShellEvent(connection.host, event);
 
       const transcript = state.transcripts[event.threadId];
+
       // Not following this thread, or already have it (a replay can overlap live events).
       if (!transcript || (id !== null && id <= transcript.cursor)) return;
 
@@ -1240,6 +1316,7 @@ function reduceRemoteShell(state: State, host: string, event: RuntimeEvent): Sta
         })),
       "project.added": (added) => {
         const next = reduceShell(state, added);
+
         return { ...next, projectHosts: { ...next.projectHosts, [added.project.id]: host } };
       },
     },
@@ -1266,6 +1343,7 @@ function applyShellEvent(host: string | null, event: RuntimeEvent) {
  * at launch the sidecar is still booting. Reset once a connection gets its shell.
  */
 const RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000, 8000];
+
 /** Each attempt at a remote host runs ssh, so those back off further. */
 const REMOTE_RETRY_DELAYS_MS = [1000, 2000, 5000, 10000, 30000];
 
@@ -1284,25 +1362,32 @@ const decodeServerFrame = Schema.decodeUnknownResult(Schema.fromJsonString(Serve
 
 async function connect(connection: Connection) {
   const { host } = connection;
+
   // Asked on every attempt: a daemon that restarts (or updates, on a remote host) comes back on a new port.
   const daemon =
     host === null
       ? ((await window.desktop?.daemon()) ?? null)
       : ((await window.desktop?.hostDaemon(host)) ?? null);
+
   if (connection.isRemoved) return;
+
   if (host !== null && !daemon) return scheduleReconnect(connection);
 
   const socket = new WebSocket(
     `ws://127.0.0.1:${daemon?.port ?? DEFAULT_DAEMON_PORT}/?protocol=${PROTOCOL_VERSION}`,
     daemon ? [`masscode.${daemon.token}`] : undefined,
   );
+
   connection.socket = socket;
   socket.onopen = () => {
     if (window.desktop) send(ClientCommand.cases["browser.host"].make({}), host);
+
     for (const command of connection.queued.splice(0)) send(command, host);
   };
+
   socket.onmessage = (message) => {
     const decoded = decodeServerFrame(message.data);
+
     if (Result.isSuccess(decoded)) onFrame(connection, decoded.success);
     else
       console.error(
@@ -1310,11 +1395,14 @@ async function connect(connection: Connection) {
         decoded.failure,
       );
   };
+
   socket.onclose = (event) => {
     if (connection.socket !== socket) return;
 
     connection.socket = null;
+
     if (event.code === PROTOCOL_MISMATCH) markIncompatible(host);
+
     // Keep everything on screen; transcripts fall back to cached until the next connect catches them up.
     const transcripts = Object.fromEntries(
       Object.entries(state.transcripts).map(([id, transcript]) => [
@@ -1325,6 +1413,7 @@ async function connect(connection: Connection) {
           : { ...transcript, status: "cached" as const, loadingOlder: false },
       ]),
     );
+
     setState(
       host === null
         ? { ...state, connected: false, transcripts }
@@ -1333,6 +1422,7 @@ async function connect(connection: Connection) {
             connected: false,
           })),
     );
+
     if (!connection.isRemoved) scheduleReconnect(connection);
   };
 }
@@ -1346,6 +1436,7 @@ function addConnection(host: string | null) {
     queued: [],
     isRemoved: false,
   };
+
   connections.set(host, connection);
   void connect(connection);
 }
@@ -1353,6 +1444,7 @@ function addConnection(host: string | null) {
 /** Drops a removed host's connection and everything it showed. */
 function removeConnection(connection: Connection, host: string) {
   connection.isRemoved = true;
+
   if (connection.retry) clearTimeout(connection.retry);
   connection.socket?.close();
   connections.delete(host);
@@ -1387,6 +1479,7 @@ function removeConnection(connection: Connection, host: string) {
 /** Follows the desktop app's list of remote hosts: connects new ones, drops removed ones. */
 function syncHosts(list: ReadonlyArray<RemoteHost>) {
   const aliases = new Set(list.map((remote) => remote.alias));
+
   for (const connection of connections.values()) {
     if (connection.host !== null && !aliases.has(connection.host))
       removeConnection(connection, connection.host);
@@ -1404,6 +1497,7 @@ function syncHosts(list: ReadonlyArray<RemoteHost>) {
 
   for (const { alias, status } of list) {
     const connection = connections.get(alias);
+
     if (!connection) {
       addConnection(alias);
     } else if (HostStatus.guards.connected(status) && connection.retry) {
@@ -1416,6 +1510,7 @@ function syncHosts(list: ReadonlyArray<RemoteHost>) {
 }
 
 addConnection(null);
+
 if (window.desktop) {
   window.desktop.onHosts(syncHosts);
   void window.desktop.hosts().then(syncHosts);
@@ -1425,10 +1520,12 @@ if (window.desktop) {
 function openThread(threadId: string) {
   const count = wanted.get(threadId) ?? 0;
   wanted.set(threadId, count + 1);
+
   if (count > 0) return;
 
   clearTimeout(evictions.get(threadId));
   evictions.delete(threadId);
+
   if (state.transcripts[threadId]) subscribeToTranscript(threadId);
   else
     void loadCachedTranscript(threadId).then(
@@ -1438,8 +1535,10 @@ function openThread(threadId: string) {
 
 function closeThread(threadId: string) {
   const count = (wanted.get(threadId) ?? 1) - 1;
+
   if (count > 0) {
     wanted.set(threadId, count);
+
     return;
   }
 
@@ -1465,6 +1564,7 @@ let kept: ReadonlyArray<string> = [];
  */
 export function keepFollowing(threadIds: ReadonlyArray<string>) {
   for (const threadId of threadIds) if (!kept.includes(threadId)) openThread(threadId);
+
   for (const threadId of kept) if (!threadIds.includes(threadId)) closeThread(threadId);
   kept = threadIds;
 }
@@ -1473,14 +1573,17 @@ export function keepFollowing(threadIds: ReadonlyArray<string>) {
 export function useTranscript(threadId: string): Transcript | null {
   useEffect(() => {
     openThread(threadId);
+
     return () => closeThread(threadId);
   }, [threadId]);
+
   return useStore((state) => state.transcripts[threadId] ?? null);
 }
 
 /** Fetches the turns before what's loaded. */
 export function loadOlder(threadId: string) {
   const transcript = state.transcripts[threadId];
+
   if (
     !transcript?.page?.hasMore ||
     transcript.loadingOlder ||
@@ -1510,11 +1613,13 @@ function findPathHost(state: State, path: string): string | null {
   const project = state.projects
     .filter((candidate) => isInside(candidate.path))
     .sort((left, right) => right.path.length - left.path.length)[0];
+
   if (project) return state.projectHosts[project.id] ?? null;
 
   const thread = Object.values(state.threads)
     .filter((candidate) => isInside(candidate.cwd))
     .sort((left, right) => right.cwd.length - left.cwd.length)[0];
+
   if (thread) return getThreadHost(state, thread.id);
 
   return pendingPaths.get(path) ?? null;
@@ -1523,17 +1628,22 @@ function findPathHost(state: State, path: string): string | null {
 /** The host a command is for: that of the thread, project or folder it names. */
 function getCommandHost(command: ClientCommand): string | null {
   if ("threadId" in command) return getThreadHost(state, command.threadId);
+
   if ("projectId" in command) return state.projectHosts[command.projectId] ?? null;
+
   if ("path" in command) return findPathHost(state, command.path);
+
   return null;
 }
 
 /** Sends to the daemon the command is for, or to `host`'s; held while that one is down. */
 export function send(command: ClientCommand, host = getCommandHost(command)) {
   const connection = connections.get(host);
+
   if (!connection) return;
 
   const socket = findOpenSocket(host);
+
   if (socket) socket.send(JSON.stringify(command));
   else connection.queued.push(command);
 }
@@ -1546,9 +1656,11 @@ export function useThreadHost(threadId: string) {
 export function useFileRestoreBlocker(threadId: string) {
   return useStore((state) => {
     const thread = state.threads[threadId];
+
     if (!thread) return null;
 
     const host = getThreadHost(state, threadId);
+
     return findFileRestoreBlocker(
       thread,
       Object.values(state.threads).filter((other) => isOnHost(state, host, other.projectId)),
@@ -1621,6 +1733,7 @@ export async function attachDevice(threadId: string, deviceId: string | null) {
     "device.attached",
     3 * 60_000,
   );
+
   return attached ? attached.error : "MassCode didn't answer in time. Try again.";
 }
 
@@ -1634,10 +1747,12 @@ const signedImages = new Map<
 export function fetchImageUrl(threadId: string, src: string) {
   const key = `${threadId}\n${src}`;
   const cached = signedImages.get(key);
+
   if (cached && Date.now() - cached.signedAtMs < 50 * 60 * 1000) return cached.url;
 
   const thread = state.threads[threadId];
   const host = getThreadHost(state, threadId);
+
   const url = thread
     ? sendRequest(
         host,
@@ -1650,16 +1765,20 @@ export function fetchImageUrl(threadId: string, src: string) {
         10_000,
       ).then((signed) => {
         const socket = findOpenSocket(host);
+
         if (!signed?.url || !socket) {
           signedImages.delete(key);
+
           return null;
         }
+
         // Remote hosts are reached through a tunnel on this Mac, so the socket's address serves both.
         return new URL(signed.url, socket.url.replace(/^ws/, "http")).href;
       })
     : Promise.resolve(null);
 
   signedImages.set(key, { url, signedAtMs: Date.now() });
+
   return url;
 }
 
@@ -1684,7 +1803,9 @@ export async function cloneProject(
     // Big repositories take a while; the daemon gives up at 10 minutes.
     11 * 60_000,
   );
+
   if (cloned?.path && host !== null) pendingPaths.set(cloned.path, host);
+
   return (
     cloned ?? {
       path: null,
@@ -1696,9 +1817,11 @@ export async function cloneProject(
 /** Remote hosts follow this Mac's settings, except their harness launch settings, which are per machine. */
 function syncSettings(host: string) {
   const remote = state.hosts[host]?.settings;
+
   if (!remote || state.source === "none") return;
 
   const settings = { ...state.settings, providers: remote.providers };
+
   if (JSON.stringify(settings) !== JSON.stringify(remote))
     send(ClientCommand.cases["settings.update"].make({ settings }), host);
 }
@@ -1742,6 +1865,7 @@ export function readLimits(provider: ProviderKind, host: string | null) {
 export function updateSettings(settings: Settings) {
   setState({ ...state, settings });
   send(ClientCommand.cases["settings.update"].make({ settings }), null);
+
   for (const host of Object.keys(state.hosts)) syncSettings(host);
 }
 
@@ -1815,6 +1939,7 @@ export function openSideChat(threadId: string, messageId: string) {
 
 export function askSideChat(text: string) {
   const { sideChat } = state;
+
   if (!sideChat || sideChat.running) return;
 
   setState({ ...state, sideChat: { ...sideChat, running: true } });
@@ -1831,6 +1956,7 @@ export function askSideChat(text: string) {
 /** Ends `threadId`'s side chat for good, stopping its agent. */
 export function closeSideChat(threadId: string) {
   const { sideChat } = state;
+
   if (sideChat?.threadId !== threadId) return;
 
   setState({ ...state, sideChat: null });
@@ -1859,6 +1985,7 @@ export function sendQueuedNow(threadId: string, messageId: string) {
 export function takeQueued(threadId: string, messageId?: string): ReadonlyArray<QueuedMessage> {
   const queue = state.threads[threadId]?.queue ?? [];
   const taken = messageId ? queue.filter((message) => message.id === messageId) : queue;
+
   if (taken.length)
     send(
       ClientCommand.cases["thread.unqueue"].make({
@@ -1866,6 +1993,7 @@ export function takeQueued(threadId: string, messageId?: string): ReadonlyArray<
         messageIds: taken.map((message) => message.id),
       }),
     );
+
   return taken;
 }
 
@@ -1882,6 +2010,7 @@ export async function searchMessages(query: string): Promise<ReadonlyArray<Searc
       ),
     ),
   );
+
   return answers.flatMap((answer) => answer?.hits ?? []);
 }
 
@@ -1907,6 +2036,7 @@ function getScreenKey(threadId: string, terminalId: string) {
 
 /** What to type into a terminal's shell when the daemon starts it, by terminal id. */
 const terminalInputs = new Map<string, string>();
+
 /** The script each script's terminal runs, by terminal id; its tab is named after it. */
 const terminalScripts = new Map<string, ProjectScript>();
 
@@ -1934,6 +2064,7 @@ export function attachTerminal(screen: TerminalScreen) {
   const key = getScreenKey(screen.threadId, screen.terminalId);
   screens.set(key, screen);
   openScreen(screen);
+
   return () => {
     if (screens.get(key) !== screen) return;
     screens.delete(key);
@@ -1949,16 +2080,19 @@ export function attachTerminal(screen: TerminalScreen) {
 export function toggleTerminalPanel(threadId: string) {
   if (state.activeTerminals[threadId]) {
     const { [threadId]: _hidden, ...activeTerminals } = state.activeTerminals;
+
     return setState({ ...state, activeTerminals });
   }
 
   const latest = state.terminals[threadId]?.at(-1);
+
   if (latest) showTerminal(threadId, latest);
   else createTerminal(threadId);
 }
 
 export function createTerminal(threadId: string, script?: ProjectScript) {
   const terminalId = crypto.randomUUID();
+
   if (script) {
     terminalInputs.set(terminalId, script.command);
     terminalScripts.set(terminalId, script);
@@ -2000,10 +2134,12 @@ export function runScript(threadId: string, script: ProjectScript) {
   const running = state.terminals[threadId]?.find(
     (terminalId) => terminalScripts.get(terminalId)?.name === script.name,
   );
+
   if (running) showTerminal(threadId, running);
   else createTerminal(threadId, script);
 
   const preview = script.preview_url && normalizeUrl(script.preview_url);
+
   if (preview && window.desktop) openPreview(threadId, preview);
 }
 
@@ -2027,6 +2163,7 @@ export async function updateProjectConfig(
   change: (config: ProjectConfig) => ProjectConfig,
 ) {
   const current = await readProjectConfig(host, path);
+
   const saved =
     current &&
     (await sendRequest(
@@ -2039,6 +2176,7 @@ export async function updateProjectConfig(
       "project.configSaved",
       10_000,
     ));
+
   return saved
     ? saved.error
     : "MassCode's daemon didn't answer, so nothing was saved. Check it's running and try again.";
@@ -2055,6 +2193,7 @@ export function closeTerminal(threadId: string, terminalId: string) {
 /** Marks a thread's latest activity as seen, which clears its unread state. */
 export function markSeen(threadId: string) {
   const info = state.threads[threadId];
+
   if (info && !isSeen(info))
     send(ClientCommand.cases["thread.seen"].make({ threadId, rev: info.updatedAt }));
 }
@@ -2081,10 +2220,12 @@ export function respondApproval(
   reply?: { readonly permission?: PermissionLevel; readonly answers?: UserAnswers },
 ) {
   const transcript = state.transcripts[threadId];
+
   if (transcript) {
     const items = transcript.items.map((item) =>
       item.id === requestId && item.kind === "approval" ? { ...item, decision } : item,
     );
+
     setState(setTranscript(state, threadId, { ...transcript, items }));
   }
 
@@ -2095,6 +2236,7 @@ export function useStore<A>(select: (state: State) => A): A {
   return useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
+
       return () => listeners.delete(listener);
     },
     () => select(state),

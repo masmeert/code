@@ -23,6 +23,7 @@ export function parseProjectConfig(projectPath: string, text: string): ProjectCo
 /** The project's `masscode.toml`; empty when there's none, an Error saying what's wrong when it's invalid. */
 export async function readProjectConfig(projectPath: string): Promise<ProjectConfig | Error> {
   const text = await readProjectConfigText(projectPath);
+
   return text === null ? {} : parseProjectConfig(projectPath, text);
 }
 
@@ -32,10 +33,12 @@ export async function writeProjectConfig(projectPath: string, config: ProjectCon
   const text = toToml(config);
   // ponytail: hand-rolled for this schema (Bun parses TOML but can't write it); parsed back so a mistake never lands.
   const parsed = text ? parseProjectConfig(projectPath, text) : null;
+
   if (parsed instanceof Error) return parsed.message;
 
   try {
     await (text ? writeFile(path, text) : rm(path, { force: true }));
+
     return null;
   } catch (error) {
     return `Couldn't save ${path}: ${getErrorMessage(error)}`;

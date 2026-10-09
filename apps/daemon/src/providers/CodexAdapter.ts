@@ -118,10 +118,12 @@ async function estimateApiCostUsd(
     )
     .catch(() => {
       prices = undefined;
+
       return new Map();
     });
 
   const price = (await prices).get(model);
+
   if (!price) return null;
 
   // ponytail: prices the whole thread at its current model, and ignores long-context surcharges.
@@ -157,6 +159,7 @@ function buildElicitationResponse(elicitation: CodexElicitation, decision: Appro
           ? /session/i.test(value)
           : /once|accept|approve|allow|yes/i.test(value) && !/session|always|persist/i.test(value),
       );
+
       if (chosen !== undefined) return [[key, chosen] as const];
 
       if (field.type === "boolean") {
@@ -172,6 +175,7 @@ function buildElicitationResponse(elicitation: CodexElicitation, decision: Appro
 
       if (field.default !== undefined && field.default !== null)
         return [[key, field.default] as const];
+
       return [];
     }),
   );
@@ -198,11 +202,13 @@ function start({
       readonly rpcId: RpcId;
       readonly elicitation: CodexElicitation | null;
     }>("codex", threadId, emit);
+
     let codexThreadId = "";
     let startedModel = "";
     let activeTurnId: string | null = null;
     // The plan's limit refused the turn; Codex says so in an error before the turn fails.
     let isLimited = false;
+
     // Subagents run as Codex threads of their own, and their notifications arrive here tagged with
     // that thread's id. Each maps to the Agent row it shows under, `isOpen` until it ends; a subagent's
     // own subagents are `isNested` and fold into the same row.
@@ -216,6 +222,7 @@ function start({
         lastMessage: string;
       }
     >();
+
     // Live turns of every thread but this one, even those not yet known as subagents: a subagent's
     // traffic can come before the activity announcing it, and Stop has to reach it either way.
     const childTurns = new Map<string, string>();
@@ -237,6 +244,7 @@ function start({
           isError,
         }),
       );
+
       if (activeTurnId === null && !hasRunningSubagents())
         emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
     }
@@ -280,6 +288,7 @@ function start({
           },
           "item/started": ({ params }) => {
             const subagent = subagents.get(params.threadId);
+
             if (params.threadId !== codexThreadId && !subagent) return;
 
             emit(
@@ -310,6 +319,7 @@ function start({
           },
           "item/completed": ({ params }) => {
             const subagent = subagents.get(params.threadId);
+
             if (params.threadId !== codexThreadId && !subagent) return;
 
             const event = CompletedItem.match(params.item, {
@@ -317,8 +327,10 @@ function start({
                 // A subagent's messages are its report, not the thread's.
                 if (subagent) {
                   subagent.lastMessage = item.text;
+
                   return null;
                 }
+
                 return RuntimeEvent.cases["assistant.completed"].make({
                   threadId,
                   messageId: item.id,
@@ -339,6 +351,7 @@ function start({
                 if (item.agentThreadId === codexThreadId) return null;
 
                 const known = subagents.get(item.agentThreadId);
+
                 if (item.kind === "started" && !known) {
                   const leaf = item.agentPath.split("/").at(-1)?.replaceAll("_", " ") ?? "";
                   const name = subagent?.name ?? leaf.charAt(0).toUpperCase() + leaf.slice(1);
@@ -349,6 +362,7 @@ function start({
                     isOpen: true,
                     lastMessage: "",
                   });
+
                   if (subagent) return null;
 
                   return RuntimeEvent.cases["tool.started"].make({
@@ -366,6 +380,7 @@ function start({
                     false,
                   );
                 }
+
                 return null;
               },
               commandExecution: (item) =>
@@ -403,6 +418,7 @@ function start({
               // A subagent's turn ending is its end: Codex doesn't always report it on the main
               // thread, and says nothing there when Stop interrupts it.
               const subagent = subagents.get(params.threadId);
+
               if (subagent) {
                 closeSubagent(
                   subagent,
@@ -414,10 +430,12 @@ function start({
                   params.turn.status === "failed",
                 );
               }
+
               return;
             }
 
             activeTurnId = null;
+
             // Codex doesn't say when the limit resets; the session manager asks for the windows.
             if (
               params.turn.status === "failed" &&
@@ -430,6 +448,7 @@ function start({
                 }),
               );
             }
+
             isLimited = false;
 
             if (params.turn.status === "failed") {
@@ -440,12 +459,14 @@ function start({
                 }),
               );
             }
+
             emit(
               RuntimeEvent.cases["turn.completed"].make({
                 threadId,
                 durationMs: params.turn.durationMs,
               }),
             );
+
             if (!hasRunningSubagents())
               emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
           },
@@ -458,6 +479,7 @@ function start({
             } else {
               // A subagent's error is its own: it ends its row instead of showing on the thread.
               const subagent = subagents.get(params.threadId);
+
               if (subagent) closeSubagent(subagent, params.error.message, true);
             }
           },
@@ -466,10 +488,12 @@ function start({
               void buildThreadUsage(params.tokenUsage, currentModel ?? startedModel).then((usage) =>
                 emit(RuntimeEvent.cases["thread.usage"].make({ threadId, usage })),
               );
+
               return;
             }
 
             const subagent = subagents.get(params.threadId);
+
             if (!subagent || subagent.isNested) return;
 
             emit(
@@ -496,6 +520,7 @@ function start({
         { rpcId, elicitation },
         { title, detail, agent: subagents.get(fromThreadId ?? "")?.name },
       );
+
       return true;
     }
 
@@ -506,6 +531,7 @@ function start({
             params._meta?.codex_approval_kind === "mcp_tool_call"
               ? params.message.match(/run tool "(.+)"/)?.[1]
               : undefined;
+
           return requestApproval(
             id,
             params,
@@ -527,6 +553,7 @@ function start({
     }
 
     const launch = yield* resolveHarnessLaunch("codex", harness);
+
     const rpc = yield* tryProviderPromise("codex", () =>
       connectCodex(
         {
@@ -535,6 +562,7 @@ function start({
             ...launch.args,
             ...(mcpServer ? listMcpEndpoints(mcpServer) : []).flatMap(({ name, url }) => {
               const timeoutSec = MCP_TOOL_TIMEOUT_SEC.get(name);
+
               return [
                 "-c",
                 `mcp_servers.${name}.url="${url}"`,
@@ -563,6 +591,7 @@ function start({
     // Null leaves a setting to the config (and, for turns, to the last override).
     const { approvalPolicy, sandbox } = PERMISSION[permission];
     const startEffort = effort && toCodexEffort(effort);
+
     const threadParams = {
       cwd,
       model: currentModel,
@@ -570,6 +599,7 @@ function start({
       approvalPolicy,
       sandbox,
     };
+
     const started = resumeToken
       ? yield* sendRequest(
           "thread/resume",
@@ -577,12 +607,14 @@ function start({
           ThreadResponse,
         )
       : yield* sendRequest("thread/start", threadParams, ThreadResponse);
+
     codexThreadId = started.thread.id;
     startedModel = started.model;
     onResumeToken(codexThreadId);
 
     function buildTurnInput(turn: TurnInput) {
       const text = formatTextWithFiles(turn);
+
       return [
         ...(turn.handoff ? [{ type: "text", text: turn.handoff, text_elements: [] }] : []),
         ...turn.attachments
@@ -601,9 +633,12 @@ function start({
           emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
           // Overrides stick for later turns, so only send what changed (keeps config.toml's sandbox details otherwise).
           const hasPermissionChanged = turn.permission !== permission;
+
           const effortOverride =
             turn.effort !== null && turn.effort !== effort ? toCodexEffort(turn.effort) : null;
+
           permission = turn.permission;
+
           if (turn.effort) effort = turn.effort;
 
           const response = yield* sendRequest(
@@ -620,6 +655,7 @@ function start({
             },
             Schema.Struct({ turn: Schema.Struct({ id: Schema.String }) }),
           );
+
           activeTurnId = response.turn.id;
         }),
       // Joins the running turn; with none running (it just ended), starts one.
@@ -639,6 +675,7 @@ function start({
         ),
       compact: Effect.suspend(() => {
         emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
+
         return sendRequest(
           "thread/compact/start",
           { threadId: codexThreadId },
@@ -694,7 +731,9 @@ async function dropLastTurns(rpc: JsonRpc, threadId: string, dropTurns: number) 
     { threadId, limit: dropTurns, sortDirection: "desc" },
     Schema.Struct({ data: Schema.Array(Schema.Struct({ id: Schema.String })) }),
   );
+
   const firstDropped = turns[dropTurns - 1];
+
   if (firstDropped === undefined)
     throw new Error(`the thread has ${turns.length} turns, can't drop ${dropTurns}`);
 
@@ -714,6 +753,7 @@ const rewind: ProviderAdapter["rewind"] = Effect.fn("CodexAdapter.rewind")(
         Schema.Unknown,
       );
       await dropLastTurns(rpc, resumeToken, dropTurns);
+
       return resumeToken;
     });
   },
@@ -733,7 +773,9 @@ const fork: ProviderAdapter["fork"] = Effect.fn("CodexAdapter.fork")(
         { threadId: resumeToken, excludeTurns: true, cwd },
         ThreadResponse,
       );
+
       await dropLastTurns(rpc, thread.id, dropTurns);
+
       return thread.id;
     });
   },
@@ -746,6 +788,7 @@ const readUsage: ProviderAdapter["readUsage"] = Effect.fn("CodexAdapter.readUsag
   function* ({ cwd, harness, resumeToken, model }) {
     const launch = yield* resolveHarnessLaunch("codex", harness);
     const reported = yield* Deferred.make<TokenUsage>();
+
     const rpc = yield* acquireCodexConnection(launch, cwd, {
       onNotification: (notification) => {
         if (
@@ -764,7 +807,9 @@ const readUsage: ProviderAdapter["readUsage"] = Effect.fn("CodexAdapter.readUsag
         ThreadResponse,
       ),
     );
+
     const usage = yield* Deferred.await(reported).pipe(Effect.timeoutOption("5 seconds"));
+
     if (Option.isNone(usage)) return { context: null, costUsd: null };
 
     return yield* tryProviderPromise("codex", () =>
@@ -802,6 +847,7 @@ const listSkills: ProviderAdapter["listSkills"] = Effect.fn("CodexAdapter.listSk
       }),
     ),
   );
+
   return data.flatMap((entry) =>
     entry.skills.flatMap(({ name, description, path, enabled }) =>
       enabled ? [{ name, description, path }] : [],

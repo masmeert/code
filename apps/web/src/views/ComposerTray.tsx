@@ -115,6 +115,7 @@ export function LimitStopNotice({
 }) {
   const now = useNow(30_000);
   const isWaitingForReset = stop.resetsAt !== null && stop.resetsAt > now;
+
   const others = providers.filter(
     (other) => other.linked && other.kind !== stop.provider && other.kind !== provider,
   );
@@ -196,6 +197,7 @@ export function LimitStopNotice({
             <DropdownMenuContent align="start" sideOffset={4} collisionPadding={8}>
               {others.map((other) => {
                 const Logo = PROVIDER_LOGO[other.kind];
+
                 return (
                   <DropdownMenuItem
                     key={other.kind}
@@ -301,9 +303,12 @@ export function RunningAgents({
 
   function describeAgentActivity(agent: ToolItem) {
     if (stopping.has(agent.id)) return "Stopping…";
+
     if (agent.progress !== undefined) return agent.progress;
     const last = agent.children?.at(-1);
+
     if (!last) return "Starting…";
+
     return last.output === null ? livePhrase(last) : summarize([last]);
   }
 
@@ -369,6 +374,7 @@ export function RunningAgents({
                     label={`${isUnfolded ? "Hide" : "Show"} what ${name} is doing`}
                     onClick={() => {
                       const next = new Set(unfolded);
+
                       if (!next.delete(agent.id)) next.add(agent.id);
                       setUnfolded(next);
                     }}

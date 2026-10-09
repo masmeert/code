@@ -28,17 +28,22 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
   useEffect(() => {
     const root = scope.current;
     const needle = query.toLowerCase();
+
     if (!isOpen || !root || !needle) return setMatches([]);
 
     let frame = 0;
+
     function findMatches() {
       const found: Array<Range> = [];
       const walker = document.createTreeWalker(root!, NodeFilter.SHOW_TEXT);
+
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
         const text = node.textContent!.toLowerCase();
         let index = text.indexOf(needle);
+
         // Collapsed tool output and the like stay in the DOM, unseen.
         if (index === -1 || !node.parentElement?.checkVisibility()) continue;
+
         for (; index !== -1; index = text.indexOf(needle, index + needle.length)) {
           const range = new Range();
           range.setStart(node, index);
@@ -46,20 +51,24 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
           found.push(range);
         }
       }
+
       setMatches(found);
     }
 
     findMatches();
+
     const observer = new MutationObserver(() => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(findMatches);
     });
+
     observer.observe(root, {
       childList: true,
       subtree: true,
       characterData: true,
       attributes: true,
     });
+
     return () => {
       observer.disconnect();
       cancelAnimationFrame(frame);
@@ -69,12 +78,16 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
   useEffect(() => {
     CSS.highlights.set("find", new Highlight(...matches));
     const range = matches[current];
+
     if (range) {
       CSS.highlights.set("find-active", new Highlight(range));
+
       if (shouldReveal.current)
         range.startContainer.parentElement?.scrollIntoView({ block: "center" });
     }
+
     shouldReveal.current = false;
+
     return () => {
       CSS.highlights.delete("find");
       CSS.highlights.delete("find-active");
@@ -116,6 +129,7 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
         }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
+
           if (event.key === "Enter") {
             event.preventDefault();
             moveToMatch(event.shiftKey ? -1 : 1);

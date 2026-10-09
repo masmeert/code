@@ -73,6 +73,7 @@ const readClaudeModels = Effect.fn("readClaudeModels")(function* (launch: Harnes
     const starred = rows.find((model) => fallback && model.resolvedModel === fallback);
 
     const models: Array<ModelOption> = [];
+
     // The catalog doesn't carry default efforts; the session reports the one it would apply after each model switch.
     // `getSettings` is untyped in the SDK, so its answer is decoded and failures just leave the default unknown.
     for (const model of rows) {
@@ -92,6 +93,7 @@ const readClaudeModels = Effect.fn("readClaudeModels")(function* (launch: Harnes
         )
         .then((settings) => settings?.applied?.effort)
         .catch(() => undefined);
+
       const levels = model.supportedEffortLevels ?? [];
       models.push({
         id: model.value,
@@ -107,6 +109,7 @@ const readClaudeModels = Effect.fn("readClaudeModels")(function* (launch: Harnes
         fast: model.supportsFastMode || undefined,
       });
     }
+
     return models;
   });
 }, Effect.scoped);
@@ -119,17 +122,20 @@ const ClaudeAuthStatus = Schema.Struct({
 
 const probeClaude = Effect.fn("probeClaude")(function* (launch: HarnessLaunch) {
   const version = yield* readVersion("claude", launch);
+
   // Signed out, it exits non-zero with the status still on stdout.
   const { stdout } = yield* tryProviderPromise("claude", () =>
     exec(launch.bin, ["auth", "status"], { env: launch.env }).catch((error) => ({
       stdout: String(error.stdout ?? "{}"),
     })),
   );
+
   const status = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ClaudeAuthStatus))(
     stdout || "{}",
   ).pipe(
     Effect.mapError((error) => new ProviderError({ provider: "claude", message: error.message })),
   );
+
   const linked = status.loggedIn === true;
 
   return {
@@ -162,7 +168,9 @@ const probeCodex = Effect.fn("probeCodex")(function* (launch: HarnessLaunch) {
         ),
       }),
     );
+
     const linked = account !== null;
+
     const models: Array<ModelOption> = linked
       ? (
           await rpc.request(
@@ -215,11 +223,13 @@ const probeCodex = Effect.fn("probeCodex")(function* (launch: HarnessLaunch) {
 
 const probeCursor = Effect.fn("probeCursor")(function* (launch: HarnessLaunch) {
   const version = yield* readVersion("cursor", launch);
+
   const { stdout } = yield* tryProviderPromise("cursor", () =>
     exec(launch.bin, ["status"], { env: launch.env }).catch((error) => ({
       stdout: String(error.stdout ?? ""),
     })),
   );
+
   const account = stdout.match(new RegExp(String.raw`Logged in as ([^\s\u001b]+)`))?.[1] ?? null;
 
   return {
@@ -267,11 +277,13 @@ const ClaudeUsage = Schema.Struct({
 /** The plan's windows as `/usage` shows them; none for API-key logins. Decoded, since the SDK marks this call experimental. */
 const readClaudeLimits = Effect.fn("readClaudeLimits")(function* (launch: HarnessLaunch) {
   const session = yield* acquireClaudeQuery(() => startPromptlessQuery(launch));
+
   const { rate_limits: limits } = yield* tryProviderPromise("claude", () =>
     session
       .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
       .then(Schema.decodeUnknownPromise(ClaudeUsage)),
   );
+
   if (!limits) return [];
 
   return (
@@ -307,13 +319,17 @@ const CodexWindow = Schema.NullOr(
 
 function formatCodexWindowLabel(minutes: number | null) {
   if (minutes === null) return "Usage limit";
+
   if (minutes === 7 * 24 * 60) return "Weekly limit";
+
   if (minutes % (24 * 60) === 0) return `${minutes / (24 * 60)}-day limit`;
+
   return `${Math.round(minutes / 60)}-hour limit`;
 }
 
 const readCodexLimits = Effect.fn("readCodexLimits")(function* (launch: HarnessLaunch) {
   const rpc = yield* acquireCodexConnection(launch, undefined);
+
   const { rateLimits } = yield* tryProviderPromise("codex", () =>
     rpc.request(
       "account/rateLimits/read",
@@ -384,6 +400,7 @@ const make = Effect.gen(function* () {
 
   const resolveLaunch = Effect.fn("ProviderRegistry.resolveLaunch")(function* (kind: ProviderKind) {
     const settings = yield* settingsStore.get;
+
     return yield* resolveHarnessLaunch(kind, settings.providers[kind]);
   });
 
@@ -402,6 +419,7 @@ const make = Effect.gen(function* () {
   // than "not installed", which hid every model picker and disabled sending on each launch.
   const lastChecked = yield* openJsonFile("providers.json", Schema.Array(ProviderStatus), []);
   const checked = yield* lastChecked.get;
+
   let providers = ProviderKind.literals.map(
     (kind) =>
       checked.find((provider) => provider.kind === kind) ?? {
@@ -409,6 +427,7 @@ const make = Effect.gen(function* () {
         checking: true,
       },
   );
+
   let listener: ProviderListener = { onProviders: () => {}, onFlow: () => {} };
   /** In-flight sign-in per harness: starting another or cancelling interrupts it, closing what it opened. */
   const linkFlows = yield* FiberMap.make<ProviderKind>();
@@ -459,6 +478,7 @@ const make = Effect.gen(function* () {
   ) {
     const launch = yield* resolveLaunch(kind);
     const exited = yield* Deferred.make<number | null>();
+
     const child = yield* Effect.acquireRelease(
       Effect.try({
         try: () => {
@@ -466,7 +486,9 @@ const make = Effect.gen(function* () {
             env: launch.env,
             stdio: ["pipe", "pipe", "pipe"],
           });
+
           spawned.on("exit", (code) => Deferred.doneUnsafe(exited, Effect.succeed(code)));
+
           return spawned;
         },
         catch: (error) => new ProviderError({ provider: kind, message: getErrorMessage(error) }),
@@ -477,16 +499,19 @@ const make = Effect.gen(function* () {
           child.kill();
         }),
     );
+
     // Nothing to type in: the CLI reads end-of-input, as it would from /dev/null.
     if (stage === "browser") child.stdin.end();
     else codeInputs.set(kind, child.stdin);
 
     let output = "";
     let hasAnnouncedUrl = false;
+
     function onData(chunk: Buffer) {
       output += chunk.toString();
       // Claude's CLI prints the URL wrapped in an OSC-8 hyperlink.
       const url = output.match(new RegExp(String.raw`https://[^\s\u0007\u001b]+`))?.[0];
+
       if (url && !hasAnnouncedUrl) {
         hasAnnouncedUrl = true;
         reportLinkFlow(kind, stage, url);
@@ -497,6 +522,7 @@ const make = Effect.gen(function* () {
     child.stderr.on("data", onData);
 
     const code = yield* Deferred.await(exited);
+
     return code === 0 ? null : getFirstLine(output.slice(-500)) || `exited with ${code}`;
   });
 
@@ -504,6 +530,7 @@ const make = Effect.gen(function* () {
   const linkCodex = Effect.fn("ProviderRegistry.linkCodex")(function* () {
     const launch = yield* resolveLaunch("codex");
     const completed = yield* Deferred.make<string | null>();
+
     const rpc = yield* acquireCodexConnection(launch, undefined, {
       onNotification: (notification) => {
         if (!CodexNotification.guards["account/login/completed"](notification)) return;

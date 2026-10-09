@@ -46,7 +46,9 @@ interface Row {
 }
 
 const MAX_THREADS = 8;
+
 const SEARCH_DELAY_MS = 150;
+
 const NO_HITS: ReadonlyArray<SearchHit> = [];
 
 /** A search snippet with the matched words highlighted (the daemon wraps them in U+E000 / U+E001). */
@@ -56,6 +58,7 @@ function Snippet({ text }: { text: string }) {
       {text.split("").map((part, index) => {
         if (index === 0) return <Fragment key={index}>{part}</Fragment>;
         const [match, rest] = part.split("");
+
         return (
           <Fragment key={index}>
             <mark className="rounded-sm bg-brand/15 text-foreground">{match}</mark>
@@ -110,10 +113,12 @@ function Palette(props: PaletteProps) {
     if (!messageQuery) return setHits(NO_HITS);
 
     let isCancelled = false;
+
     const timer = setTimeout(
       () => void searchMessages(messageQuery).then((found) => !isCancelled && setHits(found)),
       SEARCH_DELAY_MS,
     );
+
     return () => {
       isCancelled = true;
       clearTimeout(timer);
@@ -196,6 +201,7 @@ function Palette(props: PaletteProps) {
 
   // Hits from an older query stay up until the new ones land, but not once there's no search at all.
   const shownHits = messageQuery ? hits : NO_HITS;
+
   const messageRows = useMemo(
     (): ReadonlyArray<Row> =>
       shownHits.map((hit) => ({
@@ -230,6 +236,7 @@ function Palette(props: PaletteProps) {
 
   useEffect(() => {
     const container = list.current;
+
     if (!container) return;
 
     // The first row brings its section header into view too.

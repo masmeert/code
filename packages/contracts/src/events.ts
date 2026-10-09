@@ -281,6 +281,7 @@ export const RuntimeEvent = Schema.TaggedUnion({
     deviceId: Schema.NullOr(Schema.String),
   },
 });
+
 export type RuntimeEvent = typeof RuntimeEvent.Type;
 
 /** A stored event with its id: ids only grow, so they work as a resume cursor across restarts. */
@@ -288,6 +289,7 @@ export const StoredEvent = Schema.Struct({
   id: Schema.Number,
   event: RuntimeEvent,
 });
+
 export type StoredEvent = typeof StoredEvent.Type;
 
 const TRANSCRIPT_TAGS = [

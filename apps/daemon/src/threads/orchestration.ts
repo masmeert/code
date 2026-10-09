@@ -52,8 +52,10 @@ export function createOrchestration({
   function readLastTurn(threadId: string) {
     let answer: string | null = null;
     let error: string | null = null;
+
     for (const { event } of store.readTurns(threadId, 1).events) {
       if (RuntimeEvent.guards["assistant.completed"](event)) answer = event.text;
+
       if (RuntimeEvent.guards.error(event)) error = event.message;
     }
 
@@ -87,6 +89,7 @@ export function createOrchestration({
   /** Waits for the thread's turn to end, up to `timeoutMs`. */
   const waitForTurn = Effect.fn("waitForTurn")(function* (entry: ThreadEntry, timeoutMs: number) {
     const deadline = Date.now() + timeoutMs;
+
     // ponytail: polls the thread's status; a per-thread signal if many agents wait at once.
     while (entry.isSettingUp || isTurnActive(entry.info.status)) {
       if (Date.now() >= deadline) return { ...summarizeThread(entry), timedOut: true };
@@ -103,6 +106,7 @@ export function createOrchestration({
     const caller = yield* getEntry(callerId);
     const id = input.requestId ? deriveRequestUuid(callerId, input.requestId) : crypto.randomUUID();
     let entry = threads.get(id);
+
     if (!entry) {
       const permission = yield* checkPermissionCeiling(caller, input.permission);
       const provider = input.provider ?? caller.info.provider;
@@ -111,10 +115,13 @@ export function createOrchestration({
       const project = (yield* projectsStore.list).find(
         (candidate) => candidate.id === caller.info.projectId,
       );
+
       const title = deriveTitle(input.prompt, caller.info.title);
+
       const cwd = input.worktree
         ? yield* createWorktree(project?.path ?? caller.info.cwd, title, id)
         : caller.info.cwd;
+
       entry = yield* openThread(
         buildThreadInfo({
           id,
@@ -136,6 +143,7 @@ export function createOrchestration({
         input.prompt,
         null,
       );
+
       if (input.worktree) yield* setUpWorktree(entry, project?.path ?? caller.info.cwd);
 
       publish(
@@ -161,17 +169,20 @@ export function createOrchestration({
   ) {
     const caller = yield* getEntry(callerId);
     const target = yield* getTargetEntry(input.threadId);
+
     if (target === caller)
       return yield* new CommandError({
         message: "That's your own thread; reply in your turn instead.",
       });
 
     const ceiling = caller.permission ?? "ask";
+
     // The target's own level, unless that's more than the caller may give.
     const fallback =
       target.permission && getPermissionRank(target.permission) < getPermissionRank(ceiling)
         ? target.permission
         : ceiling;
+
     const permission = yield* checkPermissionCeiling(caller, input.permission ?? fallback);
     yield* send(
       target,

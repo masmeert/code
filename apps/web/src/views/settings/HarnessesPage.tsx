@@ -63,6 +63,7 @@ export function HarnessesPage() {
           <TabsList>
             {ProviderKind.literals.map((entry) => {
               const Logo = PROVIDER_LOGO[entry];
+
               return (
                 <TabsTrigger key={entry} value={entry}>
                   <span className="flex items-center gap-1.5">
@@ -128,6 +129,7 @@ function LocalHarnessSettings({
             <div role="radiogroup" aria-label="Color" className="flex gap-1">
               {HarnessColor.literals.map((color) => {
                 const isSelected = (harness.color ?? "brand") === color;
+
                 return (
                   <button
                     key={color}
@@ -196,14 +198,18 @@ function LocalHarnessSettings({
 
 function VariablesField({ provider }: { provider: ProviderKind }) {
   const env = useStore((state) => state.settings.providers[provider].env);
+
   const saved = Object.entries(env ?? {})
     .map(([key, value]) => `${key}=${value}`)
     .join("\n");
+
   const [draft, setDraft] = useState(saved);
+
   const lines = draft
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+
   const invalidLine = draft
     .split("\n")
     .findIndex((line) => line.trim() && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(line.trim()));
@@ -258,6 +264,7 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
 
   function moveModel(index: number, offset: number) {
     const target = index + offset;
+
     if (target < 0 || target >= models.length) return;
     const ids = models.map((model) => model.id);
     [ids[index], ids[target]] = [ids[target], ids[index]];
@@ -291,6 +298,7 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
           {models.map((model, index) => {
             const isHidden = hidden.includes(model.id);
             const isFavorite = favorites.includes(model.id);
+
             return (
               <div
                 key={model.id}

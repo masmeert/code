@@ -28,6 +28,7 @@ export function BrowserHost() {
     () =>
       window.desktop?.onBrowserEvent((event) => {
         const owner = findTabForWebContents(event.webContentsId);
+
         if (!owner) return;
         DesktopBrowserEvent.match(event, {
           "open-tab": ({ url }) => openTab(owner.threadId, url),
@@ -48,7 +49,9 @@ export function BrowserHost() {
     alive.flatMap(({ threadId, tabId }) => {
       const tab = browsers[threadId]?.tabs.find((candidate) => candidate.id === tabId);
       const thread = threads[threadId];
+
       if (!tab?.url || !thread) return [];
+
       // Shelved and archived threads' tabs unload unless on screen; showing them again reloads their URL.
       if (
         (thread.shelved || thread.archivedAt !== null) &&
@@ -56,6 +59,7 @@ export function BrowserHost() {
         !activity[tabId]?.automating
       )
         return [];
+
       return [
         <HostedTab
           key={tabId}
@@ -155,8 +159,10 @@ function HostedTab({
 
     // SAFETY: Electron dispatches each of these events with the WebviewEvent fields its handler reads.
     const listeners = Object.entries(handlers) as Array<[string, EventListener]>;
+
     for (const [name, listener] of listeners) element.addEventListener(name, listener);
     const unregister = registerWebview(tab.id, element);
+
     return () => {
       for (const [name, listener] of listeners) element.removeEventListener(name, listener);
       unregister();

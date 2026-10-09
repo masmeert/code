@@ -85,6 +85,7 @@ export function buildThreadInfo(
   >,
 ): ThreadInfo {
   const now = Date.now();
+
   return {
     ...fields,
     status: "idle",
@@ -107,6 +108,7 @@ export function isShelved(
   settings: Settings,
 ) {
   if (isTurnActive(info.status)) return false;
+
   if (shelveOverride !== null) return shelveOverride === "shelved";
 
   return (
@@ -154,6 +156,7 @@ export function deriveRequestUuid(caller: string, requestId: string) {
 /** A thread is named after its first message, like a chat title. */
 export function deriveTitle(text: string, fallback: string) {
   const line = text.trim().split("\n")[0]!.trim();
+
   if (!line) return fallback;
 
   return line.length > 80 ? `${line.slice(0, 79).trimEnd()}…` : line;

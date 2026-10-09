@@ -13,6 +13,7 @@ const ThreadListView = Schema.Struct({
   groupBy: Schema.Literals(["state", "project", "none"]),
   sortBy: Schema.Literals(["updated", "created"]),
 });
+
 export type ThreadListView = typeof ThreadListView.Type;
 
 export const DEFAULT_THREAD_LIST_VIEW: ThreadListView = {
@@ -28,11 +29,13 @@ const STORAGE_KEY = "masscode.sidebar.view";
 
 export function useThreadListView() {
   const projects = useStore((state) => state.projects);
+
   // Views saved before a field existed lack it.
   const [stored, setStored] = useState<ThreadListView>(() => ({
     ...DEFAULT_THREAD_LIST_VIEW,
     ...readStored(STORAGE_KEY, ThreadListView.mapFields(Struct.map(Schema.optionalKey)), {}),
   }));
+
   const view = useMemo(
     () => ({
       ...stored,

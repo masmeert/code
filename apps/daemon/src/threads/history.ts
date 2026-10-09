@@ -44,11 +44,14 @@ export function createHistory({
   ) {
     const entry = yield* getEntry(command.threadId);
     const { id: threadId, cwd, provider } = entry.info;
+
     if (isBusy(entry))
       return yield* new CommandError({ message: "Stop the agent before rewinding" });
 
     const found = store.findUserMessage(threadId, command.messageId);
+
     if (!found) return yield* new CommandError({ message: "That message is gone" });
+
     if (found.event.steer)
       return yield* new CommandError({ message: "A message sent mid-turn can't be rewound to" });
 
@@ -57,7 +60,9 @@ export function createHistory({
         entry.info,
         [...threads.values()].map((other) => other.info),
       );
+
       if (blocker) return yield* new CommandError({ message: blocker });
+
       if (!(yield* Effect.promise(() => hasCheckpoint(cwd, threadId, command.messageId)))) {
         return yield* new CommandError({
           message: "There's no snapshot of the files from that point",
@@ -68,6 +73,7 @@ export function createHistory({
     yield* dropSession(entry, null);
 
     const resumeToken = entry.resumeTokens[provider];
+
     if (hasSwitchedHarness(entry)) {
       // Each harness's own conversation holds only its turns, so none can be cut back to the
       // same point: the next message starts this one afresh, handed what's left of the thread.
@@ -81,6 +87,7 @@ export function createHistory({
         ...getForkPoint(found),
         messageId: command.messageId,
       });
+
       setResumeTokens(entry, token ? { [provider]: token } : {});
     }
 
@@ -91,11 +98,13 @@ export function createHistory({
     const error = command.restoreFiles
       ? yield* Effect.promise(() => restoreCheckpoint(cwd, threadId, command.messageId))
       : null;
+
     void deleteCheckpoints(
       cwd,
       threadId,
       found.from.map((message) => message.messageId),
     );
+
     if (error)
       return yield* new CommandError({
         message: `Rewound the conversation, but couldn't restore the files: ${error}`,
@@ -111,13 +120,16 @@ export function createHistory({
   ) {
     const source = yield* getEntry(command.threadId);
     const { cwd, provider } = source.info;
+
     if (isBusy(source))
       return yield* new CommandError({ message: "Stop the agent before forking" });
 
     const cut = store.findTurnsAfter(source.info.id, command.messageId);
+
     if (!cut) return yield* new CommandError({ message: "That message is gone" });
 
     const sourceToken = source.resumeTokens[provider];
+
     // A thread that switched harness forks like a rewind: afresh, handed the conversation.
     const resumeToken =
       sourceToken && !hasSwitchedHarness(source)
@@ -157,6 +169,7 @@ export function createHistory({
         fromTitle: source.info.title,
       }),
     );
+
     if (resumeToken) store.setResumeTokens(info.id, { [provider]: resumeToken });
     store.setCoverage(info.id, coverage);
 

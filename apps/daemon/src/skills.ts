@@ -30,9 +30,11 @@ export function findSkillMentions(
 ): Array<SkillMention> {
   return [...text.matchAll(MENTION)].flatMap((match) => {
     const skill = skills.find((candidate) => candidate.name === match[2]);
+
     if (!skill) return [];
 
     const start = match.index + match[1]!.length;
+
     return [{ skill, start, end: match.index + match[0].length }];
   });
 }
@@ -71,6 +73,7 @@ export const createSkillCatalog = Effect.fn("createSkillCatalog")(function* (opt
         const previous = listings.get(key);
         const listing = { ...result, listedAtMs: Date.now() };
         listings.set(key, listing);
+
         if (
           !previous ||
           previous.error !== listing.error ||
@@ -87,6 +90,7 @@ export const createSkillCatalog = Effect.fn("createSkillCatalog")(function* (opt
   function refreshListing(provider: ProviderKind, cwd: string) {
     const key = `${provider}:${cwd}`;
     const inFlight = reading.get(key);
+
     if (inFlight) return inFlight;
 
     const read = Deferred.makeUnsafe<SkillListing>();
@@ -97,6 +101,7 @@ export const createSkillCatalog = Effect.fn("createSkillCatalog")(function* (opt
         Deferred.into(read),
       ),
     );
+
     return read;
   }
 
@@ -104,6 +109,7 @@ export const createSkillCatalog = Effect.fn("createSkillCatalog")(function* (opt
   function loadListing(provider: ProviderKind, cwd: string) {
     return Effect.suspend(() => {
       const listing = listings.get(`${provider}:${cwd}`);
+
       return listing ? Effect.succeed(listing) : Deferred.await(refreshListing(provider, cwd));
     });
   }
@@ -112,7 +118,9 @@ export const createSkillCatalog = Effect.fn("createSkillCatalog")(function* (opt
     /** Answers from the last listing at once, then refreshes it if it's old; a new listing is announced when it differs. */
     requestListing(provider: ProviderKind, cwd: string) {
       const listing = listings.get(`${provider}:${cwd}`);
+
       if (listing) options.onListed(provider, cwd, listing);
+
       if (!listing || Date.now() - listing.listedAtMs > FRESH_MS) refreshListing(provider, cwd);
     },
     /** The skills `text` mentions, from the listing the menu showed. */
@@ -124,11 +132,13 @@ export const createSkillCatalog = Effect.fn("createSkillCatalog")(function* (opt
       if (!/\$[A-Za-z0-9]/.test(text)) return [];
 
       const { skills } = yield* loadListing(provider, cwd);
+
       return [...new Set(findSkillMentions(text, skills).map((mention) => mention.skill))];
     }),
     /** Names of the skills the menu shows, for keeping them out of the command menu. */
     loadSkillNames: Effect.fn("loadSkillNames")(function* (provider: ProviderKind, cwd: string) {
       const { skills } = yield* loadListing(provider, cwd);
+
       return new Set(skills.map((skill) => skill.name));
     }),
   };

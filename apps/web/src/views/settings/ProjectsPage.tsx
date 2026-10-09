@@ -68,6 +68,7 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
     let isCancelled = false;
     void readProjectConfig(host, path).then((frame) => {
       if (isCancelled) return;
+
       if (!frame)
         return setError(
           "MassCode's daemon didn't answer, so the project's settings couldn't be read. Check it's running and open this page again.",
@@ -100,6 +101,7 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
     savedSetup.current = next.setup;
     setIsSaving(true);
     const setup = next.setup.trim() ? next.setup.trimEnd() : "";
+
     const worktree: NonNullable<ProjectConfig["worktree"]> = {
       ...(next.startIn !== "settings" && { default: next.startIn === "worktree" }),
       ...(setup && { setup }),

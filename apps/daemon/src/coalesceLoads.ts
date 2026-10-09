@@ -19,9 +19,11 @@ export const coalesceLoads = Effect.fn("coalesceLoads")(function* (
   return (key: string) =>
     Effect.suspend(() => {
       const waiting = queued.get(key);
+
       if (waiting) return Deferred.await(waiting);
 
       let lock = locks.get(key);
+
       if (!lock) {
         lock = Semaphore.makeUnsafe(1);
         locks.set(key, lock);
@@ -34,11 +36,13 @@ export const coalesceLoads = Effect.fn("coalesceLoads")(function* (
           .withPermit(
             Effect.suspend(() => {
               queued.delete(key);
+
               return load(key);
             }),
           )
           .pipe(Deferred.into(run)),
       );
+
       return Deferred.await(run);
     });
 });

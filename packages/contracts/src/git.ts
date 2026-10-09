@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 export const MergeMethod = Schema.Literals(["merge", "squash", "rebase"]);
+
 export type MergeMethod = typeof MergeMethod.Type;
 
 /**
@@ -12,6 +13,7 @@ export function parseRepository(url: string) {
   const match = url
     .trim()
     .match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?[^/:]+(?::\d+)?[/:](.+?)(?:\.git)?\/*$/i);
+
   return match?.[1] ?? url.trim();
 }
 
@@ -23,10 +25,12 @@ export const GitAction = Schema.Literals([
   "merge",
   "merge-into-base",
 ]);
+
 export type GitAction = typeof GitAction.Type;
 
 /** Hosts we can open pull requests on, through their CLIs (gh, glab). */
 export const SourceControlKind = Schema.Literals(["github", "gitlab"]);
+
 export type SourceControlKind = typeof SourceControlKind.Type;
 
 /** What the daemon knows about one host's CLI on this machine. */
@@ -40,6 +44,7 @@ export const SourceControlStatus = Schema.Struct({
   /** Why it can't be used yet, and how to fix it. */
   detail: Schema.NullOr(Schema.String),
 });
+
 export type SourceControlStatus = typeof SourceControlStatus.Type;
 
 /** The pull request (merge request on GitLab) for a branch. */
@@ -50,6 +55,7 @@ export const PullRequest = Schema.Struct({
   state: Schema.Literals(["open", "draft", "merged", "closed"]),
   base: Schema.String,
 });
+
 export type PullRequest = typeof PullRequest.Type;
 
 /** In a linked worktree, the local branch its branch merges into. */
@@ -86,4 +92,5 @@ export const RepoStatus = Schema.Struct({
   /** Null outside a linked worktree. */
   base: Schema.NullOr(BaseBranch),
 });
+
 export type RepoStatus = typeof RepoStatus.Type;

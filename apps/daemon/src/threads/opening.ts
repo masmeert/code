@@ -57,6 +57,7 @@ export function createThreadOpener({
     threadId: string,
   ) {
     const root = yield* Effect.promise(() => readRepoRoot(projectPath));
+
     if (!root)
       return yield* new CommandError({
         message: "New worktrees need the project to be a git repo",
@@ -69,11 +70,14 @@ export function createThreadOpener({
         .replace(/^-|-$/g, "")
         .slice(0, 40) || "thread"
     }-${threadId.slice(0, 6)}`;
+
     const path = join(WORKTREES_DIR, basename(root), slug);
     const { worktreeFromOrigin } = yield* settingsStore.get;
+
     const error = yield* Effect.promise(() =>
       addWorktree(projectPath, path, `masscode/${slug}`, worktreeFromOrigin === true),
     );
+
     if (error) return yield* new CommandError({ message: `Couldn't create a worktree: ${error}` });
 
     return join(path, relative(root, projectPath));
@@ -89,6 +93,7 @@ export function createThreadOpener({
   ) {
     const threadId = entry.info.id;
     const config = yield* Effect.promise(() => readProjectConfig(projectPath));
+
     if (config instanceof Error)
       return publish(
         RuntimeEvent.cases.error.make({
@@ -98,6 +103,7 @@ export function createThreadOpener({
       );
 
     const command = config.worktree?.setup?.trim();
+
     if (!command) return;
 
     const setupError = terminals.run(
@@ -116,14 +122,17 @@ export function createThreadOpener({
             stopped: wasStopped,
           }),
         );
+
         if (!entry.isSettingUp) return;
 
         entry.isSettingUp = false;
         const [next] = entry.info.queue ?? [];
+
         if (next && entry.info.archivedAt === null) sendQueued(entry, next);
       },
       { MASSCODE_PROJECT_ROOT: projectPath },
     );
+
     if (setupError)
       return publish(
         RuntimeEvent.cases.error.make({
@@ -169,10 +178,12 @@ export function createThreadOpener({
     command: Extract<ClientCommand, { _tag: "thread.create" }>,
   ) {
     const { project, isNew } = yield* projectsStore.ensure(command.path);
+
     if (isNew) publish(RuntimeEvent.cases["project.added"].make({ project }));
 
     const id = crypto.randomUUID();
     const title = deriveTitle(command.text, project.name);
+
     const cwd =
       command.workspace === "worktree"
         ? yield* createWorktree(project.path, title, id)
@@ -193,10 +204,12 @@ export function createThreadOpener({
       command.text,
       command.requestId,
     );
+
     if (command.workspace === "worktree") yield* setUpWorktree(entry, project.path);
 
     // New chats preselect whichever harness was used last.
     const settings = yield* settingsStore.get;
+
     if (settings.lastProvider !== command.provider) {
       yield* saveSettings({ ...settings, lastProvider: command.provider }).pipe(
         reportErrorsIn(null),

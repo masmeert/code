@@ -19,6 +19,7 @@ const BrowserTab = Schema.Struct({
   url: Schema.String,
   title: Schema.String,
 });
+
 export type BrowserTab = typeof BrowserTab.Type;
 
 const ThreadBrowser = Schema.Struct({
@@ -26,6 +27,7 @@ const ThreadBrowser = Schema.Struct({
   tabs: Schema.Array(BrowserTab),
   activeTabId: Schema.NullOr(Schema.String),
 });
+
 export type ThreadBrowser = typeof ThreadBrowser.Type;
 
 const ThreadBrowsers = Schema.Record(Schema.String, ThreadBrowser);
@@ -61,13 +63,17 @@ let state: BrowserState = {
   alive: [],
   surface: null,
 };
+
 const listeners = new Set<() => void>();
+
 const webviews = new Map<string, Webview>();
+
 const addressInputs = new Map<string, HTMLInputElement>();
 
 function setState(next: BrowserState) {
   if (next.threads !== state.threads) writeStored(STORAGE_KEY, ThreadBrowsers, next.threads);
   state = next;
+
   for (const listener of listeners) listener();
 }
 
@@ -75,6 +81,7 @@ export function useBrowser<A>(select: (state: BrowserState) => A): A {
   return useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
+
       return () => listeners.delete(listener);
     },
     () => select(state),
@@ -102,13 +109,16 @@ export function isLocalUrl(url: string) {
 
 export function normalizeUrl(input: string): string | null {
   const trimmed = input.trim();
+
   if (!trimmed || /\s/.test(trimmed)) return null;
 
   const candidate = trimmed.includes("://")
     ? trimmed
     : `${isLocalUrl(`http://${trimmed}`) ? "http" : "https"}://${trimmed}`;
+
   try {
     const url = new URL(candidate);
+
     return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
   } catch {
     return null;
@@ -117,6 +127,7 @@ export function normalizeUrl(input: string): string | null {
 
 export function toggleBrowser(threadId: string) {
   const browser = getThreadBrowser(threadId);
+
   if (!browser.open && browser.tabs.length === 0) return openTab(threadId);
   updateThread(threadId, (current) => ({ ...current, open: !current.open }));
 }
@@ -133,6 +144,7 @@ export function openTab(threadId: string, url = "") {
 /** Shows `url` in the thread's browser: in the tab already on it, or a new one. */
 export function openPreview(threadId: string, url: string) {
   const tab = getThreadBrowser(threadId).tabs.find((candidate) => candidate.url === url);
+
   if (!tab) return openTab(threadId, url);
   updateThread(threadId, (current) => ({ ...current, open: true, activeTabId: tab.id }));
 }
@@ -196,12 +208,14 @@ export function updateActivity(tabId: string, patch: Partial<TabActivity>) {
 
 export function navigate(threadId: string, tabId: string, input: string) {
   const url = normalizeUrl(input);
+
   if (!url) return false;
   webviews
     .get(tabId)
     ?.loadURL(url)
     .catch(() => {});
   updateTab(threadId, tabId, { url });
+
   return true;
 }
 
@@ -232,6 +246,7 @@ export function showTab(threadId: string, tabId: string) {
 
 export function setSurface(threadId: string, rect: SurfaceRect) {
   const current = state.surface;
+
   if (
     current?.threadId === threadId &&
     current.rect.x === rect.x &&
@@ -250,6 +265,7 @@ export function clearSurface(threadId: string) {
 
 export function registerWebview(tabId: string, webview: Webview) {
   webviews.set(tabId, webview);
+
   return () => {
     if (webviews.get(tabId) === webview) webviews.delete(tabId);
   };
@@ -257,6 +273,7 @@ export function registerWebview(tabId: string, webview: Webview) {
 
 export function registerAddressInput(threadId: string, input: HTMLInputElement) {
   addressInputs.set(threadId, input);
+
   return () => {
     if (addressInputs.get(threadId) === input) addressInputs.delete(threadId);
   };
@@ -277,24 +294,30 @@ export function findTabForWebContents(webContentsId: number) {
     const threadId = Object.keys(state.threads).find((id) =>
       state.threads[id].tabs.some((tab) => tab.id === tabId),
     );
+
     return threadId ? { threadId, tabId } : null;
   }
+
   return null;
 }
 
 function findActiveTab(threadId: string) {
   const browser = getThreadBrowser(threadId);
+
   return browser.tabs.find((tab) => tab.id === browser.activeTabId);
 }
 
 async function waitForWebview(tabId: string) {
   for (let attempt = 0; attempt < 100; attempt++) {
     const webview = webviews.get(tabId);
+
     try {
       if (webview && webview.getWebContentsId() > 0) return webview;
     } catch {}
+
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+
   throw new Error("The browser tab didn't start");
 }
 
@@ -303,17 +326,21 @@ export async function performBrowserAction(
   action: BrowserAction,
 ): Promise<BrowserResult> {
   const desktop = window.desktop;
+
   if (!desktop) throw new Error("The browser is only available in the MassCode desktop app");
 
   const url = BrowserAction.guards.navigate(action) ? normalizeUrl(action.url) : null;
+
   if (BrowserAction.guards.navigate(action) && !url)
     throw new Error(`Not a web address: ${action.url}`);
   const current = findActiveTab(threadId);
+
   if (!current?.url && !url)
     throw new Error("No page is open in the browser; navigate to one first");
 
   if (!current) openTab(threadId, url!);
   else if (!current.url) updateTab(threadId, current.id, { url: url! });
+
   if (!getThreadBrowser(threadId).open)
     updateThread(threadId, (browser) => ({ ...browser, open: true }));
 
@@ -323,6 +350,7 @@ export async function performBrowserAction(
 
   try {
     const webview = await waitForWebview(tab.id);
+
     return await desktop.automateBrowser(
       webview.getWebContentsId(),
       !current?.url

@@ -43,6 +43,7 @@ function ProjectList({
   const listId = useId();
 
   const copies = new Map<string, Array<Project>>();
+
   for (const project of projects) {
     copies.set(getProjectKey(project), [...(copies.get(getProjectKey(project)) ?? []), project]);
   }
@@ -70,6 +71,7 @@ function ProjectList({
 
   const isOnAnotherMachine = projects.some((project) => projectHosts[project.id]);
   const needle = query.trim().toLowerCase();
+
   const rows = [
     ...[...copies]
       .map(([key, projectCopies]) => ({
@@ -85,6 +87,7 @@ function ProjectList({
       .map(({ key, projectCopies }) => {
         const shown = getPreferredCopy(key);
         const path = shown.path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
+
         return {
           id: key,
           project: shown,
@@ -100,6 +103,7 @@ function ProjectList({
       ),
     { id: ADD_PROJECT, project: null, where: "" },
   ];
+
   const { activeIndex, moveActive } = useRowCursor(rows, needle);
 
   useEffect(() => {
@@ -113,6 +117,7 @@ function ProjectList({
 
   function pickRow(row: (typeof rows)[number]) {
     setQuery("");
+
     if (row.project) {
       onPick(row.project.path);
       focusComposer();
@@ -135,6 +140,7 @@ function ProjectList({
         onBlur={() => setIsSearching(false)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
+
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
             moveActive(event.key === "ArrowDown" ? 1 : -1);
@@ -208,13 +214,16 @@ function CloneCopy({
   onCloned: (path: string) => void;
 }) {
   const addProjectFolder = useStore((state) => state.settings.addProjectFolder);
+
   const hostProjectFolder = useStore((state) =>
     machine === null ? undefined : state.settings.hostProjectFolders?.[machine],
   );
+
   const [isCloning, setIsCloning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const where = machine ?? "this Mac";
+
   // This Mac's clone folder is a Mac path unless it's under ~, which means the host's home there.
   const parent =
     machine === null
@@ -241,6 +250,7 @@ function CloneCopy({
         onClick={async () => {
           setIsCloning(true);
           setError(null);
+
           const cloned = await cloneProject(
             machine,
             project.remote!,
@@ -249,7 +259,9 @@ function CloneCopy({
             // The same folder name as here, so both copies read the same; a subfolder's repo keeps its own.
             project.folder ? undefined : project.name,
           );
+
           setIsCloning(false);
+
           if (cloned.path) onCloned(cloned.path);
           else setError(cloned.error);
         }}
@@ -306,26 +318,34 @@ export function DraftView({
   const choices = buildModelChoices(providers, settings);
   const saved = settings.newThreadModel;
   const lastModel = findDefaultModel(providers, settings, settings.lastProvider);
+
   const preferred =
     saved && choices.some((option) => option.value === saved)
       ? saved
       : lastModel
         ? encodeChoice(settings.lastProvider, lastModel)
         : undefined;
+
   const [choice, setChoice] = useState<string | undefined>(undefined);
+
   const selected =
     [choice, preferred].find(
       (candidate) => candidate && choices.some((option) => option.value === candidate),
     ) ?? choices[0]?.value;
+
   // Shift-click adds models: the prompt then starts one thread per model, each in its own worktree.
   const [extras, setExtras] = useState<Array<string>>([]);
+
   const extraModels = extras.filter(
     (extra) => extra !== selected && choices.some((option) => option.value === extra),
   );
+
   // Null until picked in the composer: then the project's `masscode.toml` decides, else Settings.
   const [pickedWorkspace, setWorkspace] = useState<"local" | "worktree" | null>(null);
+
   const isWorktreeByDefault = useProjectConfig(host, missingOn ? null : path)?.config.worktree
     ?.default;
+
   const workspace =
     pickedWorkspace ??
     (isWorktreeByDefault === undefined
@@ -333,6 +353,7 @@ export function DraftView({
       : isWorktreeByDefault
         ? "worktree"
         : "local");
+
   const [projectSignal, setProjectSignal] = useState(0);
   const isCheckingProviders = providers.some((provider) => provider.checking);
 
@@ -349,6 +370,7 @@ export function DraftView({
         />
       );
     }
+
     if (choices.length) {
       return (
         <div className="flex w-full flex-col items-center gap-6">
@@ -357,19 +379,26 @@ export function DraftView({
         </div>
       );
     }
+
     if (isCheckingProviders) return "Checking Claude and Codex…";
+
     if (host) return `Link a harness on ${host} in Settings → Harnesses to start.`;
+
     return "Link a harness in Settings to start.";
   }
 
   function getPlaceholder() {
     if (!selected) return isCheckingProviders ? "Checking harnesses…" : "No harness linked";
+
     if (!path) return "Pick a project above to start…";
+
     if (missingOn) {
       return `Clone ${project?.name ?? "the project"} to ${missingOn.machine ?? "this Mac"} to start…`;
     }
+
     if (extraModels.length)
       return `Ask ${extraModels.length + 1} models, each in its own worktree…`;
+
     return `Ask ${formatHarnessLabel(settings, decodeChoice(selected).provider)}…`;
   }
 
@@ -402,6 +431,7 @@ export function DraftView({
                 onChange: (value) => {
                   const machine = toMachine(value);
                   const copy = findCopyOn(machine);
+
                   if (copy) {
                     setMissing(null);
                     onPickProject(copy.path);
@@ -429,6 +459,7 @@ export function DraftView({
         onSubmit={(text, options, how) => {
           if (!selected || !path) return;
           const pickedModels = [selected, ...extraModels];
+
           for (const value of pickedModels) {
             const { provider, model } = decodeChoice(value);
             createThread({

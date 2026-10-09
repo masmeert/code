@@ -47,11 +47,13 @@ export function createSideChats({
     yield* ensureHarnessReady(provider);
 
     const cut = store.findTurnsAfter(threadId, messageId);
+
     if (!cut) return yield* new CommandError({ message: "That reply is gone" });
 
     const settings = yield* settingsStore.get;
     const harness = settings.providers[provider];
     const sourceToken = source.resumeTokens[provider];
+
     // A running turn is still writing the harness's log, and some harnesses can't copy theirs:
     // the agent then starts afresh, handed the transcript instead.
     const resumeToken =
@@ -65,6 +67,7 @@ export function createSideChats({
             })
             .pipe(Effect.orElseSucceed(() => null))
         : null;
+
     const handoff = resumeToken
       ? null
       : buildHandoff({
@@ -78,6 +81,7 @@ export function createSideChats({
 
     const chat: SideChat = { session: null };
     sideChats.set(sideChatId, chat);
+
     const session = yield* ADAPTERS[provider].start({
       threadId: sideChatId,
       cwd: source.home.path,
@@ -95,6 +99,7 @@ export function createSideChats({
         if (RuntimeEvent.guards["approval.requested"](event)) {
           if (chat.session)
             runFork(Effect.ignore(chat.session.respondApproval(event.requestId, "deny")));
+
           return;
         }
 
@@ -107,12 +112,15 @@ export function createSideChats({
       },
       mcpServer: null,
     });
+
     if (sideChats.get(sideChatId) !== chat) {
       yield* session.close;
+
       return null;
     }
 
     chat.session = session;
+
     return { session, handoff: handoff?.text ?? null };
   });
 
@@ -125,6 +133,7 @@ export function createSideChats({
     }: Extract<ClientCommand, { _tag: "sideChat.ask" }>) {
       const source = yield* getEntry(threadId);
       const session = sideChats.get(sideChatId)?.session;
+
       if (sideChats.has(sideChatId) && !session)
         return yield* new CommandError({
           message: "The side chat is still starting. Ask again in a moment.",
@@ -146,6 +155,7 @@ export function createSideChats({
       const started = session
         ? { session, handoff: null }
         : yield* startSideChat(source, messageId, sideChatId);
+
       if (!started)
         return publishSideChat(
           RuntimeEvent.cases["thread.status"].make({ threadId: sideChatId, status: "idle" }),
@@ -180,6 +190,7 @@ export function createSideChats({
   const closeSideChat = Effect.fn("closeSideChat")(function* (sideChatId: string) {
     const chat = sideChats.get(sideChatId);
     sideChats.delete(sideChatId);
+
     if (chat?.session) yield* chat.session.close;
   });
 

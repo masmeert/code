@@ -8,18 +8,23 @@ export async function pickLocalProject() {
   const picked = window.desktop
     ? await window.desktop.pickFolder("Add project folder", getSettings().addProjectFolder)
     : window.prompt("Project folder path");
+
   const path = typeof picked === "string" ? picked.trim() : "";
+
   if (!path) return null;
   addProjectOn(null, path);
+
   return path;
 }
 
 /** The Add Project dialog waiting on an answer, when one is open. */
 let pending: ((path: string | null) => void) | null = null;
+
 const listeners = new Set<() => void>();
 
 function setPending(next: typeof pending) {
   pending = next;
+
   for (const listener of listeners) listener();
 }
 
@@ -27,6 +32,7 @@ export function useAddProjectOpen() {
   return useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
+
       return () => listeners.delete(listener);
     },
     () => pending !== null,
@@ -46,6 +52,7 @@ export function finishAddProject(path: string | null) {
 export function addProject(): Promise<string | null> {
   if (Object.keys(getHosts()).length === 0) return pickLocalProject();
   finishAddProject(null);
+
   return new Promise((resolve) => setPending(resolve));
 }
 

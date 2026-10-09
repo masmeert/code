@@ -325,4 +325,5 @@ export const ClientCommand = Schema.TaggedUnion({
     terminalId: Schema.String,
   },
 });
+
 export type ClientCommand = typeof ClientCommand.Type;

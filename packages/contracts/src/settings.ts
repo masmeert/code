@@ -5,6 +5,7 @@ import { Effort, ProviderKind } from "./providers.ts";
 import { PermissionLevel, Workspace } from "./threads.ts";
 
 export const Theme = Schema.Literals(["system", "light", "dark"]);
+
 export type Theme = typeof Theme.Type;
 
 /** Tint a harness wears in the app; "brand" keeps its own colours. */
@@ -17,10 +18,12 @@ export const HarnessColor = Schema.Literals([
   "violet",
   "pink",
 ]);
+
 export type HarnessColor = typeof HarnessColor.Type;
 
 /** How commit messages and pull requests get written: like the repo's history, as Conventional Commits, or by the user's own rules. */
 export const WritingStyle = Schema.Literals(["repo_conventions", "conventional_commits", "custom"]);
+
 export type WritingStyle = typeof WritingStyle.Type;
 
 export const ProviderSettings = Schema.Struct({
@@ -40,6 +43,7 @@ export const ProviderSettings = Schema.Struct({
   hiddenModels: Schema.optional(Schema.Array(Schema.String)),
   favoriteModels: Schema.optional(Schema.Array(Schema.String)),
 });
+
 export type ProviderSettings = typeof ProviderSettings.Type;
 
 export const Settings = Schema.Struct({
@@ -89,6 +93,7 @@ export const Settings = Schema.Struct({
   /** System notifications when a thread finishes or needs you, while MassCode is in the background. Absent counts as on. */
   notifications: Schema.optional(Schema.Boolean),
 });
+
 export type Settings = typeof Settings.Type;
 
 export const DEFAULT_AUTO_SHELVE_DAYS = 7;

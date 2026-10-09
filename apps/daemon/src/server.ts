@@ -34,6 +34,7 @@ const ALLOWED_ORIGINS = new Set(["app://masscode", "http://localhost:1420"]);
  * we spawn don't inherit it.
  */
 const TOKEN = process.env.MASSCODE_TOKEN || null;
+
 delete process.env.MASSCODE_TOKEN;
 
 /** Browsers can't set headers on a WebSocket, so the token rides in as a subprotocol. */
@@ -44,9 +45,11 @@ function findTokenProtocol(request: Request) {
   if (!TOKEN) return null;
 
   const expected = Buffer.from(TOKEN_PROTOCOL_PREFIX + TOKEN);
+
   const offered = (request.headers.get("sec-websocket-protocol") ?? "")
     .split(",")
     .map((protocol) => protocol.trim());
+
   return (
     offered.find(
       (protocol) =>
@@ -89,6 +92,7 @@ export function serve(port: number) {
       if (socket.readyState !== WebSocket.OPEN) return;
 
       socket.send(JSON.stringify(frame));
+
       if (socket.getBufferedAmount() > MAX_BUFFERED_BYTES)
         socket.close(4000, "Too far behind; resume from your cursor");
     }
@@ -98,6 +102,7 @@ export function serve(port: number) {
         Effect.gen(function* () {
           const { dataId, settings, projects, providers, threads, terminals, live } =
             yield* manager.subscribe;
+
           send(
             socket,
             ServerFrame.cases.shell.make({
@@ -115,8 +120,10 @@ export function serve(port: number) {
             Effect.sync(() => {
               if (isTranscriptEvent(event)) {
                 const since = socket.data.threads.get(event.threadId);
+
                 if (since === undefined || seq <= since) return;
               }
+
               send(socket, ServerFrame.cases.event.make({ id, event }));
             }),
           );
@@ -132,10 +139,12 @@ export function serve(port: number) {
           {
             "thread.subscribe": (command) => {
               const read = manager.readThread(command.threadId, command.after, command.turnLimit);
+
               if (!read) return Effect.void;
 
               socket.data.threads.set(command.threadId, read.seq);
               send(socket, read.frame);
+
               return Effect.void;
             },
             search: (command) => {
@@ -146,6 +155,7 @@ export function serve(port: number) {
                   hits: manager.search(command.query),
                 }),
               );
+
               return Effect.void;
             },
             "folder.list": ({ path, requestId }) =>
@@ -197,6 +207,7 @@ export function serve(port: number) {
                 const { path: parentPath } = yield* Effect.promise(() => listFolders(parent));
                 const cloned = yield* Effect.promise(() => cloneRepository(url, parentPath, name));
                 const path = cloned.path && join(cloned.path, folder ?? "");
+
                 if (path)
                   yield* manager.dispatch(ClientCommand.cases["project.add"].make({ path }));
                 send(
@@ -211,24 +222,29 @@ export function serve(port: number) {
             "sideChat.ask": (command) => {
               socket.data.sideChats.set(command.sideChatId, command.threadId);
               socket.data.threads.set(command.sideChatId, 0);
+
               return manager.dispatch(command);
             },
             "sideChat.close": (command) => {
               socket.data.sideChats.delete(command.sideChatId);
               socket.data.threads.delete(command.sideChatId);
+
               return manager.dispatch(command);
             },
             "thread.unsubscribe": (command) => {
               socket.data.threads.delete(command.threadId);
+
               return Effect.void;
             },
             "thread.loadOlder": (command) => {
               const older = manager.readOlder(command.threadId, command.before, command.turnLimit);
+
               if (older)
                 send(
                   socket,
                   ServerFrame.cases["thread.page"].make({ threadId: command.threadId, ...older }),
                 );
+
               return Effect.void;
             },
             "terminal.open": (command) => {
@@ -241,11 +257,13 @@ export function serve(port: number) {
                   socket.data.viewer,
                   command.input,
                 );
+
               return Effect.void;
             },
             "terminal.detach": (command) => {
               if (socket.data.viewer)
                 manager.terminals.detach(command.threadId, command.terminalId, socket.data.viewer);
+
               return Effect.void;
             },
             "terminal.acknowledge": (command) => {
@@ -256,6 +274,7 @@ export function serve(port: number) {
                   socket.data.viewer,
                   command.characters,
                 );
+
               return Effect.void;
             },
             "browser.host": () => {
@@ -266,6 +285,7 @@ export function serve(port: number) {
                 };
                 manager.browsers.attach(socket.data.browserHost);
               }
+
               return Effect.void;
             },
             "device.list": ({ requestId, install }) =>
@@ -299,6 +319,7 @@ export function serve(port: number) {
                   command.result,
                   command.error,
                 );
+
               return Effect.void;
             },
           },
@@ -314,16 +335,20 @@ export function serve(port: number) {
           port,
           fetch(request, server) {
             const { pathname, searchParams } = new URL(request.url);
+
             if (pathname === "/mcp" || pathname.startsWith("/mcp/"))
               return manager.mcp.handleRequest(request);
+
             if (pathname.startsWith(ASSET_ROUTE_PREFIX))
               return serveAsset(pathname.slice(ASSET_ROUTE_PREFIX.length));
 
             const origin = request.headers.get("origin");
+
             if (!origin || !ALLOWED_ORIGINS.has(origin))
               return new Response("Forbidden origin", { status: 403 });
 
             const protocol = findTokenProtocol(request);
+
             if (TOKEN && !protocol) return new Response("Unauthorized", { status: 401 });
 
             const data: ConnectionData = {
@@ -331,11 +356,14 @@ export function serve(port: number) {
               threads: new Map(),
               sideChats: new Map(),
             };
+
             // The accepted subprotocol must be echoed back, or the browser drops the connection.
             const upgraded = protocol
               ? server.upgrade(request, { data, headers: { "Sec-WebSocket-Protocol": protocol } })
               : server.upgrade(request, { data });
+
             if (upgraded) return undefined;
+
             return new Response("MassCode daemon", { status: 426 });
           },
           websocket: {
@@ -362,8 +390,10 @@ export function serve(port: number) {
             },
             close(socket) {
               if (socket.data.viewer) manager.terminals.detachViewer(socket.data.viewer);
+
               if (socket.data.browserHost) manager.browsers.detach(socket.data.browserHost);
               runFork(FiberMap.remove(streams, socket));
+
               // Uninterruptible, so a server shutting down waits for the agents to close.
               for (const [sideChatId, threadId] of socket.data.sideChats)
                 runFork(
@@ -385,6 +415,7 @@ export function serve(port: number) {
     setPort(server.port!);
 
     const portFile = process.env.MASSCODE_PORT_FILE;
+
     if (portFile) yield* Effect.promise(() => writeFile(portFile, String(server.port)));
 
     yield* Effect.logInfo(`MassCode daemon listening on ws://127.0.0.1:${server.port}`);

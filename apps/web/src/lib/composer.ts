@@ -65,15 +65,18 @@ interface TurnPrefs {
 
 // Each thread keeps its own picks while the window is open; new ones start from Settings.
 const perThread = new Map<string, Partial<TurnPrefs>>();
+
 const prefsListeners = new Set<() => void>();
 
 function subscribeToPrefs(listener: () => void) {
   prefsListeners.add(listener);
+
   return () => prefsListeners.delete(listener);
 }
 
 function setTurnPrefs(key: string, patch: Partial<TurnPrefs>) {
   perThread.set(key, { ...perThread.get(key), ...patch });
+
   for (const listener of prefsListeners) listener();
 }
 
@@ -104,6 +107,7 @@ export function useTurnPrefs(key: string, provider: ProviderKind, host: string |
   const settings = useStore((state) => state.settings);
   const needsRootConsent = useNeedsRootConsent(host);
   const first = findFirstTurnOptions(key);
+
   const prefs = fitToProvider(
     {
       effort: settings.newThreadEffort ?? null,
@@ -119,6 +123,7 @@ export function useTurnPrefs(key: string, provider: ProviderKind, host: string |
     provider,
     needsRootConsent,
   );
+
   return [prefs, (patch: Partial<TurnPrefs>) => setTurnPrefs(key, { ...prefs, ...patch })] as const;
 }
 
@@ -131,15 +136,18 @@ function getRootConsentKey(host: string) {
 /** Whether Full access on `host` still waits for that OK. */
 export function useNeedsRootConsent(host: string | null) {
   const isRoot = useStore((state) => host !== null && state.hosts[host]?.root === true);
+
   const isAllowed = useSyncExternalStore(
     subscribeToPrefs,
     () => host !== null && localStorage.getItem(getRootConsentKey(host)) === "1",
   );
+
   return isRoot && !isAllowed;
 }
 
 export function allowFullAccessAsRoot(host: string) {
   localStorage.setItem(getRootConsentKey(host), "1");
+
   for (const listener of prefsListeners) listener();
 }
 
@@ -187,8 +195,10 @@ function readBase64(file: File) {
 
 async function readFileAttachment(file: File): Promise<DraftAttachment> {
   const image = file.type.startsWith("image/");
+
   const name =
     file.name || (image ? `Pasted image.${file.type.split("/")[1] ?? "png"}` : "Pasted file");
+
   return {
     id: crypto.randomUUID(),
     name,
@@ -213,15 +223,18 @@ export const LARGE_PASTE_BYTES = 32 * 1024;
 function toBase64(text: string) {
   const bytes = new TextEncoder().encode(text);
   let binary = "";
+
   // Chunked so the spread stays under the engine's argument limit.
   for (let offset = 0; offset < bytes.length; offset += 0x8000)
     binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+
   return btoa(binary);
 }
 
 /** Pasted text as a file the agent can read. */
 export function createTextAttachment(text: string): DraftAttachment {
   const name = `Pasted text (${Math.max(1, Math.round(text.length / 1024))} KB).txt`;
+
   return {
     id: crypto.randomUUID(),
     name,
@@ -233,6 +246,7 @@ export function createTextAttachment(text: string): DraftAttachment {
 /** Picked or dropped files; a remote host can't read this Mac's paths, so they go as data. */
 async function readPathAttachments(paths: ReadonlyArray<string>, isRemote: boolean) {
   if (!isRemote || !window.desktop) return paths.map(createPathAttachment);
+
   return (await window.desktop.readFiles(paths)).map((input): DraftAttachment => ({
     id: crypto.randomUUID(),
     name: input.name,
@@ -282,12 +296,15 @@ export function useAttachments({
       const input =
         inputRef.current ??
         Object.assign(document.createElement("input"), { type: "file", multiple: true });
+
       inputRef.current = input;
       input.onchange = () => {
         void addFiles([...(input.files ?? [])]);
         input.value = "";
       };
+
       input.click();
+
       return;
     }
 
@@ -299,6 +316,7 @@ export function useAttachments({
   function removeAttachment(id: string) {
     setAttachments((prev) => {
       revokePreviews(prev.filter((attachment) => attachment.id === id));
+
       return prev.filter((attachment) => attachment.id !== id);
     });
   }
@@ -308,14 +326,17 @@ export function useAttachments({
     const current = getDraft(key).attachments;
     revokePreviews(current);
     setAttachments(() => []);
+
     return current.map((attachment) => attachment.input);
   }
 
   const addDropped = useEffectEvent(async (paths: ReadonlyArray<string>) =>
     addAttachments(await readPathAttachments(paths, isRemote)),
   );
+
   useEffect(() => {
     if (!shouldAcceptDrops) return;
+
     return window.desktop?.onFileDrop((paths) => addDropped(paths));
   }, [shouldAcceptDrops]);
 

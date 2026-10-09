@@ -15,7 +15,9 @@ function formatShortVersion(raw: string) {
 
 function formatStatusLine(status: ProviderStatus | undefined) {
   if (!status) return "Checking…";
+
   if (!status.installed) return status.error ?? "Not installed";
+
   return status.linked ? (status.account ?? "Signed in") : "Not signed in";
 }
 
@@ -30,20 +32,24 @@ export function ProviderCard({
   host?: string | null;
 }) {
   const settings = useStore((state) => state.settings);
+
   const flow = useStore((state) =>
     host === null ? state.authFlows[kind] : state.hosts[host]?.authFlows[kind],
   );
+
   const [isConfirmingUnlink, setIsConfirmingUnlink] = useState(false);
   const [code, setCode] = useState("");
 
   const isSigningIn =
     flow &&
     (flow.stage === "starting" || flow.stage === "browser" || flow.stage === "awaiting-code");
+
   const Logo = PROVIDER_LOGO[kind];
   const isChecking = !status || status.checking === true;
 
   function renderAction() {
     if (isChecking) return <Skeleton className="h-7 w-16 rounded-lg" />;
+
     if (!status?.installed) return null;
 
     if (isSigningIn)

@@ -166,6 +166,7 @@ const decodeToolInput = Schema.decodeUnknownOption(Schema.Json);
 function splitSkillBlocks(text: string, skills: ReadonlyArray<ProviderSkill>): Array<string> {
   const mentions = findSkillMentions(text, skills);
   const last = mentions.at(-1);
+
   if (!last) return text ? [text] : [];
 
   const leading = mentions
@@ -183,6 +184,7 @@ function splitSkillBlocks(text: string, skills: ReadonlyArray<ProviderSkill>): A
 async function toContent(turn: TurnInput): Promise<SDKUserMessage["message"]["content"]> {
   const texts = splitSkillBlocks(formatTextWithFiles(turn), turn.skills);
   const images = await readImages(turn);
+
   if (!images.length && texts.length <= 1 && !turn.handoff) return texts[0] ?? "";
 
   return [
@@ -210,6 +212,7 @@ function toContextUsage(usage: SDKControlGetContextUsageResponse) {
 
 const start = Effect.fn("ClaudeAdapter.start")(function* (input: StartSessionInput) {
   const launch = yield* resolveHarnessLaunch("claude", input.harness);
+
   return yield* Effect.try({
     try: () => openSession(launch, input),
     catch: (error) => createError(getErrorMessage(error)),
@@ -252,6 +255,7 @@ function openSession(
               }),
             )
           : undefined;
+
       const requestId = approvals.request(
         { toolName, input, suggestions, questions, resolve },
         {
@@ -314,6 +318,7 @@ function openSession(
               // A subagent's worktree is its own; the session stays where it was.
               if (input.hook_event_name === "PostToolUse" && input.agent_id === undefined)
                 onCwd(input.cwd);
+
               return {};
             },
           ],
@@ -321,9 +326,12 @@ function openSession(
       ],
     },
   };
+
   if (model) options.model = model;
+
   if (resumeToken) options.resume = resumeToken;
   const initialLevel = initialEffort && EFFORT_LEVEL[initialEffort];
+
   if (initialLevel) options.effort = initialLevel;
 
   const conversation: Query = query({ prompt: inbox.iterable, options });
@@ -361,6 +369,7 @@ function openSession(
       .getContextUsage({ detail: "summary" })
       .then(toContextUsage)
       .catch(() => null);
+
     emit(RuntimeEvent.cases["thread.usage"].make({ threadId, usage: { context, costUsd } }));
   }
 
@@ -375,6 +384,7 @@ function openSession(
         if (message.parent_tool_use_id) return; // subagent chatter
 
         const event = message.event;
+
         if (event.type === "message_start") currentMessageId = event.message.id;
         const blockId = `${currentMessageId}:${"index" in event ? event.index : 0}`;
 
@@ -406,6 +416,7 @@ function openSession(
         }
 
         const thought = thoughts.get(blockId);
+
         if (event.type === "content_block_stop" && thought !== undefined) {
           emit(
             RuntimeEvent.cases["reasoning.completed"].make({
@@ -418,6 +429,7 @@ function openSession(
         }
 
         const text = blocks.get(blockId);
+
         if (event.type === "content_block_stop" && text !== undefined) {
           emit(
             RuntimeEvent.cases["assistant.completed"].make({
@@ -428,8 +440,10 @@ function openSession(
           );
           blocks.delete(blockId);
         }
+
         return;
       }
+
       case "rate_limit_event": {
         const info = message.rate_limit_info;
         limitResetsAt =
@@ -438,10 +452,13 @@ function openSession(
               ? null
               : info.resetsAt * 1000
             : undefined;
+
         return;
       }
+
       case "assistant": {
         const parentToolId = message.parent_tool_use_id;
+
         if (message.error === "rate_limit" && !parentToolId) limitResetsAt ??= null;
 
         for (const block of message.message.content) {
@@ -468,8 +485,10 @@ function openSession(
             );
           }
         }
+
         return;
       }
+
       case "user": {
         if (!Array.isArray(message.message.content)) return;
 
@@ -493,14 +512,17 @@ function openSession(
             }),
           );
         }
+
         return;
       }
+
       case "system": {
         if (message.subtype === "init") {
           // A resumed session goes back into the worktree it was in, or not, after a rewind to before it.
           onCwd(message.cwd);
         } else if (message.subtype === "session_state_changed") {
           hasSessionStateEvents = true;
+
           if (message.state !== "requires_action")
             emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: message.state }));
         } else if (
@@ -510,12 +532,15 @@ function openSession(
         ) {
           agentTools.set(message.task_id, message.tool_use_id);
           agentNames.set(message.task_id, message.description);
+
           if (message.is_backgrounded) backgroundAgents.add(message.tool_use_id);
         } else if (message.subtype === "task_updated" && message.patch.is_backgrounded) {
           const toolId = agentTools.get(message.task_id);
+
           if (toolId) backgroundAgents.add(toolId);
         } else if (message.subtype === "task_progress") {
           const toolId = agentTools.get(message.task_id);
+
           if (toolId) {
             emit(
               RuntimeEvent.cases["tool.progress"].make({
@@ -530,6 +555,7 @@ function openSession(
         } else if (message.subtype === "task_notification") {
           agentTools.delete(message.task_id);
           agentNames.delete(message.task_id);
+
           if (!message.tool_use_id || !backgroundAgents.delete(message.tool_use_id)) return;
 
           emit(
@@ -541,8 +567,10 @@ function openSession(
             }),
           );
         }
+
         return;
       }
+
       case "result": {
         if (message.is_error && limitResetsAt !== undefined) {
           emit(
@@ -552,6 +580,7 @@ function openSession(
             }),
           );
         }
+
         limitResetsAt = undefined;
 
         if (message.subtype !== "success") {
@@ -562,17 +591,21 @@ function openSession(
             }),
           );
         }
+
         emit(
           RuntimeEvent.cases["turn.completed"].make({
             threadId,
             durationMs: message.duration_ms,
           }),
         );
+
         if (!hasSessionStateEvents)
           emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
         void reportUsage(message.total_cost_usd);
+
         return;
       }
+
       default:
         return;
     }
@@ -608,6 +641,7 @@ function openSession(
     send: (turn) =>
       tryProviderPromise("claude", async () => {
         emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
+
         if (turn.permission !== permission) {
           await conversation.setPermissionMode(PERMISSION_MODE[turn.permission]);
           permission = turn.permission;
@@ -658,6 +692,7 @@ function openSession(
       Effect.tryPromise({
         try: async () => {
           const taskId = [...agentTools].find(([, id]) => id === toolId)?.[0];
+
           // Already finished: its notification is on the way.
           if (taskId) await conversation.stopTask(taskId);
         },
@@ -709,6 +744,7 @@ function openSession(
                   const preview = question.options.find((option) =>
                     answered[question.id]?.includes(option.label),
                   )?.preview;
+
                   return preview ? [[question.question, { preview }]] : [];
                 }),
               ),
@@ -778,27 +814,33 @@ const forkBefore = Effect.fn("ClaudeAdapter.forkBefore")(function* ({
   if (messageId !== null && keep === 0) return null;
 
   const launch = yield* resolveHarnessLaunch("claude", harness);
+
   return yield* tryProviderPromise("claude", async () => {
     // The SDK's session-log helpers read CLAUDE_CONFIG_DIR from our own env, not from options.
     // ponytail: swaps process.env for the call; a CLI spawned meanwhile without its own config dir would see it.
     const configDir = launch.env.CLAUDE_CONFIG_DIR;
     const previous = process.env.CLAUDE_CONFIG_DIR;
+
     if (configDir !== undefined) process.env.CLAUDE_CONFIG_DIR = configDir;
+
     try {
       if (messageId === null) return (await forkSession(resumeToken, { dir: cwd })).sessionId;
 
       const entries = await getSessionMessages(resumeToken, { dir: cwd });
       let index = entries.findIndex((entry) => entry.uuid === messageId);
+
       if (index === -1) {
         let prompts = 0;
         index = entries.findIndex((entry) => isPrompt(entry) && prompts++ === keep);
       }
+
       if (index <= 0) throw new Error("couldn't find that message in Claude's session log");
 
       const { sessionId } = await forkSession(resumeToken, {
         dir: cwd,
         upToMessageId: entries[index - 1]!.uuid,
       });
+
       return sessionId;
     } finally {
       if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
@@ -818,17 +860,20 @@ const readUsage: ProviderAdapter["readUsage"] = Effect.fn("ClaudeAdapter.readUsa
   function* ({ cwd, harness, resumeToken, model }) {
     const launch = yield* resolveHarnessLaunch("claude", harness);
     const options: Options = { cwd, resume: resumeToken };
+
     if (model) options.model = model;
     const conversation = yield* acquireClaudeQuery(() => startPromptlessQuery(launch, options));
 
     return yield* tryProviderPromise("claude", async () => {
       const context = toContextUsage(await conversation.getContextUsage({ detail: "summary" }));
+
       const costUsd = await conversation
         .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
         .then(
           (usage) => usage.session.total_cost_usd,
           () => null,
         );
+
       return { context, costUsd };
     });
   },
@@ -842,11 +887,13 @@ const listSkills: ProviderAdapter["listSkills"] = Effect.fn("ClaudeAdapter.listS
   harness,
 }) {
   const launch = yield* resolveHarnessLaunch("claude", harness);
+
   const conversation = yield* acquireClaudeQuery(() =>
     startPromptlessQuery(launch, { cwd, settingSources: ["user", "project", "local"] }),
   );
 
   const { skills } = yield* tryProviderPromise("claude", () => conversation.reloadSkills());
+
   return skills.map((skill) => ({
     name: skill.name,
     description: skill.description,

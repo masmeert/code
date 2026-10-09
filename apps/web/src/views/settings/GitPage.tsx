@@ -74,6 +74,7 @@ export function GitPage() {
           {SourceControlKind.literals.map((kind) => {
             const status = sourceControl?.find((entry) => entry.kind === kind);
             const Logo = SOURCE_CONTROL_LOGO[kind];
+
             return (
               <SettingsRow
                 key={kind}
@@ -172,7 +173,9 @@ export function GitPage() {
 
 function formatSignInLabel(status: SourceControlStatus) {
   if (status.authenticated) return "Signed in";
+
   if (!status.installed) return "Not installed";
+
   return status.authenticated === null ? "Unknown" : "Not signed in";
 }
 
@@ -212,6 +215,7 @@ function WriterModelSelect() {
 
   if (!linked.length && providers.some((provider) => provider.checking))
     return <Skeleton className="h-7 w-52 rounded-lg" />;
+
   if (!linked.length)
     return <span className="text-[13px] text-muted-foreground">Link a harness first</span>;
 

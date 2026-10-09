@@ -23,6 +23,7 @@ function registerIpcHandler<Argument extends Schema.ConstraintDecoder<unknown>, 
 ) {
   ipcMain.handle(channel, (event, argument) => {
     const window = BrowserWindow.fromWebContents(event.sender);
+
     if (!window || !event.senderFrame?.url.startsWith(APP_URL))
       throw new Error(`${channel} is only available to MassCode windows`);
 
@@ -109,6 +110,7 @@ export function registerBridge(findDaemon: () => Promise<{ port: number; token: 
       if (BrowserWindow.getFocusedWindow() || !Notification.isSupported()) return;
 
       const key = `${threadId}:${body}`;
+
       // ponytail: fixed 3s window to merge the windows' reports; per-event ids if it ever drops a real repeat
       if (Date.now() - (announced.get(key) ?? 0) < 3000) return;
       announced.set(key, Date.now());
@@ -118,6 +120,7 @@ export function registerBridge(findDaemon: () => Promise<{ port: number; token: 
       notification.on("close", () => shown.delete(notification));
       notification.on("click", () => {
         shown.delete(notification);
+
         if (window.isDestroyed()) return;
 
         window.show();

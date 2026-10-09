@@ -44,6 +44,7 @@ const LAST_MERGE_METHOD_KEY = "masscode.git.lastMergeMethod";
 function readLastMergeMethod(): MergeMethod {
   try {
     const saved = localStorage.getItem(LAST_MERGE_METHOD_KEY);
+
     return Schema.is(MergeMethod)(saved) ? saved : "merge";
   } catch {
     return "merge";
@@ -111,9 +112,13 @@ export function GitMenu({
   function openPanel(next: Panel) {
     setPanel(next);
     setIsConfirmingDelete(false);
+
     if (next === "commit") requestAnimationFrame(() => textarea.current?.focus());
+
     if (next === "merge-into-base") requestAnimationFrame(() => mergeButton.current?.focus());
+
     if (next === "merge") setMergeMethod(defaultMergeMethod ?? readLastMergeMethod());
+
     if (next) send(ClientCommand.cases["git.status"].make({ path: cwd }));
   }
 
@@ -132,6 +137,7 @@ export function GitMenu({
 
     setPending(null);
     setError(repo.error);
+
     if (!repo.error) {
       if (repo.action === "commit" || repo.action === "commit-push") setMessage("");
       // Back to the menu, where deleting the merged thread is offered.
@@ -145,6 +151,7 @@ export function GitMenu({
   useEffect(() => resolvePendingAction(), [repo]);
 
   const status = repo?.status;
+
   if (!repo || !status) return null;
 
   const canCommit = status.changes > 0 && !pending;
@@ -154,6 +161,7 @@ export function GitMenu({
   const isPullRequestOpen = pullRequest?.state === "open" || pullRequest?.state === "draft";
   // GitLab calls them merge requests.
   const pullRequestName = status.sourceControl === "gitlab" ? "MR" : "PR";
+
   const canCreatePullRequest =
     !!status.sourceControl &&
     !!status.branch &&
@@ -165,7 +173,9 @@ export function GitMenu({
     // A squash or rebase merge leaves the branch's commits off the default branch; only new work needs another.
     (pullRequest?.state !== "merged" || status.ahead > 0) &&
     !pending;
+
   const base = isWorktree ? status.base : null;
+
   const canMergeIntoBase =
     !!base &&
     !base.merged &&
@@ -177,6 +187,7 @@ export function GitMenu({
   function runGitAction(action: GitAction) {
     setError(null);
     setPending(action);
+
     if (action === "push") {
       send(ClientCommand.cases["git.push"].make({ path: cwd }));
     } else if (action === "pull-request") {
@@ -187,6 +198,7 @@ export function GitMenu({
       } catch {
         // Only the default for next time is lost.
       }
+
       send(ClientCommand.cases["git.mergePullRequest"].make({ path: cwd, method: mergeMethod }));
     } else if (action === "merge-into-base") {
       send(ClientCommand.cases["git.mergeIntoBase"].make({ path: cwd }));
@@ -310,6 +322,7 @@ export function GitMenu({
             className="flex flex-col gap-2"
             onSubmit={(event) => {
               event.preventDefault();
+
               if (canMergeIntoBase) runGitAction("merge-into-base");
             }}
           >
@@ -348,6 +361,7 @@ export function GitMenu({
             className="flex flex-col gap-2"
             onSubmit={(event) => {
               event.preventDefault();
+
               if (!pending) runGitAction("merge");
             }}
           >
@@ -391,6 +405,7 @@ export function GitMenu({
             className="flex flex-col gap-2"
             onSubmit={(event) => {
               event.preventDefault();
+
               if (canCommit) runGitAction("commit");
             }}
           >

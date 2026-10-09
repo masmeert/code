@@ -47,6 +47,7 @@ export function encodeChoice(provider: ProviderKind, model: string) {
 
 export function decodeChoice(value: string) {
   const index = value.indexOf(":");
+
   // SAFETY: every choice is built by encodeChoice, and provider kinds hold no ":".
   return { provider: value.slice(0, index) as ProviderKind, model: value.slice(index + 1) };
 }
@@ -88,8 +89,11 @@ export function findDefaultModel(
     providers.find((status) => status.kind === provider)?.models ?? [],
     settings.providers[provider],
   );
+
   const saved = settings.providers[provider].defaultModel;
+
   if (saved && (!models.length || models.some((model) => model.id === saved))) return saved;
+
   return (models.find((model) => model.recommended) ?? models[0])?.id ?? saved ?? null;
 }
 
@@ -100,6 +104,7 @@ export function findCatalogModel(
 ) {
   if (!choice) return undefined;
   const { provider, model } = decodeChoice(choice);
+
   return providers
     .find((status) => status.kind === provider)
     ?.models.find((option) => option.id === model);

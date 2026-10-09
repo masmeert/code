@@ -17,6 +17,7 @@ export function QuoteSelection({
 
   useEffect(() => {
     const area = container.current;
+
     if (!area) return;
 
     // Arrows rather than function declarations: those are hoisted, so `area` wouldn't stay narrowed inside them.
@@ -24,12 +25,15 @@ export function QuoteSelection({
       const selection = document.getSelection();
       const text = selection?.toString().trim() ?? "";
       const node = selection?.anchorNode;
+
       const inReply =
         node &&
         area.contains(node) &&
         (node instanceof Element ? node : node.parentElement)?.closest('[data-from="assistant"]');
+
       if (!selection || selection.isCollapsed || !text || !inReply) {
         setQuote(null);
+
         return;
       }
 
@@ -52,6 +56,7 @@ export function QuoteSelection({
     area.addEventListener("mouseup", updateQuote);
     area.addEventListener("keyup", updateQuote);
     document.addEventListener("selectionchange", clearQuote);
+
     return () => {
       area.removeEventListener("mouseup", updateQuote);
       area.removeEventListener("keyup", updateQuote);

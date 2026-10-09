@@ -6,6 +6,7 @@ let status: UpdateStatus = UpdateStatus.cases.idle.make({});
 
 function setStatus(next: UpdateStatus) {
   status = next;
+
   for (const window of BrowserWindow.getAllWindows())
     window.webContents.send("update-status-changed", status);
 }

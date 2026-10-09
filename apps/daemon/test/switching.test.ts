@@ -14,12 +14,14 @@ import {
 } from "./replay/daemon.ts";
 
 let daemon: Daemon | null = null;
+
 afterEach(async () => {
   await daemon?.stop();
   daemon = null;
 });
 
 const claude = readFixture("claude-two-turns").sessions[0]!;
+
 const codex = readFixture("codex-two-turns").sessions[0]!;
 
 function switchTo(threadId: string, provider: "claude" | "codex") {
@@ -56,11 +58,13 @@ function getCodexTurnTexts(folder: string) {
 function getClaudeTurnTexts(folder: string) {
   return readPeerLog(folder, "claude").flatMap(({ out }) => {
     if (out?.type !== "user") return [];
+
     const { content } = Schema.decodeUnknownSync(
       Schema.Struct({
         message: Schema.Struct({ content: Schema.Union([Schema.String, TextItems]) }),
       }),
     )(out).message;
+
     return [Predicate.isString(content) ? [content] : content.map((block) => block.text ?? "")];
   });
 }
@@ -85,6 +89,7 @@ test("switching harness hands the new one the conversation so far", async () => 
   const [first, second] = daemon
     .readTranscript(thread.id)
     .filter(RuntimeEvent.guards["user.message"]);
+
   expect(first).toMatchObject({ provider: "claude" });
   expect(first?.handoff).toBeUndefined();
   expect(second).toMatchObject({
@@ -96,10 +101,12 @@ test("switching harness hands the new one the conversation so far", async () => 
 
 test("switching back resumes the old session and hands over only what it missed", async () => {
   daemon = await startDaemon();
+
   const folder = createProject({
     claude: { sessions: [claude, claude] },
     codex: { sessions: [codex] },
   });
+
   const thread = await daemon.createThread(folder, "Reply with exactly: pong");
   await daemon.waitFor(matchStatus(thread.id, "idle"));
   await switchTo(thread.id, "codex");
@@ -136,9 +143,11 @@ test("switching harness back and forth without a turn hands nothing over", async
 
 test("the harness can't be switched mid-turn", async () => {
   daemon = await startDaemon();
+
   const folder = createProject({
     claude: { sessions: [takeUntil(claude, (step) => "reply" in step)] },
   });
+
   const thread = await daemon.createThread(folder, "Reply with exactly: pong");
   await daemon.waitFor(matchStatus(thread.id, "running"));
   expect(await switchTo(thread.id, "codex")).toContain("Stop");
@@ -149,18 +158,22 @@ test("the harness can't be switched mid-turn", async () => {
 
 test("rewinding a thread that switched harness starts its agent afresh with the conversation kept", async () => {
   daemon = await startDaemon();
+
   const folder = createProject({
     claude: { sessions: [claude] },
     codex: { sessions: [codex, codex] },
   });
+
   const thread = await daemon.createThread(folder, "Reply with exactly: pong");
   await daemon.waitFor(matchStatus(thread.id, "idle"));
   await switchTo(thread.id, "codex");
   await runTurn(thread.id, "Codex, say hi");
+
   const codexMessage = daemon
     .readTranscript(thread.id)
     .filter(RuntimeEvent.guards["user.message"])
     .at(-1)!;
+
   expect(
     await daemon.dispatch(
       ClientCommand.cases["thread.rewind"].make({
@@ -175,6 +188,7 @@ test("rewinding a thread that switched harness starts its agent afresh with the 
   const starts = readPeerLog(folder, "codex").filter(
     (entry) => entry.out?.method === "thread/start",
   );
+
   expect(starts).toHaveLength(2);
   const [, afresh] = getCodexTurnTexts(folder);
   expect(afresh![0]).toContain("Reply with exactly: pong");

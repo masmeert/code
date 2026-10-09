@@ -93,6 +93,7 @@ export const TokenUsage = Schema.Struct({
   last: Schema.Struct({ totalTokens: Schema.Number }),
   modelContextWindow: Schema.NullOr(Schema.Number),
 });
+
 export type TokenUsage = typeof TokenUsage.Type;
 
 /** The notifications MassCode acts on; others are dropped. */
@@ -148,6 +149,7 @@ export const CodexNotification = Schema.Union([
     params: Schema.Struct({ success: Schema.Boolean, error: Schema.NullOr(Schema.String) }),
   }),
 ]).pipe(Schema.toTaggedUnion("method"));
+
 export type CodexNotification = typeof CodexNotification.Type;
 
 /** An MCP server asking the user for input, usually to approve one of its tool calls. */
@@ -180,6 +182,7 @@ export const CodexElicitation = Schema.Struct({
     }),
   ),
 });
+
 export type CodexElicitation = typeof CodexElicitation.Type;
 
 const ApprovalParams = Schema.Struct({
@@ -203,6 +206,7 @@ export const CodexServerRequest = Schema.Union([
     params: ApprovalParams,
   }),
 ]).pipe(Schema.toTaggedUnion("method"));
+
 export type CodexServerRequest = typeof CodexServerRequest.Type;
 
 /** The service tier Codex labels "Fast". */
@@ -216,6 +220,7 @@ export const ThreadResponse = Schema.Struct({
 });
 
 const decodeNotification = Schema.decodeUnknownOption(CodexNotification);
+
 const decodeServerRequest = Schema.decodeUnknownOption(CodexServerRequest);
 
 interface CodexRpcHandlers {
@@ -234,6 +239,7 @@ export async function connectCodex(
   const rpc = connectJsonRpc("Codex", launch, ["app-server", ...launch.args], cwd, {
     onNotification: (method, params) => {
       const notification = decodeNotification({ method, params });
+
       if (Option.isSome(notification)) handlers.onNotification?.(notification.value);
     },
     onRequest: (id, method, params) =>

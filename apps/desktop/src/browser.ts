@@ -65,6 +65,7 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
       window,
       DesktopBrowserEvent.cases["open-tab"].make({ webContentsId: guest.id, url }),
     );
+
     return { action: "deny" };
   });
 
@@ -74,9 +75,11 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
 
   guest.on("before-input-event", (event, input) => {
     const shortcut = findTabShortcut(input);
+
     if (!shortcut) return;
 
     event.preventDefault();
+
     if (shortcut === "reload") guest.reload();
     else if (shortcut === "back") guest.navigationHistory.goBack();
     else if (shortcut === "forward") guest.navigationHistory.goForward();
@@ -149,6 +152,7 @@ export function enableBrowserTabs(window: BrowserWindow) {
     // Remote hosts' tabs have partitions of their own, named after this one.
     if (!attributes.partition?.startsWith(BROWSER_PARTITION) || !isWebUrl(attributes.src ?? "")) {
       event.preventDefault();
+
       return;
     }
 

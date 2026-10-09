@@ -97,8 +97,10 @@ const TerminalView = lazy(() =>
 
 /** Opens the changes panel on one turn; provided by the thread view to the checkpoint chips deep in the transcript. */
 export const TurnDiffContext = createContext<(messageId: string) => void>(() => {});
+
 /** The tool call last picked in the running-subagents list, for its group to open and scroll to. */
 export const RevealContext = createContext<ToolReveal | null>(null);
+
 /** Hands a shell block's command to the agent as a message; provided by the thread view to its replies. */
 export const RunCommandContext = createContext<((command: string) => void) | undefined>(undefined);
 
@@ -134,12 +136,14 @@ function AttachmentThumbnail({
       (signed) => isCurrent && setUrl(signed),
       () => isCurrent && setUrl(null),
     );
+
     return () => {
       isCurrent = false;
     };
   }, [threadId, attachment.path]);
 
   if (url === null) return <AttachmentChip attachment={attachment} />;
+
   if (url === undefined) return <span className="size-20 animate-pulse rounded-lg bg-muted" />;
 
   return (
@@ -220,6 +224,7 @@ export function TurnList({
   useEffect(() => {
     if (!hasTurns) return;
     const frame = requestAnimationFrame(() => setIsSettled(true));
+
     return () => cancelAnimationFrame(frame);
   }, [hasTurns]);
 
@@ -234,6 +239,7 @@ export function TurnList({
     >
       {turns.map((turn, index) => {
         if (turn.from === "marker") return <ThreadMarker key={turn.id} item={turn.item} />;
+
         if (turn.from === "setup") {
           return (
             <CommandRunResult
@@ -244,6 +250,7 @@ export function TurnList({
             />
           );
         }
+
         if (turn.from === "user") {
           return (
             <UserTurn
@@ -255,6 +262,7 @@ export function TurnList({
             />
           );
         }
+
         return (
           <AssistantTurn
             key={turn.id}
@@ -361,6 +369,7 @@ const MARKERS: Record<MarkerItem["kind"], { readonly icon: LucideIcon; readonly 
 function ThreadMarker({ item }: { item: MarkerItem }) {
   const [threadId, title] =
     item.kind === "forked" ? [item.fromThreadId, item.fromTitle] : [item.byThreadId, item.byTitle];
+
   const source = useStore((state) => state.threads[threadId]);
   const { icon: Icon, label } = MARKERS[item.kind];
 
@@ -747,9 +756,11 @@ export const AgentBlock = memo(
       case "approval":
         if (block.title === PLAN_APPROVAL_TITLE)
           return <PlanApproval threadId={threadId} item={block} />;
+
         if (block.questions) {
           return <QuestionsApproval threadId={threadId} item={block} questions={block.questions} />;
         }
+
         return <ToolApprovalRequest threadId={threadId} item={block} />;
       case "error":
         return <div className="selectable text-xs text-destructive">{block.text}</div>;
@@ -800,6 +811,7 @@ function AssistantReply({
   const isForking = useStore(
     (state) => state.forking?.messageId === item.id && state.forking.error === null,
   );
+
   const [isConfirmingFork, setIsConfirmingFork] = useState(false);
   const runReplyCommand = use(RunCommandContext);
 

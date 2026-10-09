@@ -77,6 +77,7 @@ const WaitInput = {
 };
 
 export type StartThreadInput = z.infer<z.ZodObject<typeof StartThreadInput>>;
+
 export type SendMessageInput = z.infer<z.ZodObject<typeof SendMessageInput>>;
 
 /** What the orchestration tools do, for the agent of thread `caller`; failures are messages for that agent. */
@@ -199,6 +200,7 @@ function createBrowserServer(
   async function runBrowserAction(action: BrowserAction) {
     try {
       const result = await requestBrowserAction(action);
+
       return {
         content: [
           {
@@ -351,6 +353,7 @@ function createDeviceServer(threadId: string, devices: Devices) {
         const { device, cli } = await devices.open(threadId, deviceId ?? null, platform ?? null);
         const target = `${device.platform === "ios" ? `--platform ios --udid ${device.id}` : `--platform android --serial ${device.streamId}`} --session masscode-${threadId}`;
         const app = device.platform === "ios" ? "<bundle-id>" : "<package>";
+
         return [
           {
             type: "text",
@@ -398,6 +401,7 @@ export function createMcp(
 
   function revoke(threadId: string) {
     const tokenHash = tokenHashByThread.get(threadId);
+
     if (tokenHash === undefined) return;
 
     threadByTokenHash.delete(tokenHash);
@@ -412,12 +416,14 @@ export function createMcp(
       const tokenHash = hashToken(token);
       threadByTokenHash.set(tokenHash, threadId);
       tokenHashByThread.set(threadId, tokenHash);
+
       return { url: `http://127.0.0.1:${PORT}/mcp`, token };
     },
     revoke,
     async handleRequest(request: Request) {
       const token = request.headers.get("authorization")?.match(/^Bearer\s+(\S+)$/)?.[1];
       const threadId = token ? threadByTokenHash.get(hashToken(token)) : undefined;
+
       if (threadId === undefined)
         return new Response("A valid bearer token is required", {
           status: 401,
@@ -434,6 +440,7 @@ export function createMcp(
           ),
         )
         .connect(transport);
+
       return transport.handleRequest(request);
     },
   };

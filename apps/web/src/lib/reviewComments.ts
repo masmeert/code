@@ -24,12 +24,15 @@ interface DiffRow {
 }
 
 const NO_COMMENTS: ReadonlyArray<ReviewComment> = [];
+
 const commentsByThread = new Map<string, ReadonlyArray<ReviewComment>>();
+
 const listeners = new Set<() => void>();
 
 function writeReviewComments(threadId: string, comments: ReadonlyArray<ReviewComment>) {
   if (comments.length) commentsByThread.set(threadId, comments);
   else commentsByThread.delete(threadId);
+
   for (const listener of listeners) listener();
 }
 
@@ -41,6 +44,7 @@ export function useReviewComments(threadId: string) {
   return useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
+
       return () => listeners.delete(listener);
     },
     () => getReviewComments(threadId),
@@ -69,15 +73,18 @@ export function removeReviewComment(threadId: string, id: string) {
 export function takeReviewComments(threadId: string) {
   const comments = getReviewComments(threadId);
   writeReviewComments(threadId, NO_COMMENTS);
+
   return comments;
 }
 
 /** Every row of a parsed patch, in the order the unified view shows them. */
 function buildDiffRows(fileDiff: FileDiffMetadata): Array<DiffRow> {
   const rows: Array<DiffRow> = [];
+
   for (const hunk of fileDiff.hunks) {
     let oldLine = hunk.deletionStart;
     let newLine = hunk.additionStart;
+
     for (const segment of hunk.hunkContent) {
       if (segment.type === "context") {
         for (let offset = 0; offset < segment.lines; offset++) {
@@ -88,6 +95,7 @@ function buildDiffRows(fileDiff: FileDiffMetadata): Array<DiffRow> {
             content: fileDiff.additionLines[segment.additionLineIndex + offset] ?? "",
           });
         }
+
         continue;
       }
 
@@ -130,6 +138,7 @@ export function findSelectedRows(fileDiff: FileDiffMetadata, range: SelectedLine
   const endSide = range.endSide ?? startSide;
   const startIndex = findRowIndex(rows, range.start, startSide);
   const endIndex = findRowIndex(rows, range.end, endSide);
+
   if (startIndex < 0 || endIndex < 0) return null;
 
   return {
@@ -152,6 +161,7 @@ export function isAnchoredIn(comment: ReviewComment, fileDiff: FileDiffMetadata)
 /** "line 12", "lines 12–14", or "removed line 12" for lines only the old file has. */
 export function describeRange(range: Required<SelectedLineRange>) {
   const removed = range.side === "deletions" && range.endSide === "deletions" ? "removed " : "";
+
   return range.start === range.end && range.side === range.endSide
     ? `${removed}line ${range.start}`
     : `${removed}lines ${range.start}–${range.end}`;
@@ -160,6 +170,7 @@ export function describeRange(range: Required<SelectedLineRange>) {
 function fenceDiff(code: string) {
   const longestRun = Math.max(0, ...Array.from(code.matchAll(/`+/g), (match) => match[0].length));
   const marks = "`".repeat(Math.max(3, longestRun + 1));
+
   return `${marks}diff\n${code}\n${marks}`;
 }
 
@@ -174,5 +185,6 @@ export function buildReviewMessage(comments: ReadonlyArray<ReviewComment>, text:
         `${comment.path}, ${describeRange(comment.range)}:\n${fenceDiff(comment.excerpt)}\n${comment.text}`,
     ),
   ].join("\n\n");
+
   return text ? `${review}\n\n${text}` : review;
 }

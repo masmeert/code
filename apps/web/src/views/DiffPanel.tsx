@@ -28,9 +28,13 @@ import { HIGHLIGHT, useDiffWorkersReady } from "./DiffWorkers.tsx";
 
 /** The chat keeps at least this much room next to the panel. */
 const MIN_CHAT = 380;
+
 const MIN_PANEL = 360;
+
 const MIN_TREE = 160;
+
 const MIN_DIFF = 320;
+
 /** Below this, each side of a split diff is too narrow to read a line of code. */
 const MIN_SPLIT_DIFF = 720;
 
@@ -56,6 +60,7 @@ function parseFiles(patch: string): Array<FileDiffMetadata> {
   if (patch === lastParse.patch) return lastParse.files;
 
   let files: Array<FileDiffMetadata> = [];
+
   try {
     // Key each file's highlight cache by its blob ids, so an unchanged file is never re-highlighted
     // and a changed one never shows a stale render.
@@ -68,6 +73,7 @@ function parseFiles(patch: string): Array<FileDiffMetadata> {
   } catch {}
 
   lastParse = { patch, files };
+
   return files;
 }
 
@@ -82,9 +88,11 @@ function buildCommentAnnotations(
   draft: ReviewComment | null,
 ): Array<DiffLineAnnotation<CommentSlot>> {
   const slots = new Map<string, DiffLineAnnotation<CommentSlot>>();
+
   const shown = comments.map((comment) =>
     comment.id === draft?.id ? { comment: draft, editing: true } : { comment, editing: false },
   );
+
   if (draft && !comments.some((comment) => comment.id === draft.id)) {
     shown.push({ comment: draft, editing: true });
   }
@@ -106,6 +114,7 @@ function buildCommentAnnotations(
 function countLines(files: ReadonlyArray<FileDiffMetadata>) {
   let additions = 0;
   let deletions = 0;
+
   for (const file of files) {
     for (const hunk of file.hunks) {
       additions += hunk.additionLines;
@@ -169,6 +178,7 @@ export function DiffPanel({
   const [draft, setDraft] = useState<ReviewComment | null>(null);
 
   const aside = useRef<HTMLElement>(null);
+
   const panel = useResizable({
     key: DIFF_PANEL_WIDTH_KEY,
     initial: getDefaultDiffPanelWidth(),
@@ -182,6 +192,7 @@ export function DiffPanel({
         ),
       ),
   });
+
   const tree = useResizable({
     key: "masscode.diffTreeWidth",
     initial: 256,
@@ -189,14 +200,17 @@ export function DiffPanel({
     clamp: (width) =>
       Math.max(MIN_TREE, Math.min(width, (aside.current?.clientWidth ?? 720) - MIN_DIFF)),
   });
+
   const [asideWidth, setAsideWidth] = useState(Number.POSITIVE_INFINITY);
 
   useEffect(() => {
     const element = aside.current;
+
     if (!element) return;
 
     const observer = new ResizeObserver(() => setAsideWidth(element.clientWidth));
     observer.observe(element);
+
     return () => observer.disconnect();
   }, []);
 
@@ -214,12 +228,14 @@ export function DiffPanel({
 
   useEffect(() => {
     const timer = window.setTimeout(refreshDiff, turnKey ? 0 : 250);
+
     return () => window.clearTimeout(timer);
   }, [refreshDiff, turnKey, changesKey]);
 
   const files = useMemo(() => parseFiles(diff?.patch ?? ""), [diff?.patch]);
   // CodeView reconciles by id; a file whose content or comments changed keeps its id, so its version must go up.
   const versions = useRef(new Map<string, { key: string; version: number }>());
+
   const items = useMemo(
     () =>
       files.map((file): CodeViewItem<CommentSlot> => {
@@ -227,6 +243,7 @@ export function DiffPanel({
           comments.filter((comment) => comment.path === file.name && isAnchoredIn(comment, file)),
           draft?.path === file.name ? draft : null,
         );
+
         const key = `${file.cacheKey ?? ""}|${annotations
           .flatMap((slot) =>
             slot.metadata.entries.map(
@@ -234,6 +251,7 @@ export function DiffPanel({
             ),
           )
           .join("|")}`;
+
         const seen = versions.current.get(file.name);
         const version = !seen ? 0 : seen.key === key ? seen.version : seen.version + 1;
         versions.current.set(file.name, { key, version });
@@ -245,6 +263,7 @@ export function DiffPanel({
 
   const startComment = useCallback((range: SelectedLineRange, fileDiff: FileDiffMetadata) => {
     const rows = findSelectedRows(fileDiff, range);
+
     if (!rows) return;
     setDraft({ id: crypto.randomUUID(), path: fileDiff.name, ...rows, text: "" });
   }, []);
@@ -297,6 +316,7 @@ export function DiffPanel({
   }, [reveal, items, onRevealed]);
 
   const isWriting = draft !== null;
+
   // Matches the worker pool's options (see DiffWorkers), so its cached highlighting is used as is.
   // A fixed themeType: changing it rebuilds every diff. CSS picks the theme instead (see className).
   const options = useMemo(
@@ -322,6 +342,7 @@ export function DiffPanel({
   );
 
   const isTruncated = diff?.truncated ?? false;
+
   const renderFooter = useCallback(
     () =>
       isTruncated ? (
@@ -358,6 +379,7 @@ export function DiffPanel({
 
   function toggleTree() {
     setIsTreeShown(!isTreeShown);
+
     try {
       localStorage.setItem(TREE_KEY, isTreeShown ? "0" : "1");
     } catch {}

@@ -56,10 +56,13 @@ export function useDiffWorkersReady() {
   useEffect(() => {
     if (isReady || !pool) return;
     let isMounted = true;
+
     function markStarted() {
       if (isMounted) setStarted((count) => count + 1);
     }
+
     void pool.initialize().then(markStarted, markStarted);
+
     return () => {
       isMounted = false;
     };

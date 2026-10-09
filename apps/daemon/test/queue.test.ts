@@ -13,6 +13,7 @@ import {
 } from "./replay/daemon.ts";
 
 let daemon: Daemon | null = null;
+
 afterEach(async () => {
   await daemon?.stop();
   daemon = null;
@@ -42,9 +43,11 @@ function listTurnStarts(folder: string) {
 test("a message queued during a turn starts the next turn when it ends", async () => {
   daemon = await startDaemon();
   const folder = createProject({ codex: { sessions: [slowFirstTurn] } });
+
   const thread = await daemon.createThread(folder, "Reply with exactly: pong", {
     provider: "codex",
   });
+
   await daemon.waitFor(matchStatus(thread.id, "running"));
   expect(
     await daemon.send(thread.id, "Reply with exactly: pong again", { queue: true }),
@@ -64,9 +67,11 @@ test("a message queued during a turn starts the next turn when it ends", async (
 test("queued messages outlive a daemon crash, held until you send them", async () => {
   daemon = await startDaemon();
   const folder = createProject({ codex: { sessions: [takeUntil(codex, matchReplyTo("rpc-3"))] } });
+
   const thread = await daemon.createThread(folder, "Reply with exactly: pong", {
     provider: "codex",
   });
+
   await daemon.waitFor(matchStatus(thread.id, "running"));
   await daemon.send(thread.id, "Reply with exactly: pong again", { queue: true });
   await daemon.crash();
@@ -81,9 +86,11 @@ test("queued messages outlive a daemon crash, held until you send them", async (
 test("Stop holds the queue instead of starting the next message", async () => {
   daemon = await startDaemon();
   const folder = createProject({ codex: { sessions: [makeInterruptible(codex)] } });
+
   const thread = await daemon.createThread(folder, "Reply with exactly: pong", {
     provider: "codex",
   });
+
   await daemon.waitFor(matchStatus(thread.id, "running"));
   await daemon.send(thread.id, "Reply with exactly: pong again", { queue: true });
   await daemon.dispatch(ClientCommand.cases["thread.interrupt"].make({ threadId: thread.id }));
@@ -95,6 +102,7 @@ test("Stop holds the queue instead of starting the next message", async () => {
 
 test("a queued message sent now joins the running turn", async () => {
   daemon = await startDaemon();
+
   const folder = createProject({
     codex: {
       sessions: [
@@ -107,9 +115,11 @@ test("a queued message sent now joins the running turn", async () => {
       ],
     },
   });
+
   const thread = await daemon.createThread(folder, "Reply with exactly: pong", {
     provider: "codex",
   });
+
   await daemon.waitFor(matchStatus(thread.id, "running"));
   await daemon.send(thread.id, "and again", { queue: true });
   const [queued] = await readQueue(daemon, thread.id);
@@ -128,9 +138,11 @@ test("a queued message sent now joins the running turn", async () => {
 test("a message sent twice with the same id runs once", async () => {
   daemon = await startDaemon();
   const folder = createProject({ codex: { sessions: [codex] } });
+
   const thread = await daemon.createThread(folder, "Reply with exactly: pong", {
     provider: "codex",
   });
+
   await daemon.waitFor(matchStatus(thread.id, "idle"));
   const messageId = crypto.randomUUID();
   await daemon.send(thread.id, "Reply with exactly: pong again", { messageId });

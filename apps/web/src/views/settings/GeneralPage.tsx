@@ -26,11 +26,13 @@ export function GeneralPage() {
   const providers = useStore((state) => state.providers);
   const linked = providers.filter((provider) => provider.linked && provider.models.length);
   const savedModel = settings.newThreadModel;
+
   const effortProvider =
     savedModel &&
     buildModelChoices(providers, settings).some((option) => option.value === savedModel)
       ? decodeChoice(savedModel).provider
       : settings.lastProvider;
+
   const savedEffort = settings.newThreadEffort;
 
   return (

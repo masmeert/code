@@ -61,6 +61,7 @@ export function buildCursorModelFlag(model: string | null | undefined) {
 /** Effort as MassCode names it; some models spell xhigh "extra-high". */
 function toEffort(value: string) {
   const effort = value === "extra-high" ? "xhigh" : value;
+
   return Schema.is(Effort)(effort) ? effort : undefined;
 }
 
@@ -96,12 +97,14 @@ function acquireCursorConnection(
 
 export const readCursorModels = Effect.fn("readCursorModels")(function* (launch: HarnessLaunch) {
   const rpc = yield* acquireCursorConnection(launch, undefined);
+
   const { models } = yield* tryProviderPromise("cursor", () =>
     rpc.request("cursor/list_available_models", {}, ListedModels),
   );
 
   return models.map((model): ModelOption => {
     const effort = findEffortOption(model.configOptions);
+
     return {
       id: model.value,
       label: model.name,
@@ -170,11 +173,15 @@ function formatToolOutput(update: {
   readonly rawOutput?: Schema.Json | undefined;
 }) {
   const text = getContentText(update.content);
+
   if (text) return text;
+
   if (update.rawOutput === undefined || update.rawOutput === null) return "";
+
   if (Predicate.isString(update.rawOutput)) return update.rawOutput;
 
   const { stdout, stderr, content } = decodeToolRaw(update.rawOutput);
+
   return (
     [stdout, stderr].filter(Boolean).join("\n").trim() ||
     content ||
@@ -254,12 +261,14 @@ function start({
           }),
         );
       }
+
       thought = null;
     }
 
     /** Ends the reply and thought in progress: a tool call or the turn's end closes both. */
     function finishText() {
       finishThought();
+
       if (reply?.text) {
         emit(
           RuntimeEvent.cases["assistant.completed"].make({
@@ -269,6 +278,7 @@ function start({
           }),
         );
       }
+
       reply = null;
     }
 
@@ -318,12 +328,15 @@ function start({
         },
         tool_call: (call) => {
           finishText();
+
           if (runningTools.has(call.toolCallId) || unnamedEdits.has(call.toolCallId)) return;
 
           const { command, path } = decodeToolRaw(call.rawInput);
+
           if (command) commandOf.set(call.toolCallId, command);
           const name = TOOL_NAME.get(call.kind ?? "") ?? call.title ?? "Tool";
           const summary = command ?? path ?? call.locations?.[0]?.path;
+
           if (summary === undefined && call.kind === "edit") {
             // Cursor names an edit's file only once it's made; the row waits for it.
             unnamedEdits.set(call.toolCallId, name);
@@ -334,9 +347,11 @@ function start({
         tool_call_update: (update) => {
           const isDone = update.status === "completed" || update.status === "failed";
           const unnamed = unnamedEdits.get(update.toolCallId);
+
           const path =
             update.locations?.[0]?.path ??
             update.content?.flatMap((part) => (part.type === "diff" ? [part.path] : []))[0];
+
           if (unnamed !== undefined && (path !== undefined || isDone)) {
             unnamedEdits.delete(update.toolCallId);
             startTool(update.toolCallId, unnamed, path ?? update.title ?? "");
@@ -371,13 +386,16 @@ function start({
         const request = Option.getOrUndefined(
           Schema.decodeUnknownOption(PermissionRequest)(params),
         );
+
         if (!request) return false;
 
         const { toolCall } = request;
         const command = commandOf.get(toolCall.toolCallId);
         const key = `${toolCall.kind}:${command ?? toolCall.title}`;
+
         if (permission === "full-access" || allowedForSession.has(key)) {
           answerPermission(rpcId, request, "allow_once");
+
           return true;
         }
 
@@ -388,22 +406,26 @@ function start({
             detail: command ?? getContentText(toolCall.content),
           },
         );
+
         return true;
       }
 
       if (method === "cursor/create_plan") {
         const plan = Option.getOrUndefined(Schema.decodeUnknownOption(CreatePlan)(params));
+
         if (!plan) return false;
 
         // Outside plan mode a plan is the agent's own outline: nothing to approve.
         if (permission !== "plan") rpc?.respond(rpcId, { outcome: { outcome: "accepted" } });
         else
           approvals.request({ kind: "plan", rpcId }, { title: "ExitPlanMode", detail: plan.plan });
+
         return true;
       }
 
       if (method === "cursor/ask_question") {
         const asked = Option.getOrUndefined(Schema.decodeUnknownOption(AskQuestion)(params));
+
         if (!asked) return false;
 
         approvals.request(
@@ -420,6 +442,7 @@ function start({
             })),
           },
         );
+
         return true;
       }
 
@@ -452,6 +475,7 @@ function start({
       const resumed = sessionId
         ? await (async () => {
             isReplaying = true;
+
             try {
               return await rpc.request(
                 "session/load",
@@ -469,15 +493,18 @@ function start({
 
       const setup =
         resumed ?? (await rpc.request("session/new", { cwd, mcpServers }, SessionSetup));
+
       if (!resumed && setup.sessionId) {
         sessionId = setup.sessionId;
         onResumeToken(sessionId);
       }
+
       configOptions = setup.configOptions ?? configOptions;
     }
 
     async function setConfigOption(configId: string, value: string) {
       const current = configOptions.find((option) => option.id === configId);
+
       if (!current || current.currentValue === value) return;
 
       const result = await rpc!.request(
@@ -485,6 +512,7 @@ function start({
         { sessionId, configId, value },
         SessionSetup,
       );
+
       configOptions = result.configOptions ?? configOptions;
     }
 
@@ -492,6 +520,7 @@ function start({
       const images = await readImages(turn);
 
       const written = formatTextWithFiles(turn);
+
       // Cursor takes a `/name` anywhere in the message as the skill to load.
       const text = findSkillMentions(written, turn.skills).reduce(
         (result, mention) => `${result.slice(0, mention.start)}/${result.slice(mention.start + 1)}`,
@@ -509,14 +538,18 @@ function start({
     async function beginTurn(turn: TurnInput) {
       emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
       permission = turn.permission;
+
       if (!rpc || model !== launchedModel) await launchAgent();
 
       await setConfigOption("mode", permission === "plan" ? "plan" : "agent");
       const effort = findEffortOption(configOptions);
+
       const effortValue = effort?.options?.find(
         (option) => turn.effort !== null && toEffort(option.value) === turn.effort,
       )?.value;
+
       if (effort && effortValue) await setConfigOption(effort.id, effortValue);
+
       if (turn.fast !== undefined) await setConfigOption("fast", String(turn.fast));
 
       const blocks = await buildPromptBlocks(turn);
@@ -529,11 +562,13 @@ function start({
           ({ stopReason }) => {
             finishText();
             const stopMessage = STOPPED_EARLY.get(stopReason);
+
             if (stopMessage)
               emit(RuntimeEvent.cases.error.make({ threadId, message: stopMessage }));
           },
           (error) => {
             finishText();
+
             // A process that exited has said so already.
             if (launched === generation && !Predicate.isTagged(error, "RpcExited")) {
               emit(RuntimeEvent.cases.error.make({ threadId, message: getErrorMessage(error) }));
@@ -542,6 +577,7 @@ function start({
         )
         .then(() => {
           isPrompting = false;
+
           // Tools still open when the turn ends were cut off: stopped, or the process went.
           for (const toolId of runningTools) {
             emit(
@@ -553,6 +589,7 @@ function start({
               }),
             );
           }
+
           runningTools.clear();
           unnamedEdits.clear();
           emit(
@@ -564,6 +601,7 @@ function start({
 
           const next = afterTurn ?? (steered.length ? () => void runTurn(steered.shift()!) : null);
           afterTurn = null;
+
           if (next) next();
           else emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
         });
@@ -585,6 +623,7 @@ function start({
           if (!isPrompting) return session.send(turn);
 
           steered.push(turn);
+
           return Effect.void;
         }),
       compact: Effect.fail(
@@ -594,6 +633,7 @@ function start({
       interrupt: Effect.sync(() => {
         steered.length = 0;
         afterTurn = null;
+
         for (const entry of approvals.withdrawAll())
           rpc?.respond(entry.rpcId, { outcome: { outcome: "cancelled" } });
         rpc?.notify("session/cancel", { sessionId });
@@ -601,6 +641,7 @@ function start({
       respondApproval: (requestId, decision, { permission: buildPermission, answers } = {}) =>
         Effect.gen(function* () {
           const entry = yield* approvals.take(requestId);
+
           switch (entry.kind) {
             case "permission":
               if (decision === "allow-session") allowedForSession.add(entry.key);
@@ -614,6 +655,7 @@ function start({
               rpc?.respond(entry.rpcId, {
                 outcome: { outcome: decision === "deny" ? "rejected" : "accepted" },
               });
+
               // Cursor ends its turn with the plan; building it is the next one.
               if (decision !== "deny") {
                 permission = buildPermission ?? "auto-edit";
@@ -628,6 +670,7 @@ function start({
                     handoff: null,
                   });
               }
+
               break;
             case "question":
               rpc?.respond(
@@ -672,6 +715,7 @@ const listSkills: ProviderAdapter["listSkills"] = Effect.fn("CursorAdapter.listS
 }) {
   const launch = yield* resolveHarnessLaunch("cursor", harness);
   const reported = yield* Deferred.make<ReadonlyArray<{ name: string; description: string }>>();
+
   const rpc = yield* acquireCursorConnection(launch, cwd, {
     onUpdate: (update) => {
       if (SessionUpdate.guards.available_commands_update(update)) {
@@ -683,6 +727,7 @@ const listSkills: ProviderAdapter["listSkills"] = Effect.fn("CursorAdapter.listS
   yield* tryProviderPromise("cursor", () =>
     rpc.request("session/new", { cwd, mcpServers: [] }, SessionSetup),
   );
+
   const commands = yield* Deferred.await(reported).pipe(
     Effect.timeoutOrElse({
       duration: "15 seconds",

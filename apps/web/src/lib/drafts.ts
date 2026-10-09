@@ -22,6 +22,7 @@ const EMPTY: Draft = { text: "", attachments: [] };
  * can put text into a composer.
  */
 const drafts = new Map<string, Draft>();
+
 const listeners = new Set<() => void>();
 
 export function getDraft(key: string) {
@@ -30,8 +31,10 @@ export function getDraft(key: string) {
 
 export function setDraft(key: string, next: Draft | ((prev: Draft) => Draft)) {
   const value = typeof next === "function" ? next(getDraft(key)) : next;
+
   if (value.text === "" && value.attachments.length === 0) drafts.delete(key);
   else drafts.set(key, value);
+
   for (const listener of listeners) listener();
 }
 
@@ -47,6 +50,7 @@ export function useDraft(key: string) {
   return useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
+
       return () => listeners.delete(listener);
     },
     () => getDraft(key),
@@ -60,6 +64,7 @@ export function focusComposer() {
     const textarea = [
       ...document.querySelectorAll<HTMLTextAreaElement>("textarea[data-composer]"),
     ].find((candidate) => candidate.checkVisibility());
+
     if (!textarea) return;
 
     textarea.focus();
@@ -84,10 +89,13 @@ const Stash = Schema.Struct({
   ),
   at: Schema.Number,
 });
+
 export type Stash = typeof Stash.Type;
+
 const Stashes = Schema.Array(Stash);
 
 const STASH_KEY = "masscode.stash";
+
 const stashListeners = new Set<() => void>();
 
 function readStashes() {
@@ -99,6 +107,7 @@ let stashes = readStashes();
 function writeStashes(next: ReadonlyArray<Stash>) {
   stashes = next;
   writeStored(STASH_KEY, Stashes, next);
+
   for (const listener of stashListeners) listener();
 }
 
@@ -106,6 +115,7 @@ export function useStashes() {
   return useSyncExternalStore(
     (listener) => {
       stashListeners.add(listener);
+
       return () => stashListeners.delete(listener);
     },
     () => stashes,
@@ -115,9 +125,11 @@ export function useStashes() {
 /** Moves a composer's draft into the stash; false if there's nothing to keep. */
 export function stashDraft(key: string) {
   const draft = getDraft(key);
+
   const attachments = draft.attachments.filter((attachment) =>
     AttachmentInput.guards.path(attachment.input),
   );
+
   if (!draft.text.trim() && !attachments.length) return false;
 
   writeStashes([
@@ -125,12 +137,14 @@ export function stashDraft(key: string) {
     ...stashes,
   ]);
   setDraft(key, EMPTY);
+
   return true;
 }
 
 /** Moves a stash back into a composer, after whatever is there. */
 export function restoreStash(key: string, id: string) {
   const stash = stashes.find((candidate) => candidate.id === id);
+
   if (!stash) return;
 
   writeStashes(stashes.filter((candidate) => candidate.id !== id));
@@ -144,5 +158,6 @@ export function restoreStash(key: string, id: string) {
 window.addEventListener("storage", (event) => {
   if (event.key !== STASH_KEY) return;
   stashes = readStashes();
+
   for (const listener of stashListeners) listener();
 });

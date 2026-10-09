@@ -21,6 +21,7 @@ export const BrowserAction = Schema.TaggedUnion({
   evaluate: { expression: Schema.String },
   console: {},
 });
+
 export type BrowserAction = typeof BrowserAction.Type;
 
 export const BrowserResult = Schema.Struct({
@@ -29,4 +30,5 @@ export const BrowserResult = Schema.Struct({
   text: Schema.String,
   screenshot: Schema.NullOr(Schema.String),
 });
+
 export type BrowserResult = typeof BrowserResult.Type;

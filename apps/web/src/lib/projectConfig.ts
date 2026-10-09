@@ -20,6 +20,7 @@ export function useProjectConfig(
     void readProjectConfig(host, path).then((frame) => {
       if (!isCancelled && frame) setAnswer({ path, config: frame.config, error: frame.error });
     });
+
     return () => {
       isCancelled = true;
     };

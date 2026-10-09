@@ -122,6 +122,7 @@ echo "token=$(cat "$dir/token")"
 
 function broadcastHosts() {
   const list = listHosts();
+
   for (const window of BrowserWindow.getAllWindows())
     if (!window.isDestroyed()) window.webContents.send("hosts-changed", list);
 }
@@ -135,12 +136,16 @@ function setStatus(host: Host, status: HostStatus) {
 function describeSshError(alias: string, stderr: string) {
   if (/permission denied/i.test(stderr))
     return `Couldn't sign in to ${alias}. MassCode signs in with your SSH keys or agent, not a password: run ssh-copy-id ${alias} in a terminal, then retry.`;
+
   if (/host key verification failed/i.test(stderr))
     return `${alias}'s host key isn't trusted yet. Run ssh ${alias} in a terminal once to accept it, then retry.`;
+
   if (/could not resolve hostname/i.test(stderr))
     return `Couldn't find ${alias}. Check the name, or add it to ~/.ssh/config.`;
+
   if (/timed out|connection refused|no route to host|network is unreachable/i.test(stderr))
     return `Couldn't reach ${alias}. Check that it's on and reachable from this Mac, then retry.`;
+
   return stderr.trim().split("\n").at(-1) || `ssh ${alias} failed`;
 }
 
@@ -174,25 +179,32 @@ async function runRemoteScript(alias: string, version: string, mode: "start" | "
   const lines = (await runSsh(alias, `sh -s -- ${version} ${mode}`, REMOTE_SCRIPT))
     .split("\n")
     .filter((line) => line.includes("="));
+
   const values = new Map(
     lines.map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
   );
+
   const log = lines.filter((line) => line.startsWith("log=")).map((line) => line.slice(4));
+
   return { values, log };
 }
 
 function toLinuxArch(machine: string) {
   if (machine === "x86_64" || machine === "amd64") return "x64";
+
   if (machine === "aarch64" || machine === "arm64") return "arm64";
+
   return null;
 }
 
 /** Counts bytes going by, for upload and download progress. */
 function createProgressStream(total: number, report: (percent: number) => void) {
   let done = 0;
+
   return new Transform({
     transform(chunk: Buffer, _encoding, callback) {
       done += chunk.length;
+
       if (total > 0) report(Math.min(99, Math.floor((done / total) * 100)));
       callback(null, chunk);
     },
@@ -207,6 +219,7 @@ async function readWantedVersion() {
   if (app.isPackaged) return app.getVersion();
 
   const built = await stat(getDevArchivePath("x64")).catch(() => stat(getDevArchivePath("arm64")));
+
   return `dev-${Math.round(built.mtimeMs)}`;
 }
 
@@ -223,11 +236,13 @@ async function fetchDaemonArchive(host: Host, arch: string, version: string) {
     "remote",
     `masscode-daemon-${version}-linux-${arch}.gz`,
   );
+
   if (await stat(path).catch(() => null)) return path;
 
   const response = await net.fetch(
     `https://github.com/masmeert/code/releases/download/v${version}/masscode-daemon-linux-${arch}.gz`,
   );
+
   if (!response.ok || !response.body)
     throw new Error(
       `Couldn't download MassCode for ${host.alias} (${response.status} from GitHub). Check this Mac's connection, then retry.`,
@@ -246,6 +261,7 @@ async function fetchDaemonArchive(host: Host, arch: string, version: string) {
     createWriteStream(`${path}.part`),
   );
   await rename(`${path}.part`, path);
+
   return path;
 }
 
@@ -283,6 +299,7 @@ function waitForPort(port: number, tunnel: ChildProcess) {
       });
       socket.once("error", () => {
         socket.destroy();
+
         if (Date.now() > deadline) reject(new Error("The SSH tunnel didn't open in time"));
         else setTimeout(tryConnect, 100);
       });
@@ -310,6 +327,7 @@ async function routeBrowser(alias: string, socksPort: number | null) {
 async function openTunnel(host: Host, remotePort: number, token: string) {
   const [localPort, socksPort] = [await findFreePort(), await findFreePort()];
   let stderr = "";
+
   const tunnel = spawn("ssh", [
     "-T",
     ...SSH_OPTIONS,
@@ -335,6 +353,7 @@ async function openTunnel(host: Host, remotePort: number, token: string) {
     if (host.tunnel?.process !== tunnel) return;
     host.tunnel = null;
     void routeBrowser(host.alias, null);
+
     if (hosts.get(host.alias) === host && HostStatus.guards.connected(host.status))
       setStatus(host, HostStatus.cases.connecting.make({ step: "Reconnecting" }));
   });
@@ -355,6 +374,7 @@ async function openTunnel(host: Host, remotePort: number, token: string) {
   await routeBrowser(host.alias, socksPort);
   host.tunnel?.process.kill();
   host.tunnel = { process: tunnel, remotePort, daemon: { port: localPort, token } };
+
   return host.tunnel.daemon;
 }
 
@@ -364,11 +384,14 @@ async function connectHost(host: Host, mode: "start" | "restart"): Promise<Daemo
 
   try {
     const version = await readWantedVersion();
+
     if (!VERSION_PATTERN.test(version)) throw new Error(`Unexpected app version ${version}`);
 
     let { values, log } = await runRemoteScript(host.alias, version, mode);
+
     if (values.get("state") === "missing") {
       const arch = toLinuxArch(values.get("arch") ?? "");
+
       if (!arch)
         throw new Error(
           values.get("arch")
@@ -381,6 +404,7 @@ async function connectHost(host: Host, mode: "start" | "restart"): Promise<Daemo
     }
 
     const state = values.get("state");
+
     if (state === "unsupported")
       throw new Error(
         `MassCode runs on Linux hosts for now; ${host.alias} runs ${values.get("os")}.`,
@@ -388,11 +412,13 @@ async function connectHost(host: Host, mode: "start" | "restart"): Promise<Daemo
 
     if (state === "updating") {
       setStatus(host, HostStatus.cases.updating.make({}));
+
       return null;
     }
 
     const port = Number(values.get("port"));
     const token = values.get("token");
+
     if (state !== "running" || !port || !token)
       throw new Error(
         `MassCode didn't start on ${host.alias}${log.length ? `: ${log.join(" ")}` : "."}`,
@@ -405,6 +431,7 @@ async function connectHost(host: Host, mode: "start" | "restart"): Promise<Daemo
 
     if (hosts.get(host.alias) !== host) return null;
     setStatus(host, HostStatus.cases.connected.make({}));
+
     return daemon;
   } catch (error) {
     if (hosts.get(host.alias) === host)
@@ -414,6 +441,7 @@ async function connectHost(host: Host, mode: "start" | "restart"): Promise<Daemo
           message: error instanceof Error ? error.message : String(error),
         }),
       );
+
     return null;
   }
 }
@@ -429,6 +457,7 @@ async function saveHostList() {
 
 export async function loadHosts() {
   const saved: unknown = JSON.parse(await readFile(getHostListPath(), "utf8").catch(() => "[]"));
+
   if (!Array.isArray(saved)) return;
 
   for (const alias of saved) {
@@ -453,11 +482,13 @@ export function listHosts(): ReadonlyArray<RemoteHost> {
  */
 export function ensureHostDaemon(alias: string) {
   const host = hosts.get(alias);
+
   return host ? ensureConnected(host) : Promise.resolve(null);
 }
 
 export async function addHost(alias: string) {
   const trimmed = alias.trim();
+
   // An alias starting with "-" would reach ssh as an option.
   if (!trimmed || trimmed.startsWith("-") || /\s/.test(trimmed) || hosts.has(trimmed)) return;
 
@@ -474,6 +505,7 @@ export async function addHost(alias: string) {
 
 export async function removeHost(alias: string) {
   const host = hosts.get(alias);
+
   if (!host) return;
 
   hosts.delete(alias);
@@ -485,6 +517,7 @@ export async function removeHost(alias: string) {
 
 export async function restartHost(alias: string) {
   const host = hosts.get(alias);
+
   if (!host) return;
 
   await host.connecting;
@@ -501,6 +534,7 @@ const GIT_FORGES = new Set(["github.com", "gitlab.com", "bitbucket.org", "ssh.de
 export async function readSshAliases() {
   const sshDirectory = join(homedir(), ".ssh");
   const main = await readFile(join(sshDirectory, "config"), "utf8").catch(() => "");
+
   // ponytail: one level of Include without globs, which covers OrbStack's and most tools'
   const included = await Promise.all(
     [...main.matchAll(/^\s*Include\s+(.+)$/gim)]

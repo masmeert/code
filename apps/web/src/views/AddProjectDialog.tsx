@@ -124,9 +124,11 @@ function RemoteFolders({
           error: `${host} didn't answer. Check it in Settings → Connections.`,
         },
       );
+
       if (result) setTyped(result.path);
       onFolder(result && !result.error ? result.path : null);
     });
+
     return () => {
       isCurrent = false;
     };
@@ -235,6 +237,7 @@ function CloneRepository({ host, parent }: { host: string | null; parent: string
     setError(null);
     const cloned = await cloneProject(host, url.trim(), parent);
     setIsCloning(false);
+
     if (cloned.path) finishAddProject(cloned.path);
     else setError(cloned.error);
   }

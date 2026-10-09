@@ -108,19 +108,23 @@ export function Sidebar(props: {
 
   // Grouped by state: whatever still needs you on top, then shelved threads, then archived ones.
   const [isArchivedShown, setIsArchivedShown] = useState(false);
+
   const [isShelvedShown, setIsShelvedShown] = usePersistedFlag(
     "masscode.sidebar.shelvedOpen",
     true,
   );
+
   const [collapsedProjects, setCollapsedProjects] = useState<ReadonlyArray<string>>([]);
   // Sections render a page of rows at a time: recent history is the common lookup, the deep tail shouldn't dominate the list.
   const [shownCounts, setShownCounts] = useState<Readonly<Record<string, number>>>({});
+
   const { infos, needsYou, active, shelved, archived, projectGroups } = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const projectsById = new Map(projects.map((project) => [project.id, project]));
 
     function getProjectGroupKey(projectId: string) {
       const project = projectsById.get(projectId);
+
       return project ? getProjectKey(project) : projectId;
     }
 
@@ -148,6 +152,7 @@ export function Sidebar(props: {
           ? second.createdAt - first.createdAt
           : second.updatedAt - first.updatedAt,
       );
+
     const current = infos.filter((info) => info.archivedAt === null);
 
     return {
@@ -176,10 +181,12 @@ export function Sidebar(props: {
 
   // ⌘1–9 open the first nine threads in the order they're drawn; holding ⌘ shows each one's shortcut.
   let drawnInOrder: Array<ThreadInfo>;
+
   if (view.groupBy === "none") drawnInOrder = infos;
   else if (view.groupBy === "project")
     drawnInOrder = projectGroups.flatMap((group) => {
       const key = getProjectKey(getThreadProject(group[0]));
+
       return collapsedProjects.includes(key) && !query ? [] : getShownThreads(key, group);
     });
   else if (view.status === "archived") drawnInOrder = archived;
@@ -197,6 +204,7 @@ export function Sidebar(props: {
   // Reads the threads in the order drawn when the key is pressed.
   const jumpToThread = useEffectEvent((event: KeyboardEvent) => {
     const id = /^[1-9]$/.test(event.key) ? jumpIds[Number(event.key) - 1] : null;
+
     if (!id) return;
     event.preventDefault();
     props.onSelect(id);
@@ -215,11 +223,13 @@ export function Sidebar(props: {
       if (event.key === modifier) {
         // A delay, so the hints don't flash for every other ⌘ shortcut.
         hintTimer = setTimeout(() => setIsDigitHintShown(true), 200);
+
         return;
       }
 
       hideDigitHints();
       const isModifierHeld = isMac ? event.metaKey : event.ctrlKey;
+
       if (event.defaultPrevented || !isModifierHeld || event.shiftKey || event.altKey) return;
       jumpToThread(event);
     }
@@ -231,6 +241,7 @@ export function Sidebar(props: {
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", hideDigitHints);
+
     return () => {
       hideDigitHints();
       window.removeEventListener("keydown", onKeyDown);
@@ -389,6 +400,7 @@ export function Sidebar(props: {
           {projectGroups.map((group) => {
             const project = getThreadProject(group[0]);
             const key = getProjectKey(project);
+
             return renderFolding(
               key,
               project.name,
@@ -565,17 +577,24 @@ const NEEDS_YOU: Partial<
 
 function getStatusDotStyle(info: ThreadInfo, isUnread: boolean, isShelved: boolean) {
   const needsYou = NEEDS_YOU[info.status];
+
   if (needsYou) return { label: needsYou.label, tone: needsYou.dotTone };
+
   if (info.status === "running") return { label: "Working", tone: "bg-success animate-pulse" };
+
   if (isUnread) return { label: "New activity", tone: "bg-brand" };
+
   if (isShelved) return { label: "Shelved", tone: "bg-muted-foreground/25" };
+
   return { label: "Idle", tone: "bg-brand" };
 }
 
 /** What a running thread is doing: the command it runs, else the tool call in words. */
 function describeActivity(activity: ThreadActivity | undefined) {
   if (!activity) return "Thinking…";
+
   if (categoryOf(activity.tool) === "run") return activity.summary;
+
   return livePhrase({
     id: activity.toolId,
     name: activity.tool,
@@ -605,8 +624,10 @@ function ProviderMark({ info }: { info: ThreadInfo }) {
 /** Right end of the meta row: why the thread needs you, else its age. */
 function TrailingLabel({ info, now }: { info: ThreadInfo; now: number }) {
   const needsYou = NEEDS_YOU[info.status];
+
   if (needsYou)
     return <span className={cn("font-medium", needsYou.labelTone)}>{needsYou.label}</span>;
+
   return <span className="tabular-nums">{formatAge(info.updatedAt, now)}</span>;
 }
 
@@ -628,6 +649,7 @@ function useThreadActions(info: ThreadInfo, isShelved: boolean, onRename: () => 
   const shouldConfirmDelete = useStore((state) => state.settings.confirmDelete !== false);
 
   const isArchived = info.archivedAt !== null;
+
   const actions: Array<CardAction> = [
     { key: "rename", label: "Rename", icon: Pencil, onSelect: onRename },
     ...(isArchived
@@ -704,6 +726,7 @@ function MenuRow({ action, onDone }: { action: CardAction; onDone: () => void })
       disabled={action.disabled}
       onClick={() => {
         action.onSelect();
+
         if (!action.keepOpen) onDone();
       }}
       className={cn(
@@ -738,9 +761,11 @@ const ThreadCard = memo(function ThreadCard(props: {
   const [isMenuOpen, setIsMenuOpenState] = useState(false);
   const [isResponding, setIsResponding] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
+
   const { actions, resetConfirm } = useThreadActions(info, props.isShelved, () =>
     setIsRenaming(true),
   );
+
   // Two-finger swipe left shelves (or unshelves): the row follows the fingers, and past the
   // threshold letting go commits; short of it, it springs back.
   const swipeX = useMotionValue(0);
@@ -752,6 +777,7 @@ const ThreadCard = memo(function ThreadCard(props: {
 
   function setIsMenuOpen(isOpen: boolean) {
     setIsMenuOpenState(isOpen);
+
     if (!isOpen) resetConfirm();
   }
 
@@ -770,11 +796,13 @@ const ThreadCard = memo(function ThreadCard(props: {
           event.stopPropagation();
           event.currentTarget.value = info.title;
         }
+
         if (event.key === "Enter" || event.key === "Escape") event.currentTarget.blur();
       }}
       onBlur={(event) => {
         setIsRenaming(false);
         const next = event.currentTarget.value.trim();
+
         if (next && next !== info.title)
           send(ClientCommand.cases["thread.rename"].make({ threadId: info.id, title: next }));
       }}
@@ -861,6 +889,7 @@ const ThreadCard = memo(function ThreadCard(props: {
             onClick={() => props.onSelect(info.id)}
             onKeyDown={(event) => {
               if (event.target === event.currentTarget && event.key === "F2") setIsRenaming(true);
+
               if (
                 event.target !== event.currentTarget ||
                 (event.key !== "Enter" && event.key !== " ")
@@ -871,6 +900,7 @@ const ThreadCard = memo(function ThreadCard(props: {
             }}
             onWheel={(event) => {
               if (info.archivedAt !== null || !canShelve(info)) return;
+
               if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
               swipeX.set(Math.max(-96, Math.min(0, swipeX.get() - event.deltaX)));
               clearTimeout(swipeEnd.current);

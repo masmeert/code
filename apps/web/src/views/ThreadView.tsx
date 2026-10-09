@@ -80,10 +80,13 @@ import { IconButton } from "../components/icon-button.tsx";
 const DiffPanel = lazy(() =>
   import("./DiffPanel.tsx").then((module) => ({ default: module.DiffPanel })),
 );
+
 const TerminalPanel = lazy(() =>
   import("./TerminalPanel.tsx").then((module) => ({ default: module.TerminalPanel })),
 );
+
 const NO_QUEUE: ReadonlyArray<QueuedMessage> = [];
+
 const NO_RUNS: ReadonlyArray<RunningCommand> = [];
 
 export const ThreadView = memo(function ThreadView({ threadId }: { threadId: string }) {
@@ -107,17 +110,20 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   const runningTurnStart = isBusy
     ? items.findLastIndex((item) => item.kind === "user" && !item.steer)
     : items.length;
+
   const asideReplyId = items.findLast(
     (item, index) => index < runningTurnStart && item.kind === "assistant",
   )?.id;
 
   const [reveal, setReveal] = useState<ToolReveal | null>(null);
+
   const runningAgents = isBusy
     ? items.filter(
         (item): item is ToolItem =>
           item.kind === "tool" && categoryOf(item.name) === "agent" && item.output === null,
       )
     : [];
+
   const project = useStore((state) =>
     state.projects.find((candidate) => candidate.id === info.projectId),
   );
@@ -126,6 +132,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   const [isDiffOpen, setIsDiffOpen] = useState(false);
   // Null shows all uncommitted changes; a message id shows just what that turn changed.
   const [diffTurn, setDiffTurn] = useState<string | null>(null);
+
   const openTurnDiff = useCallback((messageId: string) => {
     setDiffTurn(messageId);
     setIsDiffOpen(true);
@@ -136,6 +143,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
     diffTurn !== null &&
     transcript?.status === "live" &&
     !items.some((item) => item.id === diffTurn);
+
   useEffect(() => {
     if (isDiffTurnGone) setDiffTurn(null);
   }, [isDiffTurnGone]);
@@ -147,6 +155,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   const followUps = useStore((state) => state.threads[threadId]?.queue) ?? NO_QUEUE;
   const followUpMode = useStore((state) => state.settings.followUp ?? "queue");
   const [{ effort, fast, permission }] = useTurnPrefs(threadId, provider, host);
+
   // The turn its output starts runs at the composer's effort and permission level.
   const runReplyCommand = useCallback(
     (command: string) =>
@@ -166,6 +175,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
     () => items.flatMap((item) => (item.kind === "user" && item.text ? [item.text] : [])),
     [items],
   );
+
   const scrollArea = useRef<HTMLDivElement>(null);
   const transcriptViewport = useRef<HTMLElement>(null);
 
@@ -174,11 +184,13 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
     (count, item) => (item.kind === "tool" && item.output !== null ? count + 1 : count),
     0,
   );
+
   const diffKey = `${status}:${info.updatedAt}:${finishedTools}`;
 
   const activeTerminal = useStore((state) => state.activeTerminals[threadId]);
   useKeybinding("terminal.toggle", () => {
     toggleTerminalPanel(threadId);
+
     if (activeTerminal) focusComposer();
   });
 
@@ -188,6 +200,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   // Simulators run on this Mac only; a remote thread's agent couldn't reach them.
   const isSimulatorAvailable =
     window.desktop !== undefined && host === null && navigator.userAgent.includes("Mac");
+
   const isSimulatorOpen = useSimulator(threadId).open;
   useKeybinding(isSimulatorAvailable ? "simulator.toggle" : undefined, () =>
     toggleSimulator(threadId),
@@ -202,6 +215,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
 
     markSeenIfFocused();
     window.addEventListener("focus", markSeenIfFocused);
+
     return () => window.removeEventListener("focus", markSeenIfFocused);
   }, [threadId, updatedAt]);
 
@@ -381,6 +395,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
               const text = buildReviewMessage(takeReviewComments(threadId), typed);
               // While the agent works, a message waits for the turn to end, or steers it; ⌘Enter flips that.
               const steer = (followUpMode === "steer") !== how.alternate;
+
               if (isBusy && !steer) queueMessage(threadId, text, options);
               else send(ClientCommand.cases["thread.send"].make({ threadId, text, options }));
             }}
@@ -388,6 +403,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
               asideReplyId
                 ? (question) => {
                     openSideChat(threadId, asideReplyId);
+
                     if (question) askSideChat(question);
                   }
                 : undefined

@@ -198,10 +198,12 @@ export function createApprovalBook<Entry>(
 
   function withdraw(requestId: string) {
     const entry = pending.get(requestId);
+
     if (entry === undefined) return undefined;
 
     pending.delete(requestId);
     emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
+
     return entry;
   }
 
@@ -225,6 +227,7 @@ export function createApprovalBook<Entry>(
     take: (requestId: string) =>
       Effect.suspend(() => {
         const entry = pending.get(requestId);
+
         if (entry === undefined) {
           return Effect.fail(
             new ProviderError({ provider, message: `Unknown approval request ${requestId}` }),
@@ -232,6 +235,7 @@ export function createApprovalBook<Entry>(
         }
 
         pending.delete(requestId);
+
         return Effect.succeed(entry);
       }),
     /** Tells clients a taken request is answered and the agent runs on. */
@@ -264,6 +268,7 @@ export function readImages(turn: TurnInput) {
   return Promise.all(
     turn.attachments.flatMap((attachment) => {
       const mediaType = IMAGE_TYPES.get(extname(attachment.path).toLowerCase());
+
       return attachment.isImage && mediaType
         ? [readFile(attachment.path).then((data) => ({ mediaType, data: data.toString("base64") }))]
         : [];
@@ -291,6 +296,7 @@ export function handleHarnessExit(
 ) {
   return (code: number | null, stderrTail: string) => {
     const hasCrashed = code !== 0 && code !== null;
+
     if (hasCrashed) {
       emit(
         RuntimeEvent.cases.error.make({
@@ -301,6 +307,7 @@ export function handleHarnessExit(
         }),
       );
     }
+
     emit(
       RuntimeEvent.cases["thread.status"].make({
         threadId,
@@ -313,7 +320,9 @@ export function handleHarnessExit(
 /** One-line human summary of a tool input, for the transcript. */
 export function summarizeToolInput(input: Schema.Json): string {
   if (input === null) return "";
+
   if (!Predicate.isObjectOrArray(input)) return String(input);
+
   if (Object.keys(input).length === 0) return "";
 
   const summary = Schema.is(Schema.JsonObject)(input)
@@ -332,17 +341,21 @@ export function summarizeToolInput(input: Schema.Json): string {
         .map((field) => input[field])
         .find(Predicate.isString)
     : undefined;
+
   if (summary !== undefined) return summary;
 
   const json = JSON.stringify(input);
+
   return json.length > 200 ? `${json.slice(0, 200)}…` : json;
 }
 
 /** The message text with non-image attachments listed as paths for the agent to read. */
 export function formatTextWithFiles(turn: TurnInput) {
   const files = turn.attachments.filter((attachment) => !attachment.isImage);
+
   if (!files.length) return turn.text;
 
   const list = files.map((file) => `- ${file.path}`).join("\n");
+
   return `${turn.text}${turn.text ? "\n\n" : ""}Attached files:\n${list}`;
 }

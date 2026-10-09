@@ -14,6 +14,7 @@ export const ConfigOption = Schema.Struct({
   currentValue: Schema.optional(Schema.Unknown),
   options: Schema.optional(Schema.Array(Schema.Struct({ value: Schema.String }))),
 });
+
 export type ConfigOption = typeof ConfigOption.Type;
 
 /** What `session/new`, `session/load` and `session/set_config_option` answer with. */
@@ -33,6 +34,7 @@ export const ToolContent = Schema.Union([
   }),
   Schema.Struct({ type: Schema.Literal("terminal") }),
 ]);
+
 export type ToolContent = typeof ToolContent.Type;
 
 const ToolFields = {
@@ -67,12 +69,14 @@ export const SessionUpdate = Schema.Union([
     configOptions: Schema.Array(ConfigOption),
   }),
 ]).pipe(Schema.toTaggedUnion("sessionUpdate"));
+
 export type SessionUpdate = typeof SessionUpdate.Type;
 
 export const PermissionRequest = Schema.Struct({
   toolCall: Schema.Struct(ToolFields),
   options: Schema.Array(Schema.Struct({ optionId: Schema.String, kind: Schema.String })),
 });
+
 export type PermissionRequest = typeof PermissionRequest.Type;
 
 export const PromptResponse = Schema.Struct({ stopReason: Schema.String });
@@ -107,6 +111,7 @@ export async function connectAcp(
         if (method !== "session/update") return;
 
         const update = decodeUpdate(params);
+
         if (Option.isSome(update)) handlers.onUpdate?.(update.value.update);
       },
       onRequest: handlers.onRequest,

@@ -32,6 +32,7 @@ export interface ThreadHome {
 
 /** Per harness, the conversation id to resume it from. */
 const ResumeTokens = Schema.Record(ProviderKind, Schema.optionalKey(Schema.String));
+
 export type ResumeTokens = typeof ResumeTokens.Type;
 
 /**
@@ -39,6 +40,7 @@ export type ResumeTokens = typeof ResumeTokens.Type;
  * to; 0 for one that has none. The harness in use is missing unless it has a handoff coming.
  */
 const Coverage = Schema.Record(ProviderKind, Schema.optionalKey(Schema.Number));
+
 export type Coverage = typeof Coverage.Type;
 
 interface StoredThread {
@@ -181,21 +183,27 @@ export class ThreadStore extends Context.Service<
 >()("masscode/ThreadStore") {}
 
 const decodeEvent = Schema.decodeUnknownOption(Schema.fromJsonString(RuntimeEvent));
+
 const decodeUsage = Schema.decodeUnknownOption(Schema.fromJsonString(ThreadUsage));
+
 const decodeQueue = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(QueuedMessage)));
+
 const decodeLimitStop = Schema.decodeUnknownOption(Schema.fromJsonString(LimitStop));
 
 const decodeTag = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Struct({ _tag: Schema.optional(Schema.String) })),
 );
+
 const decodeRequestId = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Struct({ requestId: Schema.String })),
 );
+
 const decodeText = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Struct({ text: Schema.String })),
 );
 
 const decodeTokens = Schema.decodeUnknownOption(Schema.fromJsonString(ResumeTokens));
+
 const decodeCoverage = Schema.decodeUnknownOption(Schema.fromJsonString(Coverage));
 
 /** Per-harness tokens, with the one stored before there were several counted for the thread's harness. */
@@ -204,6 +212,7 @@ function parseResumeTokens(
 ): ResumeTokens {
   const tokens: ResumeTokens =
     row.resume_tokens === null ? {} : Option.getOrElse(decodeTokens(row.resume_tokens), () => ({}));
+
   return row.resume_token === null || tokens[row.provider] !== undefined
     ? tokens
     : { ...tokens, [row.provider]: row.resume_token };
@@ -234,11 +243,13 @@ function migrate(database: Database) {
       .all()
       .map((column) => column.name),
   );
+
   if (!eventColumns.has("kind")) database.run("ALTER TABLE events ADD COLUMN kind TEXT");
 
   const untagged = database
     .query<EventRow, []>("SELECT seq, json FROM events WHERE kind IS NULL")
     .all();
+
   if (untagged.length) {
     const setKind = database.prepare("UPDATE events SET kind = $kind WHERE seq = $seq");
     database.transaction(() => {
@@ -263,31 +274,45 @@ function migrate(database: Database) {
       .all()
       .map((column) => column.name),
   );
+
   if (!columns.has("model")) database.run("ALTER TABLE threads ADD COLUMN model TEXT");
+
   if (!columns.has("archived_at"))
     database.run("ALTER TABLE threads ADD COLUMN archived_at INTEGER");
+
   if (!columns.has("updated_at")) {
     database.run("ALTER TABLE threads ADD COLUMN updated_at INTEGER");
     database.run("UPDATE threads SET updated_at = created_at");
   }
+
   if (!columns.has("worktree"))
     database.run("ALTER TABLE threads ADD COLUMN worktree INTEGER NOT NULL DEFAULT 0");
+
   if (!columns.has("agent_cwd")) database.run("ALTER TABLE threads ADD COLUMN agent_cwd TEXT");
+
   if (!columns.has("usage")) database.run("ALTER TABLE threads ADD COLUMN usage TEXT");
+
   if (!columns.has("seen_rev")) {
     database.run("ALTER TABLE threads ADD COLUMN seen_rev INTEGER NOT NULL DEFAULT 0");
     // Threads from before the daemon tracked this count as looked at.
     database.run("UPDATE threads SET seen_rev = updated_at");
   }
+
   if (!columns.has("shelve_override"))
     database.run("ALTER TABLE threads ADD COLUMN shelve_override TEXT");
+
   if (!columns.has("started_by")) database.run("ALTER TABLE threads ADD COLUMN started_by TEXT");
+
   if (!columns.has("queue")) database.run("ALTER TABLE threads ADD COLUMN queue TEXT");
+
   if (!columns.has("limit_stop")) database.run("ALTER TABLE threads ADD COLUMN limit_stop TEXT");
+
   // Per-harness tokens replace `resume_token`, which is emptied once they're written.
   if (!columns.has("resume_tokens"))
     database.run("ALTER TABLE threads ADD COLUMN resume_tokens TEXT");
+
   if (!columns.has("coverage")) database.run("ALTER TABLE threads ADD COLUMN coverage TEXT");
+
   if (columns.has("settle_override")) {
     // Shelving was called settling. Both columns can exist, so a newer shelve value wins.
     database.run(
@@ -299,6 +324,7 @@ function migrate(database: Database) {
   // Full-text index of what was said, for search. Filled as messages are stored; built from the log once.
   const hasSearch =
     database.query("SELECT name FROM sqlite_master WHERE name = 'messages_fts'").get() !== null;
+
   if (!hasSearch) {
     database.run(
       `CREATE VIRTUAL TABLE messages_fts USING fts5(text, thread_id UNINDEXED, message_id UNINDEXED, sender UNINDEXED, seq UNINDEXED, tokenize = "unicode61 remove_diacritics 2")`,
@@ -321,6 +347,7 @@ const make = Effect.gen(function* () {
       database.run("PRAGMA busy_timeout = 5000");
       database.run("PRAGMA foreign_keys = ON");
       migrate(database);
+
       return database;
     }),
     (database) => Effect.sync(() => database.close()),
@@ -329,15 +356,20 @@ const make = Effect.gen(function* () {
   const insertThread = database.prepare(
     "INSERT INTO threads (id, project_id, provider, model, cwd, agent_cwd, title, created_at, updated_at, worktree, started_by) VALUES ($id, $projectId, $provider, $model, $cwd, $agentCwd, $title, $createdAt, $updatedAt, $worktree, $startedBy)",
   );
+
   const setAgentCwd = database.prepare("UPDATE threads SET agent_cwd = $cwd WHERE id = $id");
+
   const setMeta = database.prepare(
     "UPDATE threads SET title = $title, updated_at = $updatedAt WHERE id = $id",
   );
+
   const setModel = database.prepare("UPDATE threads SET model = $model WHERE id = $id");
   const setQueue = database.prepare("UPDATE threads SET queue = $queue WHERE id = $id");
+
   const setLimitStop = database.prepare(
     "UPDATE threads SET limit_stop = $limitStop WHERE id = $id",
   );
+
   // A turn starts at a user message not sent into a running one, and ends at turn.completed.
   const selectUnfinished = database.prepare<{ thread_id: string; message_id: string }, []>(
     `SELECT thread_id, (SELECT json_extract(json, '$.messageId') FROM events WHERE seq = turn_seq) AS message_id
@@ -348,55 +380,73 @@ const make = Effect.gen(function* () {
        FROM events WHERE kind IN ('user.message', 'turn.completed') GROUP BY thread_id
      ) WHERE turn_seq > COALESCE(done_seq, 0)`,
   );
+
   const setUsage = database.prepare("UPDATE threads SET usage = $usage WHERE id = $id");
+
   const setArchived = database.prepare(
     "UPDATE threads SET archived_at = $archivedAt WHERE id = $id",
   );
+
   const setSeenRev = database.prepare("UPDATE threads SET seen_rev = $seenRev WHERE id = $id");
+
   const setShelveOverride = database.prepare(
     "UPDATE threads SET shelve_override = $override WHERE id = $id",
   );
+
   const setResumeTokens = database.prepare(
     "UPDATE threads SET resume_tokens = $tokens, resume_token = NULL WHERE id = $id",
   );
+
   const setCoverage = database.prepare("UPDATE threads SET coverage = $coverage WHERE id = $id");
+
   const setProvider = database.prepare(
     "UPDATE threads SET provider = $provider, model = $model WHERE id = $id",
   );
+
   const tagUserMessages = database.prepare(
     "UPDATE events SET json = json_set(json, '$.provider', $provider) WHERE thread_id = $threadId AND kind = 'user.message' AND json_extract(json, '$.provider') IS NULL",
   );
+
   const appendEvent = database.prepare(
     "INSERT INTO events (thread_id, kind, json) VALUES ($threadId, $kind, $json)",
   );
+
   const indexMessage = database.prepare(
     "INSERT INTO messages_fts (text, thread_id, message_id, sender, seq) VALUES ($text, $threadId, $messageId, $sender, $seq)",
   );
+
   const selectUserMessages = database.prepare<EventRow, { threadId: string }>(
     "SELECT seq, json FROM events WHERE thread_id = $threadId AND kind = 'user.message' ORDER BY seq",
   );
+
   const selectMessageSeq = database.prepare<
     { seq: number },
     { threadId: string; messageId: string }
   >(
     "SELECT seq FROM events WHERE thread_id = $threadId AND json_extract(json, '$.messageId') = $messageId ORDER BY seq LIMIT 1",
   );
+
   const copyEvents = database.prepare(
     "INSERT INTO events (thread_id, kind, json) SELECT $to, kind, json_set(json, '$.threadId', $to) FROM events WHERE thread_id = $from AND seq < $before ORDER BY seq",
   );
+
   const indexThread = database.prepare(
     `INSERT INTO messages_fts (text, thread_id, message_id, sender, seq)
       SELECT json_extract(json, '$.text'), thread_id, json_extract(json, '$.messageId'),
         CASE kind WHEN 'user.message' THEN 'user' ELSE 'assistant' END, seq
       FROM events WHERE thread_id = $threadId AND kind IN ('user.message', 'assistant.completed') AND json_extract(json, '$.text') != ''`,
   );
+
   const truncateEvents = database.prepare(
     "DELETE FROM events WHERE thread_id = $threadId AND seq >= $seq",
   );
+
   const truncateIndex = database.prepare(
     "DELETE FROM messages_fts WHERE thread_id = $threadId AND seq >= $seq",
   );
+
   const deleteIndex = database.prepare("DELETE FROM messages_fts WHERE thread_id = $threadId");
+
   const selectSearch = database.prepare<
     { thread_id: string; message_id: string; sender: "user" | "assistant"; snippet: string },
     { query: string; limit: number }
@@ -404,6 +454,7 @@ const make = Effect.gen(function* () {
     `SELECT thread_id, message_id, sender, snippet(messages_fts, 0, char(57344), char(57345), '…', 16) AS snippet
      FROM messages_fts WHERE messages_fts MATCH $query ORDER BY seq DESC LIMIT $limit`,
   );
+
   const dataId = database
     .query<{ value: string }, []>("SELECT value FROM meta WHERE key = 'data_id'")
     .get()!.value;
@@ -426,36 +477,44 @@ const make = Effect.gen(function* () {
   const selectAfter = database.prepare<EventRow, { threadId: string; after: number }>(
     "SELECT seq, json FROM events WHERE thread_id = $threadId AND seq > $after ORDER BY seq",
   );
+
   const selectMeasure = database.prepare<
     { count: number; bytes: number | null },
     { threadId: string; after: number }
   >(
     "SELECT COUNT(*) AS count, SUM(length(CAST(json AS BLOB))) AS bytes FROM events WHERE thread_id = $threadId AND seq > $after",
   );
+
   const selectRange = database.prepare<
     EventRow,
     { threadId: string; from: number; before: number }
   >(
     "SELECT seq, json FROM events WHERE thread_id = $threadId AND seq >= $from AND seq < $before ORDER BY seq",
   );
+
   const selectTurnStart = database.prepare<
     { seq: number },
     { threadId: string; before: number; offset: number }
   >(
     "SELECT seq FROM events WHERE thread_id = $threadId AND kind = 'user.message' AND seq < $before ORDER BY seq DESC LIMIT 1 OFFSET $offset",
   );
+
   const selectOlder = database.prepare<{ seq: number }, { threadId: string; before: number }>(
     "SELECT seq FROM events WHERE thread_id = $threadId AND seq < $before LIMIT 1",
   );
+
   const selectCursor = database.prepare<{ seq: number | null }, { threadId: string }>(
     "SELECT MAX(seq) AS seq FROM events WHERE thread_id = $threadId",
   );
+
   const selectApprovals = database.prepare<{ thread_id: string; kind: string; json: string }, []>(
     "SELECT thread_id, kind, json FROM events WHERE kind IN ('approval.requested', 'approval.resolved') ORDER BY seq",
   );
+
   const selectFirstUser = database.prepare<{ json: string }, { threadId: string }>(
     "SELECT json FROM events WHERE thread_id = $threadId AND kind = 'user.message' ORDER BY seq LIMIT 1",
   );
+
   const deleteThread = database.prepare("DELETE FROM threads WHERE id = $id");
 
   return ThreadStore.of({
@@ -497,13 +556,16 @@ const make = Effect.gen(function* () {
     ),
     listUnresolvedApprovals: () => {
       const pending = new Map<string, string>();
+
       for (const row of selectApprovals.all()) {
         const requestId = Option.getOrUndefined(decodeRequestId(row.json))?.requestId;
+
         if (requestId === undefined) continue;
 
         if (row.kind === "approval.requested") pending.set(requestId, row.thread_id);
         else pending.delete(requestId);
       }
+
       return [...pending];
     },
     listUnfinishedTurns: () =>
@@ -511,6 +573,7 @@ const make = Effect.gen(function* () {
     hasMessage: (threadId, messageId) => selectMessageSeq.get({ threadId, messageId }) !== null,
     readFirstUserMessage: (threadId) => {
       const row = selectFirstUser.get({ threadId });
+
       if (!row) return null;
 
       return Option.getOrUndefined(decodeText(row.json))?.text ?? null;
@@ -518,6 +581,7 @@ const make = Effect.gen(function* () {
     readCursor: (threadId) => selectCursor.get({ threadId })?.seq ?? 0,
     measureAfter: (threadId, after) => {
       const row = selectMeasure.get({ threadId, after });
+
       return { count: row?.count ?? 0, bytes: row?.bytes ?? 0 };
     },
     readAfter: (threadId, after) => toStoredEvents(selectAfter.all({ threadId, after })),
@@ -525,9 +589,11 @@ const make = Effect.gen(function* () {
       const start = selectTurnStart.get({ threadId, before, offset: Math.max(0, turnLimit - 1) });
       const from = start?.seq ?? 0;
       const events = toStoredEvents(selectRange.all({ threadId, from, before }));
+
       if (events.length === 0) return { events, page: null };
 
       const hasMore = start !== null && selectOlder.get({ threadId, before: from }) !== null;
+
       return { events, page: { before: events[0]!.id, hasMore } };
     },
     insertThread: (info, home) => {
@@ -589,6 +655,7 @@ const make = Effect.gen(function* () {
         appendEvent.run({ threadId, kind: event._tag, json: JSON.stringify(event) })
           .lastInsertRowid,
       );
+
       if (RuntimeEvent.isAnyOf(["user.message", "assistant.completed"])(event) && event.text) {
         const sender = RuntimeEvent.guards["user.message"](event) ? "user" : "assistant";
         indexMessage.run({ text: event.text, threadId, messageId: event.messageId, sender, seq });
@@ -600,6 +667,7 @@ const make = Effect.gen(function* () {
       const messages = readUserMessages(threadId);
       const index = messages.findIndex((message) => message.event.messageId === messageId);
       const found = messages[index];
+
       if (!found) return null;
 
       return {
@@ -611,13 +679,17 @@ const make = Effect.gen(function* () {
     },
     findTurnsAfter: (threadId, messageId) => {
       const after = selectMessageSeq.get({ threadId, messageId });
+
       if (!after) return null;
 
       const messages = readUserMessages(threadId);
+
       const index = messages.findIndex(
         (message) => message.seq > after.seq && !message.event.steer,
       );
+
       const found = messages[index];
+
       if (!found) return { seq: null, before: messages.length, from: [] };
 
       return {
@@ -644,6 +716,7 @@ const make = Effect.gen(function* () {
         .split(/\s+/)
         .filter(Boolean)
         .map((word) => `"${word.replaceAll('"', '""')}"*`);
+
       if (!terms.length) return [];
 
       return selectSearch.all({ query: terms.join(" "), limit }).map((row) => ({

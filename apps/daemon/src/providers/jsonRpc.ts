@@ -37,6 +37,7 @@ const RpcMessage = Schema.Struct({
     ),
   ),
 });
+
 type RpcMessage = typeof RpcMessage.Type;
 
 const decodeRpcMessage = Schema.decodeUnknownOption(Schema.fromJsonString(RpcMessage));
@@ -77,6 +78,7 @@ export function connectJsonRpc(
   const child = spawn(launch.bin, args, { cwd, env: launch.env, stdio: ["pipe", "pipe", "pipe"] });
 
   let nextId = 0;
+
   const inflight = new Map<
     RpcId,
     { readonly resolve: (reply: RpcMessage) => void; readonly reject: (error: Error) => void }
@@ -90,20 +92,24 @@ export function connectJsonRpc(
 
   createInterface({ input: child.stdout }).on("line", (line) => {
     const message = Option.getOrUndefined(decodeRpcMessage(line));
+
     if (message === undefined) return;
 
     const { id, method, params } = message;
+
     if (method !== undefined && id !== undefined && id !== null) {
       if (!(handlers.onRequest?.(id, method, params) ?? false))
         writeMessage({
           id,
           error: { code: -32601, message: `MassCode does not handle ${method}` },
         });
+
       return;
     }
 
     if (method !== undefined) {
       handlers.onNotification?.(method, params);
+
       return;
     }
 
@@ -125,6 +131,7 @@ export function connectJsonRpc(
 
   function failRequests(error: Error) {
     failure ??= error;
+
     for (const waiter of inflight.values()) waiter.reject(failure);
     inflight.clear();
   }

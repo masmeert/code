@@ -10,12 +10,15 @@ import { dirname, join } from "node:path";
  * untracked-file diffs can ask at the same time; the rest wait their turn (t3code caps at 8 too).
  */
 const MAX_GIT_PROCESSES = 8;
+
 let running = 0;
+
 const waiting: Array<() => void> = [];
 
 function acquireGitSlot() {
   if (running < MAX_GIT_PROCESSES) {
     running++;
+
     return Promise.resolve();
   }
 
@@ -25,6 +28,7 @@ function acquireGitSlot() {
 /** Hands the slot straight to the next waiter, so nobody can slip in between. */
 function releaseGitSlot() {
   const next = waiting.shift();
+
   if (next) next();
   else running--;
 }
@@ -41,6 +45,7 @@ async function execGit(
   options: ExecFileOptions,
 ): Promise<GitResult> {
   await acquireGitSlot();
+
   try {
     return await new Promise((resolve) => {
       execFile(
@@ -65,20 +70,24 @@ async function execGit(
 export async function readBranch(cwd: string): Promise<string | null> {
   const head = await execGit(cwd, ["rev-parse", "--abbrev-ref", "HEAD"], { timeout: 2000 });
   const ref = head.stdout.trim();
+
   if (head.error || !ref) {
     // No commits yet: HEAD names a branch that doesn't exist.
     const symbolic = await execGit(cwd, ["symbolic-ref", "--short", "HEAD"], { timeout: 2000 });
+
     return symbolic.error ? null : symbolic.stdout.trim() || null;
   }
 
   if (ref !== "HEAD") return ref;
 
   const sha = await execGit(cwd, ["rev-parse", "--short", "HEAD"], { timeout: 2000 });
+
   return sha.error ? null : sha.stdout.trim() || null;
 }
 
 async function runGit(cwd: string, args: ReadonlyArray<string>, timeout = 5000) {
   const { error, stdout, stderr } = await execGit(cwd, args, { timeout });
+
   return { ok: !error, stdout: stdout.trim(), stderr: stderr.trim() || (error?.message ?? "") };
 }
 
@@ -93,7 +102,9 @@ export async function listBranches(cwd: string) {
       "refs/heads",
     ]),
   ]);
+
   const branches = refs.ok ? refs.stdout.split("\n").filter(Boolean) : [];
+
   if (current && !branches.includes(current)) branches.unshift(current);
 
   return { current, branches };
@@ -106,21 +117,25 @@ export async function listFiles(cwd: string) {
     ["ls-files", "--cached", "--others", "--exclude-standard", "--deduplicate"],
     { timeout: 5000, maxBuffer: 32 * 1024 * 1024 },
   );
+
   return error ? [] : stdout.split("\n").filter(Boolean);
 }
 
 /** Switches `cwd` to an existing local branch; resolves to git's error message on failure. */
 export async function checkoutBranch(cwd: string, branch: string) {
   const { branches } = await listBranches(cwd);
+
   if (!branches.includes(branch)) return `No local branch "${branch}"`;
 
   const result = await runGit(cwd, ["switch", branch], 15000);
+
   return result.ok ? null : getFirstLines(result.stderr);
 }
 
 /** Creates `branch` at HEAD and switches to it; resolves to an error message on failure. */
 export async function createBranch(cwd: string, branch: string) {
   const name = branch.trim();
+
   // check-ref-format rejects spaces, "..", trailing ".lock" and the like; a leading "-" would read as a flag.
   if (
     !name ||
@@ -131,9 +146,11 @@ export async function createBranch(cwd: string, branch: string) {
   }
 
   const { branches } = await listBranches(cwd);
+
   if (branches.includes(name)) return `Branch "${name}" already exists`;
 
   const result = await runGit(cwd, ["switch", "-c", name], 15000);
+
   return result.ok ? null : getFirstLines(result.stderr);
 }
 
@@ -143,7 +160,9 @@ function getFirstLines(text: string) {
 
 /** Git's well-known empty tree: the base to diff against before the first commit. */
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
 const MAX_PATCH_BYTES = 4 * 1024 * 1024;
+
 const MAX_UNTRACKED = 100;
 
 async function runGitRaw(cwd: string, args: ReadonlyArray<string>) {
@@ -151,6 +170,7 @@ async function runGitRaw(cwd: string, args: ReadonlyArray<string>) {
     timeout: 10000,
     maxBuffer: MAX_PATCH_BYTES * 2,
   });
+
   return {
     code: error ? (Predicate.isNumber(error.code) ? error.code : -1) : 0,
     stdout,
@@ -171,11 +191,13 @@ export async function readDiff(
   cwd: string,
 ): Promise<{ patch: string; truncated: boolean; error: string | null }> {
   const inside = await runGit(cwd, ["rev-parse", "--is-inside-work-tree"]);
+
   if (!inside.ok) return { patch: "", truncated: false, error: "Not a git repo" };
 
   const hasHead = (await runGit(cwd, ["rev-parse", "--verify", "--quiet", "HEAD"])).ok;
 
   const tracked = await runGitRaw(cwd, ["diff", ...DIFF_FLAGS, hasHead ? "HEAD" : EMPTY_TREE]);
+
   if (tracked.code !== 0)
     return { patch: "", truncated: false, error: getFirstLines(tracked.stderr) };
 
@@ -183,6 +205,7 @@ export async function readDiff(
   const untracked = others.ok ? others.stdout.split("\0").filter(Boolean) : [];
   let patch = tracked.stdout;
   let truncated = untracked.length > MAX_UNTRACKED;
+
   // In parallel (the process cap bounds it), kept in order.
   const added =
     patch.length > MAX_PATCH_BYTES
@@ -195,6 +218,7 @@ export async function readDiff(
               runGitRaw(cwd, ["diff", ...DIFF_FLAGS, "--no-index", "--", "/dev/null", file]),
             ),
         );
+
   for (const file of added) {
     if (file.code === 0 || file.code === 1) patch += file.stdout;
   }
@@ -218,6 +242,7 @@ async function runGitLong(cwd: string, args: ReadonlyArray<string>, timeout = 60
     env: NO_PROMPT,
     maxBuffer: 4 * 1024 * 1024,
   });
+
   return {
     ok: !error,
     stdout: stdout.trim(),
@@ -261,6 +286,7 @@ export async function readStatus(cwd: string): Promise<RepoStatus | null> {
     runGit(cwd, ["status", "--porcelain=v2", "--branch", "--untracked-files=all"]),
     runGit(cwd, ["remote"]),
   ]);
+
   if (!status.ok) return null;
 
   let changes = 0;
@@ -270,14 +296,17 @@ export async function readStatus(cwd: string): Promise<RepoStatus | null> {
   let detached = false;
   let branch: string | null = null;
   let oid: string | null = null;
+
   for (const line of status.stdout.split("\n")) {
     if (!line) continue;
+
     if (!line.startsWith("#")) {
       changes++;
       continue;
     }
 
     const [, key, ...rest] = line.split(" ");
+
     if (key === "branch.head") {
       detached = rest[0] === "(detached)";
       branch = detached ? null : (rest[0] ?? null);
@@ -298,6 +327,7 @@ export async function readStatus(cwd: string): Promise<RepoStatus | null> {
 
   const defaultBranch = await readDefaultBranch(cwd);
   const base = defaultBranch && (await findBaseRef(cwd, defaultBranch));
+
   const aheadOfDefault =
     base && oid && branch !== defaultBranch
       ? Number((await runGit(cwd, ["rev-list", "--count", `${base}..HEAD`])).stdout) || 0
@@ -320,20 +350,24 @@ export async function readStatus(cwd: string): Promise<RepoStatus | null> {
 /** The remote pull requests go to: origin, else the first one. */
 async function findMainRemote(cwd: string) {
   const remotes = (await runGit(cwd, ["remote"])).stdout.split("\n").filter(Boolean);
+
   return remotes.includes("origin") ? "origin" : (remotes[0] ?? null);
 }
 
 /** What the main remote's HEAD points at, else main or master if one exists. */
 async function readDefaultBranch(cwd: string) {
   const remote = await findMainRemote(cwd);
+
   if (remote) {
     const head = await runGit(cwd, ["symbolic-ref", "--short", `refs/remotes/${remote}/HEAD`]);
+
     if (head.ok && head.stdout.startsWith(`${remote}/`))
       return head.stdout.slice(remote.length + 1);
   }
 
   for (const name of ["main", "master"]) {
     const found = await runGit(cwd, ["rev-parse", "--verify", "--quiet", `refs/heads/${name}`]);
+
     if (found.ok) return name;
   }
 
@@ -344,6 +378,7 @@ async function readDefaultBranch(cwd: string) {
 async function findBaseRef(cwd: string, branch: string) {
   const remote = await findMainRemote(cwd);
   const tracking = remote ? `refs/remotes/${remote}/${branch}` : null;
+
   if (tracking && (await runGit(cwd, ["rev-parse", "--verify", "--quiet", tracking])).ok)
     return tracking;
 
@@ -355,9 +390,11 @@ async function findBaseRef(cwd: string, branch: string) {
 /** The main remote's URL, for telling which host it's on. */
 export async function readRemoteUrl(cwd: string) {
   const remote = await findMainRemote(cwd);
+
   if (!remote) return null;
 
   const url = await runGit(cwd, ["remote", "get-url", remote]);
+
   return url.ok ? url.stdout : null;
 }
 
@@ -377,9 +414,11 @@ export async function fastForwardDefaultBranch(cwd: string) {
   }
 
   if (!canFastForward(await readStatus(cwd))) return false;
+
   if (!(await runGitLong(cwd, ["fetch", "--quiet", "--no-tags"], 15000)).ok) return false;
 
   const fetched = await readStatus(cwd);
+
   if (!canFastForward(fetched) || !fetched?.behind) return false;
 
   return (await runGitLong(cwd, ["pull", "--ff-only"], 30000)).ok;
@@ -392,14 +431,17 @@ function capText(text: string, limit: number) {
 /** The branch set as `branch`'s merge base (gh's `branch.<name>.gh-merge-base`), else the default branch. */
 async function readMergeBase(cwd: string, branch: string) {
   const configured = await runGit(cwd, ["config", `branch.${branch}.gh-merge-base`]);
+
   return configured.ok && configured.stdout ? configured.stdout : await readDefaultBranch(cwd);
 }
 
 /** The checkout that has `branch` out, among the repo's main one and its worktrees. */
 async function findCheckout(cwd: string, branch: string) {
   const list = await runGit(cwd, ["worktree", "list", "--porcelain"]);
+
   for (const entry of list.stdout.split("\n\n")) {
     const lines = entry.split("\n");
+
     if (lines.includes(`branch refs/heads/${branch}`))
       return lines[0]?.replace(/^worktree /, "") ?? null;
   }
@@ -416,10 +458,12 @@ async function previewMerge(cwd: string, into: string) {
     runGitRaw(cwd, ["merge-tree", "--write-tree", "--name-only", "--no-messages", into, "HEAD"]),
     runGit(cwd, ["rev-parse", `${into}^{tree}`]),
   ]);
+
   // Exit 1 means conflicts, listed after the tree.
   if (result.code !== 0 && result.code !== 1) return null;
 
   const [tree = "", ...conflicts] = result.stdout.split("\n").filter(Boolean);
+
   return { tree, conflicts, changesNothing: result.code === 0 && tree === current.stdout };
 }
 
@@ -430,27 +474,34 @@ async function readBase(cwd: string, branch: string, head: string): Promise<Base
     "--git-dir",
     "--git-common-dir",
   ]);
+
   const [gitDir, commonDir] = dirs.stdout.split("\n");
+
   if (!dirs.ok || gitDir === commonDir) return null;
 
   const name = await readMergeBase(cwd, branch);
+
   if (!name || name === branch || !(await hasRef(cwd, `refs/heads/${name}`))) return null;
 
   const [count, checkout] = await Promise.all([
     runGit(cwd, ["rev-list", "--count", `refs/heads/${name}..HEAD`]),
     findCheckout(cwd, name),
   ]);
+
   const ahead = Number(count.stdout) || 0;
+
   if (ahead === 0) {
     // The base has every commit: merged, unless the branch never moved from where it was created (its oldest reflog entry).
     const reflog = await runGit(cwd, ["reflog", "show", "--format=%H", `refs/heads/${branch}`]);
     const start = reflog.stdout.split("\n").at(-1);
+
     return { branch: name, ahead, merged: !!start && start !== head, conflicts: [], checkout };
   }
 
   const local = await previewMerge(cwd, `refs/heads/${name}`);
   // A pull request merged on the host may not be in the local base yet.
   const tracking = await findBaseRef(cwd, name);
+
   const merged =
     !!local?.changesNothing ||
     (!!tracking && tracking !== name && !!(await previewMerge(cwd, tracking))?.changesNothing);
@@ -472,38 +523,51 @@ async function readBase(cwd: string, branch: string, head: string): Promise<Base
 export async function mergeIntoBase(cwd: string) {
   const status = await readStatus(cwd);
   const base = status?.base;
+
   if (!status?.branch || !base) return "This branch has no local base branch to merge into";
+
   if (status.changes > 0)
     return `Commit or discard the ${status.changes} ${status.changes === 1 ? "change" : "changes"} in this worktree first`;
+
   if (base.merged) return `Already merged into ${base.branch}`;
+
   if (base.ahead === 0) return `No commits to merge into ${base.branch} yet`;
+
   if (base.conflicts.length > 0)
     return `Merging into ${base.branch} would conflict in ${base.conflicts.join(", ")}. Merge ${base.branch} into this branch and resolve them first.`;
 
   if (base.checkout) {
     const dirty = await runGit(base.checkout, ["status", "--porcelain", "--untracked-files=no"]);
+
     if (!dirty.ok) return getFirstLines(dirty.stderr);
+
     if (dirty.stdout)
       return `${base.branch} has uncommitted changes in ${base.checkout}. Commit or stash them there, then merge again.`;
 
     const merge = await runGitLong(base.checkout, ["merge", "--no-edit", status.branch]);
+
     if (merge.ok) return null;
 
     // Only reachable if the base moved since the check above.
     await runGit(base.checkout, ["merge", "--abort"]);
+
     return getFirstLines(merge.stderr);
   }
 
   const ref = `refs/heads/${base.branch}`;
+
   const [old, head] = await Promise.all([
     runGit(cwd, ["rev-parse", ref]),
     runGit(cwd, ["rev-parse", "HEAD"]),
   ]);
+
   if (!old.ok || !head.ok) return getFirstLines(old.stderr || head.stderr);
 
   let target = head.stdout;
+
   if (!(await runGit(cwd, ["merge-base", "--is-ancestor", old.stdout, head.stdout])).ok) {
     const preview = await previewMerge(cwd, old.stdout);
+
     if (!preview || preview.conflicts.length > 0)
       return `${base.branch} changed and no longer merges cleanly. Check it and merge again.`;
 
@@ -517,6 +581,7 @@ export async function mergeIntoBase(cwd: string) {
       "-m",
       `Merge branch '${status.branch}'`,
     ]);
+
     if (!commit.ok) return getFirstLines(commit.stderr);
     target = commit.stdout;
   }
@@ -530,6 +595,7 @@ export async function mergeIntoBase(cwd: string) {
     target,
     old.stdout,
   ]);
+
   return update.ok ? null : getFirstLines(update.stderr);
 }
 
@@ -539,9 +605,11 @@ export async function mergeIntoBase(cwd: string) {
  */
 export async function readPullRequestRange(cwd: string, branch: string) {
   const base = await readMergeBase(cwd, branch);
+
   if (!base) return null;
 
   const ref = (await findBaseRef(cwd, base)) ?? base;
+
   const [log, stat, patch] = await Promise.all([
     runGit(cwd, ["log", "--oneline", `${ref}..HEAD`]),
     runGit(cwd, ["diff", "--stat", `${ref}...HEAD`]),
@@ -559,29 +627,37 @@ export async function readPullRequestRange(cwd: string, branch: string) {
 /** Subjects of the last few commits, newest first; empty before the first commit. */
 export async function readRecentSubjects(cwd: string, count = 8) {
   const log = await runGit(cwd, ["log", `-${count}`, "--format=%s"]);
+
   return log.ok ? log.stdout.split("\n").filter(Boolean) : [];
 }
 
 /** Stages everything and commits it; resolves to an error message on failure. */
 export async function commitAll(cwd: string, message: string) {
   const text = message.trim();
+
   if (!text) return "Write a commit message first";
 
   const add = await runGitLong(cwd, ["add", "-A"]);
+
   if (!add.ok) return getFirstLines(add.stderr);
 
   const commit = await runGitLong(cwd, ["commit", "-m", text]);
+
   return commit.ok ? null : getFirstLines(commit.stderr);
 }
 
 /** Pushes the current branch, setting its upstream on the first push; resolves to an error message on failure. */
 export async function pushBranch(cwd: string) {
   const status = await readStatus(cwd);
+
   if (!status) return "Not a git repo";
+
   if (status.detached) return "Can't push a detached HEAD";
+
   if (!status.hasRemote) return "No remote to push to";
 
   let args = ["push"];
+
   if (!status.upstream) {
     const remotes = (await runGit(cwd, ["remote"])).stdout.split("\n").filter(Boolean);
     const remote = remotes.includes("origin") ? "origin" : remotes[0]!;
@@ -589,6 +665,7 @@ export async function pushBranch(cwd: string) {
   }
 
   const result = await runGitLong(cwd, args, 120000);
+
   return result.ok ? null : getFirstLines(result.stderr);
 }
 
@@ -619,25 +696,31 @@ async function snapshotWorkingTree(cwd: string, message: string): Promise<string
     "--git-path",
     "index",
   ]);
+
   if (!indexPath.ok) return null;
 
   const scratch = join(tmpdir(), `masscode-index-${crypto.randomUUID()}`);
+
   try {
     // Starting from the real index lets `add` skip files whose stat info hasn't changed.
     await copyFile(indexPath.stdout, scratch).catch(() => undefined);
     const env = { ...process.env, ...SNAPSHOT_IDENTITY, GIT_INDEX_FILE: scratch };
     const add = await execGit(cwd, ["add", "-A"], { timeout: 60000, env });
+
     if (add.error) return null;
 
     const tree = await execGit(cwd, ["write-tree"], { timeout: 30000, env });
     const treeId = tree.stdout.trim();
+
     if (tree.error || !treeId) return null;
 
     const commit = await execGit(cwd, ["commit-tree", treeId, "-m", message], {
       timeout: 10000,
       env,
     });
+
     const commitId = commit.stdout.trim();
+
     return commit.error || !commitId ? null : commitId;
   } finally {
     await rm(scratch, { force: true });
@@ -647,6 +730,7 @@ async function snapshotWorkingTree(cwd: string, message: string): Promise<string
 /** Snapshots the working tree under `ref`; false outside a repo or if it failed. */
 export async function captureCheckpoint(cwd: string, ref: string) {
   const commit = await snapshotWorkingTree(cwd, `masscode checkpoint ${ref}`);
+
   if (!commit) return false;
 
   return (await runGit(cwd, ["update-ref", ref, commit])).ok;
@@ -661,25 +745,30 @@ function capPatch(patch: string) {
   if (patch.length <= MAX_PATCH_BYTES) return { patch, truncated: false };
 
   const cut = patch.lastIndexOf("\ndiff --git ", MAX_PATCH_BYTES);
+
   return { patch: cut > 0 ? patch.slice(0, cut + 1) : "", truncated: true };
 }
 
 /** The target to compare a turn's start against: its end snapshot, or the working tree if it has none yet. */
 async function resolveTurnEnd(cwd: string, threadId: string, messageId: string) {
   const end = getCheckpointRef(threadId, messageId, "end");
+
   return (await hasRef(cwd, end)) ? end : await snapshotWorkingTree(cwd, "masscode working tree");
 }
 
 /** What one turn changed, as a unified patch. */
 export async function readCheckpointDiff(cwd: string, threadId: string, messageId: string) {
   const start = getCheckpointRef(threadId, messageId, "start");
+
   if (!(await hasRef(cwd, start)))
     return { patch: "", truncated: false, error: "No snapshot of this turn" };
 
   const end = await resolveTurnEnd(cwd, threadId, messageId);
+
   if (!end) return { patch: "", truncated: false, error: "Couldn't read the working tree" };
 
   const diff = await runGitRaw(cwd, ["diff", ...DIFF_FLAGS, start, end]);
+
   if (diff.code !== 0) return { patch: "", truncated: false, error: getFirstLines(diff.stderr) };
 
   return { ...capPatch(diff.stdout), error: null };
@@ -690,11 +779,13 @@ export async function readCheckpointStats(cwd: string, threadId: string, message
   const start = getCheckpointRef(threadId, messageId, "start");
   const end = getCheckpointRef(threadId, messageId, "end");
   const diff = await runGit(cwd, ["diff", "--numstat", "--no-renames", start, end]);
+
   if (!diff.ok) return null;
 
   let files = 0;
   let additions = 0;
   let deletions = 0;
+
   for (const line of diff.stdout.split("\n")) {
     if (!line) continue;
     const [added, deleted] = line.split("\t");
@@ -717,16 +808,20 @@ export async function restoreCheckpoint(
   messageId: string,
 ): Promise<string | null> {
   const start = getCheckpointRef(threadId, messageId, "start");
+
   if (!(await hasRef(cwd, start))) return "There's no snapshot of the files from that point";
 
   const current = await snapshotWorkingTree(cwd, "masscode backup before restore");
+
   if (!current) return "Couldn't snapshot the current files";
 
   await runGit(cwd, ["update-ref", `refs/masscode/backups/${threadId}/${Date.now()}`, current]);
   const changed = await runGit(cwd, ["diff", "--name-only", "--no-renames", "-z", start, current]);
+
   if (!changed.ok) return getFirstLines(changed.stderr);
 
   const paths = changed.stdout.split("\0").filter(Boolean);
+
   if (!paths.length) return null;
 
   const inStart = new Set(
@@ -734,7 +829,9 @@ export async function restoreCheckpoint(
       .split("\0")
       .filter(Boolean),
   );
+
   const restore = paths.filter((path) => inStart.has(path));
+
   // Batches keep the command line short.
   for (let offset = 0; offset < restore.length; offset += 200) {
     const result = await runGitLong(cwd, [
@@ -744,6 +841,7 @@ export async function restoreCheckpoint(
       "--",
       ...restore.slice(offset, offset + 200),
     ]);
+
     if (!result.ok) return getFirstLines(result.stderr);
   }
 
@@ -751,6 +849,7 @@ export async function restoreCheckpoint(
   await Promise.all(
     paths.filter((path) => !inStart.has(path)).map((path) => rm(join(cwd, path), { force: true })),
   );
+
   return null;
 }
 
@@ -767,6 +866,7 @@ export async function deleteThreadCheckpoints(cwd: string, threadId: string) {
     `${CHECKPOINT_REFS}/${threadId}`,
     `refs/masscode/backups/${threadId}`,
   ]);
+
   if (!refs.ok || !refs.stdout) return;
 
   await updateRefs(
@@ -789,27 +889,35 @@ export async function copyCheckpoints(
   const source = `${CHECKPOINT_REFS}/${fromThreadId}`;
   const prefix = `${source}/`;
   const refs = await runGit(cwd, ["for-each-ref", "--format=%(objectname) %(refname)", source]);
+
   if (!refs.ok || !refs.stdout) return;
 
   const except = new Set(exceptMessageIds);
+
   const updates = refs.stdout.split("\n").flatMap((line) => {
     const [objectId, ref] = line.split(" ");
+
     if (!objectId || !ref?.startsWith(prefix)) return [];
 
     const path = ref.slice(prefix.length);
+
     if (except.has(path.split("/")[0]!)) return [];
+
     return [`update ${CHECKPOINT_REFS}/${toThreadId}/${path} ${objectId}\n`];
   });
+
   if (updates.length) await updateRefs(cwd, updates.join(""));
 }
 
 async function updateRefs(cwd: string, stdin: string) {
   await acquireGitSlot();
+
   try {
     await new Promise<void>((resolve) => {
       const child = execFile("git", ["-C", cwd, "update-ref", "--stdin"], { timeout: 10000 }, () =>
         resolve(),
       );
+
       child.stdin?.end(stdin);
     });
   } finally {
@@ -827,6 +935,7 @@ export async function deleteCheckpoints(
     getCheckpointRef(threadId, id, "start"),
     getCheckpointRef(threadId, id, "end"),
   ]);
+
   if (refs.length) await updateRefs(cwd, refs.map((ref) => `delete ${ref}\n`).join(""));
 }
 
@@ -835,6 +944,7 @@ export async function deleteCheckpoints(
 /** Top of the repo containing `cwd`; null outside one. */
 export async function readRepoRoot(cwd: string) {
   const root = await runGit(cwd, ["rev-parse", "--show-toplevel"]);
+
   return root.ok && root.stdout ? root.stdout : null;
 }
 
@@ -846,11 +956,14 @@ export async function readRepoRoot(cwd: string) {
 export async function addWorktree(cwd: string, path: string, branch: string, fromOrigin: boolean) {
   await mkdir(dirname(path), { recursive: true });
   const hasHead = (await runGit(cwd, ["rev-parse", "--verify", "--quiet", "HEAD"])).ok;
+
   if (!hasHead) return "Worktrees need at least one commit";
 
   const current = fromOrigin ? await readBranch(cwd) : null;
+
   const isFetched =
     current !== null && (await runGitLong(cwd, ["fetch", "origin", current], 30000)).ok;
+
   const result = await runGitLong(cwd, [
     "worktree",
     "add",
@@ -859,12 +972,15 @@ export async function addWorktree(cwd: string, path: string, branch: string, fro
     path,
     isFetched ? `origin/${current}` : "HEAD",
   ]);
+
   if (!result.ok) return getFirstLines(result.stderr);
 
   // What the branch merges into, locally and in pull requests.
   const source = await runGit(cwd, ["symbolic-ref", "--short", "--quiet", "HEAD"]);
+
   if (source.ok && source.stdout)
     await runGit(path, ["config", `branch.${branch}.gh-merge-base`, source.stdout]);
+
   return null;
 }
 
@@ -874,18 +990,22 @@ export async function removeWorktreeIfClean(path: string) {
     readStatus(path),
     runGit(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"]),
   ]);
+
   if (!status || status.changes > 0) return false;
+
   if (!(await runGitLong(path, ["worktree", "remove", path])).ok) return false;
 
   // Forced because a squash-merged branch looks unmerged to git.
   if (status.base?.merged && status.branch && commonDir.ok)
     await runGit(commonDir.stdout, ["branch", "-D", status.branch]);
+
   return true;
 }
 
 /** Where `cwd` sits in its repo, like "apps/web"; "" at the top, null outside a repo. */
 export async function readRepoFolder(cwd: string) {
   const prefix = await runGit(cwd, ["rev-parse", "--show-prefix"]);
+
   return prefix.ok ? prefix.stdout.replace(/\/$/, "") : null;
 }
 
@@ -899,14 +1019,17 @@ export async function cloneRepository(url: string, parent: string, folderName?: 
       .split(/[/:]/)
       .at(-1)
       ?.replace(/\.git$/, "");
+
   if (name && /[/\\]|^\.\.?$/.test(name))
     return { path: null, error: `Can't name a folder ${name}` };
+
   if (!name) return { path: null, error: "That doesn't look like a repository URL" };
 
   await mkdir(parent, { recursive: true });
   const path = join(parent, name);
   // Cloned there before (say, from another thread's draft): that copy is the one to use.
   const existing = await readRemoteUrl(path).catch(() => null);
+
   if (existing && parseRepository(existing) === parseRepository(url)) return { path, error: null };
 
   const result = await execGit(parent, ["clone", "--", url.trim(), path], {
@@ -918,6 +1041,7 @@ export async function cloneRepository(url: string, parent: string, folderName?: 
       GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
     },
   });
+
   if (!result.error) return { path, error: null };
 
   if (/permission denied \(publickey|could not read username/i.test(result.stderr)) {

@@ -26,6 +26,7 @@ export function buildWriterInput(path: string, settings: Settings, recent: Reado
   const commitProvider = settings.commitModel?.slice(0, split);
   const isPinned = split > 0 && Schema.is(ProviderKind)(commitProvider);
   const provider = isPinned ? commitProvider : settings.lastProvider;
+
   const model = isPinned
     ? settings.commitModel!.slice(split + 1)
     : settings.providers[provider].defaultModel;

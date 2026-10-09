@@ -82,6 +82,7 @@ export function DiffCommentForm({
           } else if (matches(event, KEYBINDINGS["diff.saveComment"])) {
             event.preventDefault();
             event.stopPropagation();
+
             if (trimmed) onSave(trimmed);
           }
         }}

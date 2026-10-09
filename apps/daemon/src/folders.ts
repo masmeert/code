@@ -10,8 +10,10 @@ export function expandHome(path: string) {
 /** The folders inside `path`, for picking a project on a machine the app can't show a native dialog for. */
 export async function listFolders(path: string) {
   const absolute = resolve(expandHome(path) || homedir());
+
   try {
     const entries = await readdir(absolute, { withFileTypes: true });
+
     return {
       path: absolute,
       folders: entries

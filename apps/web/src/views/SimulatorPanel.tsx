@@ -27,6 +27,7 @@ type Setup =
 export function SimulatorPanel({ threadId }: { threadId: string }) {
   const { deviceId } = useSimulator(threadId);
   const aside = useRef<HTMLElement>(null);
+
   const panel = useResizable({
     key: "masscode.simulatorPanelWidth",
     initial: 400,
@@ -45,15 +46,18 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
   /** Lists the devices again; false when that failed. */
   async function refreshDevices(install: boolean) {
     const listed = await listDevices(install);
+
     if (!listed) setSetup({ status: "failed", message: "MassCode didn't answer. Try again." });
     else if (listed.error) setSetup({ status: "failed", message: listed.error });
     else if (!listed.hub) setSetup({ status: "missing" });
     else setSetup({ status: "ready", hub: listed.hub, devices: listed.devices });
+
     return Boolean(listed?.hub && !listed.error);
   }
 
   async function loadDevices(install: boolean) {
     setSetup({ status: install ? "installing" : "loading" });
+
     // The hub forgets its streams when it restarts, so reattach the thread's device.
     if ((await refreshDevices(install)) && deviceId) await bootDevice(deviceId);
   }
@@ -62,6 +66,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
     setBootingDeviceId(id);
     setBootError(null);
     const error = await attachDevice(threadId, id);
+
     // A booted emulator has a serial to stream by now.
     if (!error) await refreshDevices(false);
     setBootingDeviceId(null);
@@ -83,6 +88,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
     if (setup.status === "ready" && deviceId && !device?.streamId && !bootingDeviceId)
       void refreshDevices(false);
   });
+
   useEffect(() => refreshForDevice(), [deviceId]);
 
   function renderPanelBody() {
@@ -282,6 +288,7 @@ function DeviceScreen({
       onStatus: (status) => setIsStreaming(status === "streaming"),
       onMjpeg: setMjpegUrl,
     });
+
     stream.current = deviceStream;
 
     return () => deviceStream.stop();
@@ -296,6 +303,7 @@ function DeviceScreen({
       setIsStreaming(true);
       clearInterval(poll);
     }, 250);
+
     return () => clearInterval(poll);
   }, [mjpegUrl]);
 
@@ -332,10 +340,12 @@ function DeviceScreen({
     if (event.metaKey) {
       // Apple's Simulator shortcuts: ⌘⇧H for Home, ⌘→ to rotate.
       if (phase !== "down") return;
+
       if (event.shiftKey && event.code === "KeyH") stream.current?.press("home");
       else if (event.code === "ArrowRight") stream.current?.rotate();
       else return;
       event.preventDefault();
+
       return;
     }
 

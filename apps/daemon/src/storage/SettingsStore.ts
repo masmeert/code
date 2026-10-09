@@ -21,6 +21,7 @@ const make = Effect.gen(function* () {
   yield* Effect.tryPromise(async () => {
     const path = join(DATA_DIR, "settings.json");
     const text = await readFile(path, "utf8");
+
     if (text.includes('"autoSettle'))
       await writeFile(path, text.replace(/"autoSettle(Days)?"/g, '"autoShelve$1"'));
   }).pipe(Effect.ignore);

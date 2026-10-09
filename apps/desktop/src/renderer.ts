@@ -33,16 +33,19 @@ export function serveRenderer() {
           },
         }),
     );
+
     return;
   }
 
   protocol.handle("app", async (request) => {
     const { pathname } = new URL(request.url);
+
     const response = await net.fetch(
       pathToFileURL(
         join(process.resourcesPath, "renderer", pathname === "/" ? "index.html" : pathname),
       ).toString(),
     );
+
     return new Response(response.body, {
       status: response.status,
       headers: {

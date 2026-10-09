@@ -44,6 +44,7 @@ export function useKeybinding(
   handler.current = onPress;
   useEffect(() => {
     if (!id) return;
+
     // An arrow, so `id` stays narrowed to defined inside it.
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || !matches(event, KEYBINDINGS[id])) return;
@@ -52,6 +53,7 @@ export function useKeybinding(
     };
 
     window.addEventListener("keydown", onKey);
+
     return () => window.removeEventListener("keydown", onKey);
   }, [id]);
 }

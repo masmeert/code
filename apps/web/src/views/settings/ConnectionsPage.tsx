@@ -29,11 +29,13 @@ export function ConnectionsPage() {
   }
 
   const added = Object.entries(hosts).filter(([name]) => isMatchingQuery(name));
+
   // Configs can list dozens, so they show once there's a search, or while there's no host yet.
   const suggestions =
     typed || Object.keys(hosts).length === 0
       ? aliases.filter((name) => !hosts[name] && isMatchingQuery(name))
       : [];
+
   // What's typed is a host of its own, like me@server, when it isn't the start of a listed one.
   const addable = [
     ...(typed && !hosts[typed] && suggestions.length === 0 && !/\s/.test(typed) ? [typed] : []),
@@ -57,6 +59,7 @@ export function ConnectionsPage() {
         leftIcon={<Search />}
         onKeyDown={(event) => {
           if (event.key === "Enter" && addable.length === 1) addHost(addable[0]);
+
           if (event.key === "Escape" && query) {
             event.stopPropagation();
             setQuery("");
@@ -167,6 +170,7 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
               className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
               onClick={() => {
                 setConfirmingAction(null);
+
                 if (confirmingAction === "remove") {
                   forgetFullAccessAsRoot(alias);
                   void window.desktop?.removeHost(alias);

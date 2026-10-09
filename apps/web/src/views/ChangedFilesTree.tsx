@@ -25,6 +25,7 @@ export function ChangedFilesTree({
   const paths = useMemo(() => files.map((file) => file.name), [files]);
   // Shape (and sort) once per diff, outside the tree's render path.
   const prepared = useMemo(() => prepareFileTreeInput(paths), [paths]);
+
   const status = useMemo(
     () => files.map((file): GitStatusEntry => ({ path: file.name, status: STATUS[file.type] })),
     [files],
@@ -43,6 +44,7 @@ export function ChangedFilesTree({
     density: "compact",
     onSelectionChange: (selected) => {
       const path = selected.at(-1);
+
       if (path && !path.endsWith("/")) onPickRef.current(path);
     },
   });
@@ -52,8 +54,10 @@ export function ChangedFilesTree({
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
+
       return;
     }
+
     model.resetPaths({ preparedInput: prepared });
     model.setGitStatus(status);
   }, [model, prepared, status]);

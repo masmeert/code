@@ -19,12 +19,14 @@ function getThreadId(json: Schema.JsonObject) {
 }
 
 let daemon: Daemon | null = null;
+
 afterEach(async () => {
   await daemon?.stop();
   daemon = null;
 });
 
 const codex = readFixture("codex-two-turns").sessions[0]!;
+
 const claude = readFixture("claude-two-turns").sessions[0]!;
 
 /** The orchestrating agent's turn stays open while it uses the tools. */
@@ -42,23 +44,27 @@ async function startOrchestrator(
   await waitUntil(() => readPeerLog(folder, "claude").some((entry) => entry.mcpToken));
 
   const token = readPeerLog(folder, "claude").find((entry) => entry.mcpToken)!.mcpToken!;
+
   return { folder, thread, tools: await daemon.connectAgentTools(token) };
 }
 
 test("an agent starts a thread on the other harness and waits for its answer", async () => {
   daemon = await startDaemon();
   const { thread, tools } = await startOrchestrator(daemon, { codex: { sessions: [codex] } });
+
   const result = await tools.call("start_thread", {
     prompt: "Reply with exactly: pong",
     provider: "codex",
     wait: true,
   });
+
   expect(result.isError).toBe(false);
   expect(result.json).toMatchObject({ status: "idle", answer: "pong" });
 
   const child = (await daemon.listThreads()).find(
     (candidate) => candidate.id === getThreadId(result.json),
   );
+
   expect(child).toMatchObject({
     provider: "codex",
     projectId: thread.projectId,
@@ -69,11 +75,13 @@ test("an agent starts a thread on the other harness and waits for its answer", a
 test("an agent can't start a thread with more access than its own", async () => {
   daemon = await startDaemon();
   const { thread, tools } = await startOrchestrator(daemon, { codex: { sessions: [codex] } });
+
   const result = await tools.call("start_thread", {
     prompt: "Reply with exactly: pong",
     provider: "codex",
     permission: "full-access",
   });
+
   expect(result.isError).toBe(true);
   expect(result.text).toContain("full-access");
   expect(
@@ -96,6 +104,7 @@ test("retrying start_thread with the same requestId returns the same thread", as
 test("an agent follows up with a thread it started, then reads it", async () => {
   daemon = await startDaemon();
   const { tools } = await startOrchestrator(daemon, { codex: { sessions: [codex] } });
+
   const threadId = getThreadId(
     (
       await tools.call("start_thread", {
@@ -105,6 +114,7 @@ test("an agent follows up with a thread it started, then reads it", async () => 
       })
     ).json,
   );
+
   await tools.call("send_message", { threadId, text: "Reply with exactly: pong again" });
   const waited = await tools.call("wait_for_thread", { threadId });
   expect(waited.json).toMatchObject({ status: "idle", answer: "pong again" });
@@ -121,13 +131,16 @@ test("an agent follows up with a thread it started, then reads it", async () => 
 
 test("stopping a thread stops the threads its agent started", async () => {
   daemon = await startDaemon();
+
   const { thread, tools } = await startOrchestrator(daemon, {
     codex: { sessions: [makeInterruptible(codex)] },
   });
+
   const started = getThreadId(
     (await tools.call("start_thread", { prompt: "Reply with exactly: pong", provider: "codex" }))
       .json,
   );
+
   await daemon.waitFor(matchStatus(started, "running"));
   await daemon.dispatch(ClientCommand.cases["thread.interrupt"].make({ threadId: thread.id }));
   await daemon.waitFor(matchStatus(started, "idle"));

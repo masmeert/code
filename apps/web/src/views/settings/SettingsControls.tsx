@@ -190,6 +190,7 @@ export function SettingsTextField(props: {
       onBlur={() => draft.trim() !== props.value && props.onCommit(draft.trim())}
       onKeyDown={(event) => {
         if (event.key === "Enter") event.currentTarget.blur();
+
         if (event.key === "Escape" && draft !== props.value) {
           event.stopPropagation();
           setDraft(props.value);

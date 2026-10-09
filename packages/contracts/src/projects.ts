@@ -10,6 +10,7 @@ export const Project = Schema.Struct({
   /** Where the project sits in its repo, like "apps/web"; "" at the top. Null outside a repo. */
   folder: Schema.optional(Schema.NullOr(Schema.String)),
 });
+
 export type Project = typeof Project.Type;
 
 /** A command anyone working in the project can run from a thread's Scripts menu. */
@@ -19,6 +20,7 @@ export const ProjectScript = Schema.Struct({
   /** Opened in the Browser panel when the script runs, like a dev server's address. */
   preview_url: Schema.optionalKey(Schema.String),
 });
+
 export type ProjectScript = typeof ProjectScript.Type;
 
 /** A project's `masscode.toml`, keyed as written in the file. */
@@ -36,4 +38,5 @@ export const ProjectConfig = Schema.Struct({
   /** Commands anyone working in the project can run from a thread's Scripts menu. */
   scripts: Schema.optionalKey(Schema.Array(ProjectScript)),
 });
+
 export type ProjectConfig = typeof ProjectConfig.Type;

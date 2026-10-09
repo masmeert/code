@@ -13,6 +13,7 @@ export const PageInfo = Schema.Struct({
   before: Schema.Number,
   hasMore: Schema.Boolean,
 });
+
 export type PageInfo = typeof PageInfo.Type;
 
 /** What the daemon sends a client. */
@@ -128,4 +129,5 @@ export const ServerFrame = Schema.TaggedUnion({
     error: Schema.NullOr(Schema.String),
   },
 });
+
 export type ServerFrame = typeof ServerFrame.Type;

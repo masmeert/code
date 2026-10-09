@@ -39,6 +39,7 @@ export function BrowserPanel({ threadId }: { threadId: string }) {
   const activity = useBrowser((state) => (tab ? state.activity[tab.id] : undefined));
 
   const aside = useRef<HTMLElement>(null);
+
   const panel = useResizable({
     key: "masscode.browserPanelWidth",
     initial: Math.min(720, Math.round(window.innerWidth * 0.4)),
@@ -199,6 +200,7 @@ function AddressBar({
     <form
       onSubmit={(event) => {
         event.preventDefault();
+
         if (!navigate(threadId, tab.id, draft)) return setIsInvalid(true);
         setIsInvalid(false);
         input.current?.blur();
@@ -289,6 +291,7 @@ function BrowserSurface({ threadId }: { threadId: string }) {
     const observer = new ResizeObserver(publishSurface);
     observer.observe(element);
     window.addEventListener("resize", publishSurface);
+
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", publishSurface);

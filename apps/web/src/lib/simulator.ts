@@ -7,19 +7,23 @@ const ThreadSimulator = Schema.Struct({
   /** The simulator the panel shows; null until one is picked. */
   deviceId: Schema.NullOr(Schema.String),
 });
+
 type ThreadSimulator = typeof ThreadSimulator.Type;
 
 const STORAGE_KEY = "masscode.simulator";
+
 const CLOSED: ThreadSimulator = { open: false, deviceId: null };
 
 const ThreadSimulators = Schema.Record(Schema.String, ThreadSimulator);
 
 let threads = readStored(STORAGE_KEY, ThreadSimulators, {});
+
 const listeners = new Set<() => void>();
 
 function updateThread(threadId: string, update: (simulator: ThreadSimulator) => ThreadSimulator) {
   threads = { ...threads, [threadId]: update(threads[threadId] ?? CLOSED) };
   writeStored(STORAGE_KEY, ThreadSimulators, threads);
+
   for (const listener of listeners) listener();
 }
 
@@ -27,6 +31,7 @@ export function useSimulator(threadId: string): ThreadSimulator {
   return useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
+
       return () => listeners.delete(listener);
     },
     () => threads[threadId] ?? CLOSED,

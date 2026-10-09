@@ -50,6 +50,7 @@ const AGENT_GONE =
   "The agent stopped before finishing its turn. Send a message to pick up where it left off.";
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
+
 const ATTACHMENTS_DIR = join(DATA_DIR, "attachments");
 
 /** What the agent reads after the user runs a command from its reply. */
@@ -60,6 +61,7 @@ export function formatCommandRun({ command, exitCode, output }: CommandRun) {
   }
 
   const ran = `I ran this command from your reply, in the thread's folder:\n\n${buildFence(command)}bash\n${command}\n${buildFence(command)}`;
+
   return output
     ? `${ran}\n\nIt exited with code ${exitCode} and printed:\n\n${buildFence(output)}\n${output}\n${buildFence(output)}`
     : `${ran}\n\nIt exited with code ${exitCode} and printed nothing.`;
@@ -79,10 +81,13 @@ function resolveAttachments(inputs: ReadonlyArray<AttachmentInput>) {
             }),
             data: async (pasted): Promise<Attachment> => {
               await mkdir(ATTACHMENTS_DIR, { recursive: true });
+
               const extension =
                 extname(pasted.name) || `.${pasted.mediaType.split("/")[1] ?? "bin"}`;
+
               const path = join(ATTACHMENTS_DIR, `${crypto.randomUUID()}${extension}`);
               await writeFile(path, Buffer.from(pasted.data, "base64"));
+
               return { name: pasted.name, path, isImage: pasted.mediaType.startsWith("image/") };
             },
           }),
@@ -152,15 +157,18 @@ export const createAgents = Effect.fn("createAgents")(function* ({
           ? dropSession(entry, AGENT_GONE)
           : dropSession(entry, null, "error"),
       );
+
       return;
     }
 
     if (RuntimeEvent.guards["thread.limitStop"](event)) {
       if (event.limitStop) stopForLimit(entry, event.limitStop);
+
       return;
     }
 
     publish(event);
+
     if (RuntimeEvent.guards["turn.completed"](event)) endTurn(entry);
     sendQueuedOnCue(entry, event);
   }
@@ -175,6 +183,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
     const threadId = entry.info.id;
     const generation = ++entry.generation;
     const settings = yield* settingsStore.get;
+
     const session = yield* ADAPTERS[entry.info.provider].start({
       threadId,
       cwd: entry.home.path,
@@ -189,14 +198,17 @@ export const createAgents = Effect.fn("createAgents")(function* ({
       emit: (event) => receiveAgentEvent(entry, generation, event),
       mcpServer: mcp.issue(threadId),
     });
+
     if (entry.generation !== generation) {
       yield* session.close;
+
       return yield* new CommandError({
         message: "The agent stopped as it started. Send the message again.",
       });
     }
 
     entry.session = session;
+
     return session;
   });
 
@@ -207,12 +219,14 @@ export const createAgents = Effect.fn("createAgents")(function* ({
   function endTurn(entry: ThreadEntry) {
     const messageId = entry.currentTurn;
     entry.currentTurn = null;
+
     if (!messageId) return;
 
     const { id: threadId, cwd } = entry.info;
     void (async () => {
       if (!(await captureCheckpoint(cwd, getCheckpointRef(threadId, messageId, "end")))) return;
       const stats = await readCheckpointStats(cwd, threadId, messageId);
+
       if (!stats || stats.files === 0 || threads.get(threadId) !== entry) return;
       publish(RuntimeEvent.cases["turn.checkpoint"].make({ threadId, messageId, ...stats }));
     })();
@@ -235,9 +249,11 @@ export const createAgents = Effect.fn("createAgents")(function* ({
 
     const threadId = entry.info.id;
     const isTurnCut = threads.get(threadId) === entry && isTurnActive(entry.info.status);
+
     if (isTurnCut) {
       publish(RuntimeEvent.cases["turn.completed"].make({ threadId, durationMs: null }));
       endTurn(entry);
+
       if (reason) publish(RuntimeEvent.cases.error.make({ threadId, message: reason }));
     }
 
@@ -250,6 +266,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
   // Turns going when the daemon died: nothing else will end them.
   for (const { threadId, messageId } of store.listUnfinishedTurns()) {
     const entry = threads.get(threadId);
+
     if (!entry) continue;
 
     publish(RuntimeEvent.cases["turn.completed"].make({ threadId, durationMs: null }));
@@ -267,6 +284,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
   /** Holds the thread's queue on a usage limit, and asks for the reset when the harness didn't say. */
   function stopForLimit(entry: ThreadEntry, limitStop: LimitStop) {
     setLimitStop(entry, limitStop);
+
     if (limitStop.resetsAt !== null) return;
 
     runFork(
@@ -274,7 +292,9 @@ export const createAgents = Effect.fn("createAgents")(function* ({
         const spent = limits.flatMap((limit) =>
           limit.usedPercent >= 100 && limit.resetsAt !== null ? [limit.resetsAt] : [],
         );
+
         const current = entry.info.limitStop;
+
         if (spent.length > 0 && current?.resetsAt === null && threads.get(entry.info.id) === entry)
           setLimitStop(entry, { ...current, resetsAt: Math.max(...spent) });
       }),
@@ -302,8 +322,10 @@ export const createAgents = Effect.fn("createAgents")(function* ({
       RuntimeEvent.guards["tool.completed"](event) &&
       !entry.subagentTools.delete(event.toolId) &&
       isTurnActive(entry.info.status);
+
     const hasTurnEnded = RuntimeEvent.guards["thread.status"](event) && event.status === "idle";
     const [next] = entry.info.queue ?? [];
+
     if (next && !entry.isStopRequested && !entry.info.limitStop && (hasToolEnded || hasTurnEnded))
       sendQueued(entry, next);
   }
@@ -313,7 +335,9 @@ export const createAgents = Effect.fn("createAgents")(function* ({
     entry: ThreadEntry,
   ): Effect.fn.Return<void, ProviderError> {
     if (isTurnActive(entry.info.status)) entry.isStopRequested = true;
+
     if (entry.session) yield* entry.session.interrupt;
+
     for (const started of threads.values())
       if (started.info.startedBy === entry.info.id && isTurnActive(started.info.status))
         yield* Effect.ignore(interrupt(started));
@@ -331,6 +355,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
 
   const removeThread = Effect.fn("removeThread")(function* (threadId: string) {
     const entry = threads.get(threadId);
+
     if (!entry) return;
 
     threads.delete(threadId);
@@ -343,6 +368,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
     const { home } = entry;
     void (async () => {
       await deleteThreadCheckpoints(entry.info.cwd, threadId);
+
       // A worktree with work left in it stays for the user to deal with; its branch stays until merged.
       // A fork shares its thread's worktree, so the last one out removes it.
       if (
@@ -350,6 +376,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
         ![...threads.values()].some((other) => other.home.path === home.path)
       ) {
         const root = await readRepoRoot(home.path);
+
         if (root) await removeWorktreeIfClean(root);
       }
     })();
@@ -366,6 +393,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
     entry.info = { ...entry.info, archivedAt };
     store.setArchived(entry.info.id, archivedAt);
     publish(RuntimeEvent.cases["thread.archived"].make({ threadId: entry.info.id, archivedAt }));
+
     if (!isArchived) return;
 
     terminals.closeThread(entry.info.id);
@@ -384,6 +412,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
 
       const { text, attachments, effort, fast, permission } = message;
       const settings = yield* settingsStore.get;
+
       const turn = {
         // SAFETY: send() lets only UUIDs through.
         messageId: message.id as `${string}-${string}-${string}-${string}-${string}`,
@@ -399,6 +428,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
       const { provider } = entry.info;
       // The harness was switched to and hasn't seen what happened since it last took part.
       const since = entry.coverage[provider];
+
       const handoff =
         since === undefined
           ? null
@@ -407,6 +437,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
               isFresh: entry.resumeTokens[provider] === undefined,
               getHarnessName: (kind) => getHarnessName(settings, kind),
             });
+
       const event = RuntimeEvent.cases["user.message"].make({
         threadId,
         messageId: message.id,
@@ -416,15 +447,18 @@ export const createAgents = Effect.fn("createAgents")(function* ({
         provider,
         ...(handoff && { handoff }),
       });
+
       entry.permission = permission;
 
       // A turn is running: the message joins it.
       if (entry.session && isTurnActive(entry.info.status)) {
         publish({ ...event, steer: true });
+
         return yield* entry.session.steer(turn);
       }
 
       entry.isStopRequested = false;
+
       if (entry.info.limitStop) setLimitStop(entry, null);
       publish(event);
       publish(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
@@ -434,6 +468,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
       yield* Effect.promise(() =>
         captureCheckpoint(entry.info.cwd, getCheckpointRef(threadId, message.id, "start")),
       );
+
       const session = yield* ensureSession(entry, { effort, permission, attachments: [] }).pipe(
         Effect.tap((session) => session.send({ ...turn, handoff: handoff?.text ?? null })),
         // The turn never got going; the session may be what's broken, so the next message starts afresh.
@@ -468,6 +503,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
   ) {
     if (!UUID_PATTERN.test(messageId))
       return yield* new CommandError({ message: `Message ids must be UUIDs, not "${messageId}"` });
+
     if (
       store.hasMessage(entry.info.id, messageId) ||
       (entry.info.queue ?? []).some((queued) => queued.id === messageId)
@@ -482,6 +518,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
       fast: options.fast,
       permission: options.permission,
     };
+
     if ((queue && isTurnActive(entry.info.status)) || entry.isSettingUp)
       return setQueue(entry, [...(entry.info.queue ?? []), message]);
 
@@ -497,10 +534,12 @@ export const createAgents = Effect.fn("createAgents")(function* ({
       return yield* new CommandError({
         message: `Still checking whether ${name} is set up. Try again in a moment.`,
       });
+
     if (!status?.installed)
       return yield* new CommandError({
         message: `${name} isn't installed on this machine. Install its CLI, then try again.`,
       });
+
     if (!status.linked)
       return yield* new CommandError({
         message: `${name} isn't signed in. Sign in under Settings → Harnesses, then try again.`,
@@ -509,8 +548,10 @@ export const createAgents = Effect.fn("createAgents")(function* ({
 
   const compact = Effect.fn("compact")(function* (threadId: string) {
     const entry = yield* getEntry(threadId);
+
     if (isBusy(entry))
       return yield* new CommandError({ message: "Wait for the agent to finish before compacting" });
+
     if (!entry.resumeTokens[entry.info.provider] && !entry.session) return;
 
     yield* entry.lock.withPermit(
@@ -522,6 +563,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
 
   const listCommands = Effect.fn("listCommands")(function* (threadId: string) {
     const entry = yield* getEntry(threadId);
+
     const commands = entry.session
       ? yield* entry.session.commands.pipe(Effect.orElseSucceed(() => []))
       : [];
@@ -539,11 +581,13 @@ export const createAgents = Effect.fn("createAgents")(function* ({
   const readUsage = yield* coalesceLoads(
     Effect.fn("readUsage")(function* (threadId: string) {
       const entry = threads.get(threadId);
+
       if (!entry) return;
 
       const { provider, model } = entry.info;
       const resumeToken = entry.resumeTokens[provider];
       let usage = entry.info.usage ?? null;
+
       // A live session reports its usage when its turn ends.
       if (!usage && resumeToken && !entry.session) {
         const harness = (yield* settingsStore.get).providers[provider];
@@ -564,9 +608,12 @@ export const createAgents = Effect.fn("createAgents")(function* ({
   /** Stops agent processes nobody has used in a while; they resume from their token on the next message. */
   const reapIdleSessions = Effect.gen(function* () {
     const now = Date.now();
+
     for (const entry of threads.values()) {
       const { status } = entry.info;
+
       if (!entry.session || isTurnActive(status)) continue;
+
       if (now - entry.activeAt < SESSION_IDLE_MS) continue;
 
       yield* dropSession(entry, null);
@@ -612,6 +659,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
     model,
   }: Extract<ClientCommand, { _tag: "thread.setModel" }>) {
     const entry = yield* getEntry(threadId);
+
     if (provider && provider !== entry.info.provider)
       return yield* switchHarness(entry, provider, model);
 
@@ -624,6 +672,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
         model,
       }),
     );
+
     if (entry.session) yield* entry.session.setModel(model);
   });
 
@@ -639,6 +688,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
     setLimitStop(entry, null);
 
     const [next] = entry.info.queue ?? [];
+
     if (next) return sendQueued(entry, next);
 
     yield* send(entry, "Continue where you left off.", options);

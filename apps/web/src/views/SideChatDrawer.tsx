@@ -29,6 +29,7 @@ export function SideChatDrawer({
   const sideChat = useStore((state) =>
     state.sideChat?.threadId === threadId ? state.sideChat : null,
   );
+
   const label = useStore((state) => formatHarnessLabel(state.settings, provider));
   const [question, setQuestion] = useState("");
 
@@ -41,6 +42,7 @@ export function SideChatDrawer({
 
   function askQuestion() {
     const text = question.trim();
+
     if (!text || isRunning) return;
     askSideChat(text);
     setQuestion("");

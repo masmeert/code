@@ -27,6 +27,7 @@ export type Turn =
 
 export function toTurns(items: ReadonlyArray<TranscriptItem>): Array<Turn> {
   const turns: Array<Turn> = [];
+
   for (const item of items) {
     if (item.kind === "user") {
       turns.push({ from: "user", id: item.id, item });
@@ -44,9 +45,11 @@ export function toTurns(items: ReadonlyArray<TranscriptItem>): Array<Turn> {
     }
 
     const last = turns.at(-1);
+
     if (last?.from === "assistant") last.items.push(item);
     else turns.push({ from: "assistant", id: item.id, items: [item] });
   }
+
   return turns;
 }
 
@@ -63,6 +66,7 @@ export type Block =
 
 export function toToolGroups(items: ReadonlyArray<TranscriptItem>): Array<Block> {
   const blocks: Array<Block> = [];
+
   for (const item of items) {
     if (item.kind !== "tool") {
       blocks.push(item);
@@ -70,9 +74,11 @@ export function toToolGroups(items: ReadonlyArray<TranscriptItem>): Array<Block>
     }
 
     const last = blocks.at(-1);
+
     if (last?.kind === "tools") last.calls.push(item);
     else blocks.push({ kind: "tools", id: item.id, calls: [item] });
   }
+
   return blocks;
 }
 
@@ -95,10 +101,12 @@ export function toBlocks(
   heldAnswerId?: string,
 ): Array<Block> {
   const lastWork = items.findLast(isWork);
+
   const answer =
     lastWork?.kind === "assistant" && lastWork.id !== heldAnswerId ? lastWork : undefined;
 
   const blocks: Array<Block> = [];
+
   for (const item of items) {
     if (item.kind !== "tool" && (item === answer || !isWork(item))) {
       blocks.push(item);
@@ -106,6 +114,7 @@ export function toBlocks(
     }
 
     const last = blocks.at(-1);
+
     if (last?.kind === "work") last.items.push(item);
     else blocks.push({ kind: "work", id: item.id, items: [item] });
   }
@@ -114,6 +123,7 @@ export function toBlocks(
   return blocks.flatMap((block) => {
     if (block.kind !== "work") return [block];
     const inner = toToolGroups(block.items);
+
     return inner.length === 1 && inner[0].id !== heldAnswerId ? inner : [block];
   });
 }
@@ -129,9 +139,11 @@ export function isShowingWork(items: ReadonlyArray<TranscriptItem>) {
     items.findLastIndex(
       (item) => item.kind === "user" || item.kind === "forked" || item.kind === "startedBy",
     ) + 1;
+
   const newest = toBlocks(items.slice(turnStart)).at(-1);
 
   if (newest?.kind === "tools") return newest.calls.at(-1)?.output === null;
+
   return newest?.kind === "work" || newest?.kind === "assistant" || newest?.kind === "reasoning";
 }
 

@@ -80,5 +80,6 @@ const HARNESS_TINT: Record<Exclude<HarnessColor, "brand">, HarnessTint> = {
 /** The tint a harness wears, from its Settings colour. */
 export function getHarnessTint(settings: Settings, provider: ProviderKind, color?: HarnessColor) {
   const picked = color ?? settings.providers[provider].color ?? "brand";
+
   return picked === "brand" ? BRAND_TINT[provider] : HARNESS_TINT[picked];
 }

@@ -4,6 +4,7 @@ import { afterEach, expect, test } from "bun:test";
 import { startDaemon, type Daemon } from "./replay/daemon.ts";
 
 let daemon: Daemon | null = null;
+
 afterEach(async () => {
   await daemon?.stop();
   daemon = null;
@@ -15,6 +16,7 @@ declare const WebSocket: new (url: string, options: Bun.WebSocketOptions) => glo
 /** Connects as the app's web view does. */
 function connect(port: number, protocol: number) {
   const options: Bun.WebSocketOptions = { headers: { origin: "http://localhost:1420" } };
+
   return new WebSocket(`ws://127.0.0.1:${port}/?protocol=${protocol}`, options);
 }
 

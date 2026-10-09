@@ -38,6 +38,7 @@ function getFilledScripts(scripts: ReadonlyArray<ScriptDraft>) {
 /** What keeps `script` from saving, in plain words; empty when it can. */
 function describeProblems(script: ScriptDraft, filled: ReadonlyArray<ScriptDraft>) {
   const name = script.name.trim();
+
   return [
     name ? null : "Name it, like Dev server.",
     name && filled.some((other) => other !== script && other.name.trim() === name)
@@ -77,6 +78,7 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
     let isCancelled = false;
     void readProjectConfig(host, path).then((frame) => {
       if (isCancelled) return;
+
       if (!frame) {
         return setError(
           "MassCode's daemon didn't answer, so the scripts couldn't be read. Check it's running and open this again.",
@@ -102,6 +104,7 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
             : null,
       );
     });
+
     return () => {
       isCancelled = true;
     };
@@ -119,11 +122,13 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
     if (!scripts || isSaving) return;
 
     const filled = getFilledScripts(scripts);
+
     if (filled.some((script) => describeProblems(script, filled).length > 0)) {
       return setShouldShowProblems(true);
     }
 
     setIsSaving(true);
+
     const failed = await updateProjectConfig(host, path, ({ scripts: _replaced, ...rest }) =>
       filled.length
         ? {
@@ -138,7 +143,9 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
           }
         : rest,
     );
+
     setIsSaving(false);
+
     if (failed) setError(failed);
     else onSaved();
   }

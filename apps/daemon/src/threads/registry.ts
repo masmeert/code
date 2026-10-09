@@ -121,6 +121,7 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
     if (entry.info.title !== basename(entry.info.cwd)) continue;
 
     const text = store.readFirstUserMessage(entry.info.id);
+
     if (text === null) continue;
 
     entry.info = { ...entry.info, title: deriveTitle(text, entry.info.title) };
@@ -160,7 +161,9 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
     const [real, home] = await Promise.all([realpath(reported), realpath(entry.home.path)]).catch(
       () => [reported, entry.home.path],
     );
+
     const cwd = real === home ? entry.home.path : reported;
+
     if (cwd === entry.info.cwd || threads.get(entry.info.id) !== entry) return;
 
     // The turn's start snapshot is of the folder it left, so there's nothing to compare its end with.
@@ -173,6 +176,7 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
   /** Marks activity on a thread: new message or finished turn. */
   function markUpdated(threadId: string) {
     const entry = threads.get(threadId);
+
     if (!entry) return;
 
     entry.info = { ...entry.info, updatedAt: Date.now() };
@@ -185,10 +189,12 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
       clearTimeout(flushTimer);
       flushTimer = null;
     }
+
     if (pendingDeltas.size === 0) return;
 
     const batch = [...pendingDeltas.values()];
     pendingDeltas.clear();
+
     for (const event of batch) recordAndPublish(event);
   }
 
@@ -200,6 +206,7 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
         pending ? { ...pending, delta: pending.delta + event.delta } : event,
       );
       flushTimer ??= setTimeout(flushDeltas, DELTA_FLUSH_MS);
+
       return;
     }
 
@@ -211,6 +218,7 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
     if (isShuttingDown) return;
 
     let id: number | null = null;
+
     if (isTextDelta(event)) {
       const sent = streaming.get(event.messageId)?.delta ?? "";
       streaming.set(event.messageId, { ...event, delta: sent + event.delta });
@@ -221,9 +229,11 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
     }
 
     const entry = "threadId" in event && event.threadId ? threads.get(event.threadId) : undefined;
+
     if (entry) {
       if (RuntimeEvent.guards["thread.status"](event)) {
         entry.info = { ...entry.info, status: event.status };
+
         if (isTurnActive(event.status) && entry.shelveOverride !== null)
           setShelveOverride(entry, null);
       }
@@ -245,6 +255,7 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
 
     if (RuntimeEvent.guards["settings.updated"](event)) {
       latestSettings = event.settings;
+
       for (const other of threads.values()) refreshShelved(other);
     }
 
@@ -255,14 +266,17 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
   function trackLiveState(entry: ThreadEntry, event: RuntimeEvent) {
     const threadId = entry.info.id;
     const { activity, request } = entry.info;
+
     const hasStoppedRunning =
       RuntimeEvent.guards["thread.status"](event) && event.status !== "running";
+
     const nextActivity = RuntimeEvent.guards["tool.started"](event)
       ? { toolId: event.toolId, tool: event.name, summary: event.summary }
       : hasStoppedRunning ||
           (RuntimeEvent.guards["tool.completed"](event) && event.toolId === activity?.toolId)
         ? undefined
         : activity;
+
     const nextRequest = RuntimeEvent.guards["approval.requested"](event)
       ? {
           requestId: event.requestId,
@@ -275,11 +289,14 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
             event.requestId === request?.requestId)
         ? undefined
         : request;
+
     if (nextActivity === activity && nextRequest === request) return;
 
     const { activity: _activity, request: _request, ...rest } = entry.info;
     let info: ThreadInfo = rest;
+
     if (nextActivity) info = { ...info, activity: nextActivity };
+
     if (nextRequest) info = { ...info, request: nextRequest };
     entry.info = info;
 
@@ -287,6 +304,7 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
       publish(
         RuntimeEvent.cases["thread.activity"].make({ threadId, activity: nextActivity ?? null }),
       );
+
     if (nextRequest !== request)
       publish(
         RuntimeEvent.cases["thread.request"].make({ threadId, request: nextRequest ?? null }),
@@ -296,10 +314,12 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
   /** Announces the thread's shelved state when it changed. */
   function refreshShelved(entry: ThreadEntry) {
     const shelved = isShelved(entry.info, entry.shelveOverride, Date.now(), latestSettings);
+
     if (shelved === entry.info.shelved) return;
 
     entry.info = { ...entry.info, shelved };
     publish(RuntimeEvent.cases["thread.shelved"].make({ threadId: entry.info.id, shelved }));
+
     if (shelved) onShelve(entry);
   }
 
@@ -312,6 +332,7 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
 
   const getEntry = Effect.fn("getEntry")(function* (threadId: string) {
     const entry = threads.get(threadId);
+
     if (!entry) return yield* new CommandError({ message: `No thread ${threadId}` });
 
     return entry;
@@ -396,6 +417,7 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
     forgetStreaming: (threadId: string) => {
       for (const [messageId, message] of streaming)
         if (message.threadId === threadId) streaming.delete(messageId);
+
       for (const [messageId, delta] of pendingDeltas)
         if (delta.threadId === threadId) pendingDeltas.delete(messageId);
     },
@@ -404,10 +426,12 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
 
       const live = [...streaming.values()].filter((delta) => delta.threadId === threadId);
       const cursor = store.readCursor(threadId);
+
       // A cursor past the end means the cache is from another database: start over.
       // Sized before anything is decoded, so a huge gap never gets read.
       if (after !== null && after <= cursor) {
         const { count, bytes } = store.measureAfter(threadId, after);
+
         if (count <= MAX_REPLAY && bytes <= MAX_REPLAY_BYTES) {
           return {
             seq,
@@ -420,7 +444,9 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
           };
         }
       }
+
       const { events, page } = store.readTurns(threadId, turnLimit);
+
       return {
         seq,
         frame: ServerFrame.cases["thread.snapshot"].make({
@@ -436,6 +462,7 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
       if (!threads.has(threadId)) return null;
 
       const { events, page } = store.readTurns(threadId, turnLimit, before);
+
       return { events, page: page ?? { before, hasMore: false } };
     },
     search: (query: string) => store.search(query, 50).filter((hit) => threads.has(hit.threadId)),

@@ -52,11 +52,13 @@ function SettingsView() {
         onKeyDown={(event) => {
           if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
           event.preventDefault();
+
           const next =
             pages[
               (pages.indexOf(page) + (event.key === "ArrowDown" ? 1 : -1) + pages.length) %
                 pages.length
             ];
+
           setPage(next);
           event.currentTarget.querySelector<HTMLElement>(`[data-page="${next.page}"]`)?.focus();
         }}

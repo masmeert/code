@@ -18,7 +18,9 @@ type ApprovalItem = Extract<TranscriptItem, { kind: "approval" }>;
 
 function getPlanStatus(plan: ApprovalItem) {
   if (plan.decision === "deny") return "denied";
+
   if (!plan.decision) return "pending";
+
   return plan.resolved ? "approved" : "approving";
 }
 
@@ -112,6 +114,7 @@ export function QuestionsApproval({
             label: option.label,
             description: option.description,
           };
+
           return option.preview === undefined
             ? choice
             : {
@@ -132,6 +135,7 @@ export function QuestionsApproval({
           answers: Object.fromEntries(
             questions.map((question) => {
               const custom = chosen[question.id]?.custom?.trim();
+
               return [
                 question.id,
                 [...(chosen[question.id]?.selected ?? []), ...(custom ? [custom] : [])],

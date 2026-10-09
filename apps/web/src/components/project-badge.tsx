@@ -15,12 +15,15 @@ const TINTS = [
 function getInitials(name: string) {
   const words = name.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? name).slice(0, 2);
+
   return letters.toUpperCase();
 }
 
 function getProjectTint(key: string) {
   let hash = 0;
+
   for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) | 0;
+
   return TINTS[Math.abs(hash) % TINTS.length];
 }
 

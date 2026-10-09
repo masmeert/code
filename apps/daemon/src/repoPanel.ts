@@ -77,18 +77,22 @@ export const createRepoPanel = Effect.fn("createRepoPanel")(function* ({
   /** The repo state at `path`, with its host and the branch's pull request. */
   async function readRepo(path: string): Promise<RepoStatus | null> {
     const status = await readStatus(path);
+
     if (!status) return null;
 
     const url = await readRemoteUrl(path);
     let host = hosts.get(url ?? "");
+
     if (!host) {
       host = detectSourceControl(url);
       hosts.set(url ?? "", host);
     }
+
     const sourceControl = await host;
 
     const key = `${path}\0${status.branch}`;
     let cached = pullRequests.get(key);
+
     if (
       sourceControl &&
       status.branch &&
@@ -130,6 +134,7 @@ export const createRepoPanel = Effect.fn("createRepoPanel")(function* ({
   const refreshStatus = yield* coalesceLoads(
     Effect.fn("refreshStatus")(function* (path: string) {
       const { autoPull } = yield* settingsStore.get;
+
       if (autoPull && Date.now() - (pulledAt.get(path) ?? 0) > AUTO_PULL_INTERVAL_MS) {
         pulledAt.set(path, Date.now());
         yield* Effect.promise(() => fastForwardDefaultBranch(path));
@@ -144,10 +149,13 @@ export const createRepoPanel = Effect.fn("createRepoPanel")(function* ({
   /** A message for everything uncommitted at `path`, from the commit model in settings. */
   const writeCommitMessage = Effect.fn("writeCommitMessage")(function* (path: string) {
     const settings = yield* settingsStore.get;
+
     const [diff, recent] = yield* Effect.promise(() =>
       Promise.all([readDiff(path), readRecentSubjects(path, 20)]),
     );
+
     if (diff.error) return { error: diff.error };
+
     if (!diff.patch) return { error: "Nothing to commit" };
 
     return yield* Effect.tryPromise({
@@ -166,22 +174,30 @@ export const createRepoPanel = Effect.fn("createRepoPanel")(function* ({
    */
   const submitPullRequest = Effect.fn("submitPullRequest")(function* (path: string) {
     const status = yield* Effect.promise(() => readRepo(path));
+
     if (!status?.sourceControl) return "This repo's remote isn't on GitHub or GitLab";
+
     if (!status.branch) return "Check out a branch first";
+
     if (status.branch === status.defaultBranch)
       return `You're on ${status.branch}; create a branch for the pull request first`;
+
     if (status.changes) return "Commit your changes before opening a pull request";
 
     const isOpen = status.pullRequest?.state === "open" || status.pullRequest?.state === "draft";
+
     if (isOpen) return `#${status.pullRequest.number} is already open for this branch`;
 
     const { sourceControl, branch } = status;
+
     if (!status.upstream || status.ahead) {
       const pushed = yield* Effect.promise(() => pushBranch(path));
+
       if (pushed) return pushed;
     }
 
     const settings = yield* settingsStore.get;
+
     const [range, recent, root] = yield* Effect.promise(() =>
       Promise.all([
         readPullRequestRange(path, branch),
@@ -189,7 +205,9 @@ export const createRepoPanel = Effect.fn("createRepoPanel")(function* ({
         readRepoRoot(path),
       ]),
     );
+
     if (!range) return "Couldn't find the branch to open the pull request against";
+
     if (!range.commits) return `This branch has no commits that ${range.base} doesn't have`;
 
     // t3code only follows templates on GitHub; GitLab keeps its own in .gitlab/.
@@ -208,6 +226,7 @@ export const createRepoPanel = Effect.fn("createRepoPanel")(function* ({
         }),
       catch: (error) => `Couldn't write the pull request: ${getErrorMessage(error)}`,
     }).pipe(Effect.result);
+
     if (Result.isFailure(text)) return text.failure;
 
     return yield* Effect.promise(() =>
@@ -220,6 +239,7 @@ export const createRepoPanel = Effect.fn("createRepoPanel")(function* ({
     const status = await readRepo(path);
     const sourceControl = status?.sourceControl;
     const pullRequest = status?.pullRequest;
+
     if (
       !sourceControl ||
       !pullRequest ||
@@ -232,6 +252,7 @@ export const createRepoPanel = Effect.fn("createRepoPanel")(function* ({
 
   function withRepoLock<A, E>(path: string, effect: Effect.Effect<A, E>) {
     let lock = gitLocks.get(path);
+
     if (!lock) {
       lock = Semaphore.makeUnsafe(1);
       gitLocks.set(path, lock);
@@ -252,14 +273,17 @@ export const createRepoPanel = Effect.fn("createRepoPanel")(function* ({
   /** Commits everything at `path`, with `message` or one the commit model writes, and pushes if asked. */
   function commit(path: string, message: string, push: boolean) {
     const action: GitAction = push ? "commit-push" : "commit";
+
     return withRepoLock(
       path,
       Effect.gen(function* () {
         const written = message.trim() ? { message } : yield* writeCommitMessage(path);
+
         let error =
           "error" in written
             ? written.error
             : yield* Effect.promise(() => commitAll(path, written.message));
+
         if (!error && push) error = yield* Effect.promise(() => pushBranch(path));
 
         yield* publishStatus(path, action, error);
@@ -275,6 +299,7 @@ export const createRepoPanel = Effect.fn("createRepoPanel")(function* ({
   ) {
     const error = yield* Effect.promise(run);
     yield* publishBranches(path, error);
+
     for (const entry of threads.values()) if (entry.info.cwd === path) refreshMeta(entry);
   });
 

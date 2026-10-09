@@ -12,8 +12,11 @@ import type { TranscriptItem } from "./store.ts";
 
 /** Bump when a record's shape changes; older records then read as a cold cache. */
 const VERSION = 4;
+
 const DATABASE_NAME = "masscode.cache";
+
 const SHELL = "shell";
+
 const THREADS = "threads";
 
 interface CachedShell {
@@ -44,6 +47,7 @@ function openDatabase() {
       request.result.createObjectStore(SHELL);
       request.result.createObjectStore(THREADS);
     };
+
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   }));
@@ -55,13 +59,16 @@ async function readRecord<A extends { version: number }>(
 ): Promise<A | null> {
   try {
     const connection = await openDatabase();
+
     const value = await new Promise<unknown>((resolve, reject) => {
       const request = connection.transaction(store).objectStore(store).get(key);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
+
     // SAFETY: only saveShell/saveTranscript write these stores, and a record from another version is dropped below.
     const record = value as A | undefined;
+
     return record?.version === VERSION ? record : null;
   } catch {
     return null;
@@ -86,20 +93,25 @@ const pending = new Map<
   string,
   { readonly store: string; readonly value: CachedShell | CachedTranscript | undefined }
 >();
+
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 async function flushWrites() {
   timer = null;
+
   if (pending.size === 0) return;
 
   const writes = [...pending];
   pending.clear();
+
   try {
     const connection = await openDatabase();
     const transaction = connection.transaction([SHELL, THREADS], "readwrite");
+
     for (const [key, { store, value }] of writes) {
       const objects = transaction.objectStore(store);
       const id = key.slice(store.length + 1);
+
       if (value === undefined) objects.delete(id);
       else objects.put(value, id);
     }

@@ -79,6 +79,7 @@ const GitHubAuth = Schema.Struct({
 async function probeCli(kind: SourceControlKind): Promise<SourceControlStatus> {
   const { label, install, bin } = CLI[kind];
   const version = await runCli(kind, ["--version"], undefined, 5000);
+
   if (!version.ok) {
     return {
       kind,
@@ -96,6 +97,7 @@ async function probeCli(kind: SourceControlKind): Promise<SourceControlStatus> {
   if (kind === "github") {
     const auth = await runCli(kind, ["auth", "status", "--json", "hosts"], undefined, 10_000);
     const parsed = Schema.decodeUnknownOption(Schema.fromJsonString(GitHubAuth))(auth.stdout);
+
     if (Option.isNone(parsed)) {
       return {
         ...base,
@@ -108,6 +110,7 @@ async function probeCli(kind: SourceControlKind): Promise<SourceControlStatus> {
     }
 
     const accounts = Object.values(parsed.value.hosts).flat();
+
     const account =
       accounts.find((entry) => entry.state === "success" && entry.active) ??
       accounts.find((entry) => entry.state === "success");
@@ -124,6 +127,7 @@ async function probeCli(kind: SourceControlKind): Promise<SourceControlStatus> {
 
   const auth = await runCli(kind, ["auth", "status"], undefined, 10_000);
   const account = parseGitLabAccounts(`${auth.stdout}\n${auth.stderr}`)[0]?.account ?? null;
+
   return account
     ? { ...base, authenticated: true, account, detail: null }
     : {
@@ -138,9 +142,11 @@ async function probeCli(kind: SourceControlKind): Promise<SourceControlStatus> {
 function parseGitLabAccounts(output: string) {
   const found: Array<{ host: string; account: string }> = [];
   let host = "";
+
   for (const line of output.split("\n")) {
     if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(line.trim()) && !/^\s/.test(line)) host = line.trim();
     const account = line.match(/Logged in to (\S+) as\s+([^\s(]+)/i);
+
     if (account) found.push({ host: account[1] ?? host, account: account[2]! });
   }
 
@@ -153,6 +159,7 @@ export function probeSourceControl() {
 
 function parseRemoteHost(url: string) {
   const scp = url.match(/^[^@/]+@([^:]+):/);
+
   if (scp) return scp[1]!.toLowerCase();
 
   try {
@@ -165,13 +172,17 @@ function parseRemoteHost(url: string) {
 /** Which host a remote URL is on; self-hosted GitLab counts when glab is signed in to it. */
 export async function detectSourceControl(url: string | null): Promise<SourceControlKind | null> {
   const host = url ? parseRemoteHost(url) : null;
+
   if (!host) return null;
 
   const labels = host.split(".");
+
   if (host === "github.com" || labels.includes("github")) return "github";
+
   if (host === "gitlab.com" || labels.includes("gitlab")) return "gitlab";
 
   const auth = await runCli("gitlab", ["auth", "status"], undefined, 5000);
+
   return parseGitLabAccounts(`${auth.stdout}\n${auth.stderr}`).some((entry) => entry.host === host)
     ? "gitlab"
     : null;
@@ -233,14 +244,17 @@ export async function readPullRequest(
       ],
       cwd,
     );
+
     const pullRequests = Schema.decodeUnknownOption(Schema.fromJsonString(GitHubPullRequests))(
       listed.stdout,
     );
+
     if (Option.isNone(pullRequests)) return null;
 
     // gh lists newest first.
     const pullRequest =
       pullRequests.value.find((entry) => entry.state === "OPEN") ?? pullRequests.value[0];
+
     if (!pullRequest) return null;
 
     return {
@@ -257,13 +271,16 @@ export async function readPullRequest(
     ["mr", "list", "--source-branch", branch, "--all", "--per-page", "20", "--output", "json"],
     cwd,
   );
+
   const mergeRequests = Schema.decodeUnknownOption(Schema.fromJsonString(GitLabMergeRequests))(
     listed.stdout,
   );
+
   if (Option.isNone(mergeRequests)) return null;
 
   const mergeRequest =
     mergeRequests.value.find((entry) => entry.state === "opened") ?? mergeRequests.value[0];
+
   if (!mergeRequest) return null;
 
   return {
@@ -378,12 +395,14 @@ const TEMPLATE_DIRS = [
 export async function readPullRequestTemplate(root: string) {
   for (const file of TEMPLATE_FILES) {
     const text = await readFile(join(root, file), "utf8").catch(() => null);
+
     if (text !== null) return text.slice(0, 8000);
   }
 
   for (const folder of TEMPLATE_DIRS) {
     const entries = await readdir(join(root, folder)).catch(() => []);
     const templates = entries.filter((name) => name.endsWith(".md"));
+
     if (templates.length === 1)
       return (await readFile(join(root, folder, templates[0]!), "utf8")).slice(0, 8000);
   }

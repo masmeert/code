@@ -8,6 +8,7 @@ import { useEffect } from "react";
  */
 function applyDark(isDark: boolean) {
   const root = document.documentElement;
+
   if (root.classList.contains("dark") === isDark) return;
 
   root.dataset.themeSwitching = "";
@@ -22,15 +23,18 @@ export function useTheme(theme: Theme) {
     try {
       localStorage.setItem("masscode.theme", theme);
     } catch {}
+
     void window.desktop?.setTheme(theme).catch(() => {});
 
     const media = matchMedia("(prefers-color-scheme: dark)");
+
     function apply() {
       applyDark(theme === "dark" || (theme === "system" && media.matches));
     }
 
     apply();
     media.addEventListener("change", apply);
+
     return () => media.removeEventListener("change", apply);
   }, [theme]);
 }

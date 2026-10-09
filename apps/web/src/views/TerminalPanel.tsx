@@ -26,6 +26,7 @@ import {
 import { useResizableSize } from "@masscode/ui/hooks/use-resizable";
 
 const symbolsFont = new FontFace("Symbols Nerd Font Mono", `url(${symbolsFontUrl})`);
+
 document.fonts.add(symbolsFont);
 
 function getTerminalTheme(isDark: boolean): ITheme {
@@ -93,6 +94,7 @@ export function TerminalPanel({
 }) {
   const terminalIds = useStore((state) => state.terminals[threadId]) ?? [];
   const section = useRef<HTMLElement>(null);
+
   const panel = useResizableSize({
     key: "masscode.terminalHeight",
     initial: 288,
@@ -201,6 +203,7 @@ export function TerminalView({
   useEffect(() => {
     let isCancelled = false;
     let dispose = () => {};
+
     void symbolsFont
       .load()
       .catch(() => symbolsFont)
@@ -218,6 +221,7 @@ export function TerminalView({
           minimumContrastRatio: 4.5,
           theme: getTerminalTheme(document.documentElement.classList.contains("dark")),
         });
+
         const fitAddon = new FitAddon();
         terminal.loadAddon(fitAddon);
         terminal.loadAddon(new Unicode11Addon());
@@ -225,6 +229,7 @@ export function TerminalView({
         terminal.loadAddon(
           new WebLinksAddon((event, uri) => {
             if (!event.metaKey && !event.ctrlKey) return;
+
             if (window.desktop && isLocalUrl(uri)) openTab(threadId, uri);
             else window.open(uri, "_blank");
           }),
@@ -240,6 +245,7 @@ export function TerminalView({
         fitAddon.fit();
 
         let isReplaying = false;
+
         function acknowledge(characters: number) {
           sendIfConnected(
             ClientCommand.cases["terminal.acknowledge"].make({ threadId, terminalId, characters }),
@@ -281,10 +287,12 @@ export function TerminalView({
         );
 
         let frame = 0;
+
         const sizeObserver = new ResizeObserver(() => {
           cancelAnimationFrame(frame);
           frame = requestAnimationFrame(() => fitAddon.fit());
         });
+
         sizeObserver.observe(host.current);
 
         const themeObserver = new MutationObserver(() => {
@@ -292,6 +300,7 @@ export function TerminalView({
             document.documentElement.classList.contains("dark"),
           );
         });
+
         themeObserver.observe(document.documentElement, {
           attributes: true,
           attributeFilter: ["class"],

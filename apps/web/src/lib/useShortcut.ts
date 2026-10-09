@@ -11,6 +11,7 @@ export function useShortcut(key: string, onPress: () => void) {
     }
 
     window.addEventListener("keydown", onKey);
+
     return () => window.removeEventListener("keydown", onKey);
   }, [key, onPress]);
 }

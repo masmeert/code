@@ -37,6 +37,7 @@ export const resolveHarnessLaunch = Effect.fn("resolveHarnessLaunch")(function* 
   settings: ProviderSettings,
 ) {
   const cli = CLI[kind];
+
   const bin = settings.binaryPath?.trim()
     ? expandHome(settings.binaryPath)
     : yield* Effect.try({
@@ -44,6 +45,7 @@ export const resolveHarnessLaunch = Effect.fn("resolveHarnessLaunch")(function* 
         try: () => resolveExecutable(cli.name, cli.pathEnv),
         catch: (error) => new ProviderError({ provider: kind, message: getErrorMessage(error) }),
       });
+
   if (!existsSync(bin)) {
     return yield* new ProviderError({
       provider: kind,
@@ -52,9 +54,11 @@ export const resolveHarnessLaunch = Effect.fn("resolveHarnessLaunch")(function* 
   }
 
   const env = { ...process.env, ...settings.env };
+
   const configDir = settings.configDir?.trim()
     ? expandHome(settings.configDir)
     : cli.defaultConfigDir;
+
   if (configDir) env[cli.configEnv] = configDir;
 
   return { bin, args: settings.launchArgs ?? [], env };
@@ -66,11 +70,14 @@ export const resolveHarnessLaunch = Effect.fn("resolveHarnessLaunch")(function* 
  */
 export function toClaudeExtraArgs(args: ReadonlyArray<string>) {
   const flags: Record<string, string | null> = {};
+
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!;
+
     if (!arg.startsWith("--")) continue;
     const [flag, inline] = arg.slice(2).split(/=(.*)/s);
     const next = args[index + 1];
+
     if (inline !== undefined) flags[flag!] = inline;
     else if (next !== undefined && !next.startsWith("-")) {
       flags[flag!] = next;

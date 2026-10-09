@@ -12,8 +12,11 @@ import { watchForUpdates } from "./updates.ts";
 import { createWindow } from "./windows.ts";
 
 const daemonToken = randomBytes(32).toString("hex");
+
 let daemon: ChildProcess | null = null;
+
 let daemonPort: Promise<number> | null = null;
+
 let isQuitting = false;
 
 // A fixed port let a daemon left over from an earlier launch (or a dev daemon) hold it,
@@ -28,6 +31,7 @@ function startDaemon() {
     daemon.once("exit", () => {
       if (!isQuitting) setTimeout(startDaemon, 1000);
     });
+
     return port;
   });
 }
@@ -35,6 +39,7 @@ function startDaemon() {
 if (app.isPackaged) startDaemon();
 
 registerRendererScheme();
+
 registerBridge(() => daemonPort?.then((port) => ({ port, token: daemonToken })) ?? null);
 
 app.on("window-all-closed", () => {
@@ -57,6 +62,7 @@ app
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow(APP_URL);
     });
+
     if (app.isPackaged) watchForUpdates();
   })
   .catch(() => app.quit());

@@ -72,19 +72,24 @@ export function createTerminals(options: {
     },
   ): TerminalSession | Error {
     const folder = options.findFolder(threadId);
+
     if (folder === null) return new Error("This thread is gone.");
+
     if (!existsSync(folder)) return new Error(`The thread's folder is gone: ${folder}`);
 
     const shellPath =
       [process.env.SHELL, "/bin/zsh", "/bin/bash", "/bin/sh"].find((candidate) => {
         if (!candidate) return false;
+
         try {
           accessSync(candidate, constants.X_OK);
+
           return true;
         } catch {
           return false;
         }
       }) ?? "/bin/sh";
+
     const shellName = basename(shellPath);
 
     const screen = new HeadlessTerminal({
@@ -93,6 +98,7 @@ export function createTerminals(options: {
       scrollback: 5000,
       allowProposedApi: true,
     });
+
     const serializer = new SerializeAddon();
     screen.loadAddon(serializer);
     screen.loadAddon(new Unicode11Addon());
@@ -153,12 +159,15 @@ export function createTerminals(options: {
       };
 
       sessions.set(getTerminalKey(threadId, terminalId), session);
+
       if (run) runs.add(getTerminalKey(threadId, terminalId));
       void session.shell.exited.then((exitCode) => handleShellExit(session, exitCode));
       options.onOpened({ threadId, terminalId, ...(run && { command: run.command }) });
+
       return session;
     } catch (error) {
       screen.dispose();
+
       return new Error(`Couldn't start ${shellPath}: ${getErrorMessage(error)}`);
     }
   }
@@ -173,9 +182,11 @@ export function createTerminals(options: {
     session.flushTimer = null;
 
     const data = session.pendingOutput;
+
     if (!data) return;
 
     session.pendingOutput = "";
+
     if (session.unparsedCharacters < 16 * 1024 * 1024) {
       session.unparsedCharacters += data.length;
       session.screen.write(data, () => {
@@ -208,11 +219,13 @@ export function createTerminals(options: {
           data,
         }),
       );
+
       return;
     }
 
     attachment.queued.push(data);
     attachment.queuedCharacters += data.length;
+
     if (attachment.queuedCharacters > 1024 * 1024)
       Object.assign(attachment, { queued: [], queuedCharacters: 0, isStale: true });
   }
@@ -258,6 +271,7 @@ export function createTerminals(options: {
       session.screen.dispose();
 
       const key = getTerminalKey(session.threadId, session.terminalId);
+
       if (sessions.get(key) !== session) return;
 
       sessions.delete(key);
@@ -267,6 +281,7 @@ export function createTerminals(options: {
 
   function close(threadId: string, terminalId: string) {
     const session = sessions.get(getTerminalKey(threadId, terminalId));
+
     if (!session) return;
 
     session.isStopped = true;
@@ -306,6 +321,7 @@ export function createTerminals(options: {
         onExit,
         ...(env && { env }),
       });
+
       return session instanceof Error ? session : null;
     },
     attach(
@@ -317,6 +333,7 @@ export function createTerminals(options: {
       input?: string,
     ) {
       const existing = sessions.get(getTerminalKey(threadId, terminalId));
+
       if (existing) resize(existing, columns, rows);
 
       const session =
@@ -324,6 +341,7 @@ export function createTerminals(options: {
         (runs.has(getTerminalKey(threadId, terminalId))
           ? new Error("This command already finished.")
           : startShell(threadId, terminalId, columns, rows));
+
       // The pty holds it until the shell reads its first line.
       if (!existing && input && !(session instanceof Error))
         session.shell.terminal?.write(`${input}\r`);
@@ -338,6 +356,7 @@ export function createTerminals(options: {
         );
 
       flushOutput(session);
+
       const attachment: Attachment = {
         inFlightCharacters: 0,
         queued: [],
@@ -345,6 +364,7 @@ export function createTerminals(options: {
         isWaitingForSnapshot: false,
         isStale: false,
       };
+
       session.viewers.set(viewer, attachment);
       sendSnapshot(session, viewer, attachment);
     },
@@ -357,11 +377,14 @@ export function createTerminals(options: {
     acknowledge(threadId: string, terminalId: string, viewer: TerminalViewer, characters: number) {
       const session = sessions.get(getTerminalKey(threadId, terminalId));
       const attachment = session?.viewers.get(viewer);
+
       if (!session || !attachment) return;
 
       attachment.inFlightCharacters = Math.max(0, attachment.inFlightCharacters - characters);
+
       if (attachment.isStale) {
         if (attachment.inFlightCharacters === 0) sendSnapshot(session, viewer, attachment);
+
         return;
       }
 
@@ -385,6 +408,7 @@ export function createTerminals(options: {
     },
     resize(threadId: string, terminalId: string, columns: number, rows: number) {
       const session = sessions.get(getTerminalKey(threadId, terminalId));
+
       if (session) resize(session, columns, rows);
     },
     close,
@@ -426,14 +450,18 @@ export function createTerminals(options: {
 function getPrintedText(screen: HeadlessTerminal) {
   const buffer = screen.buffer.active;
   const lines: Array<string> = [];
+
   for (let index = 0; index < buffer.length; index++) {
     const line = buffer.getLine(index);
+
     if (!line) continue;
     const text = line.translateToString(true);
+
     if (line.isWrapped && lines.length > 0) lines[lines.length - 1] += text;
     else lines.push(text);
   }
 
   const text = lines.join("\n").replace(/^\n+/, "").trimEnd();
+
   return text.length > RUN_OUTPUT_CHARACTER_LIMIT ? text.slice(-RUN_OUTPUT_CHARACTER_LIMIT) : text;
 }

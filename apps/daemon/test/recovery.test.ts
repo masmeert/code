@@ -16,12 +16,14 @@ import {
 } from "./replay/daemon.ts";
 
 let daemon: Daemon | null = null;
+
 afterEach(async () => {
   await daemon?.stop();
   daemon = null;
 });
 
 const codex = readFixture("codex-two-turns").sessions[0]!;
+
 const claude = readFixture("claude-two-turns").sessions[0]!;
 
 /** Claude up to answering `initialize`: the turn has started and nothing has come back yet. */
@@ -43,14 +45,17 @@ function filterThreadEvents<T extends RuntimeEvent["_tag"]>(
 
 test("codex: a crash mid-turn ends the turn, and the next message resumes the thread", async () => {
   daemon = await startDaemon();
+
   const folder = createProject({
     codex: {
       sessions: [[...takeUntil(codex, matchReplyTo("rpc-3")), { exit: 1 }], toResumed(codex)],
     },
   });
+
   const thread = await daemon.createThread(folder, "Reply with exactly: pong", {
     provider: "codex",
   });
+
   await daemon.waitFor(matchStatus(thread.id, "error"));
   const transcript = daemon.readTranscript(thread.id);
   expect(filterThreadEvents(transcript, thread.id, "turn.completed")).toHaveLength(1);
@@ -59,9 +64,11 @@ test("codex: a crash mid-turn ends the turn, and the next message resumes the th
   expect(await daemon.send(thread.id, "Reply with exactly: pong")).toBeNull();
   await daemon.waitFor(matchStatus(thread.id, "idle"));
   expect(listSpawns(folder, "codex")).toHaveLength(2);
+
   const resume = readPeerLog(folder, "codex").find(
     (entry) => entry.session === 1 && entry.out?.method === "thread/resume",
   );
+
   expect(resume?.out?.params).toMatchObject({ threadId: getCodexThreadId(codex) });
 });
 
@@ -82,6 +89,7 @@ test("claude: a crash mid-turn ends the turn, and the next message resumes the s
 
 test("codex: a turn the agent refuses to start doesn't leave the thread running", async () => {
   daemon = await startDaemon();
+
   const folder = createProject({
     codex: {
       sessions: [
@@ -93,9 +101,11 @@ test("codex: a turn the agent refuses to start doesn't leave the thread running"
       ],
     },
   });
+
   const thread = await daemon.createThread(folder, "Reply with exactly: pong", {
     provider: "codex",
   });
+
   await daemon.waitFor(matchStatus(thread.id, "error"));
   await daemon.waitFor(
     (event) =>

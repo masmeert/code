@@ -89,6 +89,7 @@ const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {
 
 function buildPermissionOption(level: PermissionLevel) {
   const Icon = PERMISSION_ICON[level];
+
   return {
     value: level,
     label: PERMISSION_LABEL[level],
@@ -160,6 +161,7 @@ const MAX_FILE_MATCHES = 50;
 function matchFiles(files: ReadonlyArray<string>, query: string) {
   function getMatchRank(path: string) {
     const name = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
+
     return name.startsWith(query) ? 0 : name.includes(query) ? 1 : 2;
   }
 
@@ -179,15 +181,18 @@ export function Composer(props: ComposerProps) {
   const [prefs, setPrefs] = useTurnPrefs(prefsKey, props.provider, host);
   const needsRootConsent = useNeedsRootConsent(host);
   const [isConfirmingRoot, setIsConfirmingRoot] = useState(false);
+
   const files = useAttachments({
     key: prefsKey,
     shouldAcceptDrops: !props.disabled,
     isRemote: host !== null,
   });
+
   const providers = useProviders(host);
   const settings = useStore((state) => state.settings);
   const stashes = useStashes();
   const [stashSignal, setStashSignal] = useState(0);
+
   const isWorktree = useStore((state) =>
     threadId ? state.threads[threadId]?.worktree : undefined,
   );
@@ -197,6 +202,7 @@ export function Composer(props: ComposerProps) {
   const fallbackEffort = catalog?.defaultEffort;
   const efforts = catalog?.efforts ?? EFFORTS[props.provider];
   const { effort, fast } = fitToModel(prefs, catalog);
+
   const effortOptions = efforts.map((level) => ({
     value: level,
     label: EFFORT_LABEL[level],
@@ -219,9 +225,12 @@ export function Composer(props: ComposerProps) {
 
   // Slash commands: "/" at the start opens the menu.
   const commands = useStore((state) => (threadId ? state.commands[threadId] : undefined));
+
   const slashQuery =
     threadId && /^\/\S*$/.test(draft.text) ? draft.text.slice(1).toLowerCase() : null;
+
   const [dismissed, setDismissed] = useState<string | null>(null);
+
   const slashItems: Array<SlashItem> =
     slashQuery === null || dismissed === draft.text
       ? []
@@ -249,6 +258,7 @@ export function Composer(props: ComposerProps) {
               hint: command.argumentHint,
             })),
         ].filter((item) => item.name.toLowerCase().startsWith(slashQuery));
+
   const isSlashTyped = slashQuery !== null;
 
   useEffect(() => {
@@ -275,10 +285,12 @@ export function Composer(props: ComposerProps) {
   const mention = props.cwd ? /(?:^|\s)@(\S*)$/.exec(draft.text.slice(0, caret)) : null;
   const mentionQuery = mention && dismissed !== draft.text ? mention[1].toLowerCase() : null;
   const repoFiles = useStore((state) => (props.cwd ? state.files[props.cwd] : undefined));
+
   const fileMatches = useMemo(
     () => (repoFiles && mentionQuery !== null ? matchFiles(repoFiles, mentionQuery) : []),
     [repoFiles, mentionQuery],
   );
+
   const isMentionTyped = mention !== null;
 
   useEffect(() => {
@@ -307,11 +319,14 @@ export function Composer(props: ComposerProps) {
   const skillMention = props.cwd
     ? /(?:^|\s)\$((?:[A-Za-z][\w:-]*)?)$/.exec(draft.text.slice(0, caret))
     : null;
+
   const skillQuery =
     skillMention && dismissed !== draft.text ? skillMention[1].toLowerCase() : null;
+
   const skillList = useStore((state) =>
     props.cwd ? state.skills[getSkillsKey(props.provider, props.cwd)] : undefined,
   );
+
   const skillMatches =
     skillList && skillQuery !== null
       ? skillList.skills
@@ -322,6 +337,7 @@ export function Composer(props: ComposerProps) {
               Number(!second.name.toLowerCase().startsWith(skillQuery)),
           )
       : [];
+
   const isSkillTyped = skillMention !== null;
 
   useEffect(() => {
@@ -335,6 +351,7 @@ export function Composer(props: ComposerProps) {
     pick: (index: number) => void;
     empty: string | null;
   } | null = null;
+
   if (slashItems.length > 0) {
     menu = {
       label: "Commands",
@@ -378,6 +395,7 @@ export function Composer(props: ComposerProps) {
   }
 
   const shouldReduceMotion = useReducedMotion();
+
   const {
     activeIndex: menuIndex,
     pointed: isPointed,
@@ -389,26 +407,34 @@ export function Composer(props: ComposerProps) {
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     input.current = event.currentTarget;
+
     if (menu && event.key === "Escape") {
       event.preventDefault();
       setDismissed(draft.text);
+
       return;
     }
+
     if (menu?.items.length) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
         moveActive(event.key === "ArrowDown" ? 1 : -1);
+
         return;
       }
+
       if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
         event.preventDefault();
         menu.pick(menuIndex);
+
         return;
       }
     }
+
     const textarea = event.currentTarget;
     const text = textarea.value;
     const isUntouched = text === "" || text === recall.current?.text;
+
     if (
       event.key === "ArrowUp" &&
       isUntouched &&
@@ -416,6 +442,7 @@ export function Composer(props: ComposerProps) {
       !text.slice(0, textarea.selectionStart).includes("\n")
     ) {
       const index = recall.current ? recall.current.index - 1 : history.length - 1;
+
       if (index < 0) return;
       event.preventDefault();
       recallPrompt(index);
@@ -433,6 +460,7 @@ export function Composer(props: ComposerProps) {
   // ⌘S stash: tucks the prompt away; on an empty composer, brings one back.
   useKeybinding(props.disabled ? undefined : "composer.stash", () => {
     if (stashDraft(prefsKey)) return;
+
     if (stashes.length === 1) restoreStash(prefsKey, stashes[0].id);
     else if (stashes.length > 1) setStashSignal((signal) => signal + 1);
   });
@@ -440,14 +468,17 @@ export function Composer(props: ComposerProps) {
   function submitPrompt(text: string, how: { alternate: boolean }) {
     if (props.onNeedProject && !props.cwd) {
       props.onNeedProject();
+
       return;
     }
 
     recall.current = null;
     const aside = props.onAskAside && /^\s*\/btw(?:\s+([\s\S]*))?$/i.exec(text);
+
     if (aside) {
       setText("");
       props.onAskAside?.(aside[1]?.trim() ?? "");
+
       return;
     }
 
@@ -520,6 +551,7 @@ export function Composer(props: ComposerProps) {
               value={prefs.permission}
               onChange={(value) => {
                 if (!Schema.is(PermissionLevel)(value)) return;
+
                 if (value === "full-access" && needsRootConsent) setIsConfirmingRoot(true);
                 else setPrefs({ permission: value });
               }}
@@ -539,6 +571,7 @@ export function Composer(props: ComposerProps) {
           onPasteText={(text, plain) => {
             if (plain || new TextEncoder().encode(text).length < LARGE_PASTE_BYTES) return false;
             files.addAttachments([createTextAttachment(text)]);
+
             return true;
           }}
           onSubmit={submitPrompt}
@@ -816,8 +849,10 @@ function BranchPicker({
   useEffect(() => send(ClientCommand.cases["git.listBranches"].make({ path: cwd })), [cwd]);
 
   if (!list) return null;
+
   if (!list.current && !list.branches.length)
     return <span className="px-1.5 text-muted-foreground/70">Not a git repo</span>;
+
   return (
     <PromptSelect
       title={isWorktree ? "Start the worktree from" : "Switch branch"}

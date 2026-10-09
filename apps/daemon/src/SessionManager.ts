@@ -96,6 +96,7 @@ const make = Effect.gen(function* () {
   const projectsStore = yield* ProjectsStore;
   const store = yield* ThreadStore;
   const providerRegistry = yield* ProviderRegistry;
+
   const {
     threads,
     getEntry,
@@ -125,6 +126,7 @@ const make = Effect.gen(function* () {
     // Terminals and agents publish through the registry, so they come after it: bound late.
     onShelve: (entry) => {
       terminals.closeIdle(entry.info.id);
+
       // Shelved threads never have a turn going; like the idle reaper, the next message resumes from the token.
       if (entry.session) runFork(dropSession(entry, null));
     },
@@ -141,10 +143,13 @@ const make = Effect.gen(function* () {
     onOpened: (terminal) => publish(RuntimeEvent.cases["terminal.opened"].make(terminal)),
     onClosed: (terminal) => publish(RuntimeEvent.cases["terminal.closed"].make(terminal)),
   });
+
   const browsers = createBrowsers();
+
   const devices = createDevices((threadId, deviceId) =>
     publish(RuntimeEvent.cases["thread.device"].make({ threadId, deviceId })),
   );
+
   const skills = yield* createSkillCatalog({
     readSkills: (provider, cwd) =>
       Effect.flatMap(settingsStore.get, (settings) =>
@@ -277,6 +282,7 @@ const make = Effect.gen(function* () {
         for (const entry of threads.values()) {
           refreshShelved(entry);
           const stop = entry.info.limitStop;
+
           if (
             stop?.resumeAtReset &&
             stop.resetsAt !== null &&
@@ -308,6 +314,7 @@ const make = Effect.gen(function* () {
         "thread.sendQueued": ({ threadId, messageId }) =>
           Effect.map(getEntry(threadId), (entry) => {
             const message = (entry.info.queue ?? []).find((queued) => queued.id === messageId);
+
             if (message) sendQueued(entry, message);
           }),
         "thread.unqueue": ({ threadId, messageIds }) =>
@@ -322,6 +329,7 @@ const make = Effect.gen(function* () {
         "thread.resumeAtReset": ({ threadId, options }) =>
           Effect.map(getEntry(threadId), (entry) => {
             const stop = entry.info.limitStop;
+
             if (stop) setLimitStop(entry, { ...stop, resumeAtReset: options });
           }),
         "thread.dismissLimitStop": ({ threadId }) =>
@@ -340,9 +348,11 @@ const make = Effect.gen(function* () {
         "checkpoint.diff": (command) =>
           Effect.gen(function* () {
             const entry = yield* getEntry(command.threadId);
+
             const diff = yield* Effect.promise(() =>
               readCheckpointDiff(entry.info.cwd, command.threadId, command.messageId),
             );
+
             publish(
               RuntimeEvent.cases["checkpoint.diff"].make({
                 threadId: command.threadId,
@@ -381,8 +391,10 @@ const make = Effect.gen(function* () {
           Effect.gen(function* () {
             async function findRepos(folder: string, levels: number): Promise<Array<string>> {
               if (existsSync(join(folder, ".git"))) return [folder];
+
               if (levels === 0) return [];
               const { path, folders } = await listFolders(folder);
+
               return (
                 await Promise.all(folders.map((name) => findRepos(join(path, name), levels - 1)))
               ).flat();
@@ -393,6 +405,7 @@ const make = Effect.gen(function* () {
             const repos = yield* Effect.promise(() =>
               findRepos(resolve(expandHome(command.path)), 3),
             );
+
             yield* Effect.forEach(repos, (folder) =>
               projectsStore.ensure(folder).pipe(
                 Effect.map(({ project, isNew }) =>
@@ -451,6 +464,7 @@ const make = Effect.gen(function* () {
             const owned = [...threads.values()].filter(
               (entry) => entry.info.projectId === command.projectId,
             );
+
             yield* Effect.forEach(owned, (entry) => removeThread(entry.info.id), { discard: true });
             publish(RuntimeEvent.cases["project.removed"].make({ projectId: command.projectId }));
           }),
@@ -474,6 +488,7 @@ const make = Effect.gen(function* () {
                 ),
               );
             });
+
             return runError
               ? Effect.fail(
                   new CommandError({ message: `Couldn't run the command: ${runError.message}` }),
@@ -504,6 +519,7 @@ const make = Effect.gen(function* () {
               return JSON.stringify(
                 ProviderKind.literals.map((kind) => {
                   const { binaryPath, configDir, env, launchArgs } = value.providers[kind];
+
                   return [binaryPath, configDir, env, launchArgs];
                 }),
               );

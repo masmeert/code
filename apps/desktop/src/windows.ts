@@ -25,6 +25,7 @@ function isOnScreen(bounds: Rectangle) {
 function readSavedBounds(): Partial<Rectangle> {
   try {
     const bounds: Rectangle = JSON.parse(readFileSync(BOUNDS_PATH, "utf8"));
+
     return isOnScreen(bounds) ? bounds : { width: 1200, height: 800 };
   } catch {
     return { width: 1200, height: 800 };
@@ -72,6 +73,7 @@ export function createWindow(url: string, bounds = readSavedBounds()) {
 
   window.webContents.setWindowOpenHandler((details) => {
     openLink(details.url);
+
     return { action: "deny" };
   });
 

@@ -81,16 +81,22 @@ function scrub(value: Schema.Json): Schema.Json {
     return value
       .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "user@example.com")
       .replaceAll(homedir(), "/home/user");
+
   if (Array.isArray(value)) return value.map(scrub);
+
   if (!isObject(value)) return value;
 
   // Your own hooks' output (SessionStart and the like).
   const isHook = Predicate.isString(value.subtype) && value.subtype.startsWith("hook_");
+
   return Object.fromEntries(
     Object.entries(value).map(([key, field]): [string, Schema.Json] => {
       if (isHook && ["stdout", "stderr", "output"].includes(key)) return [key, ""];
+
       if (!PERSONAL.has(key)) return [key, scrub(field)];
+
       if (Array.isArray(field)) return [key, []];
+
       return [key, isObject(field) ? {} : Predicate.isString(field) ? "" : field];
     }),
   );
@@ -100,6 +106,7 @@ function scrub(value: Schema.Json): Schema.Json {
 function scrubEntry(entry: Recorded): ReadonlyArray<Recorded> {
   if ("out" in entry)
     return [{ pid: entry.pid, out: Schema.decodeUnknownSync(Schema.JsonObject)(scrub(entry.out)) }];
+
   if (!("in" in entry)) return [entry];
 
   if (
@@ -112,8 +119,10 @@ function scrubEntry(entry: Recorded): ReadonlyArray<Recorded> {
 }
 
 const only = process.argv[2];
+
 for (const scenario of SCENARIOS.filter((candidate) => !only || candidate.name === only)) {
   const folder = createProject({});
+
   const daemon = await startDaemon({
     [scenario.provider]: {
       defaultModel: scenario.model,
@@ -143,6 +152,7 @@ for (const scenario of SCENARIOS.filter((candidate) => !only || candidate.name =
       );
 
     const turns = daemon.countTurnsCompleted();
+
     while (daemon.countTurnsCompleted() === turns) {
       const request = daemon.events.find(
         (event): event is Extract<RuntimeEvent, { _tag: "approval.requested" }> =>
@@ -153,6 +163,7 @@ for (const scenario of SCENARIOS.filter((candidate) => !only || candidate.name =
               resolution.requestId === event.requestId,
           ),
       );
+
       if (request && scenario.shouldApprove)
         await daemon.dispatch(
           ClientCommand.cases["approval.respond"].make({

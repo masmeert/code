@@ -3,7 +3,9 @@ import { mkdirSync, watch } from "node:fs";
 import electron from "electron";
 
 const build = spawn("pnpm", ["build", "--watch"], { stdio: "inherit" });
+
 let app = null;
+
 let restartTimer = null;
 
 function launchApp() {
@@ -24,7 +26,9 @@ process.on("exit", () => {
   build.kill();
   app?.kill();
 });
+
 mkdirSync("dist", { recursive: true });
+
 watch("dist", (_event, file) => {
   if (file?.endsWith(".cjs")) restartApp();
 });

@@ -32,7 +32,9 @@ const CATEGORY_COLOR = new Map([
 
 function getCategoryColor(category: ContextUsage["categories"][number]) {
   if (category.kind === "free") return "bg-muted";
+
   if (category.kind !== "used") return "bg-muted-foreground/40";
+
   return CATEGORY_COLOR.get(category.name) ?? "bg-muted-foreground";
 }
 
@@ -43,11 +45,13 @@ function getPercent(part: number, whole: number) {
 /** "Resets in 3 hr 21 min" within a day, else the weekday and time. */
 export function formatResetLabel(resetsAt: number, now: number) {
   const minutes = Math.max(0, Math.round((resetsAt - now) / 60_000));
+
   if (minutes >= 24 * 60) {
     return `Resets ${new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }).format(resetsAt)}`;
   }
 
   const hours = Math.floor(minutes / 60);
+
   return `Resets in ${hours ? `${hours} hr ` : ""}${minutes % 60} min`;
 }
 
@@ -239,6 +243,7 @@ function LimitsSection({ provider, host }: { provider: ProviderKind; host: strin
   const limits = useStore((state) =>
     host === null ? state.limits[provider] : state.hosts[host]?.limits[provider],
   );
+
   const plan = useProviders(host).find((status) => status.kind === provider)?.plan;
   const now = useNow(60_000);
 

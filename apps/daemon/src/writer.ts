@@ -70,6 +70,7 @@ const writeWithClaude = Effect.fn("writeWithClaude")(function* (
   prompt: string,
 ) {
   const launch = yield* resolveHarnessLaunch("claude", harness);
+
   const options: Options = {
     cwd,
     // Thinking is most of the wait on a message this short.
@@ -82,15 +83,19 @@ const writeWithClaude = Effect.fn("writeWithClaude")(function* (
     extraArgs: toClaudeExtraArgs(launch.args),
     env: launch.env,
   };
+
   if (model) options.model = model;
   const conversation = yield* acquireClaudeQuery(() => query({ prompt, options }));
 
   return yield* tryProviderPromise("claude", async () => {
     for await (const message of conversation) {
       if (message.type !== "result") continue;
+
       if (message.subtype !== "success") throw new Error(`Claude stopped: ${message.subtype}`);
+
       return message.result;
     }
+
     throw new Error("Claude returned nothing");
   });
 });
@@ -109,6 +114,7 @@ const writeWithCodex = Effect.fn("writeWithCodex")(function* (
   }
 
   const launch = yield* resolveHarnessLaunch("codex", harness);
+
   const rpc = yield* acquireCodexConnection(launch, cwd, {
     onNotification: (notification) =>
       CodexNotification.matchOrElse(
@@ -144,6 +150,7 @@ const writeWithCodex = Effect.fn("writeWithCodex")(function* (
       ThreadResponse,
     ),
   );
+
   yield* tryProviderPromise("codex", () =>
     rpc.request(
       "turn/start",
@@ -166,6 +173,7 @@ const writeWithCursor = Effect.fn("writeWithCursor")(function* (
   prompt: string,
 ) {
   const launch = yield* resolveHarnessLaunch("cursor", harness);
+
   // Interrupting the run (the timeout) aborts the signal, which kills the CLI.
   const { stdout } = yield* tryProviderPromise("cursor", (signal) =>
     promisify(execFile)(
@@ -184,6 +192,7 @@ const writeWithCursor = Effect.fn("writeWithCursor")(function* (
       { cwd, env: launch.env, maxBuffer: 10 * 1024 * 1024, signal },
     ),
   );
+
   return stdout;
 });
 
@@ -221,6 +230,7 @@ function writeWithHarness(input: WriterInput, prompt: string) {
 export async function generateCommitMessage(input: WriterInput & { readonly patch: string }) {
   const style = getStyleRules(input.settings, input.recent);
   const truncated = input.patch.length > MAX_PROMPT_PATCH;
+
   const message = await writeWithHarness(
     input,
     [
@@ -232,6 +242,7 @@ export async function generateCommitMessage(input: WriterInput & { readonly patc
       .filter(Boolean)
       .join("\n\n"),
   );
+
   if (!message) throw new Error("The model returned an empty message");
 
   return message;
@@ -264,6 +275,7 @@ export async function generatePullRequest(
   },
 ) {
   const style = getStyleRules(input.settings, input.recent);
+
   const bodyRules = input.template
     ? [
         "- body must be markdown and follow the repository pull request template structure",
@@ -298,9 +310,11 @@ export async function generatePullRequest(
       .filter(Boolean)
       .join("\n\n"),
   );
+
   // The object may come with a sentence around it despite the instructions.
   const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
   const parsed = Schema.decodeUnknownOption(Schema.fromJsonString(PullRequestText))(json);
+
   if (Option.isNone(parsed)) throw new Error("The model didn't return a title and body");
 
   return {

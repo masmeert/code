@@ -9,6 +9,7 @@ export const DesktopBrowserEvent = Schema.TaggedUnion({
   "close-tab": { webContentsId: Schema.Number },
   "focus-address": { webContentsId: Schema.Number },
 });
+
 export type DesktopBrowserEvent = typeof DesktopBrowserEvent.Type;
 
 export const UpdateStatus = Schema.TaggedUnion({
@@ -20,6 +21,7 @@ export const UpdateStatus = Schema.TaggedUnion({
   ready: { version: Schema.String },
   failed: { message: Schema.String },
 });
+
 export type UpdateStatus = typeof UpdateStatus.Type;
 
 /** Where the app is with a remote host, an SSH alias like one from ~/.ssh/config. */
@@ -31,6 +33,7 @@ export const HostStatus = Schema.TaggedUnion({
   updating: {},
   failed: { message: Schema.String },
 });
+
 export type HostStatus = typeof HostStatus.Type;
 
 export interface RemoteHost {

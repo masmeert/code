@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 export const ProviderKind = Schema.Literals(["claude", "codex", "cursor"]);
+
 export type ProviderKind = typeof ProviderKind.Type;
 
 export const PROVIDER_NAME: Record<ProviderKind, string> = {
@@ -25,6 +26,7 @@ export const Effort = Schema.Literals([
   "ultracode",
   "ultrathink",
 ]);
+
 export type Effort = typeof Effort.Type;
 
 export const ModelOption = Schema.Struct({
@@ -39,6 +41,7 @@ export const ModelOption = Schema.Struct({
   /** Offers fast mode. */
   fast: Schema.optional(Schema.Boolean),
 });
+
 export type ModelOption = typeof ModelOption.Type;
 
 /** What the daemon knows about one harness CLI on this machine. */
@@ -56,6 +59,7 @@ export const ProviderStatus = Schema.Struct({
   /** Not checked yet, so nothing above is known: the first check after launch is still running. */
   checking: Schema.optional(Schema.Boolean),
 });
+
 export type ProviderStatus = typeof ProviderStatus.Type;
 
 /** Progress of an interactive sign-in started from Settings. */
@@ -65,6 +69,7 @@ export const AuthFlow = Schema.Struct({
   url: Schema.NullOr(Schema.String),
   message: Schema.NullOr(Schema.String),
 });
+
 export type AuthFlow = typeof AuthFlow.Type;
 
 /** One window of a subscription's rate limit, e.g. the 5-hour one. */
@@ -74,6 +79,7 @@ export const UsageLimit = Schema.Struct({
   /** Epoch ms; null when the window hasn't started. */
   resetsAt: Schema.NullOr(Schema.Number),
 });
+
 export type UsageLimit = typeof UsageLimit.Type;
 
 /** A slash command the thread's harness offers. */
@@ -82,6 +88,7 @@ export const SlashCommand = Schema.Struct({
   description: Schema.String,
   argumentHint: Schema.String,
 });
+
 export type SlashCommand = typeof SlashCommand.Type;
 
 /** A skill the harness loads in a folder; `$name` in a message runs it. */
@@ -89,4 +96,5 @@ export const Skill = Schema.Struct({
   name: Schema.String,
   description: Schema.String,
 });
+
 export type Skill = typeof Skill.Type;

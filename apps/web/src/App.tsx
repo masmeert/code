@@ -40,8 +40,11 @@ type View =
 function readInitialView(): View | null {
   const params = new URLSearchParams(location.search);
   const path = params.get("path");
+
   if (path) return { kind: "draft", path };
+
   if (params.has("home")) return { kind: "draft", path: null };
+
   return null;
 }
 
@@ -50,17 +53,20 @@ export function App() {
   const threads = useStore((state) => state.threads);
   const projects = useStore((state) => state.projects);
   const isConnected = useStore((state) => state.connected);
+
   const incompatible = useStore(
     (state) =>
       state.incompatible ??
       Object.values(state.hosts).find((host) => host.incompatible)?.incompatible,
   );
+
   const source = useStore((state) => state.source);
   // A cold start takes a moment and the cached threads are already on screen, so
   // only speak up if it's slow. Losing a live daemon is worth saying right away.
   const [isSlowStart, setIsSlowStart] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setIsSlowStart(true), 2500);
+
     return () => clearTimeout(timer);
   }, []);
 
@@ -92,6 +98,7 @@ export function App() {
   // The last few threads' views stay mounted, hidden, and followed live: switching back to one
   // is instant and shows it current. Most recent first; four bounds what they hold in memory.
   const [recent, setRecent] = useState<ReadonlyArray<string>>([]);
+
   if (activeThread && recent[0] !== activeThread)
     setRecent([activeThread, ...recent.filter((id) => id !== activeThread)].slice(0, 4));
   useEffect(() => keepFollowing(recent), [recent]);
@@ -134,6 +141,7 @@ export function App() {
     }
 
     window.addEventListener("keydown", onKey);
+
     return () => window.removeEventListener("keydown", onKey);
   }, [currentPath]);
 

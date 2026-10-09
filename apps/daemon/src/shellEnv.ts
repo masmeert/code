@@ -17,6 +17,7 @@ function loadShellEnv(): Record<string, string> | null {
   if (process.platform === "win32" || process.env.MASSCODE_SKIP_SHELL_ENV) return null;
 
   const shell = process.env.SHELL || "/bin/zsh";
+
   try {
     // Markers fence off anything the rc files print; NUL-separated so multi-line values survive.
     const output = execFileSync(
@@ -30,14 +31,19 @@ function loadShellEnv(): Record<string, string> | null {
         env: { ...process.env, DISABLE_AUTO_UPDATE: "true", ZSH_TMUX_AUTOSTARTED: "true" },
       },
     );
+
     const body = output.split(MARKER)[1];
+
     if (!body) return null;
 
     const env: Record<string, string> = {};
+
     for (const entry of body.split("\0")) {
       const separator = entry.indexOf("=");
+
       if (separator > 0) env[entry.slice(0, separator)] = entry.slice(separator + 1);
     }
+
     return env;
   } catch {
     return null;
@@ -45,6 +51,7 @@ function loadShellEnv(): Record<string, string> | null {
 }
 
 const shellEnv = loadShellEnv();
+
 if (shellEnv) {
   for (const [key, value] of Object.entries(shellEnv)) {
     // Explicit overrides passed to the daemon (MASSCODE_*, etc.) win over the shell's.

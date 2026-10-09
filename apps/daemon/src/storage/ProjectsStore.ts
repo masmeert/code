@@ -39,6 +39,7 @@ const make = Effect.gen(function* () {
 
   // Projects added before their repo was read get it once, so they group with their copies elsewhere.
   const saved = yield* file.get;
+
   if (saved.some((project) => project.remote === undefined || project.folder === undefined))
     yield* save(
       yield* Effect.forEach(saved, (project) =>
@@ -56,12 +57,14 @@ const make = Effect.gen(function* () {
       const path = resolve(expandHome(rawPath));
       const projects = yield* file.get;
       const existing = projects.find((project) => project.path === path);
+
       if (existing) return { project: existing, isNew: false };
 
       const isFolder = yield* Effect.tryPromise(() => stat(path)).pipe(
         Effect.map((stats) => stats.isDirectory()),
         Effect.orElseSucceed(() => false),
       );
+
       if (!isFolder)
         return yield* Effect.fail(new ProjectNotFound({ message: `Not a folder: ${path}` }));
 
@@ -73,7 +76,9 @@ const make = Effect.gen(function* () {
         remote: yield* Effect.promise(() => readRemoteUrl(path)),
         folder: yield* Effect.promise(() => readRepoFolder(path)),
       };
+
       yield* save([...projects, project]);
+
       return { project, isNew: true };
     });
   }
@@ -82,9 +87,11 @@ const make = Effect.gen(function* () {
     return Effect.gen(function* () {
       const projects = yield* file.get;
       const next = projects.filter((project) => project.id !== projectId);
+
       if (next.length === projects.length) return false;
 
       yield* save(next);
+
       return true;
     });
   }
