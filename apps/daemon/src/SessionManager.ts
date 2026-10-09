@@ -31,8 +31,10 @@ import {
 } from "@masscode/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
@@ -396,6 +398,11 @@ function resolveAttachments(inputs: ReadonlyArray<AttachmentInput>) {
 }
 
 const make = Effect.gen(function* () {
+  // Every effect started from a callback runs here, so closing the daemon's scope interrupts it.
+  const fibers = yield* FiberSet.make();
+  const runFork = yield* FiberSet.runtime(fibers)();
+  const runPromise = yield* FiberSet.runtimePromise(fibers)();
+
   const settingsStore = yield* SettingsStore;
   const projectsStore = yield* ProjectsStore;
   const store = yield* ThreadStore;
@@ -429,7 +436,10 @@ const make = Effect.gen(function* () {
     );
   }
 
-  /** Set as the daemon goes away: agents still running then mustn't touch its state. */
+  /**
+   * Set as the daemon goes away: agents still running then mustn't touch its state. Their
+   * callbacks run outside any fiber, so closing the scope doesn't stop them.
+   */
   let isShuttingDown = false;
   yield* Effect.addFinalizer(() => Effect.sync(() => void (isShuttingDown = true)));
 
@@ -646,12 +656,12 @@ const make = Effect.gen(function* () {
 
     terminals.closeIdle(entry.info.id);
     // Shelved threads never have a turn going; like the idle reaper, the next message resumes from the token.
-    if (entry.session) Effect.runFork(dropSession(entry, null));
+    if (entry.session) runFork(dropSession(entry, null));
   }
 
   // Idle threads shelve with time alone; the threshold is in days, so a check a minute is plenty.
   // Resuming at a usage limit's reset rides along: a minute late is fine, and it survives sleep.
-  const shelver = setInterval(() => {
+  const shelveAndResumeAtReset = Effect.sync(() => {
     for (const entry of threads.values()) {
       refreshShelved(entry);
       const stop = entry.info.limitStop;
@@ -660,12 +670,12 @@ const make = Effect.gen(function* () {
         stop.resetsAt !== null &&
         Date.now() >= stop.resetsAt + LIMIT_RESET_GRACE_MS
       )
-        Effect.runFork(
+        runFork(
           resumeAfterLimit(entry, stop.resumeAtReset).pipe(reportErrorsOn(entry), Effect.ignore),
         );
     }
-  }, 60_000);
-  yield* Effect.addFinalizer(() => Effect.sync(() => clearInterval(shelver)));
+  });
+  yield* Effect.forkScoped(Effect.schedule(shelveAndResumeAtReset, Schedule.spaced("1 minute")));
 
   function setShelveOverride(entry: ThreadEntry, override: ShelveOverride) {
     entry.shelveOverride = override;
@@ -753,7 +763,7 @@ const make = Effect.gen(function* () {
               RuntimeEvent.guards["thread.status"](event) &&
               (event.status === "closed" || event.status === "error")
             ) {
-              Effect.runFork(
+              runFork(
                 event.status === "closed"
                   ? dropSession(entry, AGENT_GONE)
                   : dropSession(entry, null, "error"),
@@ -873,14 +883,16 @@ const make = Effect.gen(function* () {
     setLimitStop(entry, limitStop);
     if (limitStop.resetsAt !== null) return;
 
-    void Effect.runPromise(registry.readLimits(limitStop.provider)).then(({ limits }) => {
-      const spent = limits.flatMap((limit) =>
-        limit.usedPercent >= 100 && limit.resetsAt !== null ? [limit.resetsAt] : [],
-      );
-      const current = entry.info.limitStop;
-      if (spent.length > 0 && current?.resetsAt === null && threads.get(entry.info.id) === entry)
-        setLimitStop(entry, { ...current, resetsAt: Math.max(...spent) });
-    });
+    runFork(
+      Effect.map(registry.readLimits(limitStop.provider), ({ limits }) => {
+        const spent = limits.flatMap((limit) =>
+          limit.usedPercent >= 100 && limit.resetsAt !== null ? [limit.resetsAt] : [],
+        );
+        const current = entry.info.limitStop;
+        if (spent.length > 0 && current?.resetsAt === null && threads.get(entry.info.id) === entry)
+          setLimitStop(entry, { ...current, resetsAt: Math.max(...spent) });
+      }),
+    );
   }
 
   /** Sends a queued message, reporting on the thread if it can't go. */
@@ -889,7 +901,7 @@ const make = Effect.gen(function* () {
       entry,
       entry.queue.filter((queued) => queued.id !== message.id),
     );
-    Effect.runFork(
+    runFork(
       deliverMessage(entry, message).pipe(
         Effect.catch((error) =>
           Effect.sync(() =>
@@ -1349,7 +1361,7 @@ const make = Effect.gen(function* () {
           // Read-only: whatever the agent asks to do beyond reading is refused.
           if (RuntimeEvent.guards["approval.requested"](event)) {
             if (chat.session)
-              Effect.runFork(Effect.ignore(chat.session.respondApproval(event.requestId, "deny")));
+              runFork(Effect.ignore(chat.session.respondApproval(event.requestId, "deny")));
             return;
           }
 
@@ -1510,8 +1522,7 @@ const make = Effect.gen(function* () {
       yield* dropSession(entry, null);
     }
   });
-  const reaper = setInterval(() => Effect.runFork(reapIdleSessions), REAP_INTERVAL_MS);
-  yield* Effect.addFinalizer(() => Effect.sync(() => clearInterval(reaper)));
+  yield* Effect.forkScoped(Effect.schedule(reapIdleSessions, Schedule.spaced(REAP_INTERVAL_MS)));
 
   /** Announces the branches at `path`; `error` reports a failed checkout alongside them. */
   function publishBranches(path: string, error: string | null = null) {
@@ -1578,7 +1589,7 @@ const make = Effect.gen(function* () {
 
   // Plain refreshes (every window, every finished tool call) coalesce per repo.
   const refreshStatus = coalesceLoads(async (path) => {
-    const { autoPull: enabled } = await Effect.runPromise(settingsStore.get);
+    const { autoPull: enabled } = await runPromise(settingsStore.get);
     if (enabled && Date.now() - (pulledAt.get(path) ?? 0) > AUTO_PULL_INTERVAL_MS) {
       pulledAt.set(path, Date.now());
       await fastForwardDefaultBranch(path);
@@ -1591,7 +1602,7 @@ const make = Effect.gen(function* () {
   const readLimits = coalesceLoads(async (provider) => {
     if (!Schema.is(ProviderKind)(provider)) return;
 
-    const { limits, error } = await Effect.runPromise(registry.readLimits(provider));
+    const { limits, error } = await runPromise(registry.readLimits(provider));
     publish(RuntimeEvent.cases["provider.limits"].make({ provider, limits: [...limits], error }));
   });
 
@@ -1605,7 +1616,7 @@ const make = Effect.gen(function* () {
     const usage =
       entry.info.usage ??
       (resumeToken && !entry.session
-        ? await Effect.runPromise(
+        ? await runPromise(
             Effect.flatMap(settingsStore.get, (settings) =>
               ADAPTERS[provider].readUsage({
                 cwd: entry.home.path,
@@ -1688,7 +1699,7 @@ const make = Effect.gen(function* () {
     }
 
     const [settings, range, recent, root] = await Promise.all([
-      Effect.runPromise(settingsStore.get),
+      runPromise(settingsStore.get),
       readPullRequestRange(path, status.branch),
       readRecentSubjects(path, 20),
       readRepoRoot(path),
@@ -2403,7 +2414,7 @@ const make = Effect.gen(function* () {
           const runError = terminals.run(threadId, terminalId, command, columns, rows, (exit) => {
             if (exit.wasStopped) return;
             const run = { command, exitCode: exit.exitCode, output: exit.output };
-            Effect.runFork(
+            runFork(
               send(entry, formatCommandRun(run), options, { run }).pipe(
                 Effect.catch((error) =>
                   Effect.sync(() =>
