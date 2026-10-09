@@ -59,7 +59,7 @@ import {
   useReducedMotion,
   useTransform,
 } from "motion/react";
-import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   canShelve,
   isSeen,
@@ -74,6 +74,9 @@ import { getProjectKey } from "../lib/projects.ts";
 import { useThreadListView } from "../lib/threadListView.ts";
 import { formatAge, useNow } from "../lib/time.ts";
 import { useUpdateStatus } from "../lib/updates.ts";
+import { getUpdateAction } from "../lib/updateAction.ts";
+import { buildFallbackProject } from "../lib/fallbackProject.ts";
+import { PLAN_APPROVAL_TITLE } from "../lib/transcriptBlocks.ts";
 import { usePersistedFlag } from "../lib/usePersistedFlag.ts";
 import { ThreadListMenu } from "./ThreadListMenu.tsx";
 
@@ -84,24 +87,6 @@ function isWaitingOnYou(info: ThreadInfo) {
 
 /** Only the macOS desktop window draws traffic lights over the top-left corner. */
 export const hasTrafficLights = Boolean(window.desktop) && isMac;
-
-function IconButton({
-  label,
-  onClick,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Tooltip content={label} side="bottom">
-      <Button variant="ghost" size="icon" aria-label={label} onClick={onClick} className="size-7">
-        {children}
-      </Button>
-    </Tooltip>
-  );
-}
 
 export function Sidebar(props: {
   activeId: string | null;
@@ -119,6 +104,7 @@ export function Sidebar(props: {
   const now = useNow();
   const shouldReduceMotion = useReducedMotion();
   const updateStatus = useUpdateStatus();
+  const updateAction = updateStatus ? getUpdateAction(updateStatus) : null;
 
   // Grouped by state: whatever still needs you on top, then shelved threads, then archived ones.
   const [isArchivedShown, setIsArchivedShown] = useState(false);
@@ -179,12 +165,8 @@ export function Sidebar(props: {
 
   function getThreadProject(info: ThreadInfo) {
     return (
-      projects.find((project) => project.id === info.projectId) ?? {
-        id: info.projectId,
-        name: info.cwd.split("/").at(-1) ?? info.cwd,
-        path: info.cwd,
-        addedAt: 0,
-      }
+      projects.find((project) => project.id === info.projectId) ??
+      buildFallbackProject(info.projectId, info.cwd)
     );
   }
 
@@ -211,8 +193,14 @@ export function Sidebar(props: {
   const jumpIds = drawnInOrder.slice(0, 9).map((info) => info.id);
 
   const [isDigitHintShown, setIsDigitHintShown] = useState(false);
-  const latestJump = useRef({ ids: jumpIds, onSelect: props.onSelect });
-  latestJump.current = { ids: jumpIds, onSelect: props.onSelect };
+
+  // Reads the threads in the order drawn when the key is pressed.
+  const jumpToThread = useEffectEvent((event: KeyboardEvent) => {
+    const id = /^[1-9]$/.test(event.key) ? jumpIds[Number(event.key) - 1] : null;
+    if (!id) return;
+    event.preventDefault();
+    props.onSelect(id);
+  });
 
   useEffect(() => {
     const modifier = isMac ? "Meta" : "Control";
@@ -233,10 +221,7 @@ export function Sidebar(props: {
       hideDigitHints();
       const isModifierHeld = isMac ? event.metaKey : event.ctrlKey;
       if (event.defaultPrevented || !isModifierHeld || event.shiftKey || event.altKey) return;
-      const id = /^[1-9]$/.test(event.key) ? latestJump.current.ids[Number(event.key) - 1] : null;
-      if (!id) return;
-      event.preventDefault();
-      latestJump.current.onSelect(id);
+      jumpToThread(event);
     }
 
     function onKeyUp(event: KeyboardEvent) {
@@ -473,12 +458,17 @@ export function Sidebar(props: {
           <PanelLeft className="size-4" />
         </AnimatedSidebarTrigger>
         <div className="ml-auto [-webkit-app-region:no-drag]">
-          <IconButton
-            label={`New thread ${formatKeybinding("thread.new")}`}
-            onClick={() => props.onDraft(props.currentPath)}
-          >
-            <SquarePen className="size-4" />
-          </IconButton>
+          <Tooltip content={`New thread ${formatKeybinding("thread.new")}`} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`New thread ${formatKeybinding("thread.new")}`}
+              onClick={() => props.onDraft(props.currentPath)}
+              className="size-7"
+            >
+              <SquarePen className="size-4" />
+            </Button>
+          </Tooltip>
         </div>
       </div>
 
@@ -516,23 +506,16 @@ export function Sidebar(props: {
 
       <div className="flex shrink-0 flex-col gap-1 px-3 pt-1 pb-3">
         {updateStatus &&
+        updateAction &&
         UpdateStatus.isAnyOf(["available", "downloading", "ready"])(updateStatus) ? (
           <Button
             variant="ghost"
-            disabled={UpdateStatus.guards.downloading(updateStatus)}
-            onClick={() =>
-              UpdateStatus.guards.ready(updateStatus)
-                ? window.desktop?.installUpdate()
-                : window.desktop?.downloadUpdate()
-            }
+            disabled={updateAction.isBusy}
+            onClick={updateAction.run}
             className="h-8 w-full justify-start gap-2 rounded-lg bg-brand/10 px-2 text-sm font-normal text-brand hover:bg-brand/15 hover:text-brand disabled:opacity-100"
           >
             <ArrowDownToLine className="size-4" />
-            {UpdateStatus.guards.ready(updateStatus)
-              ? "Restart to update"
-              : UpdateStatus.guards.downloading(updateStatus)
-                ? `Downloading ${Math.round(updateStatus.percent)}%`
-                : "Download update"}
+            {updateAction.label}
             <span className="ml-auto text-xs tabular-nums opacity-70">v{updateStatus.version}</span>
           </Button>
         ) : null}
@@ -567,10 +550,22 @@ function StatusDot({
   );
 }
 
+/** Why a thread needs you, as its dot and its trailing label say it. */
+const NEEDS_YOU: Partial<
+  Record<ThreadInfo["status"], { label: string; dotTone: string; labelTone: string }>
+> = {
+  "awaiting-approval": {
+    label: "Needs approval",
+    dotTone: "bg-warning",
+    labelTone: "text-warning",
+  },
+  "awaiting-answer": { label: "Needs an answer", dotTone: "bg-warning", labelTone: "text-warning" },
+  error: { label: "Error", dotTone: "bg-destructive", labelTone: "text-destructive" },
+};
+
 function getStatusDotStyle(info: ThreadInfo, isUnread: boolean, isShelved: boolean) {
-  if (info.status === "awaiting-approval") return { label: "Needs approval", tone: "bg-warning" };
-  if (info.status === "awaiting-answer") return { label: "Needs an answer", tone: "bg-warning" };
-  if (info.status === "error") return { label: "Error", tone: "bg-destructive" };
+  const needsYou = NEEDS_YOU[info.status];
+  if (needsYou) return { label: needsYou.label, tone: needsYou.dotTone };
   if (info.status === "running") return { label: "Working", tone: "bg-success animate-pulse" };
   if (isUnread) return { label: "New activity", tone: "bg-brand" };
   if (isShelved) return { label: "Shelved", tone: "bg-muted-foreground/25" };
@@ -609,11 +604,9 @@ function ProviderMark({ info }: { info: ThreadInfo }) {
 
 /** Right end of the meta row: why the thread needs you, else its age. */
 function TrailingLabel({ info, now }: { info: ThreadInfo; now: number }) {
-  if (info.status === "awaiting-approval")
-    return <span className="font-medium text-warning">Needs approval</span>;
-  if (info.status === "awaiting-answer")
-    return <span className="font-medium text-warning">Needs an answer</span>;
-  if (info.status === "error") return <span className="font-medium text-destructive">Error</span>;
+  const needsYou = NEEDS_YOU[info.status];
+  if (needsYou)
+    return <span className={cn("font-medium", needsYou.labelTone)}>{needsYou.label}</span>;
   return <span className="tabular-nums">{formatAge(info.updatedAt, now)}</span>;
 }
 
@@ -948,7 +941,7 @@ const ThreadCard = memo(function ThreadCard(props: {
                 {isUrgent &&
                 request &&
                 !request.asksQuestions &&
-                request.title !== "ExitPlanMode" ? (
+                request.title !== PLAN_APPROVAL_TITLE ? (
                   <>
                     <p className="mt-2 truncate rounded-lg bg-muted/70 px-2 py-1 font-mono text-[11px] text-muted-foreground">
                       <span className="text-foreground">{request.title}</span> {request.detail}

@@ -8,8 +8,7 @@ import { ArrowUp, Folder, FolderOpen, LoaderCircle, Monitor, Server } from "luci
 import { useEffect, useState } from "react";
 import { finishAddProject, pickLocalProject, useAddProjectOpen } from "../lib/projects.ts";
 import { addProjectOn, cloneProject, listFolders, useStore } from "../lib/store.ts";
-
-const THIS_MAC = "\u0000this-mac";
+import { buildMachineOptions, THIS_MAC, toMachine } from "../lib/machines.ts";
 
 /** Where a new project lives once there are remote hosts: this Mac, or a folder on one of them. */
 export function AddProjectDialog() {
@@ -40,22 +39,20 @@ function AddProject() {
       <Tabs
         value={host ?? THIS_MAC}
         onValueChange={(value) => {
-          setHost(value === THIS_MAC ? null : value);
+          setHost(toMachine(value));
           setFolder(null);
         }}
       >
         <TabsList>
-          <TabsTrigger value={THIS_MAC}>
-            <span className="flex items-center gap-1.5">
-              <Monitor className="size-3.5" />
-              This Mac
-            </span>
-          </TabsTrigger>
-          {Object.keys(hosts).map((alias) => (
-            <TabsTrigger key={alias} value={alias}>
+          {buildMachineOptions(hosts).map((option) => (
+            <TabsTrigger key={option.value} value={option.value}>
               <span className="flex items-center gap-1.5">
-                <Server className="size-3.5" />
-                {alias}
+                {option.machine ? (
+                  <Server className="size-3.5" />
+                ) : (
+                  <Monitor className="size-3.5" />
+                )}
+                {option.label}
               </span>
             </TabsTrigger>
           ))}

@@ -19,6 +19,8 @@ import { cloneProject, createThread, usePathHost, useProviders, useStore } from 
 import { Composer } from "./Composer.tsx";
 import { useProjectConfig } from "../lib/projectConfig.ts";
 import { ThreadHeader } from "./ThreadHeader.tsx";
+import { buildMachineOptions, THIS_MAC, toMachine } from "../lib/machines.ts";
+import { buildFallbackProject } from "../lib/fallbackProject.ts";
 
 const ADD_PROJECT = "\u0000add-project";
 
@@ -194,8 +196,6 @@ function ProjectList({
     </div>
   );
 }
-
-const THIS_MAC = "\u0000this-mac";
 
 /** Clones a project onto a machine that doesn't have it yet, from its git origin. */
 function CloneCopy({
@@ -376,7 +376,7 @@ export function DraftView({
   return (
     <>
       <ThreadHeader
-        project={path ? (project ?? { id: path, name: path.split("/").at(-1) ?? path }) : undefined}
+        project={path ? (project ?? buildFallbackProject(path, path)) : undefined}
         title="New thread"
       />
       <div className="flex flex-1 items-center justify-center px-6 text-center text-muted-foreground [-webkit-app-region:drag]">
@@ -393,14 +393,14 @@ export function DraftView({
           project && Object.keys(hosts).length
             ? {
                 value: host ?? THIS_MAC,
-                options: [null, ...Object.keys(hosts)].map((machine) => ({
-                  value: machine ?? THIS_MAC,
-                  label: machine ?? "This Mac",
-                  description: findCopyOn(machine)?.path ?? "Not cloned here yet",
-                  icon: machine ? <Server /> : <Monitor />,
+                options: buildMachineOptions(hosts).map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                  description: findCopyOn(option.machine)?.path ?? "Not cloned here yet",
+                  icon: option.machine ? <Server /> : <Monitor />,
                 })),
                 onChange: (value) => {
-                  const machine = value === THIS_MAC ? null : value;
+                  const machine = toMachine(value);
                   const copy = findCopyOn(machine);
                   if (copy) {
                     setMissing(null);

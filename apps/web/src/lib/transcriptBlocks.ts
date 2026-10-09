@@ -1,5 +1,8 @@
 import type { TranscriptItem } from "./store.ts";
 
+/** The approval Claude asks for to leave plan mode; its detail is the plan. */
+export const PLAN_APPROVAL_TITLE = "ExitPlanMode";
+
 export const NO_ITEMS: ReadonlyArray<TranscriptItem> = [];
 
 export type UserItem = Extract<TranscriptItem, { kind: "user" }>;
@@ -83,7 +86,7 @@ function isWork(item: TranscriptItem) {
       item.resolved &&
       item.decision !== "deny" &&
       !item.questions &&
-      item.title !== "ExitPlanMode")
+      item.title !== PLAN_APPROVAL_TITLE)
   );
 }
 

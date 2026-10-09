@@ -17,6 +17,7 @@ import {
   RowLabel,
   SettingsTextField,
 } from "./SettingsControls.tsx";
+import { getUpdateAction } from "../../lib/updateAction.ts";
 
 const AUTO_SHELVE_DAYS = [1, 3, 7, 14, 30];
 
@@ -272,6 +273,7 @@ function UpdatesSection() {
 
   const isReady = UpdateStatus.guards.ready(status);
   const isAvailable = UpdateStatus.guards.available(status);
+  const updateAction = getUpdateAction(status);
 
   return (
     <SettingsSection title="About">
@@ -302,25 +304,11 @@ function UpdatesSection() {
           <Button
             size="sm"
             variant={isReady || isAvailable ? "primary" : "secondary"}
-            disabled={UpdateStatus.isAnyOf(["checking", "downloading"])(status)}
+            disabled={updateAction.isBusy}
             className="h-7 rounded-lg tabular-nums disabled:opacity-100"
-            onClick={() =>
-              isReady
-                ? window.desktop?.installUpdate()
-                : isAvailable
-                  ? window.desktop?.downloadUpdate()
-                  : window.desktop?.checkForUpdates()
-            }
+            onClick={updateAction.run}
           >
-            {UpdateStatus.match(status, {
-              idle: () => "Check for updates",
-              checking: () => "Checking…",
-              "up-to-date": () => "Up to date",
-              available: () => "Download update",
-              downloading: ({ percent }) => `Downloading ${Math.round(percent)}%`,
-              ready: () => "Restart to update",
-              failed: () => "Try again",
-            })}
+            {updateAction.label}
           </Button>
         </SettingsRow>
       </SettingsGroup>

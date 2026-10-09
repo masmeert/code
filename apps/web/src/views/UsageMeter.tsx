@@ -14,7 +14,10 @@ import {
 } from "../lib/store.ts";
 import { useNow } from "../lib/time.ts";
 
-const tokens = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
+export const tokenFormat = new Intl.NumberFormat("en", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
 
 /** Keyed by the category's name so a row keeps its colour whatever else is in the window. */
 const CATEGORY_COLOR = new Map([
@@ -165,7 +168,7 @@ function ContextSection({
           <div className="flex items-center justify-between gap-2">
             <span className="text-muted-foreground">Context window</span>
             <span className="flex items-center gap-1 tabular-nums">
-              {tokens.format(context.usedTokens)} / {tokens.format(context.maxTokens)} (
+              {tokenFormat.format(context.usedTokens)} / {tokenFormat.format(context.maxTokens)} (
               {getPercent(context.usedTokens, context.maxTokens)}%)
               <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
             </span>
@@ -176,7 +179,7 @@ function ContextSection({
               .map((category) => (
                 <div
                   key={category.name}
-                  title={`${category.name}: ${tokens.format(category.tokens)}`}
+                  title={`${category.name}: ${tokenFormat.format(category.tokens)}`}
                   className={cn("h-full", getCategoryColor(category))}
                   style={{ width: `${(category.tokens / context.maxTokens) * 100}%` }}
                 />
@@ -195,7 +198,7 @@ function ContextSection({
               <span className={cn("size-2 shrink-0 rounded-sm", getCategoryColor(category))} />
               <span className="min-w-0 flex-1 truncate">{category.name}</span>
               <span className="text-muted-foreground tabular-nums">
-                {tokens.format(category.tokens)}
+                {tokenFormat.format(category.tokens)}
               </span>
               <span className="w-10 text-right tabular-nums">
                 {category.kind === "deferred"

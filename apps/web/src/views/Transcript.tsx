@@ -79,6 +79,7 @@ import {
 } from "../lib/store.ts";
 import { PlanApproval, QuestionsApproval, ToolApprovalRequest } from "./ApprovalBlocks.tsx";
 import {
+  PLAN_APPROVAL_TITLE,
   toTurns,
   toToolGroups,
   toBlocks,
@@ -744,7 +745,7 @@ export const AgentBlock = memo(
       case "tools":
         return <RevealableToolGroup calls={block.calls} live={live} />;
       case "approval":
-        if (block.title === "ExitPlanMode")
+        if (block.title === PLAN_APPROVAL_TITLE)
           return <PlanApproval threadId={threadId} item={block} />;
         if (block.questions) {
           return <QuestionsApproval threadId={threadId} item={block} questions={block.questions} />;

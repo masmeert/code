@@ -31,14 +31,13 @@ import {
   SettingsTextField,
 } from "./SettingsControls.tsx";
 import { ProviderCard } from "./ProviderCard.tsx";
+import { buildMachineOptions, THIS_MAC, toMachine } from "../../lib/machines.ts";
 
 const CONFIG_DIR: Record<ProviderKind, { env: string; placeholder: string }> = {
   claude: { env: "CLAUDE_CONFIG_DIR", placeholder: "~/.claude" },
   codex: { env: "CODEX_HOME", placeholder: "~/.codex" },
   cursor: { env: "CURSOR_CONFIG_DIR", placeholder: "~/.masscode/cursor" },
 };
-
-const THIS_MAC = "\u0000this-mac";
 
 export function HarnessesPage() {
   const settings = useStore((state) => state.settings);
@@ -78,15 +77,16 @@ export function HarnessesPage() {
         {Object.keys(hosts).length > 0 ? (
           <SettingsSelect
             value={machine ?? THIS_MAC}
-            onChange={(value) => setMachine(value === THIS_MAC ? null : value)}
-            options={[
-              { value: THIS_MAC, label: "This Mac", icon: <Monitor className="size-3.5" /> },
-              ...Object.keys(hosts).map((alias) => ({
-                value: alias,
-                label: alias,
-                icon: <Server className="size-3.5" />,
-              })),
-            ]}
+            onChange={(value) => setMachine(toMachine(value))}
+            options={buildMachineOptions(hosts).map((option) => ({
+              value: option.value,
+              label: option.label,
+              icon: option.machine ? (
+                <Server className="size-3.5" />
+              ) : (
+                <Monitor className="size-3.5" />
+              ),
+            }))}
           />
         ) : null}
       </div>

@@ -35,7 +35,7 @@ import { appendToDraft, focusComposer } from "../lib/drafts.ts";
 import { formatKeybinding } from "../lib/keybindings.ts";
 import { describeRange, removeReviewComment, type ReviewComment } from "../lib/reviewComments.ts";
 import { useNow } from "../lib/time.ts";
-import { formatResetLabel } from "./UsageMeter.tsx";
+import { formatResetLabel, tokenFormat } from "./UsageMeter.tsx";
 import { formatHarnessLabel } from "../lib/models.ts";
 import { send, sendQueuedNow, takeQueued } from "../lib/store.ts";
 import { type ToolItem } from "../lib/transcriptBlocks.ts";
@@ -359,8 +359,7 @@ export function RunningAgents({
                   </button>
                   {agent.tokens === undefined ? null : (
                     <span className="shrink-0 text-muted-foreground/70 tabular-nums">
-                      {new Intl.NumberFormat("en", { notation: "compact" }).format(agent.tokens)}{" "}
-                      tokens
+                      {tokenFormat.format(agent.tokens)} tokens
                       {agent.startedAt === undefined
                         ? null
                         : ` in ${now - agent.startedAt >= 60_000 ? `${Math.floor((now - agent.startedAt) / 60_000)}m ` : ""}${Math.floor((now - agent.startedAt) / 1000) % 60}s`}

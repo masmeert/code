@@ -73,6 +73,8 @@ import {
 } from "./ComposerTray.tsx";
 import { SideChatDrawer } from "./SideChatDrawer.tsx";
 import { QuoteSelection } from "./QuoteSelection.tsx";
+import { buildFallbackProject } from "../lib/fallbackProject.ts";
+import { IconButton } from "../components/icon-button.tsx";
 
 // Loaded on first open, keeping the diff renderer out of startup.
 const DiffPanel = lazy(() =>
@@ -208,9 +210,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
       <div className="flex min-h-0 flex-1">
         <div ref={scrollArea} className="relative flex min-h-0 min-w-95 flex-1 flex-col">
           <ThreadHeader
-            project={
-              project ?? { id: info.projectId, name: info.cwd.split("/").at(-1) ?? info.cwd }
-            }
+            project={project ?? buildFallbackProject(info.projectId, info.cwd)}
             title={info.title}
             badge={
               info.worktree ? (
@@ -235,19 +235,16 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                   {project ? (
                     <ScriptsMenu threadId={threadId} host={host} path={project.path} />
                   ) : null}
-                  <button
-                    type="button"
-                    title={isDiffOpen ? "Hide changes" : "Show changes"}
-                    aria-label={isDiffOpen ? "Hide changes" : "Show changes"}
-                    aria-pressed={isDiffOpen}
+                  <IconButton
+                    label={isDiffOpen ? "Hide changes" : "Show changes"}
+                    isActive={isDiffOpen}
                     onClick={() => {
                       setIsDiffOpen(!isDiffOpen);
                       setDiffTurn(null);
                     }}
-                    className={`grid size-7 place-items-center rounded-lg transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${isDiffOpen ? "bg-muted/60 text-foreground" : "text-muted-foreground"}`}
                   >
                     <FileDiff className="size-4" />
-                  </button>
+                  </IconButton>
                   <PanelsMenu threadId={threadId} isSimulatorAvailable={isSimulatorAvailable} />
                 </span>
               </>
