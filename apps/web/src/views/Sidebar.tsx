@@ -29,11 +29,10 @@ import {
   ClientCommand,
   isAwaitingUser,
   type Project,
-  type ThreadActivity,
   type ThreadInfo,
   UpdateStatus,
 } from "@masscode/contracts";
-import { categoryOf, livePhrase } from "@masscode/client";
+import { categoryOf, describeActivity } from "@masscode/client";
 import { TextShimmer } from "@masscode/ui/motion/text-shimmer";
 import {
   Archive,
@@ -72,7 +71,8 @@ import {
 import { formatKeybinding } from "../lib/keybindings.ts";
 import { getProjectKey } from "../lib/projects.ts";
 import { useThreadListView } from "../lib/threadListView.ts";
-import { formatAge, useNow } from "../lib/time.ts";
+import { formatAge } from "@masscode/client";
+import { useNow } from "@masscode/client";
 import { useUpdateStatus } from "../lib/updates.ts";
 import { getUpdateAction } from "../lib/updateAction.ts";
 import { buildFallbackProject } from "../lib/fallbackProject.ts";
@@ -587,21 +587,6 @@ function getStatusDotStyle(info: ThreadInfo, isUnread: boolean, isShelved: boole
   if (isShelved) return { label: "Shelved", tone: "bg-muted-foreground/25" };
 
   return { label: "Idle", tone: "bg-brand" };
-}
-
-/** What a running thread is doing: the command it runs, else the tool call in words. */
-function describeActivity(activity: ThreadActivity | undefined) {
-  if (!activity) return "Thinking…";
-
-  if (categoryOf(activity.tool) === "run") return activity.summary;
-
-  return livePhrase({
-    id: activity.toolId,
-    name: activity.tool,
-    summary: activity.summary,
-    output: null,
-    isError: false,
-  });
 }
 
 /** Provider mark; spins while the agent works. */

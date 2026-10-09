@@ -6,7 +6,8 @@ import { LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { encode } from "uqr";
 import { send, startPhonePairing, updateSettings, useStore } from "../../lib/store.ts";
-import { formatAge, useNow } from "../../lib/time.ts";
+import { formatAge } from "@masscode/client";
+import { useNow } from "@masscode/client";
 import { RowLabel, SettingsGroup, SettingsRow, SettingsSection } from "./SettingsControls.tsx";
 
 export function PhonesPage() {

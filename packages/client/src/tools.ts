@@ -1,3 +1,4 @@
+import type { ThreadActivity } from "@masscode/contracts";
 import type { ToolCall } from "./transcript.ts";
 
 export type ToolCategory =
@@ -94,3 +95,18 @@ export const summarize = (calls: ReadonlyArray<ToolCall>): string => {
   }
   return capitalize([...byCategory].map(([category, group]) => phrase(category, group)).join(", "));
 };
+
+/** What a running thread is doing: the command it runs, else the tool call in words. */
+export function describeActivity(activity: ThreadActivity | undefined) {
+  if (!activity) return "Thinking…";
+
+  if (categoryOf(activity.tool) === "run") return activity.summary;
+
+  return livePhrase({
+    id: activity.toolId,
+    name: activity.tool,
+    summary: activity.summary,
+    output: null,
+    isError: false,
+  });
+}

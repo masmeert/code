@@ -13,6 +13,10 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@types/react": "^19.3.0",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0"
   }
 }

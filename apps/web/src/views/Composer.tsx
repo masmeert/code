@@ -78,7 +78,8 @@ import {
   useProviders,
   useStore,
 } from "../lib/store.ts";
-import { formatAge, useNow } from "../lib/time.ts";
+import { formatAge } from "@masscode/client";
+import { useNow } from "@masscode/client";
 import { UsageMeter } from "./UsageMeter.tsx";
 
 const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {

@@ -35,7 +35,7 @@ import { type ReactNode, useId, useState } from "react";
 import { appendToDraft, focusComposer } from "../lib/drafts.ts";
 import { formatKeybinding } from "../lib/keybindings.ts";
 import { describeRange, removeReviewComment, type ReviewComment } from "../lib/reviewComments.ts";
-import { useNow } from "../lib/time.ts";
+import { useNow } from "@masscode/client";
 import { formatResetLabel, tokenFormat } from "./UsageMeter.tsx";
 import { formatHarnessLabel } from "../lib/models.ts";
 import { send, sendQueuedNow, takeQueued } from "../lib/store.ts";

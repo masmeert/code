@@ -20,6 +20,7 @@ export function formatAge(ms: number, now: number) {
 /** Current time, re-read every `everyMs` so relative labels stay fresh. */
 export function useNow(everyMs = 30_000) {
   const [now, setNow] = useState(Date.now);
+
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), everyMs);
 
