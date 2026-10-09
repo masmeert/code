@@ -68,7 +68,7 @@ function toToml({ worktree, scripts = [] }: ProjectConfig) {
 }
 
 /** Multi-line text as a literal block, so a script reads as written; JSON's escapes are valid TOML ones. */
-function formatTomlString(value: string) {
+export function formatTomlString(value: string) {
   return value.includes("\n") && !value.includes("'''")
     ? `'''\n${value.endsWith("\n") ? value : `${value}\n`}'''`
     : JSON.stringify(value);

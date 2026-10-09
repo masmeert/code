@@ -1,15 +1,20 @@
 import {
-  PairedPhone,
+  DevicePlatform,
+  type PairedPhone,
   type PairingGrant,
   type PairingOffer,
   type PairingRequest,
 } from "@masscode/contracts";
 import * as Effect from "effect/Effect";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { hostname, networkInterfaces } from "node:os";
-import { CommandError } from "./errors.ts";
-import { openJsonFile } from "./storage/jsonFile.ts";
+import { join } from "node:path";
+import { CommandError, getErrorMessage } from "./errors.ts";
+import { formatTomlString } from "./projectConfig.ts";
+import { DATA_DIR } from "./storage/jsonFile.ts";
 
 /** Where paired phones reach the daemon, on its Tailscale address. */
 export const REMOTE_PORT = Number(process.env.MASSCODE_REMOTE_PORT) || 47822;
@@ -19,7 +24,62 @@ const PAIRING_TTL_MS = 5 * 60 * 1000;
 /** Wrong codes a pairing takes before it's burnt, so a 6-digit code can't be guessed. */
 const PAIRING_ATTEMPTS = 5;
 
-const StoredPhone = Schema.Struct({ ...PairedPhone.fields, tokenHash: Schema.String });
+const PHONES_PATH = join(DATA_DIR, "phones.toml");
+
+/** `phones.toml`, keyed like `masscode.toml`; TOML has no null, so a phone not seen yet has no `last_seen_at`. */
+const PhonesFile = Schema.Struct({
+  phones: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        name: Schema.String,
+        platform: DevicePlatform,
+        paired_at: Schema.Number,
+        last_seen_at: Schema.optional(Schema.Number),
+        token_hash: Schema.String,
+      }),
+    ),
+  ),
+});
+
+type StoredPhone = PairedPhone & { readonly tokenHash: string };
+
+/** The paired phones on disk; none when the file is missing or invalid. */
+function readPhonesFile() {
+  return Effect.tryPromise(() => readFile(PHONES_PATH, "utf8")).pipe(
+    Effect.flatMap((text) => Effect.try(() => Bun.TOML.parse(text))),
+    Effect.flatMap(Schema.decodeUnknownEffect(PhonesFile)),
+    Effect.map(({ phones = [] }) =>
+      phones.map((phone): StoredPhone => ({
+        id: phone.id,
+        name: phone.name,
+        platform: phone.platform,
+        pairedAt: phone.paired_at,
+        lastSeenAt: phone.last_seen_at ?? null,
+        tokenHash: phone.token_hash,
+      })),
+    ),
+    Effect.orElseSucceed((): ReadonlyArray<StoredPhone> => []),
+  );
+}
+
+// ponytail: hand-rolled like masscode.toml's writer, since Bun parses TOML but can't write it.
+function formatPhonesFile(phones: ReadonlyArray<StoredPhone>) {
+  return phones
+    .map((phone) =>
+      [
+        "[[phones]]",
+        `id = ${formatTomlString(phone.id)}`,
+        `name = ${formatTomlString(phone.name)}`,
+        `platform = ${formatTomlString(phone.platform)}`,
+        `paired_at = ${phone.pairedAt}`,
+        ...(phone.lastSeenAt === null ? [] : [`last_seen_at = ${phone.lastSeenAt}`]),
+        `token_hash = ${formatTomlString(phone.tokenHash)}`,
+        "",
+      ].join("\n"),
+    )
+    .join("\n");
+}
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -46,7 +106,25 @@ export function createPhones(options: {
   readonly onChanged: (phones: ReadonlyArray<PairedPhone>) => void;
 }) {
   return Effect.gen(function* () {
-    const file = yield* openJsonFile("phones.json", Schema.Array(StoredPhone), []);
+    const current = yield* Ref.make(yield* readPhonesFile());
+
+    const file = {
+      get: Ref.get(current),
+      /** Changes them in memory, then writes them; fails when the write does. */
+      set: (phones: ReadonlyArray<StoredPhone>) =>
+        Ref.set(current, phones).pipe(
+          Effect.andThen(
+            Effect.tryPromise({
+              try: async () => {
+                await mkdir(DATA_DIR, { recursive: true });
+                await writeFile(PHONES_PATH, formatPhonesFile(phones));
+              },
+              catch: (error) => new Error(`${PHONES_PATH}: ${getErrorMessage(error)}`),
+            }),
+          ),
+        ),
+    };
+
     let pairing: { code: string; expiresAt: number; attemptsLeft: number } | null = null;
 
     const list = Effect.map(file.get, (stored) =>
@@ -59,7 +137,7 @@ export function createPhones(options: {
       })),
     );
 
-    function save(stored: ReadonlyArray<typeof StoredPhone.Type>) {
+    function save(stored: ReadonlyArray<StoredPhone>) {
       return file.set(stored).pipe(
         Effect.andThen(list),
         Effect.tap((phones) => Effect.sync(() => options.onChanged(phones))),
