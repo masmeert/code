@@ -1169,7 +1169,7 @@ const QuoteSelection = ({
   );
 };
 
-export const ThreadView = ({ threadId }: { threadId: string }) => {
+export const ThreadView = memo(function ThreadView({ threadId }: { threadId: string }) {
   const info = useStore((s) => s.threads[threadId])!;
   // Loaded on open: from the local cache first, then caught up by the daemon.
   const transcript = useTranscript(threadId);
@@ -1198,7 +1198,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
       )
     : [];
   const project = useStore((s) => s.projects.find((p) => p.id === info.projectId));
-  // Per thread: switching threads remounts this view, so the panel starts closed.
+  // Per thread: each thread has its own view, kept while you switch away and back.
   const [diffOpen, setDiffOpen] = useState(false);
   // Null shows all uncommitted changes; a message id shows just what that turn changed.
   const [diffTurn, setDiffTurn] = useState<string | null>(null);
@@ -1599,7 +1599,7 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
       ) : null}
     </>
   );
-};
+});
 
 /** Same items, by identity: the store only replaces the item that changed. */
 const sameItems = (a: ReadonlyArray<unknown>, b: ReadonlyArray<unknown>) =>

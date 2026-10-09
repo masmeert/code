@@ -156,7 +156,8 @@ export function AgentActivity({
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+    // The content mounts on first expand.
+  }, [expanded]);
 
   useEffect(() => {
     if (previousStatus.current === "working" && status === "complete") {

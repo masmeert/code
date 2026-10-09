@@ -255,7 +255,8 @@ export function MessageScroller({
 
   const handleScroll = useCallback(() => {
     const viewport = viewportRef.current;
-    if (!viewport || programmaticScrollRef.current) return;
+    // Hiding it (an <Activity>) scrolls it to 0 of 0, which isn't the reader catching up.
+    if (!viewport || programmaticScrollRef.current || viewport.clientHeight === 0) return;
 
     const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
     setFollowing(distance <= followThreshold);
@@ -266,9 +267,11 @@ export function MessageScroller({
     programmaticScrollRef.current = false;
   }, []);
 
+  // Also runs when a hidden <Activity> shows the transcript again: a reader who had scrolled
+  // up finds it where they left it.
   useLayoutEffect(() => {
-    followingRef.current = followOutput;
-    if (!followOutput) return;
+    if (!followOutput) followingRef.current = false;
+    if (!followingRef.current) return;
 
     frameRef.current = requestAnimationFrame(() => scrollToEnd("auto"));
     return () => {

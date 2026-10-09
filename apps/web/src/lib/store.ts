@@ -1386,6 +1386,18 @@ const closeThread = (threadId: string) => {
   );
 };
 
+let kept: ReadonlyArray<string> = [];
+
+/**
+ * Follows these threads' transcripts while their views are kept hidden, so switching back to
+ * one shows it current, with no replay to wait for.
+ */
+export function keepFollowing(threadIds: ReadonlyArray<string>) {
+  for (const threadId of threadIds) if (!kept.includes(threadId)) openThread(threadId);
+  for (const threadId of kept) if (!threadIds.includes(threadId)) closeThread(threadId);
+  kept = threadIds;
+}
+
 /** A thread's transcript, followed live while the calling component is mounted. */
 export const useTranscript = (threadId: string): Transcript | null => {
   useEffect(() => {

@@ -9,12 +9,13 @@ import {
   SquareTerminal,
 } from "lucide-react";
 import { MotionConfig } from "motion/react";
-import { useCallback, useEffect, useState } from "react";
+import { Activity, useCallback, useEffect, useState } from "react";
 import { toggleBrowser } from "./lib/browser.ts";
 import { describe, useKeybinding } from "./lib/keybindings.ts";
 import "./lib/notifications.ts";
 import { toggleSimulator } from "./lib/simulator.ts";
-import { toggleTerminalPanel, useStore, useThreadHost } from "./lib/store.ts";
+import { focusComposer } from "./lib/drafts.ts";
+import { keepFollowing, toggleTerminalPanel, useStore, useThreadHost } from "./lib/store.ts";
 import { useShortcut } from "./lib/useShortcut.ts";
 import { useTheme } from "./lib/useTheme.ts";
 import { openWindow } from "./lib/windows.ts";
@@ -80,6 +81,18 @@ export const App = () => {
     if (switchTo) setView({ kind: "thread", id: switchTo.threadId });
   }, [switchTo]);
 
+  const activeThread = view.kind === "thread" ? view.id : null;
+  // The last few threads' views stay mounted, hidden, and followed live: switching back to one
+  // is instant and shows it current. Most recent first; four bounds what they hold in memory.
+  const [recent, setRecent] = useState<ReadonlyArray<string>>([]);
+  if (activeThread && recent[0] !== activeThread)
+    setRecent([activeThread, ...recent.filter((id) => id !== activeThread)].slice(0, 4));
+  useEffect(() => keepFollowing(recent), [recent]);
+  // A kept view isn't remounted, so its composer's autoFocus doesn't fire again.
+  useEffect(() => {
+    if (activeThread) focusComposer();
+  }, [activeThread]);
+
   // Simulators run on this Mac only; a remote thread's agent couldn't reach them.
   const simulatorAvailable =
     useThreadHost(view.kind === "thread" ? view.id : "") === null &&
@@ -129,12 +142,19 @@ export const App = () => {
                 {source === "daemon" ? "Reconnecting to daemon…" : "Starting daemon…"}
               </div>
             )}
-            {view.kind === "thread" ? (
-              <ThreadView key={view.id} threadId={view.id} />
-            ) : (
+            {recent
+              .filter((id) => threads[id])
+              // In a fixed order: moving a view in the DOM would lose its scroll position.
+              .toSorted()
+              .map((id) => (
+                <Activity key={id} mode={id === activeThread ? "visible" : "hidden"}>
+                  <ThreadView threadId={id} />
+                </Activity>
+              ))}
+            {view.kind === "draft" ? (
               // One key for every draft, so text typed before picking a project survives the pick.
               <DraftView key="draft" path={view.path} onPickProject={draft} />
-            )}
+            ) : null}
           </AnimatedSidebarInset>
           <AppModal view={modal} onView={setModal} />
           <AddProjectDialog />

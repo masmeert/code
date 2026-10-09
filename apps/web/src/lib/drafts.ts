@@ -50,7 +50,10 @@ export const useDraft = (key: string) =>
 /** Puts the caret in the window's composer. */
 export const focusComposer = () =>
   requestAnimationFrame(() => {
-    const textarea = document.querySelector<HTMLTextAreaElement>("textarea[data-composer]");
+    // Hidden threads' views stay mounted, composers and all.
+    const textarea = [
+      ...document.querySelectorAll<HTMLTextAreaElement>("textarea[data-composer]"),
+    ].find((candidate) => candidate.checkVisibility());
     if (!textarea) return;
     textarea.focus();
     textarea.setSelectionRange(textarea.value.length, textarea.value.length);

@@ -1,5 +1,5 @@
 import { motion, type HTMLMotionProps, useReducedMotion } from "motion/react";
-import type { CSSProperties } from "react";
+import { type CSSProperties, useState } from "react";
 import { EASE_OUT } from "@masscode/ui/lib/ease";
 import { cn } from "@masscode/ui/lib/utils";
 
@@ -15,9 +15,14 @@ export function AgentDisclosure({
   className,
   style,
   transition,
+  children,
   ...props
 }: AgentDisclosureProps) {
   const reduce = useReducedMotion() ?? false;
+  // Collapsed content (tool output, diffs) can be thousands of nodes a turn: it isn't built
+  // until first opened, then stays for the closing animation.
+  const [opened, setOpened] = useState(open);
+  if (open && !opened) setOpened(true);
 
   return (
     <motion.div
@@ -47,6 +52,8 @@ export function AgentDisclosure({
         pointerEvents: open ? undefined : "none",
         transformOrigin: "top",
       }}
-    />
+    >
+      {opened ? children : null}
+    </motion.div>
   );
 }
