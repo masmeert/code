@@ -45,7 +45,12 @@ const execGit = async (
       execFile(
         "git",
         ["-C", cwd, ...args],
-        { ...options, encoding: "utf8" },
+        {
+          ...options,
+          // Paths we pass are file names, never patterns: a file named `*` mustn't match every file.
+          env: { ...(options.env ?? process.env), GIT_LITERAL_PATHSPECS: "1" },
+          encoding: "utf8",
+        },
         (error, stdout, stderr) =>
           resolve({ error, stdout: String(stdout), stderr: String(stderr) }),
       );
