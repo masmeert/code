@@ -40,13 +40,10 @@ import {
 } from "./ProviderAdapter.ts";
 import { DEVICES_SUPPORTED } from "../devices.ts";
 import { findSkillMentions } from "../skills.ts";
+import { getErrorMessage } from "../errors.ts";
 
 function createError(message: string) {
   return new ProviderError({ provider: "cursor", message });
-}
-
-function getErrorMessage(cause: unknown) {
-  return cause instanceof Error ? cause.message : String(cause);
 }
 
 /** Cursor's id for its Auto model; its CLI calls it `auto`. */

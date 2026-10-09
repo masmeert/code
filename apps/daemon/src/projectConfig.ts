@@ -2,6 +2,7 @@ import { ProjectConfig } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { getErrorMessage } from "./errors.ts";
 
 /** The text of the project's `masscode.toml`; null when there's none. */
 export function readProjectConfigText(projectPath: string) {
@@ -14,7 +15,7 @@ export function parseProjectConfig(projectPath: string, text: string): ProjectCo
     return Schema.decodeUnknownSync(ProjectConfig)(Bun.TOML.parse(text));
   } catch (error) {
     return new Error(
-      `${join(projectPath, "masscode.toml")} isn't valid: ${error instanceof Error ? error.message : String(error)}`,
+      `${join(projectPath, "masscode.toml")} isn't valid: ${getErrorMessage(error)}`,
     );
   }
 }
@@ -37,7 +38,7 @@ export async function writeProjectConfig(projectPath: string, config: ProjectCon
     await (text ? writeFile(path, text) : rm(path, { force: true }));
     return null;
   } catch (error) {
-    return `Couldn't save ${path}: ${error instanceof Error ? error.message : String(error)}`;
+    return `Couldn't save ${path}: ${getErrorMessage(error)}`;
   }
 }
 

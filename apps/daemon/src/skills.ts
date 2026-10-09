@@ -7,6 +7,7 @@ import { PROVIDER_NAME, type ProviderKind } from "@masscode/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import type { ProviderError, ProviderSkill } from "./providers/ProviderAdapter.ts";
+import { getErrorMessage } from "./errors.ts";
 
 /** Asking a harness takes seconds (Claude starts a process), so a listing is reused this long before a refresh. */
 const FRESH_MS = 30_000;
@@ -65,7 +66,7 @@ export function createSkillCatalog(options: {
             const error = Cause.squash(cause);
             return {
               skills: listings.get(key)?.skills ?? [],
-              error: `Couldn't read ${PROVIDER_NAME[provider]}'s skills: ${error instanceof Error ? error.message : String(error)}`,
+              error: `Couldn't read ${PROVIDER_NAME[provider]}'s skills: ${getErrorMessage(error)}`,
             };
           },
         }),

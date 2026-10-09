@@ -14,6 +14,7 @@ import * as Match from "effect/Match";
 import { z } from "zod";
 import type { Devices } from "./devices.ts";
 import { PORT } from "./port.ts";
+import { getErrorMessage } from "./errors.ts";
 
 export type Mcp = ReturnType<typeof createMcp>;
 
@@ -211,9 +212,7 @@ function createBrowserServer(
       };
     } catch (error) {
       return {
-        content: [
-          { type: "text" as const, text: error instanceof Error ? error.message : String(error) },
-        ],
+        content: [{ type: "text" as const, text: getErrorMessage(error) }],
         isError: true,
       };
     }
@@ -315,7 +314,7 @@ function createDeviceServer(threadId: string, devices: Devices) {
       return { content: await content() };
     } catch (error) {
       return {
-        content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+        content: [{ type: "text", text: getErrorMessage(error) }],
         isError: true,
       };
     }

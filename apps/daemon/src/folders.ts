@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { getErrorMessage } from "./errors.ts";
 
 export function expandHome(path: string) {
   return path.trim().replace(/^~(?=\/|$)/, homedir());
@@ -23,7 +24,7 @@ export async function listFolders(path: string) {
     return {
       path: absolute,
       folders: [],
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     };
   }
 }

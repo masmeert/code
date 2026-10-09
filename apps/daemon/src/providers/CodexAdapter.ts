@@ -38,6 +38,7 @@ import {
   type StartSessionInput,
   type TurnInput,
 } from "./ProviderAdapter.ts";
+import { getErrorMessage } from "../errors.ts";
 
 function createError(message: string) {
   return new ProviderError({ provider: "codex", message });
@@ -596,14 +597,13 @@ function start({
           },
         );
       },
-      catch: (error) => createError(error instanceof Error ? error.message : String(error)),
+      catch: (error) => createError(getErrorMessage(error)),
     });
 
     function sendRequest<A>(method: string, params: Schema.Json, response: Schema.Decoder<A>) {
       return Effect.tryPromise({
         try: () => rpc.request(method, params, response),
-        catch: (error) =>
-          createError(`${method}: ${error instanceof Error ? error.message : String(error)}`),
+        catch: (error) => createError(`${method}: ${getErrorMessage(error)}`),
       });
     }
 
@@ -772,8 +772,7 @@ const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, dropTurn
         rpc.close();
       }
     },
-    catch: (error) =>
-      createError(`Couldn't rewind: ${error instanceof Error ? error.message : String(error)}`),
+    catch: (error) => createError(`Couldn't rewind: ${getErrorMessage(error)}`),
   });
 
 /** Forks the thread in a short-lived app-server and drops the fork's last turns. */
@@ -793,8 +792,7 @@ const fork: ProviderAdapter["fork"] = ({ cwd, harness, resumeToken, dropTurns })
         rpc.close();
       }
     },
-    catch: (error) =>
-      createError(`Couldn't fork: ${error instanceof Error ? error.message : String(error)}`),
+    catch: (error) => createError(`Couldn't fork: ${getErrorMessage(error)}`),
   });
 
 /** Codex reports a thread's token usage as it loads it, so a short-lived app-server resumes it and waits for that. */
@@ -835,8 +833,7 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
         rpc.close();
       }
     },
-    catch: (error) =>
-      createError(`Couldn't read usage: ${error instanceof Error ? error.message : String(error)}`),
+    catch: (error) => createError(`Couldn't read usage: ${getErrorMessage(error)}`),
   });
 
 const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
@@ -871,7 +868,7 @@ const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
         rpc.close();
       }
     },
-    catch: (error) => createError(error instanceof Error ? error.message : String(error)),
+    catch: (error) => createError(getErrorMessage(error)),
   });
 
 export const CodexAdapter: ProviderAdapter = {

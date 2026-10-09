@@ -23,6 +23,7 @@ import { promisify } from "node:util";
 import { CODEX_FAST_TIER, CodexNotification, connectCodex, type CodexRpc } from "./codexRpc.ts";
 import { readCursorModels } from "./CursorAdapter.ts";
 import { resolveHarnessLaunch, startPromptlessQuery, type HarnessLaunch } from "./launch.ts";
+import { getErrorMessage } from "../errors.ts";
 
 const exec = promisify(execFile);
 
@@ -41,10 +42,6 @@ function buildUnknownStatus(kind: ProviderKind, error: string | null = null): Pr
 
 function getFirstLine(text: string) {
   return text.trim().split("\n")[0] ?? "";
-}
-
-function getErrorMessage(cause: unknown) {
-  return cause instanceof Error ? cause.message : String(cause);
 }
 
 // --- probes ------------------------------------------------------------------

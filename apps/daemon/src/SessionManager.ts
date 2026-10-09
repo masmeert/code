@@ -106,6 +106,7 @@ import { createMcp, type Mcp, type SendMessageInput, type StartThreadInput } fro
 import { createTerminals, type Terminals } from "./terminals.ts";
 import { readProjectConfig } from "./projectConfig.ts";
 import { createSkillCatalog } from "./skills.ts";
+import { getErrorMessage } from "./errors.ts";
 
 const ADAPTERS: Record<ProviderKind, ProviderAdapter> = {
   claude: ClaudeAdapter,
@@ -390,10 +391,7 @@ function resolveAttachments(inputs: ReadonlyArray<AttachmentInput>) {
           }),
         ),
       ),
-    catch: (error) =>
-      createError(
-        `Couldn't attach files: ${error instanceof Error ? error.message : String(error)}`,
-      ),
+    catch: (error) => createError(`Couldn't attach files: ${getErrorMessage(error)}`),
   });
 }
 
@@ -1661,8 +1659,7 @@ const make = Effect.gen(function* () {
       return yield* Effect.tryPromise({
         try: () =>
           generateCommitMessage({ ...buildWriterInput(path, settings, recent), patch: diff.patch }),
-        catch: (error) =>
-          `Couldn't write a commit message: ${error instanceof Error ? error.message : String(error)}`,
+        catch: (error) => `Couldn't write a commit message: ${getErrorMessage(error)}`,
       }).pipe(
         Effect.map((message) => ({ message })),
         Effect.catch((error) => Effect.succeed({ error })),
@@ -1714,7 +1711,7 @@ const make = Effect.gen(function* () {
         template,
       });
     } catch (error) {
-      return `Couldn't write the pull request: ${error instanceof Error ? error.message : String(error)}`;
+      return `Couldn't write the pull request: ${getErrorMessage(error)}`;
     }
     return openPullRequest(path, status.sourceControl, {
       base: range.base,

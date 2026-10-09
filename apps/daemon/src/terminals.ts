@@ -4,6 +4,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal as HeadlessTerminal } from "@xterm/headless";
 import { accessSync, constants, existsSync } from "node:fs";
 import { basename } from "node:path";
+import { getErrorMessage } from "./errors.ts";
 
 const IN_FLIGHT_CHARACTER_LIMIT = 128 * 1024;
 
@@ -158,9 +159,7 @@ export function createTerminals(options: {
       return session;
     } catch (error) {
       screen.dispose();
-      return new Error(
-        `Couldn't start ${shellPath}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      return new Error(`Couldn't start ${shellPath}: ${getErrorMessage(error)}`);
     }
   }
 

@@ -46,6 +46,7 @@ import {
 import { toClaudeExtraArgs, resolveHarnessLaunch, startPromptlessQuery } from "./launch.ts";
 import { DEVICES_SUPPORTED } from "../devices.ts";
 import { findSkillMentions } from "../skills.ts";
+import { getErrorMessage } from "../errors.ts";
 
 /** Minimal push-based async iterable used as the SDK's streaming prompt input. */
 function createInbox<A>() {
@@ -606,7 +607,7 @@ function start({
           emit(
             RuntimeEvent.cases.error.make({
               threadId,
-              message: error instanceof Error ? error.message : String(error),
+              message: getErrorMessage(error),
             }),
           );
           emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "error" }));
@@ -641,7 +642,7 @@ function start({
                 uuid: turn.messageId,
               });
             },
-            catch: (error) => createError(error instanceof Error ? error.message : String(error)),
+            catch: (error) => createError(getErrorMessage(error)),
           }),
         // Claude Code takes a message sent mid-turn in at its next step.
         steer: (turn) =>
@@ -656,7 +657,7 @@ function start({
                 priority: "now",
               });
             },
-            catch: (error) => createError(error instanceof Error ? error.message : String(error)),
+            catch: (error) => createError(getErrorMessage(error)),
           }),
         compact: Effect.sync(() => {
           emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
@@ -781,7 +782,7 @@ function start({
 
       return session;
     },
-    catch: (error) => createError(error instanceof Error ? error.message : String(error)),
+    catch: (error) => createError(getErrorMessage(error)),
   });
 }
 
@@ -844,15 +845,13 @@ async function forkBefore({ cwd, harness, resumeToken, messageId, keep }: ForkIn
 const rewind: ProviderAdapter["rewind"] = (input) =>
   Effect.tryPromise({
     try: () => forkBefore(input),
-    catch: (error) =>
-      createError(`Couldn't rewind: ${error instanceof Error ? error.message : String(error)}`),
+    catch: (error) => createError(`Couldn't rewind: ${getErrorMessage(error)}`),
   });
 
 const fork: ProviderAdapter["fork"] = (input) =>
   Effect.tryPromise({
     try: () => forkBefore(input),
-    catch: (error) =>
-      createError(`Couldn't fork: ${error instanceof Error ? error.message : String(error)}`),
+    catch: (error) => createError(`Couldn't fork: ${getErrorMessage(error)}`),
   });
 
 /** A prompt-less session resumed from the log answers as the live one would; the cost call is experimental, so it may come back empty. */
@@ -875,8 +874,7 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
         conversation.close();
       }
     },
-    catch: (error) =>
-      createError(`Couldn't read usage: ${error instanceof Error ? error.message : String(error)}`),
+    catch: (error) => createError(`Couldn't read usage: ${getErrorMessage(error)}`),
   });
 
 /** Bundled, plugin, user and project skills alike, as the session in `cwd` would load them. */
@@ -898,7 +896,7 @@ const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
         conversation.close();
       }
     },
-    catch: (error) => createError(error instanceof Error ? error.message : String(error)),
+    catch: (error) => createError(getErrorMessage(error)),
   });
 
 export const ClaudeAdapter: ProviderAdapter = {
