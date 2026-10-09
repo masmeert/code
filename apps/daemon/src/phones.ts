@@ -6,6 +6,7 @@ import {
 } from "@masscode/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { execFile } from "node:child_process";
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { hostname, networkInterfaces } from "node:os";
 import { CommandError } from "./errors.ts";
@@ -45,6 +46,38 @@ export function findTailnetAddress() {
   );
 }
 
+/** The Tailscale CLI: on PATH when installed that way, else inside the Mac app. */
+const TAILSCALE_COMMANDS = ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"];
+
+/**
+ * This machine's MagicDNS name, like `my-mac.tail1234.ts.net`, which outlives its address; null
+ * without the CLI or MagicDNS.
+ */
+function findTailnetName() {
+  return Effect.promise(async () => {
+    for (const command of TAILSCALE_COMMANDS) {
+      const output = await new Promise<string | null>((resolve) =>
+        execFile(command, ["status", "--json"], { timeout: 3000 }, (error, stdout) =>
+          resolve(error ? null : stdout),
+        ),
+      );
+
+      if (output === null) continue;
+
+      try {
+        // SAFETY: the shape of `tailscale status --json`, as far as it's read here.
+        const status = JSON.parse(output) as { Self?: { DNSName?: string } };
+
+        return status.Self?.DNSName?.replace(/\.$/, "") || null;
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  });
+}
+
 /** Phones paired with this daemon, and the one-time codes that pair them. */
 export function createPhones(options: {
   readonly isRemoteAccessOn: Effect.Effect<boolean>;
@@ -77,46 +110,48 @@ export function createPhones(options: {
 
     /** A new code, replacing any earlier one, for the desktop to show as a QR code. */
     function startPairing() {
-      return Effect.flatMap(
-        options.isRemoteAccessOn,
-        (isOn): Effect.Effect<PairingOffer, CommandError> => {
-          if (!isOn)
-            return Effect.fail(
-              new CommandError({
-                message: "Phone access is off. Turn it on in Settings → Phone, then pair again.",
-              }),
-            );
+      return Effect.gen(function* (): Effect.fn.Return<PairingOffer, CommandError> {
+        if (!(yield* options.isRemoteAccessOn))
+          return yield* Effect.fail(
+            new CommandError({
+              message: "Phone access is off. Turn it on in Settings → Phone, then pair again.",
+            }),
+          );
 
-          const host = findTailnetAddress();
+        const host = findTailnetAddress();
 
-          if (!host)
-            return Effect.fail(
-              new CommandError({
-                message:
-                  "Tailscale isn't running on this Mac. Open Tailscale, sign in, and try again.",
-              }),
-            );
+        if (!host)
+          return yield* Effect.fail(
+            new CommandError({
+              message:
+                "Tailscale isn't running on this Mac. Open Tailscale, sign in, and try again.",
+            }),
+          );
 
-          const code = String(randomInt(1_000_000)).padStart(6, "0");
-          const name = findMacName();
-          pairing = {
-            code,
-            expiresAt: Date.now() + PAIRING_TTL_MS,
-            attemptsLeft: PAIRING_ATTEMPTS,
-          };
+        const dnsName = yield* findTailnetName();
+        const code = String(randomInt(1_000_000)).padStart(6, "0");
+        const name = findMacName();
+        const expiresAt = Date.now() + PAIRING_TTL_MS;
+        pairing = { code, expiresAt, attemptsLeft: PAIRING_ATTEMPTS };
 
-          const query = new URLSearchParams({ host, port: String(REMOTE_PORT), code, name });
+        const query = new URLSearchParams({
+          host,
+          port: String(REMOTE_PORT),
+          code,
+          name,
+          ...(dnsName && { dns: dnsName }),
+        });
 
-          return Effect.succeed({
-            url: `masscode://pair?${query}`,
-            host,
-            port: REMOTE_PORT,
-            code,
-            name,
-            expiresAt: pairing.expiresAt,
-          });
-        },
-      );
+        return {
+          url: `masscode://pair?${query}`,
+          host,
+          dnsName,
+          port: REMOTE_PORT,
+          code,
+          name,
+          expiresAt,
+        };
+      });
     }
 
     /** Trades the current code for a token of the phone's own; the code works once. */

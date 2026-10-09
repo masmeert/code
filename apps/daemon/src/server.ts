@@ -9,6 +9,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as FiberSet from "effect/FiberSet";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
@@ -566,5 +567,9 @@ export function serve(port: number) {
     yield* Effect.logInfo(`MassCode daemon listening on ws://127.0.0.1:${server.port}`);
     yield* Effect.addFinalizer(() => Effect.promise(async () => phoneListener?.stop(true)));
     yield* syncPhoneListener.pipe(Effect.catch((error) => Effect.logWarning(error.message)));
+    // Tailscale can hand the Mac a new address while the daemon runs; the listener follows it.
+    yield* Effect.forkScoped(
+      Effect.schedule(Effect.ignore(syncPhoneListener), Schedule.spaced("30 seconds")),
+    );
   });
 }

@@ -23,6 +23,8 @@ export const PairingOffer = Schema.Struct({
   url: Schema.String,
   /** The daemon's Tailscale address. */
   host: Schema.String,
+  /** Its MagicDNS name, which stays when the address changes; null without MagicDNS. */
+  dnsName: Schema.NullOr(Schema.String),
   port: Schema.Number,
   code: Schema.String,
   /** This machine's name, so the phone can tell its Macs apart. */
