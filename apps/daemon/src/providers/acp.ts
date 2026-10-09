@@ -4,10 +4,8 @@
  */
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { connectJsonRpc, type JsonRpc, type RpcId } from "./jsonRpc.ts";
+import { CLIENT_INFO, connectJsonRpc, type JsonRpc, type RpcId } from "./jsonRpc.ts";
 import type { HarnessLaunch } from "./launch.ts";
-
-export type { RpcId };
 
 /** A setting the session takes, like its mode, model or effort. */
 export const ConfigOption = Schema.Struct({
@@ -16,6 +14,7 @@ export const ConfigOption = Schema.Struct({
   currentValue: Schema.optional(Schema.Unknown),
   options: Schema.optional(Schema.Array(Schema.Struct({ value: Schema.String }))),
 });
+
 export type ConfigOption = typeof ConfigOption.Type;
 
 /** What `session/new`, `session/load` and `session/set_config_option` answer with. */
@@ -35,6 +34,7 @@ export const ToolContent = Schema.Union([
   }),
   Schema.Struct({ type: Schema.Literal("terminal") }),
 ]);
+
 export type ToolContent = typeof ToolContent.Type;
 
 const ToolFields = {
@@ -69,12 +69,14 @@ export const SessionUpdate = Schema.Union([
     configOptions: Schema.Array(ConfigOption),
   }),
 ]).pipe(Schema.toTaggedUnion("sessionUpdate"));
+
 export type SessionUpdate = typeof SessionUpdate.Type;
 
 export const PermissionRequest = Schema.Struct({
   toolCall: Schema.Struct(ToolFields),
   options: Schema.Array(Schema.Struct({ optionId: Schema.String, kind: Schema.String })),
 });
+
 export type PermissionRequest = typeof PermissionRequest.Type;
 
 export const PromptResponse = Schema.Struct({ stopReason: Schema.String });
@@ -107,14 +109,17 @@ export async function connectAcp(
     {
       onNotification: (method, params) => {
         if (method !== "session/update") return;
+
         const update = decodeUpdate(params);
+
         if (Option.isSome(update)) handlers.onUpdate?.(update.value.update);
       },
       onRequest: handlers.onRequest,
       onExit: handlers.onExit,
     },
-    { versioned: true },
+    { isVersioned: true },
   );
+
   await rpc.request(
     "initialize",
     {
@@ -125,16 +130,17 @@ export async function connectAcp(
         // Cursor: models come with their effort and fast settings as config options of their own.
         _meta: { parameterizedModelPicker: true },
       },
-      clientInfo: { name: "masscode", title: "MassCode", version: "0.0.1" },
+      clientInfo: CLIENT_INFO,
     },
     Schema.Unknown,
   );
+
   return rpc;
 }
 
 /** The text an update or tool result carries, for the transcript. */
-export const contentText = (content: ReadonlyArray<ToolContent> | null | undefined) =>
-  (content ?? [])
+export function getContentText(content: ReadonlyArray<ToolContent> | null | undefined) {
+  return (content ?? [])
     .flatMap((part) => {
       switch (part.type) {
         case "content":
@@ -146,3 +152,4 @@ export const contentText = (content: ReadonlyArray<ToolContent> | null | undefin
       }
     })
     .join("\n");
+}

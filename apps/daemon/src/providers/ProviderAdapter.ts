@@ -1,26 +1,52 @@
-import type {
-  ApprovalDecision,
-  Attachment,
-  Effort,
-  PermissionLevel,
-  ProviderKind,
-  ProviderSettings,
+import {
   RuntimeEvent,
-  Skill,
-  SlashCommand,
-  ThreadUsage,
-  UserAnswers,
+  type ApprovalDecision,
+  type Attachment,
+  type Effort,
+  type PermissionLevel,
+  type ProviderKind,
+  type ProviderSettings,
+  type Skill,
+  type SlashCommand,
+  type ThreadUsage,
+  type UserAnswers,
+  type UserQuestion,
 } from "@masscode/contracts";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
-import type { UUID } from "node:crypto";
+import { randomUUID, type UUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
+import { DEVICES_SUPPORTED } from "../devices.ts";
 import type { McpServerAccess } from "../mcp.ts";
+import { getErrorMessage } from "../errors.ts";
 
 export class ProviderError extends Schema.TaggedError<ProviderError>()("ProviderError", {
   provider: Schema.String,
   message: Schema.String,
 }) {}
+
+/** Runs a promise as an Effect that fails with a ProviderError carrying the rejection's message. */
+export function tryProviderPromise<A>(
+  provider: ProviderKind,
+  run: (signal: AbortSignal) => PromiseLike<A>,
+) {
+  return Effect.tryPromise({
+    try: run,
+    catch: (error) => new ProviderError({ provider, message: getErrorMessage(error) }),
+  });
+}
+
+/** Says what was being done before the message of any ProviderError, as "context: message". */
+export function prefixErrorMessage(context: string) {
+  return <A, R>(self: Effect.Effect<A, ProviderError, R>) =>
+    Effect.mapError(
+      self,
+      (error) =>
+        new ProviderError({ provider: error.provider, message: `${context}: ${error.message}` }),
+    );
+}
 
 export interface StartSessionInput {
   /** The thread the session belongs to; every event the adapter emits carries it. */
@@ -67,7 +93,7 @@ export interface ProviderSkill extends Skill {
   readonly path: string | null;
 }
 
-export interface ListSkillsInput {
+interface ListSkillsInput {
   readonly cwd: string;
   readonly harness: ProviderSettings;
 }
@@ -111,11 +137,11 @@ export interface ForkInput {
   readonly dropTurns: number;
 }
 
-export interface RewindInput extends ForkInput {
+interface RewindInput extends ForkInput {
   readonly messageId: string;
 }
 
-export interface ReadUsageInput {
+interface ReadUsageInput {
   readonly cwd: string;
   readonly harness: ProviderSettings;
   readonly resumeToken: string;
@@ -143,22 +169,162 @@ export interface ProviderAdapter {
   ) => Effect.Effect<ReadonlyArray<ProviderSkill>, ProviderError>;
 }
 
+/** Each process numbers its requests from 0, and the transcript keeps approvals across relaunches, so ids are our own. */
+const APPROVAL_ID_PREFIX = {
+  claude: "claude-perm",
+  codex: "codex",
+  cursor: "cursor",
+} as const satisfies Record<ProviderKind, string>;
+
+interface ApprovalPrompt {
+  readonly title: string;
+  readonly detail: string;
+  /** The subagent asking, by name. */
+  readonly agent?: string | undefined;
+  /** Set when the "approval" is the user's answers. */
+  readonly questions?: ReadonlyArray<UserQuestion> | undefined;
+}
+
+/**
+ * The approvals a session waits on, keyed by request id, and the events that show them to the
+ * user. `Entry` is what the adapter needs to answer its provider.
+ */
+export function createApprovalBook<Entry>(
+  provider: ProviderKind,
+  threadId: string,
+  emit: (event: RuntimeEvent) => void,
+) {
+  const pending = new Map<string, Entry>();
+
+  function withdraw(requestId: string) {
+    const entry = pending.get(requestId);
+
+    if (entry === undefined) return undefined;
+
+    pending.delete(requestId);
+    emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
+
+    return entry;
+  }
+
+  return {
+    /** Files the entry and asks the user; returns the request id their answer comes back with. */
+    request: (entry: Entry, prompt: ApprovalPrompt) => {
+      const requestId = `${APPROVAL_ID_PREFIX[provider]}-${randomUUID()}`;
+      pending.set(requestId, entry);
+
+      emit(
+        RuntimeEvent.cases["thread.status"].make({
+          threadId,
+          status: prompt.questions ? "awaiting-answer" : "awaiting-approval",
+        }),
+      );
+      emit(RuntimeEvent.cases["approval.requested"].make({ threadId, requestId, ...prompt }));
+
+      return requestId;
+    },
+    /** Removes the entry the user answered, for the adapter to pass the answer on. */
+    take: (requestId: string) =>
+      Effect.suspend(() => {
+        const entry = pending.get(requestId);
+
+        if (entry === undefined) {
+          return Effect.fail(
+            new ProviderError({ provider, message: `Unknown approval request ${requestId}` }),
+          );
+        }
+
+        pending.delete(requestId);
+
+        return Effect.succeed(entry);
+      }),
+    /** Tells clients a taken request is answered and the agent runs on. */
+    resolve: (requestId: string, answers?: UserAnswers) => {
+      emit(
+        RuntimeEvent.cases["approval.resolved"].make(
+          answers ? { threadId, requestId, answers } : { threadId, requestId },
+        ),
+      );
+      emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
+    },
+    /** Drops a request the agent stopped waiting on; the entry, if it was still pending. */
+    withdraw,
+    /** Drops every pending request, returning their entries. */
+    withdrawAll: () => [...pending.keys()].flatMap((requestId) => withdraw(requestId) ?? []),
+  };
+}
+
 /** Image extensions models take, with their media types. */
-export const IMAGE_TYPES = new Map<string, "image/png" | "image/jpeg" | "image/gif" | "image/webp">(
-  [
-    [".png", "image/png"],
-    [".jpg", "image/jpeg"],
-    [".jpeg", "image/jpeg"],
-    [".gif", "image/gif"],
-    [".webp", "image/webp"],
-  ],
-);
+const IMAGE_TYPES = new Map<string, "image/png" | "image/jpeg" | "image/gif" | "image/webp">([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".gif", "image/gif"],
+  [".webp", "image/webp"],
+]);
+
+/** The turn's attached images that models take, read as base64, in the order they were attached. */
+export function readImages(turn: TurnInput) {
+  return Promise.all(
+    turn.attachments.flatMap((attachment) => {
+      const mediaType = IMAGE_TYPES.get(extname(attachment.path).toLowerCase());
+
+      return attachment.isImage && mediaType
+        ? [readFile(attachment.path).then((data) => ({ mediaType, data: data.toString("base64") }))]
+        : [];
+    }),
+  );
+}
+
+/** MassCode's MCP servers an agent can reach, for each adapter to hand over in its harness's format. */
+export function listMcpEndpoints(mcpServer: McpServerAccess) {
+  return [
+    { name: "browser", url: mcpServer.url },
+    { name: "masscode", url: `${mcpServer.url}/masscode` },
+    ...(DEVICES_SUPPORTED ? [{ name: "device", url: `${mcpServer.url}/device` }] : []),
+  ] as const;
+}
+
+/**
+ * Reports a session's harness process ending, as `name` (like "Codex"): a crash says why and how
+ * to recover; either way the thread's status follows.
+ */
+export function handleHarnessExit(
+  name: string,
+  threadId: string,
+  emit: (event: RuntimeEvent) => void,
+) {
+  return (code: number | null, stderrTail: string) => {
+    const hasCrashed = code !== 0 && code !== null;
+
+    if (hasCrashed) {
+      emit(
+        RuntimeEvent.cases.error.make({
+          threadId,
+          message: `${name} exited unexpectedly (code ${code})${
+            stderrTail.trim() ? `: ${stderrTail.trim().split("\n").at(-1)}` : ""
+          }. Send a message to pick the thread back up.`,
+        }),
+      );
+    }
+
+    emit(
+      RuntimeEvent.cases["thread.status"].make({
+        threadId,
+        status: hasCrashed ? "error" : "closed",
+      }),
+    );
+  };
+}
 
 /** One-line human summary of a tool input, for the transcript. */
 export function summarizeToolInput(input: Schema.Json): string {
   if (input === null) return "";
+
   if (!Predicate.isObjectOrArray(input)) return String(input);
+
   if (Object.keys(input).length === 0) return "";
+
   const summary = Schema.is(Schema.JsonObject)(input)
     ? [
         "command",
@@ -175,15 +341,21 @@ export function summarizeToolInput(input: Schema.Json): string {
         .map((field) => input[field])
         .find(Predicate.isString)
     : undefined;
+
   if (summary !== undefined) return summary;
+
   const json = JSON.stringify(input);
+
   return json.length > 200 ? `${json.slice(0, 200)}…` : json;
 }
 
 /** The message text with non-image attachments listed as paths for the agent to read. */
-export const textWithFiles = (turn: TurnInput) => {
-  const files = turn.attachments.filter((a) => !a.isImage);
+export function formatTextWithFiles(turn: TurnInput) {
+  const files = turn.attachments.filter((attachment) => !attachment.isImage);
+
   if (!files.length) return turn.text;
-  const list = files.map((a) => `- ${a.path}`).join("\n");
+
+  const list = files.map((file) => `- ${file.path}`).join("\n");
+
   return `${turn.text}${turn.text ? "\n\n" : ""}Attached files:\n${list}`;
-};
+}

@@ -4,23 +4,28 @@
  */
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import type { ProviderKind, ProviderSettings, Settings } from "@masscode/contracts";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { CodexNotification, connectCodex, ThreadResponse } from "./providers/codexRpc.ts";
+import { acquireCodexConnection, CodexNotification, ThreadResponse } from "./providers/codexRpc.ts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { cursorModelFlag } from "./providers/CursorAdapter.ts";
-import { claudeExtraArgs, harnessLaunch } from "./providers/launch.ts";
+import { buildCursorModelFlag } from "./providers/CursorAdapter.ts";
+import { acquireClaudeQuery, toClaudeExtraArgs, resolveHarnessLaunch } from "./providers/launch.ts";
+import { ProviderError, tryProviderPromise } from "./providers/ProviderAdapter.ts";
 
 /** Enough of the patch to describe it; the model doesn't need every line of a big change. */
 const MAX_PROMPT_PATCH = 60_000;
+
 const TIMEOUT_MS = 120_000;
 
 /** The writing style's rules for commits and pull requests, from Settings (wording follows t3code). */
-function styleRules(settings: Settings, recent: ReadonlyArray<string>) {
+function getStyleRules(settings: Settings, recent: ReadonlyArray<string>) {
   const history = recent.length
-    ? `Recent commit subjects from this repository:\n${recent.map((s) => `- ${s}`).join("\n")}`
+    ? `Recent commit subjects from this repository:\n${recent.map((subject) => `- ${subject}`).join("\n")}`
     : null;
+
   switch (settings.writingStyle ?? "repo_conventions") {
     case "conventional_commits":
       return {
@@ -51,19 +56,21 @@ const COMMIT_INSTRUCTIONS = `You write git commit messages. Reply with the commi
 Subject line: imperative mood, at most 72 characters, no trailing period. If the change needs explaining, add a blank line and a short body wrapped at 72 characters.`;
 
 /** Models like to wrap the answer anyway; keep just the message. */
-const clean = (text: string) =>
-  text
+function stripCodeFences(text: string) {
+  return text
     .trim()
     .replace(/^```[a-z]*\n?|\n?```$/g, "")
     .trim();
+}
 
-const withClaude = async (
+const writeWithClaude = Effect.fn("writeWithClaude")(function* (
   cwd: string,
   harness: ProviderSettings,
   model: string | undefined,
   prompt: string,
-) => {
-  const launch = harnessLaunch("claude", harness);
+) {
+  const launch = yield* resolveHarnessLaunch("claude", harness);
+
   const options: Options = {
     cwd,
     // Thinking is most of the wait on a message this short.
@@ -73,61 +80,65 @@ const withClaude = async (
     settingSources: [],
     persistSession: false,
     pathToClaudeCodeExecutable: launch.bin,
-    extraArgs: claudeExtraArgs(launch.args),
+    extraArgs: toClaudeExtraArgs(launch.args),
     env: launch.env,
   };
-  if (model) options.model = model;
-  const q = query({ prompt, options });
-  try {
-    for await (const msg of q) {
-      if (msg.type !== "result") continue;
-      if (msg.subtype !== "success") throw new Error(`Claude stopped: ${msg.subtype}`);
-      return msg.result;
-    }
-    throw new Error("Claude returned nothing");
-  } finally {
-    q.close();
-  }
-};
 
-const withCodex = async (
+  if (model) options.model = model;
+  const conversation = yield* acquireClaudeQuery(() => query({ prompt, options }));
+
+  return yield* tryProviderPromise("claude", async () => {
+    for await (const message of conversation) {
+      if (message.type !== "result") continue;
+
+      if (message.subtype !== "success") throw new Error(`Claude stopped: ${message.subtype}`);
+
+      return message.result;
+    }
+
+    throw new Error("Claude returned nothing");
+  });
+});
+
+const writeWithCodex = Effect.fn("writeWithCodex")(function* (
   cwd: string,
   harness: ProviderSettings,
   model: string | undefined,
   prompt: string,
-) => {
-  let finish: (text: string) => void = () => {};
-  let abort: (error: Error) => void = () => {};
-  const done = new Promise<string>((resolve, reject) => ((finish = resolve), (abort = reject)));
+) {
+  const done = yield* Deferred.make<string, ProviderError>();
   let text = "";
-  const launch = harnessLaunch("codex", harness);
-  const rpc = await connectCodex(
-    cwd,
-    {
-      onNotification: (notification) =>
-        CodexNotification.matchOrElse(
-          notification,
-          {
-            "item/completed": ({ params }) => {
-              if (params.item.type === "agentMessage") text = params.item.text;
-            },
-            "turn/completed": ({ params }) => {
-              if (params.turn.status === "failed")
-                abort(new Error(params.turn.error?.message ?? "Codex turn failed"));
-              else finish(text);
-            },
-            error: ({ params }) => {
-              if (!params.willRetry) abort(new Error(params.error.message));
-            },
+
+  function fail(message: string) {
+    Deferred.doneUnsafe(done, Effect.fail(new ProviderError({ provider: "codex", message })));
+  }
+
+  const launch = yield* resolveHarnessLaunch("codex", harness);
+
+  const rpc = yield* acquireCodexConnection(launch, cwd, {
+    onNotification: (notification) =>
+      CodexNotification.matchOrElse(
+        notification,
+        {
+          "item/completed": ({ params }) => {
+            if (params.item.type === "agentMessage") text = params.item.text;
           },
-          () => {},
-        ),
-      onExit: (code, stderr) => abort(new Error(`codex exited (${code}): ${stderr}`)),
-    },
-    launch,
-  );
-  try {
-    const started = await rpc.request(
+          "turn/completed": ({ params }) => {
+            if (params.turn.status === "failed")
+              fail(params.turn.error?.message ?? "Codex turn failed");
+            else Deferred.doneUnsafe(done, Effect.succeed(text));
+          },
+          error: ({ params }) => {
+            if (!params.willRetry) fail(params.error.message);
+          },
+        },
+        () => {},
+      ),
+    onExit: (code, stderr) => fail(`codex exited (${code}): ${stderr}`),
+  });
+
+  const started = yield* tryProviderPromise("codex", () =>
+    rpc.request(
       "thread/start",
       {
         cwd,
@@ -137,51 +148,58 @@ const withCodex = async (
         sandbox: "read-only",
       },
       ThreadResponse,
-    );
-    await rpc.request(
+    ),
+  );
+
+  yield* tryProviderPromise("codex", () =>
+    rpc.request(
       "turn/start",
       {
         threadId: started.thread.id,
         input: [{ type: "text", text: prompt, text_elements: [] }],
       },
       Schema.Unknown,
-    );
-    return await done;
-  } finally {
-    rpc.close();
-  }
-};
+    ),
+  );
+
+  return yield* Deferred.await(done);
+});
 
 /** Cursor's print mode, read-only ("ask"); `--trust` skips the prompt for a folder it hasn't seen. */
-const withCursor = async (
+const writeWithCursor = Effect.fn("writeWithCursor")(function* (
   cwd: string,
   harness: ProviderSettings,
   model: string | undefined,
   prompt: string,
-) => {
-  const launch = harnessLaunch("cursor", harness);
-  const { stdout } = await promisify(execFile)(
-    launch.bin,
-    [
-      ...launch.args,
-      "--print",
-      "--output-format",
-      "text",
-      "--mode",
-      "ask",
-      "--trust",
-      ...cursorModelFlag(model),
-      prompt,
-    ],
-    { cwd, env: launch.env, maxBuffer: 10 * 1024 * 1024 },
-  );
-  return stdout;
-};
+) {
+  const launch = yield* resolveHarnessLaunch("cursor", harness);
 
-const WRITE: Record<ProviderKind, typeof withCursor> = {
-  claude: withClaude,
-  codex: withCodex,
-  cursor: withCursor,
+  // Interrupting the run (the timeout) aborts the signal, which kills the CLI.
+  const { stdout } = yield* tryProviderPromise("cursor", (signal) =>
+    promisify(execFile)(
+      launch.bin,
+      [
+        ...launch.args,
+        "--print",
+        "--output-format",
+        "text",
+        "--mode",
+        "ask",
+        "--trust",
+        ...buildCursorModelFlag(model),
+        prompt,
+      ],
+      { cwd, env: launch.env, maxBuffer: 10 * 1024 * 1024, signal },
+    ),
+  );
+
+  return stdout;
+});
+
+const WRITE: Record<ProviderKind, typeof writeWithClaude> = {
+  claude: writeWithClaude,
+  codex: writeWithCodex,
+  cursor: writeWithCursor,
 };
 
 interface WriterInput {
@@ -193,42 +211,47 @@ interface WriterInput {
   readonly recent: ReadonlyArray<string>;
 }
 
-async function write(input: WriterInput, prompt: string) {
-  const run = WRITE[input.provider];
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>(
-    (_, reject) => (timer = setTimeout(() => reject(new Error("Timed out")), TIMEOUT_MS)),
+/** Timing out interrupts the run, which closes the harness it started. */
+function writeWithHarness(input: WriterInput, prompt: string) {
+  return Effect.runPromise(
+    WRITE[input.provider](input.cwd, input.harness, input.model, prompt).pipe(
+      Effect.scoped,
+      Effect.timeoutOrElse({
+        duration: TIMEOUT_MS,
+        orElse: () =>
+          Effect.fail(new ProviderError({ provider: input.provider, message: "Timed out" })),
+      }),
+      Effect.map(stripCodeFences),
+    ),
   );
-  try {
-    return clean(await Promise.race([run(input.cwd, input.harness, input.model, prompt), timeout]));
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 /** Resolves to the message, or rejects with why it couldn't be written. */
-export const generateCommitMessage = async (input: WriterInput & { readonly patch: string }) => {
-  const style = styleRules(input.settings, input.recent);
-  const cut = input.patch.length > MAX_PROMPT_PATCH;
-  const message = await write(
+export async function generateCommitMessage(input: WriterInput & { readonly patch: string }) {
+  const style = getStyleRules(input.settings, input.recent);
+  const truncated = input.patch.length > MAX_PROMPT_PATCH;
+
+  const message = await writeWithHarness(
     input,
     [
       COMMIT_INSTRUCTIONS,
       style.commit ? `Additional instructions:\n${style.commit}` : null,
       style.history,
-      `Changes to commit${cut ? " (truncated)" : ""}:\n${cut ? input.patch.slice(0, MAX_PROMPT_PATCH) : input.patch}`,
+      `Changes to commit${truncated ? " (truncated)" : ""}:\n${truncated ? input.patch.slice(0, MAX_PROMPT_PATCH) : input.patch}`,
     ]
       .filter(Boolean)
       .join("\n\n"),
   );
+
   if (!message) throw new Error("The model returned an empty message");
+
   return message;
-};
+}
 
 /** Resolves to a short title summarizing a thread's first message, or rejects with why it couldn't be written. */
-export const generateThreadTitle = async (input: WriterInput & { readonly text: string }) =>
-  (
-    await write(
+export async function generateThreadTitle(input: WriterInput & { readonly text: string }) {
+  return (
+    await writeWithHarness(
       input,
       `You name chat threads with a coding agent. Reply with a title of at most 6 words summarizing what the user asks for: no preamble, no quotes, no trailing period.\n\nThe user's first message:\n${input.text.slice(0, 4_000)}`,
     )
@@ -236,11 +259,12 @@ export const generateThreadTitle = async (input: WriterInput & { readonly text: 
     .split("\n")[0]!
     .replace(/^["'`]+|["'`.]+$/g, "")
     .trim();
+}
 
 const PullRequestText = Schema.Struct({ title: Schema.String, body: Schema.String });
 
 /** Resolves to the pull request's title and body, or rejects with why they couldn't be written. */
-export const generatePullRequest = async (
+export async function generatePullRequest(
   input: WriterInput & {
     readonly base: string;
     readonly head: string;
@@ -249,9 +273,10 @@ export const generatePullRequest = async (
     readonly patch: string;
     readonly template: string | null;
   },
-) => {
-  const style = styleRules(input.settings, input.recent);
-  const body = input.template
+) {
+  const style = getStyleRules(input.settings, input.recent);
+
+  const bodyRules = input.template
     ? [
         "- body must be markdown and follow the repository pull request template structure",
         "- fill in the template sections appropriately for this change",
@@ -263,7 +288,8 @@ export const generatePullRequest = async (
         "- under Summary, provide short bullet points",
         "- under Testing, include bullet points with concrete checks or 'Not run' where appropriate",
       ];
-  const text = await write(
+
+  const text = await writeWithHarness(
     input,
     [
       [
@@ -271,7 +297,7 @@ export const generatePullRequest = async (
         "Reply with only a JSON object with keys: title, body. No code fences.",
         "Rules:",
         "- title should be concise and specific",
-        ...body,
+        ...bodyRules,
       ].join("\n"),
       style.pullRequest ? `Additional instructions:\n${style.pullRequest}` : null,
       style.history,
@@ -284,12 +310,15 @@ export const generatePullRequest = async (
       .filter(Boolean)
       .join("\n\n"),
   );
+
   // The object may come with a sentence around it despite the instructions.
   const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
   const parsed = Schema.decodeUnknownOption(Schema.fromJsonString(PullRequestText))(json);
+
   if (Option.isNone(parsed)) throw new Error("The model didn't return a title and body");
+
   return {
     title: parsed.value.title.split("\n")[0]!.trim() || "Update project changes",
     body: parsed.value.body.trim(),
   };
-};
+}

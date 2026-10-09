@@ -24,16 +24,19 @@ interface DiffRow {
 }
 
 const NO_COMMENTS: ReadonlyArray<ReviewComment> = [];
+
 const commentsByThread = new Map<string, ReadonlyArray<ReviewComment>>();
+
 const listeners = new Set<() => void>();
 
-function write(threadId: string, comments: ReadonlyArray<ReviewComment>) {
+function writeReviewComments(threadId: string, comments: ReadonlyArray<ReviewComment>) {
   if (comments.length) commentsByThread.set(threadId, comments);
   else commentsByThread.delete(threadId);
+
   for (const listener of listeners) listener();
 }
 
-export function getReviewComments(threadId: string) {
+function getReviewComments(threadId: string) {
   return commentsByThread.get(threadId) ?? NO_COMMENTS;
 }
 
@@ -41,6 +44,7 @@ export function useReviewComments(threadId: string) {
   return useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
+
       return () => listeners.delete(listener);
     },
     () => getReviewComments(threadId),
@@ -50,7 +54,7 @@ export function useReviewComments(threadId: string) {
 /** Adds the comment, or replaces the one with its id. */
 export function saveReviewComment(threadId: string, comment: ReviewComment) {
   const comments = getReviewComments(threadId);
-  write(
+  writeReviewComments(
     threadId,
     comments.some((existing) => existing.id === comment.id)
       ? comments.map((existing) => (existing.id === comment.id ? comment : existing))
@@ -59,7 +63,7 @@ export function saveReviewComment(threadId: string, comment: ReviewComment) {
 }
 
 export function removeReviewComment(threadId: string, id: string) {
-  write(
+  writeReviewComments(
     threadId,
     getReviewComments(threadId).filter((comment) => comment.id !== id),
   );
@@ -68,16 +72,19 @@ export function removeReviewComment(threadId: string, id: string) {
 /** Clears the thread's comments and returns them, for the message about to go out. */
 export function takeReviewComments(threadId: string) {
   const comments = getReviewComments(threadId);
-  write(threadId, NO_COMMENTS);
+  writeReviewComments(threadId, NO_COMMENTS);
+
   return comments;
 }
 
 /** Every row of a parsed patch, in the order the unified view shows them. */
-function diffRows(fileDiff: FileDiffMetadata): Array<DiffRow> {
+function buildDiffRows(fileDiff: FileDiffMetadata): Array<DiffRow> {
   const rows: Array<DiffRow> = [];
+
   for (const hunk of fileDiff.hunks) {
     let oldLine = hunk.deletionStart;
     let newLine = hunk.additionStart;
+
     for (const segment of hunk.hunkContent) {
       if (segment.type === "context") {
         for (let offset = 0; offset < segment.lines; offset++) {
@@ -88,8 +95,10 @@ function diffRows(fileDiff: FileDiffMetadata): Array<DiffRow> {
             content: fileDiff.additionLines[segment.additionLineIndex + offset] ?? "",
           });
         }
+
         continue;
       }
+
       for (let offset = 0; offset < segment.deletions; offset++) {
         rows.push({
           marker: "-",
@@ -98,6 +107,7 @@ function diffRows(fileDiff: FileDiffMetadata): Array<DiffRow> {
           content: fileDiff.deletionLines[segment.deletionLineIndex + offset] ?? "",
         });
       }
+
       for (let offset = 0; offset < segment.additions; offset++) {
         rows.push({
           marker: "+",
@@ -108,10 +118,11 @@ function diffRows(fileDiff: FileDiffMetadata): Array<DiffRow> {
       }
     }
   }
+
   return rows;
 }
 
-function rowIndex(rows: ReadonlyArray<DiffRow>, lineNumber: number, side: SelectionSide) {
+function findRowIndex(rows: ReadonlyArray<DiffRow>, lineNumber: number, side: SelectionSide) {
   return rows.findIndex((row) =>
     side === "deletions" ? row.oldLine === lineNumber : row.newLine === lineNumber,
   );
@@ -121,18 +132,20 @@ function rowIndex(rows: ReadonlyArray<DiffRow>, lineNumber: number, side: Select
  * The rows a selection covers, with the selection put in top-to-bottom order.
  * Null when either end isn't in the diff.
  */
-export function selectRows(fileDiff: FileDiffMetadata, range: SelectedLineRange) {
-  const rows = diffRows(fileDiff);
+export function findSelectedRows(fileDiff: FileDiffMetadata, range: SelectedLineRange) {
+  const rows = buildDiffRows(fileDiff);
   const startSide = range.side ?? "additions";
   const endSide = range.endSide ?? startSide;
-  const startIndex = rowIndex(rows, range.start, startSide);
-  const endIndex = rowIndex(rows, range.end, endSide);
+  const startIndex = findRowIndex(rows, range.start, startSide);
+  const endIndex = findRowIndex(rows, range.end, endSide);
+
   if (startIndex < 0 || endIndex < 0) return null;
-  const forward = startIndex <= endIndex;
+
   return {
-    range: forward
-      ? { start: range.start, side: startSide, end: range.end, endSide }
-      : { start: range.end, side: endSide, end: range.start, endSide: startSide },
+    range:
+      startIndex <= endIndex
+        ? { start: range.start, side: startSide, end: range.end, endSide }
+        : { start: range.end, side: endSide, end: range.start, endSide: startSide },
     excerpt: rows
       .slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1)
       .map((row) => `${row.marker}${row.content.replace(/\r?\n$/, "")}`)
@@ -142,32 +155,36 @@ export function selectRows(fileDiff: FileDiffMetadata, range: SelectedLineRange)
 
 /** Whether the comment's lines still read the same in this diff, so it can sit on them. */
 export function isAnchoredIn(comment: ReviewComment, fileDiff: FileDiffMetadata) {
-  return selectRows(fileDiff, comment.range)?.excerpt === comment.excerpt;
+  return findSelectedRows(fileDiff, comment.range)?.excerpt === comment.excerpt;
 }
 
 /** "line 12", "lines 12–14", or "removed line 12" for lines only the old file has. */
 export function describeRange(range: Required<SelectedLineRange>) {
   const removed = range.side === "deletions" && range.endSide === "deletions" ? "removed " : "";
+
   return range.start === range.end && range.side === range.endSide
     ? `${removed}line ${range.start}`
     : `${removed}lines ${range.start}–${range.end}`;
 }
 
-function fence(code: string) {
+function fenceDiff(code: string) {
   const longestRun = Math.max(0, ...Array.from(code.matchAll(/`+/g), (match) => match[0].length));
   const marks = "`".repeat(Math.max(3, longestRun + 1));
+
   return `${marks}diff\n${code}\n${marks}`;
 }
 
 /** The message that carries the comments, followed by whatever was typed with them. */
-export function withReviewComments(comments: ReadonlyArray<ReviewComment>, text: string) {
+export function buildReviewMessage(comments: ReadonlyArray<ReviewComment>, text: string) {
   if (!comments.length) return text;
+
   const review = [
     "Review comments on the diff:",
     ...comments.map(
       (comment) =>
-        `${comment.path}, ${describeRange(comment.range)}:\n${fence(comment.excerpt)}\n${comment.text}`,
+        `${comment.path}, ${describeRange(comment.range)}:\n${fenceDiff(comment.excerpt)}\n${comment.text}`,
     ),
   ].join("\n\n");
+
   return text ? `${review}\n\n${text}` : review;
 }

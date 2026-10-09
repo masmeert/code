@@ -1,12 +1,12 @@
 /**
  * What `codex app-server` says over its JSON-RPC, decoded down to the fields MassCode reads.
  */
+import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { connectJsonRpc, type JsonRpc, type RpcId } from "./jsonRpc.ts";
+import { CLIENT_INFO, connectJsonRpc, type JsonRpc, type RpcId } from "./jsonRpc.ts";
 import type { HarnessLaunch } from "./launch.ts";
-
-export type { RpcId };
+import { tryProviderPromise } from "./ProviderAdapter.ts";
 
 const ErrorMessage = Schema.Struct({
   message: Schema.String,
@@ -93,6 +93,7 @@ export const TokenUsage = Schema.Struct({
   last: Schema.Struct({ totalTokens: Schema.Number }),
   modelContextWindow: Schema.NullOr(Schema.Number),
 });
+
 export type TokenUsage = typeof TokenUsage.Type;
 
 /** The notifications MassCode acts on; others are dropped. */
@@ -148,6 +149,7 @@ export const CodexNotification = Schema.Union([
     params: Schema.Struct({ success: Schema.Boolean, error: Schema.NullOr(Schema.String) }),
   }),
 ]).pipe(Schema.toTaggedUnion("method"));
+
 export type CodexNotification = typeof CodexNotification.Type;
 
 /** An MCP server asking the user for input, usually to approve one of its tool calls. */
@@ -180,6 +182,7 @@ export const CodexElicitation = Schema.Struct({
     }),
   ),
 });
+
 export type CodexElicitation = typeof CodexElicitation.Type;
 
 const ApprovalParams = Schema.Struct({
@@ -203,6 +206,7 @@ export const CodexServerRequest = Schema.Union([
     params: ApprovalParams,
   }),
 ]).pipe(Schema.toTaggedUnion("method"));
+
 export type CodexServerRequest = typeof CodexServerRequest.Type;
 
 /** The service tier Codex labels "Fast". */
@@ -216,26 +220,26 @@ export const ThreadResponse = Schema.Struct({
 });
 
 const decodeNotification = Schema.decodeUnknownOption(CodexNotification);
+
 const decodeServerRequest = Schema.decodeUnknownOption(CodexServerRequest);
 
-export interface CodexRpcHandlers {
+interface CodexRpcHandlers {
   readonly onNotification?: (notification: CodexNotification) => void;
   /** Requests the server makes of us (approvals etc.). Unhandled ones get a method-not-found error. */
   readonly onServerRequest?: (id: RpcId, request: CodexServerRequest) => boolean;
   readonly onExit?: (code: number | null, stderrTail: string) => void;
 }
 
-export type CodexRpc = JsonRpc;
-
 /** Spawns `codex app-server` and completes the initialize handshake. */
 export async function connectCodex(
+  launch: HarnessLaunch,
   cwd: string | undefined,
   handlers: CodexRpcHandlers = {},
-  launch: HarnessLaunch,
-): Promise<CodexRpc> {
+): Promise<JsonRpc> {
   const rpc = connectJsonRpc("Codex", launch, ["app-server", ...launch.args], cwd, {
     onNotification: (method, params) => {
       const notification = decodeNotification({ method, params });
+
       if (Option.isSome(notification)) handlers.onNotification?.(notification.value);
     },
     onRequest: (id, method, params) =>
@@ -245,14 +249,28 @@ export async function connectCodex(
       }),
     onExit: handlers.onExit,
   });
+
   await rpc.request(
     "initialize",
     {
-      clientInfo: { name: "masscode", title: "MassCode", version: "0.0.1" },
+      clientInfo: CLIENT_INFO,
       capabilities: null,
     },
     Schema.Unknown,
   );
   rpc.notify("initialized");
+
   return rpc;
+}
+
+/** A short-lived `codex app-server`, closed with the scope. */
+export function acquireCodexConnection(
+  launch: HarnessLaunch,
+  cwd: string | undefined,
+  handlers: CodexRpcHandlers = {},
+) {
+  return Effect.acquireRelease(
+    tryProviderPromise("codex", () => connectCodex(launch, cwd, handlers)),
+    (rpc) => Effect.sync(() => rpc.close()),
+  );
 }

@@ -14,8 +14,10 @@ window.addEventListener("dragover", (event) => {
 
 window.addEventListener("drop", (event) => {
   const files = [...(event.dataTransfer?.files ?? [])];
+
   if (dropListeners.size === 0 || files.length === 0) return;
   event.preventDefault();
+
   for (const listener of dropListeners)
     listener(files.map((file) => webUtils.getPathForFile(file)));
 });
@@ -27,7 +29,9 @@ contextBridge.exposeInMainWorld("desktop", {
     function forward(_event: IpcRendererEvent, hosts: ReadonlyArray<RemoteHost>) {
       listener(hosts);
     }
+
     ipcRenderer.on("hosts-changed", forward);
+
     return () => ipcRenderer.removeListener("hosts-changed", forward);
   },
   addHost: (alias) => ipcRenderer.invoke("add-host", alias),
@@ -41,13 +45,16 @@ contextBridge.exposeInMainWorld("desktop", {
   setTheme: (theme) => ipcRenderer.invoke("set-theme", theme),
   onFileDrop: (listener) => {
     dropListeners.add(listener);
+
     return () => dropListeners.delete(listener);
   },
   onBrowserEvent: (listener) => {
     function forward(_event: IpcRendererEvent, browserEvent: DesktopBrowserEvent) {
       listener(browserEvent);
     }
+
     ipcRenderer.on("browser-event", forward);
+
     return () => ipcRenderer.removeListener("browser-event", forward);
   },
   automateBrowser: (webContentsId, action) =>
@@ -58,7 +65,9 @@ contextBridge.exposeInMainWorld("desktop", {
     function forward(_event: IpcRendererEvent, status: UpdateStatus) {
       listener(status);
     }
+
     ipcRenderer.on("update-status-changed", forward);
+
     return () => ipcRenderer.removeListener("update-status-changed", forward);
   },
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
@@ -69,7 +78,9 @@ contextBridge.exposeInMainWorld("desktop", {
     function forward(_event: IpcRendererEvent, threadId: string) {
       listener(threadId);
     }
+
     ipcRenderer.on("open-thread", forward);
+
     return () => ipcRenderer.removeListener("open-thread", forward);
   },
 } satisfies DesktopBridge);

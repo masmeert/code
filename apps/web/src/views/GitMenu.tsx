@@ -4,6 +4,8 @@ import {
   MorphPopoverMenu,
 } from "@masscode/ui/motion/popover-morph";
 import { cn } from "@masscode/ui/lib/utils";
+import { Button } from "@masscode/ui/motion/button/base";
+import { SOURCE_CONTROL_LABEL } from "@/components/source-control-logo";
 import { ClientCommand, MergeMethod, type GitAction } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import {
@@ -42,13 +44,14 @@ const LAST_MERGE_METHOD_KEY = "masscode.git.lastMergeMethod";
 function readLastMergeMethod(): MergeMethod {
   try {
     const saved = localStorage.getItem(LAST_MERGE_METHOD_KEY);
+
     return Schema.is(MergeMethod)(saved) ? saved : "merge";
   } catch {
     return "merge";
   }
 }
 
-const MenuItem = ({
+function MenuItem({
   onClick,
   disabled,
   children,
@@ -58,22 +61,24 @@ const MenuItem = ({
   disabled?: boolean;
   children: ReactNode;
   hint?: ReactNode;
-}) => (
-  <button
-    type="button"
-    role="menuitem"
-    disabled={disabled}
-    onClick={onClick}
-    className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4 [&_svg]:text-muted-foreground"
-  >
-    {children}
-    {hint ? (
-      <span className="ml-auto pl-3 font-mono text-xs text-muted-foreground tabular-nums">
-        {hint}
-      </span>
-    ) : null}
-  </button>
-);
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4 [&_svg]:text-muted-foreground"
+    >
+      {children}
+      {hint ? (
+        <span className="ml-auto pl-3 font-mono text-xs text-muted-foreground tabular-nums">
+          {hint}
+        </span>
+      ) : null}
+    </button>
+  );
+}
 
 /**
  * Commit / push for the thread's folder: the main button commits every change (or pushes
@@ -81,21 +86,21 @@ const MenuItem = ({
  * the thread may have touched files, which re-reads the repo state. A `worktree` thread can
  * also merge its branch into the one it was made from, then be deleted along with it.
  */
-export const GitMenu = ({
+export function GitMenu({
   cwd,
   refreshKey,
   threadId,
-  worktree,
+  isWorktree,
 }: {
   cwd: string;
   refreshKey: string;
   threadId: string;
-  worktree: boolean;
-}) => {
-  const repo = useStore((s) => s.repos[cwd]);
-  const defaultMergeMethod = useStore((s) => s.settings.mergeMethod);
-  const confirmDelete = useStore((s) => s.settings.confirmDelete !== false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  isWorktree: boolean;
+}) {
+  const repo = useStore((state) => state.repos[cwd]);
+  const defaultMergeMethod = useStore((state) => state.settings.mergeMethod);
+  const shouldConfirmDelete = useStore((state) => state.settings.confirmDelete !== false);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
   const [mergeMethod, setMergeMethod] = useState<MergeMethod>("merge");
   const [message, setMessage] = useState("");
@@ -104,60 +109,73 @@ export const GitMenu = ({
   const textarea = useRef<HTMLTextAreaElement>(null);
   const mergeButton = useRef<HTMLButtonElement>(null);
 
+  function openPanel(next: Panel) {
+    setPanel(next);
+    setIsConfirmingDelete(false);
+
+    if (next === "commit") requestAnimationFrame(() => textarea.current?.focus());
+
+    if (next === "merge-into-base") requestAnimationFrame(() => mergeButton.current?.focus());
+
+    if (next === "merge") setMergeMethod(defaultMergeMethod ?? readLastMergeMethod());
+
+    if (next) send(ClientCommand.cases["git.status"].make({ path: cwd }));
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(
       () => send(ClientCommand.cases["git.status"].make({ path: cwd })),
       250,
     );
+
     return () => window.clearTimeout(timer);
   }, [cwd, refreshKey]);
 
   // Any update carrying an action answers the one in flight (only one runs per repo at a time).
-  const answerPending = useEffectEvent(() => {
+  const resolvePendingAction = useEffectEvent(() => {
     if (!repo?.action || !pending) return;
+
     setPending(null);
     setError(repo.error);
+
     if (!repo.error) {
       if (repo.action === "commit" || repo.action === "commit-push") setMessage("");
       // Back to the menu, where deleting the merged thread is offered.
-      setPanel(repo.action === "merge-into-base" ? "menu" : null);
+      openPanel(repo.action === "merge-into-base" ? "menu" : null);
     } else if (repo.status?.changes === 0) {
       // The commit landed even though the push after it failed.
       setMessage("");
     }
   });
-  useEffect(() => answerPending(), [repo]);
 
-  useEffect(() => {
-    if (panel === "commit") requestAnimationFrame(() => textarea.current?.focus());
-    if (panel === "merge-into-base") requestAnimationFrame(() => mergeButton.current?.focus());
-    setConfirmingDelete(false);
-    if (panel === "merge") setMergeMethod(defaultMergeMethod ?? readLastMergeMethod());
-    if (panel) send(ClientCommand.cases["git.status"].make({ path: cwd }));
-  }, [panel, cwd, defaultMergeMethod]);
+  useEffect(() => resolvePendingAction(), [repo]);
 
   const status = repo?.status;
+
   if (!repo || !status) return null;
 
   const canCommit = status.changes > 0 && !pending;
   const canPush = status.hasRemote && !status.detached && status.ahead > 0 && !pending;
   const pushHint = status.upstream ? `↑${status.ahead}` : status.ahead ? "new branch" : undefined;
-  const pr = status.pullRequest;
-  const prOpen = pr?.state === "open" || pr?.state === "draft";
+  const pullRequest = status.pullRequest;
+  const isPullRequestOpen = pullRequest?.state === "open" || pullRequest?.state === "draft";
   // GitLab calls them merge requests.
-  const prName = status.sourceControl === "gitlab" ? "MR" : "PR";
-  const canCreatePr =
+  const pullRequestName = status.sourceControl === "gitlab" ? "MR" : "PR";
+
+  const canCreatePullRequest =
     !!status.sourceControl &&
     !!status.branch &&
     status.branch !== status.defaultBranch &&
     status.changes === 0 &&
     status.behind === 0 &&
     status.aheadOfDefault > 0 &&
-    !prOpen &&
+    !isPullRequestOpen &&
     // A squash or rebase merge leaves the branch's commits off the default branch; only new work needs another.
-    (pr?.state !== "merged" || status.ahead > 0) &&
+    (pullRequest?.state !== "merged" || status.ahead > 0) &&
     !pending;
-  const base = worktree ? status.base : null;
+
+  const base = isWorktree ? status.base : null;
+
   const canMergeIntoBase =
     !!base &&
     !base.merged &&
@@ -165,22 +183,26 @@ export const GitMenu = ({
     base.conflicts.length === 0 &&
     status.changes === 0 &&
     !pending;
-  const run = (action: GitAction) => {
+
+  function runGitAction(action: GitAction) {
     setError(null);
     setPending(action);
-    if (action === "push") send(ClientCommand.cases["git.push"].make({ path: cwd }));
-    else if (action === "pull-request")
+
+    if (action === "push") {
+      send(ClientCommand.cases["git.push"].make({ path: cwd }));
+    } else if (action === "pull-request") {
       send(ClientCommand.cases["git.createPullRequest"].make({ path: cwd }));
-    else if (action === "merge") {
+    } else if (action === "merge") {
       try {
         localStorage.setItem(LAST_MERGE_METHOD_KEY, mergeMethod);
       } catch {
         // Only the default for next time is lost.
       }
+
       send(ClientCommand.cases["git.mergePullRequest"].make({ path: cwd, method: mergeMethod }));
-    } else if (action === "merge-into-base")
+    } else if (action === "merge-into-base") {
       send(ClientCommand.cases["git.mergeIntoBase"].make({ path: cwd }));
-    else
+    } else {
       send(
         ClientCommand.cases["git.commit"].make({
           path: cwd,
@@ -188,35 +210,54 @@ export const GitMenu = ({
           push: action === "commit-push",
         }),
       );
-  };
-  // With nothing to commit, the main button pushes, or opens the branch's pull request (pushing first).
-  const primaryOpensPr = status.changes === 0 && canCreatePr;
-  const primaryPushes = status.changes === 0 && canPush && !primaryOpensPr;
-  // Nothing left to do locally: the main button shows the pull request.
-  const primaryViewsPr = status.changes === 0 && !canPush && !primaryOpensPr && prOpen;
-  // Without a pull request to go through, a worktree's next step is merging it locally.
-  const primaryMerges = canMergeIntoBase && !primaryOpensPr && !primaryPushes && !primaryViewsPr;
-  const primary = () =>
-    primaryOpensPr
-      ? run("pull-request")
-      : primaryPushes
-        ? run("push")
-        : primaryViewsPr
-          ? window.open(pr!.url, "_blank", "noreferrer")
-          : primaryMerges
-            ? setPanel(panel === "merge-into-base" ? null : "merge-into-base")
-            : setPanel(panel === "commit" ? null : "commit");
-  const primaryLabel = primaryOpensPr
-    ? canPush || !status.upstream
-      ? `Push & create ${prName}`
-      : `Create ${prName}`
-    : primaryPushes
-      ? "Push"
-      : primaryViewsPr
-        ? `View ${prName}`
-        : primaryMerges
-          ? `Merge into ${base!.branch}`
-          : "Commit";
+    }
+  }
+
+  // With nothing to commit, the main button opens the branch's pull request (pushing first), or
+  // pushes, or shows the open pull request. Without a pull request to go through, a worktree's
+  // next step is merging it locally.
+  const primary =
+    status.changes === 0 && canCreatePullRequest
+      ? {
+          icon: GitPullRequestArrow,
+          label:
+            canPush || !status.upstream
+              ? `Push & create ${pullRequestName}`
+              : `Create ${pullRequestName}`,
+          title: `Open a ${pullRequestName} for ${status.branch} into ${status.defaultBranch}`,
+          run: () => runGitAction("pull-request"),
+        }
+      : status.changes === 0 && canPush
+        ? {
+            icon: ArrowUp,
+            label: "Push",
+            title: "Push commits",
+            run: () => runGitAction("push"),
+            count: status.upstream ? status.ahead : undefined,
+          }
+        : status.changes === 0 && isPullRequestOpen
+          ? {
+              icon: ExternalLink,
+              label: `View ${pullRequestName}`,
+              title: `Open #${pullRequest.number} on ${SOURCE_CONTROL_LABEL[status.sourceControl ?? "github"]}`,
+              run: () => window.open(pullRequest.url, "_blank", "noreferrer"),
+            }
+          : canMergeIntoBase
+            ? {
+                icon: GitMerge,
+                label: `Merge into ${base.branch}`,
+                title: `Merge ${status.branch} into ${base.branch}`,
+                run: () => openPanel(panel === "merge-into-base" ? null : "merge-into-base"),
+              }
+            : {
+                icon: GitCommitHorizontal,
+                label: "Commit",
+                title: status.changes
+                  ? `Commit ${status.changes} changed ${status.changes === 1 ? "file" : "files"}`
+                  : "Nothing to commit",
+                run: status.changes ? () => openPanel(panel === "commit" ? null : "commit") : null,
+              };
+
   // An empty message is written by the commit model first, which takes a moment.
   const pendingLabel =
     (pending === "commit" || pending === "commit-push") && !message.trim()
@@ -224,52 +265,30 @@ export const GitMenu = ({
       : pending
         ? PENDING_LABEL[pending]
         : null;
+
   const errorNote = error ? (
     <p className="px-2 pt-1.5 pb-1 text-xs whitespace-pre-wrap text-destructive">{error}</p>
   ) : null;
 
   return (
-    <MorphPopover open={panel !== null} onOpenChange={(open) => !open && setPanel(null)}>
+    <MorphPopover open={panel !== null} onOpenChange={(isOpen) => !isOpen && openPanel(null)}>
       <div className="flex h-7 items-stretch overflow-hidden rounded-lg border border-border text-muted-foreground">
         <button
           type="button"
-          onClick={primary}
-          disabled={
-            !!pending ||
-            (!canCommit && !primaryPushes && !primaryOpensPr && !primaryViewsPr && !primaryMerges)
-          }
-          title={
-            primaryOpensPr
-              ? `Open a ${prName} for ${status.branch} into ${status.defaultBranch}`
-              : primaryViewsPr
-                ? `Open #${pr!.number} on ${status.sourceControl === "gitlab" ? "GitLab" : "GitHub"}`
-                : primaryMerges
-                  ? `Merge ${status.branch} into ${base!.branch}`
-                  : primaryPushes
-                    ? "Push commits"
-                    : status.changes
-                      ? `Commit ${status.changes} changed ${status.changes === 1 ? "file" : "files"}`
-                      : "Nothing to commit"
-          }
+          onClick={() => primary.run?.()}
+          disabled={!!pending || !primary.run}
+          title={primary.title}
           className="flex items-center gap-1.5 pr-2.5 pl-2 text-xs font-medium transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-50"
         >
           {pending ? (
             <LoaderCircle className="size-4 animate-spin" />
-          ) : primaryOpensPr ? (
-            <GitPullRequestArrow className="size-4" />
-          ) : primaryViewsPr ? (
-            <ExternalLink className="size-4" />
-          ) : primaryMerges ? (
-            <GitMerge className="size-4" />
-          ) : primaryPushes ? (
-            <ArrowUp className="size-4" />
           ) : (
-            <GitCommitHorizontal className="size-4" />
+            <primary.icon className="size-4" />
           )}
           {/* Collapses to the icon when the thread pane is narrow; the header is the container. */}
-          <span className="@max-md:sr-only">{pending ? pendingLabel : primaryLabel}</span>
-          {!pending && primaryPushes && status.upstream ? (
-            <span className="font-mono tabular-nums opacity-70">{status.ahead}</span>
+          <span className="@max-md:sr-only">{pending ? pendingLabel : primary.label}</span>
+          {!pending && primary.count !== undefined ? (
+            <span className="font-mono tabular-nums opacity-70">{primary.count}</span>
           ) : null}
         </button>
         <button
@@ -277,7 +296,7 @@ export const GitMenu = ({
           aria-label="Git actions"
           aria-haspopup="menu"
           aria-expanded={panel === "menu"}
-          onClick={() => setPanel(panel === "menu" ? null : "menu")}
+          onClick={() => openPanel(panel === "menu" ? null : "menu")}
           className={cn(
             "grid w-6 place-items-center border-l border-border transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:bg-muted/60",
             panel === "menu" && "bg-muted/60 text-foreground",
@@ -301,9 +320,10 @@ export const GitMenu = ({
         {panel === "merge-into-base" && base ? (
           <form
             className="flex flex-col gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (canMergeIntoBase) run("merge-into-base");
+            onSubmit={(event) => {
+              event.preventDefault();
+
+              if (canMergeIntoBase) runGitAction("merge-into-base");
             }}
           >
             <p className="px-0.5 text-sm text-foreground">
@@ -317,33 +337,36 @@ export const GitMenu = ({
             </p>
             {errorNote}
             <div className="flex justify-end gap-1.5">
-              <button
-                type="button"
-                onClick={() => setPanel(null)}
-                className="h-7 rounded-lg border border-border px-2.5 text-xs font-medium text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2.5"
+                onClick={() => openPanel(null)}
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
                 ref={mergeButton}
                 type="submit"
                 disabled={!canMergeIntoBase}
-                className="h-7 rounded-lg bg-foreground px-2.5 text-xs font-medium text-background transition-opacity outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                size="sm"
+                className="h-7 px-2.5"
               >
                 {pending === "merge-into-base" ? pendingLabel : "Merge"}
-              </button>
+              </Button>
             </div>
           </form>
-        ) : panel === "merge" && pr ? (
+        ) : panel === "merge" && pullRequest ? (
           <form
             className="flex flex-col gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!pending) run("merge");
+            onSubmit={(event) => {
+              event.preventDefault();
+
+              if (!pending) runGitAction("merge");
             }}
           >
             <p className="px-0.5 text-sm text-foreground">
-              Merge #{pr.number} into {pr.base}?
+              Merge #{pullRequest.number} into {pullRequest.base}?
             </p>
             <div role="radiogroup" aria-label="Merge method" className="flex flex-col gap-0.5">
               {MergeMethod.literals.map((method) => (
@@ -364,38 +387,36 @@ export const GitMenu = ({
             </div>
             {errorNote}
             <div className="flex justify-end gap-1.5">
-              <button
-                type="button"
-                onClick={() => setPanel(null)}
-                className="h-7 rounded-lg border border-border px-2.5 text-xs font-medium text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2.5"
+                onClick={() => openPanel(null)}
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={!!pending}
-                className="h-7 rounded-lg bg-foreground px-2.5 text-xs font-medium text-background transition-opacity outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-              >
+              </Button>
+              <Button type="submit" disabled={!!pending} size="sm" className="h-7 px-2.5">
                 {pending === "merge" ? pendingLabel : MERGE_LABEL[mergeMethod]}
-              </button>
+              </Button>
             </div>
           </form>
         ) : panel === "commit" ? (
           <form
             className="flex flex-col gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (canCommit) run("commit");
+            onSubmit={(event) => {
+              event.preventDefault();
+
+              if (canCommit) runGitAction("commit");
             }}
           >
             <textarea
               ref={textarea}
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canCommit) {
-                  e.preventDefault();
-                  run(e.shiftKey && status.hasRemote ? "commit-push" : "commit");
+              onChange={(event) => setMessage(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && canCommit) {
+                  event.preventDefault();
+                  runGitAction(event.shiftKey && status.hasRemote ? "commit-push" : "commit");
                 }
               }}
               placeholder="Commit message, or leave empty to generate one"
@@ -409,30 +430,32 @@ export const GitMenu = ({
             {errorNote}
             <div className="flex justify-end gap-1.5">
               {status.hasRemote && !status.detached ? (
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  size="sm"
                   title="⌘⇧↩"
                   disabled={!canCommit}
-                  onClick={() => run("commit-push")}
-                  className="h-7 rounded-lg border border-border px-2.5 text-xs font-medium text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                  onClick={() => runGitAction("commit-push")}
+                  className="h-7 px-2.5"
                 >
                   Commit & push
-                </button>
+                </Button>
               ) : null}
-              <button
+              <Button
                 type="submit"
                 title="⌘↩"
                 disabled={!canCommit}
-                className="h-7 rounded-lg bg-foreground px-2.5 text-xs font-medium text-background transition-opacity outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                size="sm"
+                className="h-7 px-2.5"
               >
-                {pending && pending !== "push" ? pendingLabel : "Commit"}
-              </button>
+                {pending === "commit" || pending === "commit-push" ? pendingLabel : "Commit"}
+              </Button>
             </div>
           </form>
         ) : (
           <MorphPopoverMenu>
             <MenuItem
-              onClick={() => setPanel("commit")}
+              onClick={() => openPanel("commit")}
               disabled={!canCommit}
               hint={status.changes || undefined}
             >
@@ -440,7 +463,7 @@ export const GitMenu = ({
               Commit…
             </MenuItem>
             <MenuItem
-              onClick={() => run("push")}
+              onClick={() => runGitAction("push")}
               disabled={!canPush}
               hint={canPush ? pushHint : undefined}
             >
@@ -451,19 +474,19 @@ export const GitMenu = ({
               base.merged ? (
                 <MenuItem
                   onClick={() =>
-                    confirmDelete && !confirmingDelete
-                      ? setConfirmingDelete(true)
+                    shouldConfirmDelete && !isConfirmingDelete
+                      ? setIsConfirmingDelete(true)
                       : send(ClientCommand.cases["thread.close"].make({ threadId }))
                   }
                   disabled={status.changes > 0 || !!pending}
                   hint={status.changes > 0 ? "uncommitted" : undefined}
                 >
                   <Trash2 />
-                  {confirmingDelete ? "Click again to delete" : "Delete thread & worktree"}
+                  {isConfirmingDelete ? "Click again to delete" : "Delete thread & worktree"}
                 </MenuItem>
               ) : (
                 <MenuItem
-                  onClick={() => setPanel("merge-into-base")}
+                  onClick={() => openPanel("merge-into-base")}
                   disabled={!canMergeIntoBase}
                   hint={
                     base.conflicts.length > 0
@@ -481,46 +504,49 @@ export const GitMenu = ({
               )
             ) : null}
             {status.sourceControl ? (
-              prOpen && pr ? (
+              isPullRequestOpen && pullRequest ? (
                 <>
                   <a
                     role="menuitem"
-                    href={pr.url}
+                    href={pullRequest.url}
                     target="_blank"
                     rel="noreferrer"
-                    onClick={() => setPanel(null)}
+                    onClick={() => openPanel(null)}
                     className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:bg-muted/60 [&_svg]:size-4 [&_svg]:text-muted-foreground"
                   >
                     <ExternalLink />
-                    View {prName}
+                    View {pullRequestName}
                     <span className="ml-auto pl-3 font-mono text-xs text-muted-foreground tabular-nums">
-                      #{pr.number}
+                      #{pullRequest.number}
                     </span>
                   </a>
                   <MenuItem
-                    onClick={() => setPanel("merge")}
-                    disabled={!!pending || pr.state === "draft"}
-                    hint={pr.state === "draft" ? "draft" : undefined}
+                    onClick={() => openPanel("merge")}
+                    disabled={!!pending || pullRequest.state === "draft"}
+                    hint={pullRequest.state === "draft" ? "draft" : undefined}
                   >
                     <GitMerge />
-                    Merge {prName}…
+                    Merge {pullRequestName}…
                   </MenuItem>
                 </>
               ) : (
-                <MenuItem onClick={() => run("pull-request")} disabled={!canCreatePr}>
+                <MenuItem
+                  onClick={() => runGitAction("pull-request")}
+                  disabled={!canCreatePullRequest}
+                >
                   <GitPullRequestArrow />
-                  Create {prName}
+                  Create {pullRequestName}
                 </MenuItem>
               )
             ) : null}
-            {pr && !prOpen ? (
+            {pullRequest && !isPullRequestOpen ? (
               <a
-                href={pr.url}
+                href={pullRequest.url}
                 target="_blank"
                 rel="noreferrer"
                 className="block px-2 pt-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
               >
-                {prName} #{pr.number} {pr.state}
+                {pullRequestName} #{pullRequest.number} {pullRequest.state}
               </a>
             ) : null}
             {base?.merged ? (
@@ -547,4 +573,4 @@ export const GitMenu = ({
       </MorphPopoverContent>
     </MorphPopover>
   );
-};
+}

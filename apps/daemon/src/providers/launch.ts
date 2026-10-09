@@ -1,9 +1,12 @@
-import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
+import { query, type Options, type Query } from "@anthropic-ai/claude-agent-sdk";
 import type { ProviderKind, ProviderSettings } from "@masscode/contracts";
+import * as Effect from "effect/Effect";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { getErrorMessage } from "../errors.ts";
 import { expandHome } from "../folders.ts";
 import { DATA_DIR } from "../storage/jsonFile.ts";
+import { ProviderError } from "./ProviderAdapter.ts";
 import { resolveExecutable } from "./resolveExecutable.ts";
 
 /** How to run one harness CLI, from its Settings. */
@@ -29,50 +32,82 @@ const CLI: Record<
   },
 };
 
-export function harnessLaunch(kind: ProviderKind, settings: ProviderSettings): HarnessLaunch {
+export const resolveHarnessLaunch = Effect.fn("resolveHarnessLaunch")(function* (
+  kind: ProviderKind,
+  settings: ProviderSettings,
+) {
   const cli = CLI[kind];
+
   const bin = settings.binaryPath?.trim()
     ? expandHome(settings.binaryPath)
-    : resolveExecutable(cli.name, cli.pathEnv);
-  if (!existsSync(bin))
-    throw new Error(`No file at ${bin}. Fix the binary path in Settings → Harnesses.`);
+    : yield* Effect.try({
+        // ponytail: blocks on the login shell the first time a CLI is looked up; cached after.
+        try: () => resolveExecutable(cli.name, cli.pathEnv),
+        catch: (error) => new ProviderError({ provider: kind, message: getErrorMessage(error) }),
+      });
+
+  if (!existsSync(bin)) {
+    return yield* new ProviderError({
+      provider: kind,
+      message: `No file at ${bin}. Fix the binary path in Settings → Harnesses.`,
+    });
+  }
+
   const env = { ...process.env, ...settings.env };
+
   const configDir = settings.configDir?.trim()
     ? expandHome(settings.configDir)
     : cli.defaultConfigDir;
+
   if (configDir) env[cli.configEnv] = configDir;
+
   return { bin, args: settings.launchArgs ?? [], env };
-}
+});
 
 /**
  * The Claude SDK takes extra CLI flags as a record: `--flag value`, `--flag=value`, or a bare `--flag`.
  * ponytail: short flags, positionals and repeated flags are dropped; pass them through a wrapper binary if needed.
  */
-export function claudeExtraArgs(args: ReadonlyArray<string>) {
+export function toClaudeExtraArgs(args: ReadonlyArray<string>) {
   const flags: Record<string, string | null> = {};
+
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!;
+
     if (!arg.startsWith("--")) continue;
     const [flag, inline] = arg.slice(2).split(/=(.*)/s);
     const next = args[index + 1];
+
     if (inline !== undefined) flags[flag!] = inline;
     else if (next !== undefined && !next.startsWith("-")) {
       flags[flag!] = next;
       index++;
     } else flags[flag!] = null;
   }
+
   return flags;
 }
 
-/** A Claude session with no prompt: it answers control requests without ever starting a turn. Close it when done. */
-export function promptlessQuery(launch: HarnessLaunch, options: Options = {}) {
+/** A Claude session with no prompt: it answers control requests without ever starting a turn. */
+export function startPromptlessQuery(launch: HarnessLaunch, options: Options = {}) {
   return query({
     prompt: { [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => {}) }) },
     options: {
       ...options,
       pathToClaudeCodeExecutable: launch.bin,
-      extraArgs: claudeExtraArgs(launch.args),
+      extraArgs: toClaudeExtraArgs(launch.args),
       env: launch.env,
     },
   });
+}
+
+/** A short-lived Claude query, closed with the scope. */
+export function acquireClaudeQuery(start: () => Query) {
+  return Effect.acquireRelease(
+    Effect.try({
+      try: start,
+      catch: (error) => new ProviderError({ provider: "claude", message: getErrorMessage(error) }),
+    }),
+    (conversation) => Effect.sync(() => conversation.close()),
+  );
 }

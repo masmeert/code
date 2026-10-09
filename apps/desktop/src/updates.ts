@@ -6,11 +6,12 @@ let status: UpdateStatus = UpdateStatus.cases.idle.make({});
 
 function setStatus(next: UpdateStatus) {
   status = next;
+
   for (const window of BrowserWindow.getAllWindows())
     window.webContents.send("update-status-changed", status);
 }
 
-export function updateStatus() {
+export function getUpdateStatus() {
   return status;
 }
 
@@ -19,6 +20,7 @@ export function checkForUpdates() {
     return setStatus(
       UpdateStatus.cases.failed.make({ message: "Updates only work in the installed app." }),
     );
+
   // A downloaded update would be fetched again and flip the status back to downloading
   if (UpdateStatus.isAnyOf(["checking", "downloading", "ready"])(status)) return;
   autoUpdater.checkForUpdates().catch(() => {});
@@ -26,6 +28,7 @@ export function checkForUpdates() {
 
 export function downloadUpdate() {
   if (!UpdateStatus.guards.available(status)) return;
+
   setStatus(UpdateStatus.cases.downloading.make({ version: status.version, percent: 0 }));
   autoUpdater.downloadUpdate().catch(() => {});
 }
@@ -56,6 +59,7 @@ export function watchForUpdates() {
       }),
     ),
   );
+
   checkForUpdates();
   setInterval(checkForUpdates, 4 * 60 * 60 * 1000);
 }

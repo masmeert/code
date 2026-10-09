@@ -13,12 +13,11 @@ import {
 } from "@masscode/ui/components/dropdown-menu";
 import { Button } from "@masscode/ui/motion/button";
 import { cn } from "@masscode/ui/lib/utils";
-import { ProjectBadge, projectLabel } from "@/components/project-badge";
+import { ProjectBadge, formatProjectLabel } from "@/components/project-badge";
 import type { Project } from "@masscode/contracts";
-import * as Match from "effect/Match";
 import { SlidersHorizontal } from "lucide-react";
 import type { ReactNode } from "react";
-import { harnessLabel } from "../lib/models.ts";
+import { formatHarnessLabel } from "../lib/models.ts";
 import { useStore } from "../lib/store.ts";
 import { DEFAULT_THREAD_LIST_VIEW, type ThreadListView } from "../lib/threadListView.ts";
 
@@ -70,9 +69,10 @@ export function ThreadListMenu(props: {
   onChange: (patch: Partial<ThreadListView>) => void;
 }) {
   const { view } = props;
-  const settings = useStore((s) => s.settings);
-  const projectHosts = useStore((s) => s.projectHosts);
-  const filtered =
+  const settings = useStore((state) => state.settings);
+  const projectHosts = useStore((state) => state.projectHosts);
+
+  const isFiltered =
     view.status !== "active" ||
     view.projects.length > 0 ||
     view.provider !== "all" ||
@@ -85,7 +85,7 @@ export function ThreadListMenu(props: {
           variant="ghost"
           size="icon"
           aria-label="View options"
-          className={cn("size-7", filtered && "bg-muted/60 text-foreground")}
+          className={cn("size-7", isFiltered && "bg-muted/60 text-foreground")}
         >
           <SlidersHorizontal className="size-4" />
         </Button>
@@ -99,14 +99,13 @@ export function ThreadListMenu(props: {
         />
         <OptionMenu
           label="Project"
-          value={Match.value(view.projects.length).pipe(
-            Match.when(0, () => "All"),
-            Match.when(
-              1,
-              () => props.projects.find((project) => project.id === view.projects[0])?.name,
-            ),
-            Match.orElse((count) => `${count} projects`),
-          )}
+          value={
+            view.projects.length > 1
+              ? `${view.projects.length} projects`
+              : view.projects.length
+                ? props.projects.find((project) => project.id === view.projects[0])?.name
+                : "All"
+          }
         >
           <DropdownMenuCheckboxItem
             checked={view.projects.length === 0}
@@ -131,7 +130,7 @@ export function ThreadListMenu(props: {
             >
               <ProjectBadge project={project} />
               <span className="min-w-0 truncate">
-                {projectLabel(project.name, projectHosts[project.id])}
+                {formatProjectLabel(project.name, projectHosts[project.id])}
               </span>
             </DropdownMenuCheckboxItem>
           ))}
@@ -141,9 +140,9 @@ export function ThreadListMenu(props: {
           value={view.provider}
           labels={{
             all: "All",
-            claude: harnessLabel(settings, "claude"),
-            codex: harnessLabel(settings, "codex"),
-            cursor: harnessLabel(settings, "cursor"),
+            claude: formatHarnessLabel(settings, "claude"),
+            codex: formatHarnessLabel(settings, "codex"),
+            cursor: formatHarnessLabel(settings, "cursor"),
           }}
           onChange={(provider) => props.onChange({ provider })}
         />
@@ -166,7 +165,7 @@ export function ThreadListMenu(props: {
           labels={{ updated: "Last activity", created: "Created" }}
           onChange={(sortBy) => props.onChange({ sortBy })}
         />
-        {filtered ? (
+        {isFiltered ? (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem

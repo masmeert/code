@@ -21,19 +21,27 @@ export class ProjectsStore extends Context.Service<
     /** Returns the existing project for `path`, or registers a new one. */
     readonly ensure: (
       path: string,
-    ) => Effect.Effect<{ readonly project: Project; readonly created: boolean }, ProjectNotFound>;
+    ) => Effect.Effect<{ readonly project: Project; readonly isNew: boolean }, ProjectNotFound>;
     readonly remove: (projectId: string) => Effect.Effect<boolean>;
   }
 >()("masscode/ProjectsStore") {}
 
 const make = Effect.gen(function* () {
   const file = yield* openJsonFile("projects.json", Schema.Array(Project), []);
+
   // Serializes read-modify-write so concurrent commands can't register the same folder twice.
   const lock = yield* Semaphore.make(1);
+
+  // Projects work from memory until restart either way, so a failed write is only logged.
+  function save(projects: ReadonlyArray<Project>) {
+    return file.set(projects).pipe(Effect.catch((error) => Effect.logWarning(error)));
+  }
+
   // Projects added before their repo was read get it once, so they group with their copies elsewhere.
   const saved = yield* file.get;
+
   if (saved.some((project) => project.remote === undefined || project.folder === undefined))
-    yield* file.set(
+    yield* save(
       yield* Effect.forEach(saved, (project) =>
         Effect.promise(async () => ({
           ...project,
@@ -44,18 +52,20 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const ensure = (rawPath: string) =>
-    Effect.gen(function* () {
+  function ensure(rawPath: string) {
+    return Effect.gen(function* () {
       const path = resolve(expandHome(rawPath));
       const projects = yield* file.get;
-      const existing = projects.find((p) => p.path === path);
-      if (existing) return { project: existing, created: false };
+      const existing = projects.find((project) => project.path === path);
 
-      const isDir = yield* Effect.tryPromise(() => stat(path)).pipe(
-        Effect.map((s) => s.isDirectory()),
+      if (existing) return { project: existing, isNew: false };
+
+      const isFolder = yield* Effect.tryPromise(() => stat(path)).pipe(
+        Effect.map((stats) => stats.isDirectory()),
         Effect.orElseSucceed(() => false),
       );
-      if (!isDir)
+
+      if (!isFolder)
         return yield* Effect.fail(new ProjectNotFound({ message: `Not a folder: ${path}` }));
 
       const project: Project = {
@@ -66,18 +76,25 @@ const make = Effect.gen(function* () {
         remote: yield* Effect.promise(() => readRemoteUrl(path)),
         folder: yield* Effect.promise(() => readRepoFolder(path)),
       };
-      yield* file.set([...projects, project]);
-      return { project, created: true };
-    });
 
-  const remove = (projectId: string) =>
-    Effect.gen(function* () {
+      yield* save([...projects, project]);
+
+      return { project, isNew: true };
+    });
+  }
+
+  function remove(projectId: string) {
+    return Effect.gen(function* () {
       const projects = yield* file.get;
-      const next = projects.filter((p) => p.id !== projectId);
+      const next = projects.filter((project) => project.id !== projectId);
+
       if (next.length === projects.length) return false;
-      yield* file.set(next);
+
+      yield* save(next);
+
       return true;
     });
+  }
 
   return ProjectsStore.of({
     list: file.get,

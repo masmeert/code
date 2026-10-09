@@ -10,6 +10,19 @@ import type { HarnessLaunch } from "./launch.ts";
 
 export type RpcId = number | string;
 
+/** How MassCode introduces itself in `initialize`. */
+export const CLIENT_INFO = { name: "masscode", title: "MassCode", version: "0.0.1" };
+
+/** The child exited, so the request goes unanswered. */
+export class RpcExited extends Schema.TaggedError<RpcExited>()("RpcExited", {
+  message: Schema.String,
+}) {}
+
+/** The child answered the request with an error. */
+export class RpcFailed extends Schema.TaggedError<RpcFailed>()("RpcFailed", {
+  message: Schema.String,
+}) {}
+
 const RpcMessage = Schema.Struct({
   id: Schema.optional(Schema.NullOr(Schema.Union([Schema.Number, Schema.String]))),
   method: Schema.optional(Schema.String),
@@ -24,11 +37,12 @@ const RpcMessage = Schema.Struct({
     ),
   ),
 });
+
 type RpcMessage = typeof RpcMessage.Type;
 
 const decodeRpcMessage = Schema.decodeUnknownOption(Schema.fromJsonString(RpcMessage));
 
-export interface JsonRpcHandlers {
+interface JsonRpcHandlers {
   readonly onNotification?: (method: string, params: Schema.Json | undefined) => void;
   /** Requests the child makes of us. Unhandled ones (false) get a method-not-found error. */
   readonly onRequest?:
@@ -59,32 +73,46 @@ export function connectJsonRpc(
   args: ReadonlyArray<string>,
   cwd: string | undefined,
   handlers: JsonRpcHandlers,
-  { versioned = false } = {},
+  { isVersioned = false } = {},
 ): JsonRpc {
   const child = spawn(launch.bin, args, { cwd, env: launch.env, stdio: ["pipe", "pipe", "pipe"] });
 
   let nextId = 0;
+
   const inflight = new Map<
     RpcId,
     { readonly resolve: (reply: RpcMessage) => void; readonly reject: (error: Error) => void }
   >();
-  function write(message: Schema.JsonObject) {
-    child.stdin.write(`${JSON.stringify(versioned ? { jsonrpc: "2.0", ...message } : message)}\n`);
+
+  function writeMessage(message: Schema.JsonObject) {
+    child.stdin.write(
+      `${JSON.stringify(isVersioned ? { jsonrpc: "2.0", ...message } : message)}\n`,
+    );
   }
 
   createInterface({ input: child.stdout }).on("line", (line) => {
     const message = Option.getOrUndefined(decodeRpcMessage(line));
+
     if (message === undefined) return;
+
     const { id, method, params } = message;
+
     if (method !== undefined && id !== undefined && id !== null) {
       if (!(handlers.onRequest?.(id, method, params) ?? false))
-        write({ id, error: { code: -32601, message: `MassCode does not handle ${method}` } });
+        writeMessage({
+          id,
+          error: { code: -32601, message: `MassCode does not handle ${method}` },
+        });
+
       return;
     }
+
     if (method !== undefined) {
       handlers.onNotification?.(method, params);
+
       return;
     }
+
     if (id !== undefined && id !== null) {
       const waiter = inflight.get(id);
       inflight.delete(id);
@@ -97,37 +125,48 @@ export function connectJsonRpc(
     "data",
     (chunk: Buffer) => (stderrTail = (stderrTail + chunk.toString()).slice(-4000)),
   );
-  let reportExit: (error: Error) => void = () => {};
-  const exited = new Promise<never>((_, reject) => (reportExit = reject));
-  // Settled with nothing awaiting it yet; requests race it.
-  exited.catch(() => {});
-  child.on("error", (error) => reportExit(error));
+
+  /** Why the child is gone, once it is; requests made after fail with it. */
+  let failure: Error | undefined;
+
+  function failRequests(error: Error) {
+    failure ??= error;
+
+    for (const waiter of inflight.values()) waiter.reject(failure);
+    inflight.clear();
+  }
+
+  child.on("error", failRequests);
   // A write racing the exit fails with EPIPE; the exit itself is what's reported.
   child.stdin.on("error", () => {});
+
   child.on("exit", (code) => {
-    const error = new Error(`${name} exited (code ${code}): ${stderrTail.trim() || "no output"}`);
-    reportExit(error);
-    for (const waiter of inflight.values()) waiter.reject(error);
-    inflight.clear();
+    failRequests(
+      new RpcExited({
+        message: `${name} exited (code ${code}): ${stderrTail.trim() || "no output"}`,
+      }),
+    );
     handlers.onExit?.(code, stderrTail);
   });
 
   return {
     request: (method, params, response) =>
-      Promise.race([
-        exited,
-        new Promise<RpcMessage>((resolve, reject) => {
-          const id = ++nextId;
-          inflight.set(id, { resolve, reject });
-          write({ id, method, params });
-        }),
-      ]).then((reply) =>
+      new Promise<RpcMessage>((resolve, reject) => {
+        if (failure) return reject(failure);
+
+        const id = ++nextId;
+        inflight.set(id, { resolve, reject });
+        writeMessage({ id, method, params });
+      }).then((reply) =>
         reply.error
-          ? Promise.reject(new Error(reply.error.data?.message ?? reply.error.message))
+          ? Promise.reject(
+              new RpcFailed({ message: reply.error.data?.message ?? reply.error.message }),
+            )
           : Schema.decodeUnknownPromise(response)(reply.result),
       ),
-    notify: (method, params) => write(params === undefined ? { method } : { method, params }),
-    respond: (id, result) => write({ id, result }),
+    notify: (method, params) =>
+      writeMessage(params === undefined ? { method } : { method, params }),
+    respond: (id, result) => writeMessage({ id, result }),
     close: () => {
       child.stdin.end();
       child.kill();

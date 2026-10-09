@@ -49,33 +49,34 @@ import {
   allowFullAccessAsRoot,
   EFFORT_LABEL,
   EFFORTS,
-  fromText,
+  createTextAttachment,
   LARGE_PASTE_BYTES,
   PERMISSION_DESCRIPTION,
   PERMISSION_LABEL,
   PERMISSIONS,
+  fitToModel,
   toTurnOptions,
   useAttachments,
   useNeedsRootConsent,
   useTurnPrefs,
 } from "../lib/composer.ts";
 import { restoreStash, setDraft, stashDraft, useDraft, useStashes } from "../lib/drafts.ts";
-import { describe, KEYBINDINGS, useKeybinding } from "../lib/keybindings.ts";
+import { formatKeybinding, KEYBINDINGS, useKeybinding } from "../lib/keybindings.ts";
 import {
-  catalogModel,
-  favoriteChoices,
-  type modelChoices,
-  recommendedBadge,
+  findCatalogModel,
+  getFavoriteChoices,
+  type buildModelChoices,
+  renderRecommendedBadge,
 } from "../lib/models.ts";
 import {
   send,
-  skillsKey,
+  getSkillsKey,
   toggleFavoriteModel,
   usePathHost,
   useProviders,
   useStore,
 } from "../lib/store.ts";
-import { ago, useNow } from "../lib/time.ts";
+import { formatAge, useNow } from "../lib/time.ts";
 import { UsageMeter } from "./UsageMeter.tsx";
 
 const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {
@@ -86,8 +87,9 @@ const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {
   "full-access": LockOpen,
 };
 
-function permissionOption(level: PermissionLevel) {
+function buildPermissionOption(level: PermissionLevel) {
   const Icon = PERMISSION_ICON[level];
+
   return {
     value: level,
     label: PERMISSION_LABEL[level],
@@ -96,7 +98,7 @@ function permissionOption(level: PermissionLevel) {
   };
 }
 
-export interface ComposerProps {
+interface ComposerProps {
   /** Whose draft, and effort/permission picks, these are: a thread id, or "draft:new". */
   prefsKey: string;
   provider: ProviderKind;
@@ -122,10 +124,10 @@ export interface ComposerProps {
   /** Card on top of the composer, e.g. queued messages. */
   header?: ReactNode;
   /** Something goes out with the next message besides its text, so an empty prompt can send. */
-  pendingContent?: boolean;
-  busy?: boolean;
+  hasPendingContent?: boolean;
+  isBusy?: boolean;
   disabled?: boolean;
-  models: ReturnType<typeof modelChoices>;
+  models: ReturnType<typeof buildModelChoices>;
   model: string | undefined;
   onModelChange: (value: string) => void;
   extraModels?: string[];
@@ -157,65 +159,78 @@ const MAX_FILE_MATCHES = 50;
 
 /** Paths containing `query`, file-name matches first, then shallower paths. */
 function matchFiles(files: ReadonlyArray<string>, query: string) {
-  function rank(path: string) {
+  function getMatchRank(path: string) {
     const name = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
+
     return name.startsWith(query) ? 0 : name.includes(query) ? 1 : 2;
   }
+
   return files
-    .flatMap((path) => (path.toLowerCase().includes(query) ? [{ path, rank: rank(path) }] : []))
-    .sort((a, b) => a.rank - b.rank || a.path.length - b.path.length)
+    .flatMap((path) =>
+      path.toLowerCase().includes(query) ? [{ path, rank: getMatchRank(path) }] : [],
+    )
+    .sort((first, second) => first.rank - second.rank || first.path.length - second.path.length)
     .slice(0, MAX_FILE_MATCHES)
     .map(({ path }) => path);
 }
 
-const byteLength = (text: string) => new TextEncoder().encode(text).length;
-
-export const Composer = (props: ComposerProps) => {
+export function Composer(props: ComposerProps) {
   const { prefsKey, threadId } = props;
   const draft = useDraft(prefsKey);
   const host = usePathHost(props.cwd);
   const [prefs, setPrefs] = useTurnPrefs(prefsKey, props.provider, host);
   const needsRootConsent = useNeedsRootConsent(host);
-  const [confirmingRoot, setConfirmingRoot] = useState(false);
+  const [isConfirmingRoot, setIsConfirmingRoot] = useState(false);
+
   const files = useAttachments({
     key: prefsKey,
-    acceptDrops: !props.disabled,
-    remote: host !== null,
+    shouldAcceptDrops: !props.disabled,
+    isRemote: host !== null,
   });
+
   const providers = useProviders(host);
-  const settings = useStore((s) => s.settings);
+  const settings = useStore((state) => state.settings);
   const stashes = useStashes();
   const [stashSignal, setStashSignal] = useState(0);
-  const worktree = useStore((s) => (threadId ? s.threads[threadId]?.worktree : undefined));
-  const catalog = catalogModel(providers, props.model);
+
+  const isWorktree = useStore((state) =>
+    threadId ? state.threads[threadId]?.worktree : undefined,
+  );
+
+  const catalog = findCatalogModel(providers, props.model);
   // No pick means the model's own default, which the menu stars; picking the starred level keeps following it.
   const fallbackEffort = catalog?.defaultEffort;
   const efforts = catalog?.efforts ?? EFFORTS[props.provider];
-  // A pick this model can't take (kept from another model) falls back to its default.
-  const effort = prefs.effort && efforts.includes(prefs.effort) ? prefs.effort : null;
-  const fast = prefs.fast && catalog?.fast === true;
-  const effortOptions = efforts.map((effort) => ({
-    value: effort,
-    label: EFFORT_LABEL[effort],
-    badge: effort === fallbackEffort ? recommendedBadge() : undefined,
+  const { effort, fast } = fitToModel(prefs, catalog);
+
+  const effortOptions = efforts.map((level) => ({
+    value: level,
+    label: EFFORT_LABEL[level],
+    badge: level === fallbackEffort ? renderRecommendedBadge() : undefined,
   }));
 
-  const setText = (text: string) => setDraft(prefsKey, (prev) => ({ ...prev, text }));
+  function setText(text: string) {
+    setDraft(prefsKey, (previous) => ({ ...previous, text }));
+  }
 
-  // --- ↑ recall: walks back through sent prompts while the composer holds one untouched.
+  // ↑ recall: walks back through sent prompts while the composer holds one untouched.
   const recall = useRef<{ index: number; text: string } | null>(null);
   const history = props.history ?? [];
-  const recallTo = (index: number) => {
+
+  function recallPrompt(index: number) {
     const text = history[index] ?? "";
     recall.current = index < history.length ? { index, text } : null;
     setText(text);
-  };
+  }
 
-  // --- slash commands: "/" at the start opens the menu.
-  const commands = useStore((s) => (threadId ? s.commands[threadId] : undefined));
+  // Slash commands: "/" at the start opens the menu.
+  const commands = useStore((state) => (threadId ? state.commands[threadId] : undefined));
+
   const slashQuery =
     threadId && /^\/\S*$/.test(draft.text) ? draft.text.slice(1).toLowerCase() : null;
+
   const [dismissed, setDismissed] = useState<string | null>(null);
+
   const slashItems: Array<SlashItem> =
     slashQuery === null || dismissed === draft.text
       ? []
@@ -236,43 +251,55 @@ export const Composer = (props: ComposerProps) => {
               ]
             : []),
           ...(commands ?? [])
-            .filter((c) => c.name !== "compact" && c.name !== "btw")
-            .map((c) => ({ name: c.name, description: c.description, hint: c.argumentHint })),
+            .filter((command) => command.name !== "compact" && command.name !== "btw")
+            .map((command) => ({
+              name: command.name,
+              description: command.description,
+              hint: command.argumentHint,
+            })),
         ].filter((item) => item.name.toLowerCase().startsWith(slashQuery));
-  const slashTyped = slashQuery !== null;
-  useEffect(() => {
-    if (slashTyped && threadId) send(ClientCommand.cases["thread.listCommands"].make({ threadId }));
-  }, [slashTyped, threadId]);
 
-  const pickSlash = (item: SlashItem) => {
+  const isSlashTyped = slashQuery !== null;
+
+  useEffect(() => {
+    if (isSlashTyped && threadId)
+      send(ClientCommand.cases["thread.listCommands"].make({ threadId }));
+  }, [isSlashTyped, threadId]);
+
+  function pickSlashCommand(item: SlashItem) {
     if (item.run) {
       setText("");
       item.run();
     } else setText(`/${item.name} `);
-  };
+  }
 
-  // --- @ mentions: "@" at the start or after whitespace searches the project's files.
+  // @ mentions: "@" at the start or after whitespace searches the project's files.
   const input = useRef<HTMLTextAreaElement | null>(null);
   const [caret, setCaret] = useState(0);
+
   function trackCaret(event: SyntheticEvent<HTMLTextAreaElement>) {
     input.current = event.currentTarget;
     setCaret(event.currentTarget.selectionStart);
   }
+
   const mention = props.cwd ? /(?:^|\s)@(\S*)$/.exec(draft.text.slice(0, caret)) : null;
-  const mentionQuery = mention && dismissed !== draft.text ? mention[1]!.toLowerCase() : null;
-  const repoFiles = useStore((s) => (props.cwd ? s.files[props.cwd] : undefined));
+  const mentionQuery = mention && dismissed !== draft.text ? mention[1].toLowerCase() : null;
+  const repoFiles = useStore((state) => (props.cwd ? state.files[props.cwd] : undefined));
+
   const fileMatches = useMemo(
     () => (repoFiles && mentionQuery !== null ? matchFiles(repoFiles, mentionQuery) : []),
     [repoFiles, mentionQuery],
   );
-  const mentionTyped = mention !== null;
+
+  const isMentionTyped = mention !== null;
+
   useEffect(() => {
-    if (mentionTyped && props.cwd)
+    if (isMentionTyped && props.cwd)
       send(ClientCommand.cases["git.listFiles"].make({ path: props.cwd }));
-  }, [mentionTyped, props.cwd]);
+  }, [isMentionTyped, props.cwd]);
 
   /** Swaps the word at the caret, `typedLength` characters of which are before it, for `token`. */
-  function replaceTyped(typedLength: number, token: string) {
+  function replaceTypedWord(typedLength: number, token: string) {
     const start = caret - typedLength;
     const end = caret + /^\S*/.exec(draft.text.slice(caret))![0].length;
     const rest = draft.text.slice(end).replace(/^ +/, "");
@@ -284,118 +311,141 @@ export const Composer = (props: ComposerProps) => {
 
   function pickFile(path: string) {
     // Quoted so a path with spaces still reads as one mention.
-    replaceTyped(mention![1]!.length + 1, /\s/.test(path) ? `@"${path}" ` : `@${path} `);
+    replaceTypedWord(mention![1].length + 1, /\s/.test(path) ? `@"${path}" ` : `@${path} `);
   }
 
-  // --- $ skills: "$" at the start or after whitespace offers the skills the harness loads here.
+  // $ skills: "$" at the start or after whitespace offers the skills the harness loads here.
   // A letter must follow, so prices like "$20" never open the menu.
   const skillMention = props.cwd
     ? /(?:^|\s)\$((?:[A-Za-z][\w:-]*)?)$/.exec(draft.text.slice(0, caret))
     : null;
+
   const skillQuery =
-    skillMention && dismissed !== draft.text ? skillMention[1]!.toLowerCase() : null;
-  const skillList = useStore((s) =>
-    props.cwd ? s.skills[skillsKey(props.provider, props.cwd)] : undefined,
+    skillMention && dismissed !== draft.text ? skillMention[1].toLowerCase() : null;
+
+  const skillList = useStore((state) =>
+    props.cwd ? state.skills[getSkillsKey(props.provider, props.cwd)] : undefined,
   );
+
   const skillMatches =
     skillList && skillQuery !== null
       ? skillList.skills
           .filter((skill) => skill.name.toLowerCase().includes(skillQuery))
           .sort(
-            (a, b) =>
-              Number(!a.name.toLowerCase().startsWith(skillQuery)) -
-              Number(!b.name.toLowerCase().startsWith(skillQuery)),
+            (first, second) =>
+              Number(!first.name.toLowerCase().startsWith(skillQuery)) -
+              Number(!second.name.toLowerCase().startsWith(skillQuery)),
           )
       : [];
-  const skillTyped = skillMention !== null;
-  useEffect(() => {
-    if (skillTyped && props.cwd)
-      send(ClientCommand.cases["skills.list"].make({ provider: props.provider, path: props.cwd }));
-  }, [skillTyped, props.cwd, props.provider]);
 
-  const menu =
-    slashItems.length > 0
-      ? {
-          label: "Commands",
-          items: slashItems.map((item) => ({
-            id: item.name,
-            name: `/${item.name}`,
-            hint: item.hint,
-            description: item.description,
-          })),
-          pick: (index: number) => pickSlash(slashItems[index]!),
-          empty: null,
-        }
-      : // Once a name is typed, no match means it's likely prose ("$HOME"), so the menu steps aside.
-        skillQuery !== null && (skillMatches.length || !skillList || !skillQuery)
-        ? {
-            label: "Skills",
-            items: skillMatches.map((skill) => ({
-              id: skill.name,
-              name: `$${skill.name}`,
-              description: skill.description,
-            })),
-            pick: (index: number) =>
-              replaceTyped(skillMention![1]!.length + 1, `$${skillMatches[index]!.name} `),
-            empty: !skillList
-              ? "Loading skills…"
-              : (skillList.error ??
-                `No skills here yet. Add one as ${{ claude: ".claude", codex: ".agents", cursor: ".cursor" }[props.provider]}/skills/<name>/SKILL.md in the project.`),
-          }
-        : mentionQuery !== null
-          ? {
-              label: "Files",
-              items: fileMatches.map((path) => ({
-                id: path,
-                name: path.slice(path.lastIndexOf("/") + 1),
-                description: path.slice(0, path.lastIndexOf("/") + 1),
-              })),
-              pick: (index: number) => pickFile(fileMatches[index]!),
-              empty: repoFiles ? "No matching files" : "Loading files…",
-            }
-          : null;
-  const reduceMotion = useReducedMotion();
+  const isSkillTyped = skillMention !== null;
+
+  useEffect(() => {
+    if (isSkillTyped && props.cwd)
+      send(ClientCommand.cases["skills.list"].make({ provider: props.provider, path: props.cwd }));
+  }, [isSkillTyped, props.cwd, props.provider]);
+
+  let menu: {
+    label: string;
+    items: ReadonlyArray<MenuItem>;
+    pick: (index: number) => void;
+    empty: string | null;
+  } | null = null;
+
+  if (slashItems.length > 0) {
+    menu = {
+      label: "Commands",
+      items: slashItems.map((item) => ({
+        id: item.name,
+        name: `/${item.name}`,
+        hint: item.hint,
+        description: item.description,
+      })),
+      pick: (index) => pickSlashCommand(slashItems[index]),
+      empty: null,
+    };
+  }
+  // Once a name is typed, no match means it's likely prose ("$HOME"), so the menu steps aside.
+  else if (skillQuery !== null && (skillMatches.length || !skillList || !skillQuery)) {
+    menu = {
+      label: "Skills",
+      items: skillMatches.map((skill) => ({
+        id: skill.name,
+        name: `$${skill.name}`,
+        description: skill.description,
+      })),
+      pick: (index) =>
+        replaceTypedWord(skillMention![1].length + 1, `$${skillMatches[index].name} `),
+      empty: !skillList
+        ? "Loading skills…"
+        : (skillList.error ??
+          `No skills here yet. Add one as ${{ claude: ".claude", codex: ".agents", cursor: ".cursor" }[props.provider]}/skills/<name>/SKILL.md in the project.`),
+    };
+  } else if (mentionQuery !== null) {
+    menu = {
+      label: "Files",
+      items: fileMatches.map((path) => ({
+        id: path,
+        name: path.slice(path.lastIndexOf("/") + 1),
+        description: path.slice(0, path.lastIndexOf("/") + 1),
+      })),
+      pick: (index) => pickFile(fileMatches[index]),
+      empty: repoFiles ? "No matching files" : "Loading files…",
+    };
+  }
+
+  const shouldReduceMotion = useReducedMotion();
+
   const {
     activeIndex: menuIndex,
-    pointed,
+    pointed: isPointed,
     moveTo,
     moveActive,
   } = useRowCursor(menu?.items ?? [], slashQuery ?? skillQuery ?? mentionQuery ?? "", {
     loop: true,
   });
 
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     input.current = event.currentTarget;
+
     if (menu && event.key === "Escape") {
       event.preventDefault();
       setDismissed(draft.text);
+
       return;
     }
+
     if (menu?.items.length) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
         moveActive(event.key === "ArrowDown" ? 1 : -1);
+
         return;
       }
+
       if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
         event.preventDefault();
         menu.pick(menuIndex);
+
         return;
       }
     }
+
     const textarea = event.currentTarget;
     const text = textarea.value;
-    const untouched = text === "" || text === recall.current?.text;
+    const isUntouched = text === "" || text === recall.current?.text;
+
     if (
       event.key === "ArrowUp" &&
-      untouched &&
+      isUntouched &&
       history.length &&
       !text.slice(0, textarea.selectionStart).includes("\n")
     ) {
       const index = recall.current ? recall.current.index - 1 : history.length - 1;
+
       if (index < 0) return;
       event.preventDefault();
-      recallTo(index);
+      recallPrompt(index);
     } else if (
       event.key === "ArrowDown" &&
       recall.current &&
@@ -403,33 +453,39 @@ export const Composer = (props: ComposerProps) => {
       !text.slice(textarea.selectionEnd).includes("\n")
     ) {
       event.preventDefault();
-      recallTo(recall.current.index + 1);
+      recallPrompt(recall.current.index + 1);
     }
-  };
+  }
 
-  // --- ⌘S stash: tucks the prompt away; on an empty composer, brings one back.
+  // ⌘S stash: tucks the prompt away; on an empty composer, brings one back.
   useKeybinding(props.disabled ? undefined : "composer.stash", () => {
     if (stashDraft(prefsKey)) return;
-    if (stashes.length === 1) restoreStash(prefsKey, stashes[0]!.id);
-    else if (stashes.length > 1) setStashSignal((n) => n + 1);
+
+    if (stashes.length === 1) restoreStash(prefsKey, stashes[0].id);
+    else if (stashes.length > 1) setStashSignal((signal) => signal + 1);
   });
 
-  const submit = (text: string, how: { alternate: boolean }) => {
+  function submitPrompt(text: string, how: { alternate: boolean }) {
     if (props.onNeedProject && !props.cwd) {
       props.onNeedProject();
+
       return;
     }
+
     recall.current = null;
     const aside = props.onAskAside && /^\s*\/btw(?:\s+([\s\S]*))?$/i.exec(text);
+
     if (aside) {
       setText("");
       props.onAskAside?.(aside[1]?.trim() ?? "");
+
       return;
     }
-    const options = toTurnOptions({ ...prefs, effort, fast }, files.take());
+
+    const options = toTurnOptions(prefs, catalog, files.takeAttachments());
     setDraft(prefsKey, { text: "", attachments: [] });
     props.onSubmit(text, options, how);
-  };
+  }
 
   return (
     <div className="shrink-0 px-3 pb-3">
@@ -439,9 +495,9 @@ export const Composer = (props: ComposerProps) => {
             label={menu.label}
             items={menu.items}
             empty={menu.empty}
-            active={menuIndex}
+            activeIndex={menuIndex}
             // Glides after the pointer only, like the command palette: arrow keys want each step at once.
-            glide={pointed && !reduceMotion}
+            shouldGlide={isPointed && !shouldReduceMotion}
             onPoint={moveTo}
             onPick={menu.pick}
           />
@@ -456,22 +512,22 @@ export const Composer = (props: ComposerProps) => {
           onKeyDown={onKeyDown}
           onSelect={trackCaret}
           onFocus={trackCaret}
-          loading={props.busy ?? false}
+          loading={props.isBusy ?? false}
           disabled={props.disabled ?? false}
           controls={[
             <PromptModelMenu
               key="model"
               // The model can't change mid-turn; effort and fast mode apply from the next message.
               models={
-                props.busy
+                props.isBusy
                   ? props.models.map((option) => ({ ...option, disabled: true }))
                   : props.models
               }
               model={props.model}
               onModelChange={props.onModelChange}
-              {...(props.extraModels ? { extraModels: props.extraModels } : {})}
-              {...(props.onToggleModel ? { onToggleModel: props.onToggleModel } : {})}
-              favorites={favoriteChoices(settings)}
+              extraModels={props.extraModels}
+              onToggleModel={props.onToggleModel}
+              favorites={getFavoriteChoices(settings)}
               onToggleFavorite={toggleFavoriteModel}
               efforts={effortOptions}
               effort={effort ?? fallbackEffort}
@@ -491,11 +547,12 @@ export const Composer = (props: ComposerProps) => {
             <PromptSelect
               key="permission"
               title="Permissions"
-              options={PERMISSIONS[props.provider].map(permissionOption)}
+              options={PERMISSIONS[props.provider].map(buildPermissionOption)}
               value={prefs.permission}
               onChange={(value) => {
                 if (!Schema.is(PermissionLevel)(value)) return;
-                if (value === "full-access" && needsRootConsent) setConfirmingRoot(true);
+
+                if (value === "full-access" && needsRootConsent) setIsConfirmingRoot(true);
                 else setPrefs({ permission: value });
               }}
               disabled={props.disabled}
@@ -508,15 +565,16 @@ export const Composer = (props: ComposerProps) => {
             />,
           ]}
           attachments={[...files.attachments]}
-          onAttach={() => void files.pick()}
-          onRemoveAttachment={files.remove}
+          onAttach={() => void files.pickFiles()}
+          onRemoveAttachment={files.removeAttachment}
           onPasteFiles={(pasted) => void files.addFiles(pasted)}
           onPasteText={(text, plain) => {
-            if (plain || byteLength(text) < LARGE_PASTE_BYTES) return false;
-            files.add([fromText(text)]);
+            if (plain || new TextEncoder().encode(text).length < LARGE_PASTE_BYTES) return false;
+            files.addAttachments([createTextAttachment(text)]);
+
             return true;
           }}
-          onSubmit={submit}
+          onSubmit={submitPrompt}
           onStop={props.onStop}
           minRows={2}
           maxRows={10}
@@ -527,12 +585,12 @@ export const Composer = (props: ComposerProps) => {
               <UsageMeter
                 threadId={threadId}
                 provider={props.provider}
-                busy={props.busy ?? false}
+                isBusy={props.isBusy ?? false}
               />
             ) : null
           }
           header={props.header}
-          pendingContent={props.pendingContent ?? false}
+          pendingContent={props.hasPendingContent ?? false}
           footer={
             <>
               <span className="flex min-w-0 items-center gap-0.5">
@@ -550,14 +608,14 @@ export const Composer = (props: ComposerProps) => {
                 ) : null}
                 {props.workspace ? (
                   <WorkspaceSelect {...props.workspace} disabled={props.disabled} />
-                ) : worktree === undefined ? null : (
+                ) : isWorktree === undefined ? null : (
                   <span className="flex min-w-0 items-center gap-1.5 px-2 text-[11px]">
-                    {worktree ? (
+                    {isWorktree ? (
                       <FolderTree className="size-3.5 shrink-0" />
                     ) : (
                       <Folder className="size-3.5 shrink-0" />
                     )}
-                    {worktree ? "Worktree" : "Local checkout"}
+                    {isWorktree ? "Worktree" : "Local checkout"}
                   </span>
                 )}
               </span>
@@ -568,8 +626,8 @@ export const Composer = (props: ComposerProps) => {
                 {props.cwd ? (
                   <BranchPicker
                     cwd={props.cwd}
-                    worktree={props.workspace?.value === "worktree"}
-                    disabled={(props.disabled || props.busy) ?? false}
+                    isWorktree={props.workspace?.value === "worktree"}
+                    disabled={(props.disabled || props.isBusy) ?? false}
                   />
                 ) : (
                   <span />
@@ -580,16 +638,16 @@ export const Composer = (props: ComposerProps) => {
           autoFocus
         />
       </div>
-      {confirmingRoot && host ? (
+      {isConfirmingRoot && host ? (
         <RootFullAccessDialog
           host={host}
           onAllow={() => setPrefs({ permission: "full-access" })}
-          onClose={() => setConfirmingRoot(false)}
+          onClose={() => setIsConfirmingRoot(false)}
         />
       ) : null}
     </div>
   );
-};
+}
 
 /** The one-time OK for Full access on a host whose daemon runs as root. */
 export function RootFullAccessDialog({
@@ -602,7 +660,7 @@ export function RootFullAccessDialog({
   onClose: () => void;
 }) {
   return (
-    <AlertDialog open onOpenChange={(open) => open || onClose()}>
+    <AlertDialog open onOpenChange={(isOpen) => isOpen || onClose()}>
       <AlertDialogContent className="gap-4 bg-popover p-4 data-[size=default]:sm:max-w-sm">
         <div className="flex items-center gap-3">
           <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-warning/10 text-warning">
@@ -640,8 +698,8 @@ function SuggestionMenu({
   label,
   items,
   empty,
-  active,
-  glide,
+  activeIndex,
+  shouldGlide,
   onPoint,
   onPick,
 }: {
@@ -649,13 +707,14 @@ function SuggestionMenu({
   items: ReadonlyArray<MenuItem>;
   /** Shown when there are no items. */
   empty: string | null;
-  active: number;
+  activeIndex: number;
   /** Whether the highlight glides to the active row, rather than appearing there. */
-  glide: boolean;
+  shouldGlide: boolean;
   onPoint: (id: string) => void;
   onPick: (index: number) => void;
 }) {
   const highlightId = useId();
+
   return (
     // layoutScroll: the glide accounts for how far the list is scrolled. isolate: the highlight
     // passes under the rows it crosses instead of over the ones before its own.
@@ -674,22 +733,26 @@ function SuggestionMenu({
           type="button"
           role="option"
           tabIndex={-1}
-          aria-selected={index === active}
-          ref={index === active ? (node) => node?.scrollIntoView({ block: "nearest" }) : undefined}
+          aria-selected={index === activeIndex}
+          ref={
+            index === activeIndex ? (node) => node?.scrollIntoView({ block: "nearest" }) : undefined
+          }
           // Not mouseenter: rows scrolling under a resting pointer would take the highlight from the keyboard.
-          onMouseMove={index === active ? undefined : () => onPoint(item.id)}
+          onMouseMove={index === activeIndex ? undefined : () => onPoint(item.id)}
           // Keep focus in the textarea.
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => onPick(index)}
           className={cn(
             "relative flex w-full items-baseline gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] outline-none",
-            index === active ? "text-foreground" : "text-muted-foreground",
+            index === activeIndex ? "text-foreground" : "text-muted-foreground",
           )}
         >
-          {index === active ? (
+          {index === activeIndex ? (
             <motion.span
               layoutId={highlightId}
-              transition={glide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }}
+              transition={
+                shouldGlide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }
+              }
               className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-muted"
             />
           ) : null}
@@ -706,17 +769,18 @@ function SuggestionMenu({
   );
 }
 
-const StashSelect = ({ prefsKey, openSignal }: { prefsKey: string; openSignal: number }) => {
+function StashSelect({ prefsKey, openSignal }: { prefsKey: string; openSignal: number }) {
   const stashes = useStashes();
   const now = useNow();
+
   return (
     <PromptSelect
-      title={`Stashed prompts (${describe("composer.stash")} stashes the current one)`}
+      title={`Stashed prompts (${formatKeybinding("composer.stash")} stashes the current one)`}
       icon={<Archive />}
       options={stashes.map((stash) => ({
         value: stash.id,
         label: stash.text.split("\n")[0] || `${stash.attachments.length} files`,
-        description: `${ago(stash.at, now)}${stash.attachments.length ? `, ${stash.attachments.length} files` : ""}`,
+        description: `${formatAge(stash.at, now)}${stash.attachments.length ? `, ${stash.attachments.length} files` : ""}`,
       }))}
       value={undefined}
       placeholder={String(stashes.length)}
@@ -727,7 +791,7 @@ const StashSelect = ({ prefsKey, openSignal }: { prefsKey: string; openSignal: n
       variant="plain"
     />
   );
-};
+}
 
 const WORKSPACE_OPTIONS = [
   {
@@ -744,7 +808,7 @@ const WORKSPACE_OPTIONS = [
   },
 ];
 
-const WorkspaceSelect = ({
+function WorkspaceSelect({
   value,
   onChange,
   disabled,
@@ -752,41 +816,46 @@ const WorkspaceSelect = ({
   value: "local" | "worktree";
   onChange: (value: "local" | "worktree") => void;
   disabled: boolean | undefined;
-}) => (
-  <PromptSelect
-    title="Workspace"
-    options={WORKSPACE_OPTIONS}
-    value={value}
-    onChange={(next) => onChange(next === "worktree" ? "worktree" : "local")}
-    shortcut={KEYBINDINGS["picker.workspace"]}
-    disabled={disabled}
-    showOptionIcon
-    width="w-72"
-    variant="plain"
-  />
-);
+}) {
+  return (
+    <PromptSelect
+      title="Workspace"
+      options={WORKSPACE_OPTIONS}
+      value={value}
+      onChange={(next) => onChange(next === "worktree" ? "worktree" : "local")}
+      shortcut={KEYBINDINGS["picker.workspace"]}
+      disabled={disabled}
+      showOptionIcon
+      width="w-72"
+      variant="plain"
+    />
+  );
+}
 
 /** Current branch of the project folder; picking another checks it out. */
-const BranchPicker = ({
+function BranchPicker({
   cwd,
-  worktree,
+  isWorktree,
   disabled,
 }: {
   cwd: string;
   /** A new worktree will start from this branch, so it reads "From main". */
-  worktree: boolean;
+  isWorktree: boolean;
   disabled: boolean;
-}) => {
-  const list = useStore((s) => s.branches[cwd]);
-  const fromOrigin = useStore((s) => s.settings.worktreeFromOrigin === true);
+}) {
+  const list = useStore((state) => state.branches[cwd]);
+  const isFromOrigin = useStore((state) => state.settings.worktreeFromOrigin === true);
+
   useEffect(() => send(ClientCommand.cases["git.listBranches"].make({ path: cwd })), [cwd]);
 
   if (!list) return null;
+
   if (!list.current && !list.branches.length)
     return <span className="px-1.5 text-muted-foreground/70">Not a git repo</span>;
+
   return (
     <PromptSelect
-      title={worktree ? "Start the worktree from" : "Switch branch"}
+      title={isWorktree ? "Start the worktree from" : "Switch branch"}
       icon={<GitBranch />}
       searchPlaceholder="Find or create a branch…"
       onCreate={(branch) =>
@@ -799,7 +868,7 @@ const BranchPicker = ({
       )}
       options={list.branches.map((branch) => ({
         value: branch,
-        label: worktree ? `From ${fromOrigin ? "origin/" : ""}${branch}` : branch,
+        label: isWorktree ? `From ${isFromOrigin ? "origin/" : ""}${branch}` : branch,
       }))}
       value={list.current ?? undefined}
       placeholder="Detached"
@@ -807,8 +876,8 @@ const BranchPicker = ({
         branch !== list.current &&
         send(ClientCommand.cases["git.checkout"].make({ path: cwd, branch }))
       }
-      onOpenChange={(open) =>
-        open && send(ClientCommand.cases["git.listBranches"].make({ path: cwd }))
+      onOpenChange={(isOpen) =>
+        isOpen && send(ClientCommand.cases["git.listBranches"].make({ path: cwd }))
       }
       disabled={disabled}
       shortcut={KEYBINDINGS["picker.branch"]}
@@ -822,4 +891,4 @@ const BranchPicker = ({
       variant="plain"
     />
   );
-};
+}

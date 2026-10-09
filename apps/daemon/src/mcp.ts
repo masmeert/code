@@ -14,6 +14,7 @@ import * as Match from "effect/Match";
 import { z } from "zod";
 import type { Devices } from "./devices.ts";
 import { PORT } from "./port.ts";
+import { getErrorMessage } from "./errors.ts";
 
 export type Mcp = ReturnType<typeof createMcp>;
 
@@ -76,10 +77,11 @@ const WaitInput = {
 };
 
 export type StartThreadInput = z.infer<z.ZodObject<typeof StartThreadInput>>;
+
 export type SendMessageInput = z.infer<z.ZodObject<typeof SendMessageInput>>;
 
 /** What the orchestration tools do, for the agent of thread `caller`; failures are messages for that agent. */
-export interface Orchestration {
+interface Orchestration {
   readonly listThreads: (caller: string) => Effect.Effect<unknown, Error>;
   readonly readThread: (
     caller: string,
@@ -98,8 +100,8 @@ export interface Orchestration {
 
 const WAIT_MS = 600_000;
 
-function orchestrationServer(caller: string, orchestration: Orchestration) {
-  function run(effect: Effect.Effect<unknown, Error>) {
+function createOrchestrationServer(caller: string, orchestration: Orchestration) {
+  function runToolEffect(effect: Effect.Effect<unknown, Error>) {
     return Effect.runPromise(
       Effect.match(effect, {
         onSuccess: (result) => ({
@@ -112,6 +114,7 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
       }),
     );
   }
+
   const server = new McpServer(
     { name: "masscode", version: "1.0.0" },
     {
@@ -119,15 +122,18 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
         "MassCode's threads. Start agents (Claude or Codex) in threads of their own to work on tasks in parallel, get a second opinion from the other harness, or review work; message them, wait for and read their answers. Threads you start show in the user's sidebar, in your project, where the user can watch and steer them. Stopping your thread stops them too.",
     },
   );
+
   const readOnly = { readOnlyHint: true };
+
   server.registerTool(
     "list_threads",
     {
       description: "Threads in your project, newest first: id, title, harness and status.",
       annotations: readOnly,
     },
-    () => run(orchestration.listThreads(caller)),
+    () => runToolEffect(orchestration.listThreads(caller)),
   );
+
   server.registerTool(
     "read_thread",
     {
@@ -136,8 +142,9 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
       inputSchema: { threadId: z.string(), after: z.number().int().optional() },
       annotations: readOnly,
     },
-    ({ threadId, after }) => run(orchestration.readThread(caller, threadId, after)),
+    ({ threadId, after }) => runToolEffect(orchestration.readThread(caller, threadId, after)),
   );
+
   server.registerTool(
     "start_thread",
     {
@@ -145,16 +152,18 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
         "Starts an agent on a task in a new thread in your project. Returns its id; with `wait`, also its answer.",
       inputSchema: StartThreadInput,
     },
-    (input) => run(orchestration.startThread(caller, input)),
+    (input) => runToolEffect(orchestration.startThread(caller, input)),
   );
+
   server.registerTool(
     "send_message",
     {
       description: "Sends a message to a thread: it starts a turn, or joins the one running.",
       inputSchema: SendMessageInput,
     },
-    (input) => run(orchestration.sendMessage(caller, input)),
+    (input) => runToolEffect(orchestration.sendMessage(caller, input)),
   );
+
   server.registerTool(
     "wait_for_thread",
     {
@@ -164,27 +173,34 @@ function orchestrationServer(caller: string, orchestration: Orchestration) {
       annotations: readOnly,
     },
     ({ threadId, timeoutSeconds }) =>
-      run(orchestration.waitForThread(caller, threadId, (timeoutSeconds ?? WAIT_MS / 1000) * 1000)),
+      runToolEffect(
+        orchestration.waitForThread(caller, threadId, (timeoutSeconds ?? WAIT_MS / 1000) * 1000),
+      ),
   );
+
   server.registerTool(
     "stop_thread",
     {
       description: "Stops a thread's running turn, and the threads its agent started.",
       inputSchema: { threadId: z.string() },
     },
-    ({ threadId }) => run(orchestration.stopThread(caller, threadId)),
+    ({ threadId }) => runToolEffect(orchestration.stopThread(caller, threadId)),
   );
+
   return server;
 }
 
-function hashOf(token: string) {
+function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult>) {
-  async function run(action: BrowserAction) {
+function createBrowserServer(
+  requestBrowserAction: (action: BrowserAction) => Promise<BrowserResult>,
+) {
+  async function runBrowserAction(action: BrowserAction) {
     try {
-      const result = await browser(action);
+      const result = await requestBrowserAction(action);
+
       return {
         content: [
           {
@@ -198,9 +214,7 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       };
     } catch (error) {
       return {
-        content: [
-          { type: "text" as const, text: error instanceof Error ? error.message : String(error) },
-        ],
+        content: [{ type: "text" as const, text: getErrorMessage(error) }],
         isError: true,
       };
     }
@@ -213,7 +227,9 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
         "A real browser the user watches in MassCode's Browser panel next to this thread; it shares their logins. Use it to check web apps you build (such as a local dev server) or to read pages. Call snapshot to see the page (text, interactive elements with refs like e3, and a screenshot), then click or type by ref. Refs go stale after navigation or re-renders, so take a new snapshot when an action says nothing matches.",
     },
   );
+
   const alwaysLoad = { "anthropic/alwaysLoad": true };
+
   server.registerTool(
     "navigate",
     {
@@ -222,8 +238,9 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       inputSchema: { url: z.string() },
       _meta: alwaysLoad,
     },
-    ({ url }) => run(BrowserAction.cases.navigate.make({ url })),
+    ({ url }) => runBrowserAction(BrowserAction.cases.navigate.make({ url })),
   );
+
   server.registerTool(
     "snapshot",
     {
@@ -232,8 +249,9 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       annotations: { readOnlyHint: true },
       _meta: alwaysLoad,
     },
-    () => run(BrowserAction.cases.snapshot.make({})),
+    () => runBrowserAction(BrowserAction.cases.snapshot.make({})),
   );
+
   server.registerTool(
     "click",
     {
@@ -242,8 +260,9 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       inputSchema: { target: z.string() },
       _meta: alwaysLoad,
     },
-    ({ target }) => run(BrowserAction.cases.click.make({ target })),
+    ({ target }) => runBrowserAction(BrowserAction.cases.click.make({ target })),
   );
+
   server.registerTool(
     "type",
     {
@@ -253,8 +272,9 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       _meta: alwaysLoad,
     },
     ({ target, text, submit }) =>
-      run(BrowserAction.cases.type.make({ target, text, submit: submit ?? false })),
+      runBrowserAction(BrowserAction.cases.type.make({ target, text, submit: submit ?? false })),
   );
+
   server.registerTool(
     "press",
     {
@@ -262,8 +282,9 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       inputSchema: { key: z.string() },
       _meta: alwaysLoad,
     },
-    ({ key }) => run(BrowserAction.cases.press.make({ key })),
+    ({ key }) => runBrowserAction(BrowserAction.cases.press.make({ key })),
   );
+
   server.registerTool(
     "evaluate",
     {
@@ -271,8 +292,9 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       inputSchema: { expression: z.string() },
       _meta: alwaysLoad,
     },
-    ({ expression }) => run(BrowserAction.cases.evaluate.make({ expression })),
+    ({ expression }) => runBrowserAction(BrowserAction.cases.evaluate.make({ expression })),
   );
+
   server.registerTool(
     "console",
     {
@@ -280,18 +302,21 @@ function browserServer(browser: (action: BrowserAction) => Promise<BrowserResult
       annotations: { readOnlyHint: true },
       _meta: alwaysLoad,
     },
-    () => run(BrowserAction.cases.console.make({})),
+    () => runBrowserAction(BrowserAction.cases.console.make({})),
   );
+
   return server;
 }
 
-function deviceServer(threadId: string, devices: Devices) {
-  async function run(content: () => Promise<CallToolResult["content"]>): Promise<CallToolResult> {
+function createDeviceServer(threadId: string, devices: Devices) {
+  async function runDeviceTool(
+    content: () => Promise<CallToolResult["content"]>,
+  ): Promise<CallToolResult> {
     try {
       return { content: await content() };
     } catch (error) {
       return {
-        content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+        content: [{ type: "text", text: getErrorMessage(error) }],
         isError: true,
       };
     }
@@ -304,6 +329,7 @@ function deviceServer(threadId: string, devices: Devices) {
         "An iOS simulator or Android emulator the user watches in MassCode's Simulator panel next to this thread. Call device_open to show one and learn how to drive it, before simctl, adb or computer use.",
     },
   );
+
   server.registerTool(
     "device_open",
     {
@@ -323,10 +349,11 @@ function deviceServer(threadId: string, devices: Devices) {
       },
     },
     ({ deviceId, platform }) =>
-      run(async () => {
+      runDeviceTool(async () => {
         const { device, cli } = await devices.open(threadId, deviceId ?? null, platform ?? null);
         const target = `${device.platform === "ios" ? `--platform ios --udid ${device.id}` : `--platform android --serial ${device.streamId}`} --session masscode-${threadId}`;
         const app = device.platform === "ios" ? "<bundle-id>" : "<package>";
+
         return [
           {
             type: "text",
@@ -348,6 +375,7 @@ function deviceServer(threadId: string, devices: Devices) {
         ];
       }),
   );
+
   server.registerTool(
     "device_screenshot",
     {
@@ -355,15 +383,16 @@ function deviceServer(threadId: string, devices: Devices) {
       annotations: { readOnlyHint: true },
     },
     () =>
-      run(async () => [
-        { type: "image", data: await devices.screenshot(threadId), mimeType: "image/png" },
+      runDeviceTool(async () => [
+        { type: "image", data: await devices.takeScreenshot(threadId), mimeType: "image/png" },
       ]),
   );
+
   return server;
 }
 
 export function createMcp(
-  browser: (threadId: string, action: BrowserAction) => Promise<BrowserResult>,
+  requestBrowserAction: (threadId: string, action: BrowserAction) => Promise<BrowserResult>,
   orchestration: Orchestration,
   devices: Devices,
 ) {
@@ -372,7 +401,9 @@ export function createMcp(
 
   function revoke(threadId: string) {
     const tokenHash = tokenHashByThread.get(threadId);
+
     if (tokenHash === undefined) return;
+
     threadByTokenHash.delete(tokenHash);
     tokenHashByThread.delete(threadId);
   }
@@ -380,29 +411,36 @@ export function createMcp(
   return {
     issue(threadId: string): McpServerAccess {
       revoke(threadId);
+
       const token = randomBytes(32).toString("base64url");
-      const tokenHash = hashOf(token);
+      const tokenHash = hashToken(token);
       threadByTokenHash.set(tokenHash, threadId);
       tokenHashByThread.set(threadId, tokenHash);
+
       return { url: `http://127.0.0.1:${PORT}/mcp`, token };
     },
     revoke,
-    async handle(request: Request) {
+    async handleRequest(request: Request) {
       const token = request.headers.get("authorization")?.match(/^Bearer\s+(\S+)$/)?.[1];
-      const threadId = token ? threadByTokenHash.get(hashOf(token)) : undefined;
+      const threadId = token ? threadByTokenHash.get(hashToken(token)) : undefined;
+
       if (threadId === undefined)
         return new Response("A valid bearer token is required", {
           status: 401,
           headers: { "www-authenticate": "Bearer" },
         });
+
       const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
       await Match.value(new URL(request.url).pathname)
         .pipe(
-          Match.when("/mcp/masscode", () => orchestrationServer(threadId, orchestration)),
-          Match.when("/mcp/device", () => deviceServer(threadId, devices)),
-          Match.orElse(() => browserServer((action) => browser(threadId, action))),
+          Match.when("/mcp/masscode", () => createOrchestrationServer(threadId, orchestration)),
+          Match.when("/mcp/device", () => createDeviceServer(threadId, devices)),
+          Match.orElse(() =>
+            createBrowserServer((action) => requestBrowserAction(threadId, action)),
+          ),
         )
         .connect(transport);
+
       return transport.handleRequest(request);
     },
   };

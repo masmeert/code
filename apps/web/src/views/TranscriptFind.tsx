@@ -1,42 +1,49 @@
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { focusComposer } from "../lib/drafts.ts";
-import { describe, useKeybinding } from "../lib/keybindings.ts";
+import { formatKeybinding, useKeybinding } from "../lib/keybindings.ts";
 
 /**
  * ⌘F in the transcript. Matches are painted with the CSS Highlight API (`find` and `find-active`,
  * styled by the scroller), so React's DOM is never touched.
  */
 export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null> }) {
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<Array<Range>>([]);
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   // Streaming re-runs the search; only a new query or a step should move the view.
-  const reveal = useRef(false);
+  const shouldReveal = useRef(false);
+
   const current = Math.min(active, matches.length - 1);
 
   useKeybinding("thread.find", () => {
-    setOpen(true);
+    setIsOpen(true);
     input.current?.focus();
     input.current?.select();
   });
-  useKeybinding(open ? "thread.findNext" : undefined, () => step(1));
+  useKeybinding(isOpen ? "thread.findNext" : undefined, () => moveToMatch(1));
 
   useEffect(() => {
     const root = scope.current;
     const needle = query.toLowerCase();
-    if (!open || !root || !needle) return setMatches([]);
+
+    if (!isOpen || !root || !needle) return setMatches([]);
+
     let frame = 0;
-    function search() {
+
+    function findMatches() {
       const found: Array<Range> = [];
       const walker = document.createTreeWalker(root!, NodeFilter.SHOW_TEXT);
+
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
         const text = node.textContent!.toLowerCase();
         let index = text.indexOf(needle);
+
         // Collapsed tool output and the like stay in the DOM, unseen.
         if (index === -1 || !node.parentElement?.checkVisibility()) continue;
+
         for (; index !== -1; index = text.indexOf(needle, index + needle.length)) {
           const range = new Range();
           range.setStart(node, index);
@@ -44,51 +51,62 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
           found.push(range);
         }
       }
+
       setMatches(found);
     }
-    search();
+
+    findMatches();
+
     const observer = new MutationObserver(() => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(search);
+      frame = requestAnimationFrame(findMatches);
     });
+
     observer.observe(root, {
       childList: true,
       subtree: true,
       characterData: true,
       attributes: true,
     });
+
     return () => {
       observer.disconnect();
       cancelAnimationFrame(frame);
     };
-  }, [open, query, scope]);
+  }, [isOpen, query, scope]);
 
   useEffect(() => {
     CSS.highlights.set("find", new Highlight(...matches));
     const range = matches[current];
+
     if (range) {
       CSS.highlights.set("find-active", new Highlight(range));
-      if (reveal.current) range.startContainer.parentElement?.scrollIntoView({ block: "center" });
+
+      if (shouldReveal.current)
+        range.startContainer.parentElement?.scrollIntoView({ block: "center" });
     }
-    reveal.current = false;
+
+    shouldReveal.current = false;
+
     return () => {
       CSS.highlights.delete("find");
       CSS.highlights.delete("find-active");
     };
   }, [matches, current]);
 
-  function step(direction: number) {
+  function moveToMatch(direction: number) {
     if (!matches.length) return;
-    reveal.current = true;
+    shouldReveal.current = true;
     setActive((current + direction + matches.length) % matches.length);
   }
 
-  function close() {
-    setOpen(false);
+  function closeFind() {
+    setIsOpen(false);
     focusComposer();
   }
 
-  if (!open) return null;
+  if (!isOpen) return null;
+
   return (
     <div
       role="search"
@@ -105,18 +123,19 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
         spellCheck={false}
         onFocus={(event) => event.currentTarget.select()}
         onChange={(event) => {
-          reveal.current = true;
+          shouldReveal.current = true;
           setQuery(event.target.value);
           setActive(0);
         }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
+
           if (event.key === "Enter") {
             event.preventDefault();
-            step(event.shiftKey ? -1 : 1);
+            moveToMatch(event.shiftKey ? -1 : 1);
           } else if (event.key === "Escape") {
             event.preventDefault();
-            close();
+            closeFind();
           }
         }}
         className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
@@ -126,9 +145,13 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
       </span>
       {(
         [
-          ["Previous match (⇧↩)", ChevronUp, () => step(-1)],
-          [`Next match (↩ or ${describe("thread.findNext")})`, ChevronDown, () => step(1)],
-          ["Close (Esc)", X, close],
+          ["Previous match (⇧↩)", ChevronUp, () => moveToMatch(-1)],
+          [
+            `Next match (↩ or ${formatKeybinding("thread.findNext")})`,
+            ChevronDown,
+            () => moveToMatch(1),
+          ],
+          ["Close (Esc)", X, closeFind],
         ] as const
       ).map(([label, Icon, onClick]) => (
         <button

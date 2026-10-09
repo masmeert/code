@@ -2,48 +2,45 @@
  * Cursor via `cursor-agent acp`, the Agent Client Protocol server in Cursor's CLI. It runs on the
  * user's Cursor login.
  */
-import {
-  Effort,
-  RuntimeEvent,
-  type ModelOption,
-  type SlashCommand,
-  type UserQuestion,
-} from "@masscode/contracts";
+import { Effort, RuntimeEvent, type ModelOption, type SlashCommand } from "@masscode/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { extname } from "node:path";
 import {
   ConfigOption,
   connectAcp,
-  contentText,
+  getContentText,
   PermissionRequest,
   PromptResponse,
   SessionSetup,
   SessionUpdate,
-  type RpcId,
+  type AcpHandlers,
   type ToolContent,
 } from "./acp.ts";
-import type { JsonRpc } from "./jsonRpc.ts";
-import { harnessLaunch, type HarnessLaunch } from "./launch.ts";
+import type { JsonRpc, RpcId } from "./jsonRpc.ts";
+import { resolveHarnessLaunch, type HarnessLaunch } from "./launch.ts";
 import {
-  IMAGE_TYPES,
   ProviderError,
-  textWithFiles,
+  createApprovalBook,
+  formatTextWithFiles,
+  handleHarnessExit,
+  listMcpEndpoints,
+  readImages,
+  tryProviderPromise,
   type ProviderAdapter,
   type ProviderSession,
   type StartSessionInput,
   type TurnInput,
 } from "./ProviderAdapter.ts";
-import { DEVICES_SUPPORTED } from "../devices.ts";
-import { skillMentions } from "../skills.ts";
+import { findSkillMentions } from "../skills.ts";
+import { getErrorMessage } from "../errors.ts";
 
-const fail = (message: string) => new ProviderError({ provider: "cursor", message });
-
-const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+function createError(message: string) {
+  return new ProviderError({ provider: "cursor", message });
+}
 
 /** Cursor's id for its Auto model; its CLI calls it `auto`. */
 const AUTO = "default";
@@ -52,25 +49,26 @@ const AUTO = "default";
  * Model is only picked at launch: switching it over ACP is accepted and then ignored, which also
  * leaves the model's effort and fast settings unknown to the session.
  */
-const acpArgs = (launch: HarnessLaunch, model: string | null) => [
-  ...launch.args,
-  ...cursorModelFlag(model),
-  "acp",
-];
+function buildAcpArgs(launch: HarnessLaunch, model: string | null) {
+  return [...launch.args, ...buildCursorModelFlag(model), "acp"];
+}
 
 /** The CLI flag that picks `model`; none leaves the CLI's own default. */
-export const cursorModelFlag = (model: string | null | undefined) =>
-  model ? ["--model", model === AUTO ? "auto" : model] : [];
+export function buildCursorModelFlag(model: string | null | undefined) {
+  return model ? ["--model", model === AUTO ? "auto" : model] : [];
+}
 
 /** Effort as MassCode names it; some models spell xhigh "extra-high". */
 function toEffort(value: string) {
   const effort = value === "extra-high" ? "xhigh" : value;
+
   return Schema.is(Effort)(effort) ? effort : undefined;
 }
 
 /** The setting a model takes its effort from: `effort`, `reasoning` or `reasoning_effort`, by model. */
-const effortOption = (options: ReadonlyArray<ConfigOption>) =>
-  options.find((option) => option.category === "thought_level" && option.id !== "thinking");
+function findEffortOption(options: ReadonlyArray<ConfigOption>) {
+  return options.find((option) => option.category === "thought_level" && option.id !== "thinking");
+}
 
 const ListedModels = Schema.Struct({
   models: Schema.Array(
@@ -83,27 +81,42 @@ const ListedModels = Schema.Struct({
 });
 
 /** The models the account can use, with each one's efforts and fast mode. */
-export async function readCursorModels(launch: HarnessLaunch): Promise<Array<ModelOption>> {
-  const rpc = await connectAcp("Cursor", launch, acpArgs(launch, null), undefined);
-  try {
-    const { models } = await rpc.request("cursor/list_available_models", {}, ListedModels);
-    return models.map((model) => {
-      const effort = effortOption(model.configOptions);
-      return {
-        id: model.value,
-        label: model.name,
-        recommended: model.value === AUTO || undefined,
-        defaultEffort: Predicate.isString(effort?.currentValue)
-          ? toEffort(effort.currentValue)
-          : undefined,
-        efforts: (effort?.options ?? []).flatMap((option) => toEffort(option.value) ?? []),
-        fast: model.configOptions.some((option) => option.id === "fast") || undefined,
-      };
-    });
-  } finally {
-    rpc.close();
-  }
+/** A short-lived `cursor-agent acp` on the CLI's default model, closed with the scope. */
+function acquireCursorConnection(
+  launch: HarnessLaunch,
+  cwd: string | undefined,
+  handlers: AcpHandlers = {},
+) {
+  return Effect.acquireRelease(
+    tryProviderPromise("cursor", () =>
+      connectAcp("Cursor", launch, buildAcpArgs(launch, null), cwd, handlers),
+    ),
+    (rpc) => Effect.sync(() => rpc.close()),
+  );
 }
+
+export const readCursorModels = Effect.fn("readCursorModels")(function* (launch: HarnessLaunch) {
+  const rpc = yield* acquireCursorConnection(launch, undefined);
+
+  const { models } = yield* tryProviderPromise("cursor", () =>
+    rpc.request("cursor/list_available_models", {}, ListedModels),
+  );
+
+  return models.map((model): ModelOption => {
+    const effort = findEffortOption(model.configOptions);
+
+    return {
+      id: model.value,
+      label: model.name,
+      recommended: model.value === AUTO || undefined,
+      defaultEffort: Predicate.isString(effort?.currentValue)
+        ? toEffort(effort.currentValue)
+        : undefined,
+      efforts: (effort?.options ?? []).flatMap((option) => toEffort(option.value) ?? []),
+      fast: model.configOptions.some((option) => option.id === "fast") || undefined,
+    };
+  });
+}, Effect.scoped);
 
 const CreatePlan = Schema.Struct({ plan: Schema.String });
 
@@ -149,19 +162,26 @@ const ToolRaw = Schema.Struct({
   /** A read file's text. */
   content: Schema.optional(Schema.String),
 });
-const decodeToolRaw = (raw: Schema.Json | undefined): typeof ToolRaw.Type =>
-  Option.getOrElse(Schema.decodeUnknownOption(ToolRaw)(raw), () => ({}));
+
+function decodeToolRaw(raw: Schema.Json | undefined): typeof ToolRaw.Type {
+  return Option.getOrElse(Schema.decodeUnknownOption(ToolRaw)(raw), () => ({}));
+}
 
 /** What a finished tool printed or changed. */
-function toolOutput(update: {
+function formatToolOutput(update: {
   readonly content?: ReadonlyArray<ToolContent> | null | undefined;
   readonly rawOutput?: Schema.Json | undefined;
 }) {
-  const text = contentText(update.content);
+  const text = getContentText(update.content);
+
   if (text) return text;
+
   if (update.rawOutput === undefined || update.rawOutput === null) return "";
+
   if (Predicate.isString(update.rawOutput)) return update.rawOutput;
+
   const { stdout, stderr, content } = decodeToolRaw(update.rawOutput);
+
   return (
     [stdout, stderr].filter(Boolean).join("\n").trim() ||
     content ||
@@ -184,7 +204,7 @@ type Pending =
       readonly questions: typeof AskQuestion.Type.questions;
     };
 
-const start = ({
+function start({
   threadId,
   cwd,
   harness,
@@ -194,12 +214,10 @@ const start = ({
   onResumeToken,
   emit,
   mcpServer,
-}: StartSessionInput) =>
-  Effect.gen(function* () {
-    const launch = yield* Effect.try({
-      try: () => harnessLaunch("cursor", harness),
-      catch: (e) => fail(message(e)),
-    });
+}: StartSessionInput) {
+  return Effect.gen(function* () {
+    const launch = yield* resolveHarnessLaunch("cursor", harness);
+
     let rpc: JsonRpc | undefined;
     // Bumped on each launch, so a process closed for a relaunch doesn't report its exit.
     let generation = 0;
@@ -210,35 +228,31 @@ const start = ({
     let configOptions: ReadonlyArray<ConfigOption> = [];
     let commands: ReadonlyArray<SlashCommand> = [];
     /** Set while `session/load` replays the conversation, which the transcript already has. */
-    let replaying = false;
+    let isReplaying = false;
     let reply: { readonly id: string; text: string } | null = null;
     let thought: { readonly id: string; text: string } | null = null;
     const runningTools = new Set<string>();
     /** Edits started without saying which file, by tool id, with their transcript name. */
     const unnamedEdits = new Map<string, string>();
     const commandOf = new Map<string, string>();
-    const pending = new Map<string, Pending>();
+    const approvals = createApprovalBook<Pending>("cursor", threadId, emit);
     const allowedForSession = new Set<string>();
-    let prompting = false;
+    let isPrompting = false;
     /** Messages sent while a turn runs: ACP can't add to a turn, so each starts the next one. */
     const steered: Array<TurnInput> = [];
     /** Runs once the turn ends, in place of going idle: building an approved plan. */
     let afterTurn: (() => void) | null = null;
 
     const mcpServers = mcpServer
-      ? [
-          { name: "browser", url: mcpServer.url },
-          { name: "masscode", url: `${mcpServer.url}/masscode` },
-          ...(DEVICES_SUPPORTED ? [{ name: "device", url: `${mcpServer.url}/device` }] : []),
-        ].map((server) => ({
+      ? listMcpEndpoints(mcpServer).map((endpoint) => ({
           type: "http",
-          ...server,
+          ...endpoint,
           headers: [{ name: "Authorization", value: `Bearer ${mcpServer.token}` }],
         }))
       : [];
 
     function finishThought() {
-      if (thought?.text)
+      if (thought?.text) {
         emit(
           RuntimeEvent.cases["reasoning.completed"].make({
             threadId,
@@ -246,13 +260,16 @@ const start = ({
             text: thought.text,
           }),
         );
+      }
+
       thought = null;
     }
 
     /** Ends the reply and thought in progress: a tool call or the turn's end closes both. */
     function finishText() {
       finishThought();
-      if (reply?.text)
+
+      if (reply?.text) {
         emit(
           RuntimeEvent.cases["assistant.completed"].make({
             threadId,
@@ -260,6 +277,8 @@ const start = ({
             text: reply.text,
           }),
         );
+      }
+
       reply = null;
     }
 
@@ -272,13 +291,16 @@ const start = ({
     // the commands and options it reports alongside aren't.
     function onUpdate(update: SessionUpdate) {
       if (
-        replaying &&
+        isReplaying &&
         !SessionUpdate.isAnyOf(["available_commands_update", "config_option_update"])(update)
-      )
+      ) {
         return;
+      }
+
       SessionUpdate.match(update, {
         agent_thought_chunk: ({ content }) => {
           if (!content.text) return;
+
           if (reply) finishText();
           thought ??= { id: randomUUID(), text: "" };
           thought.text += content.text;
@@ -292,6 +314,7 @@ const start = ({
         },
         agent_message_chunk: ({ content }) => {
           if (!content.text) return;
+
           finishThought();
           reply ??= { id: randomUUID(), text: "" };
           reply.text += content.text;
@@ -305,32 +328,42 @@ const start = ({
         },
         tool_call: (call) => {
           finishText();
+
           if (runningTools.has(call.toolCallId) || unnamedEdits.has(call.toolCallId)) return;
+
           const { command, path } = decodeToolRaw(call.rawInput);
+
           if (command) commandOf.set(call.toolCallId, command);
           const name = TOOL_NAME.get(call.kind ?? "") ?? call.title ?? "Tool";
           const summary = command ?? path ?? call.locations?.[0]?.path;
-          // Cursor names an edit's file only once it's made; the row waits for it.
-          if (summary === undefined && call.kind === "edit")
+
+          if (summary === undefined && call.kind === "edit") {
+            // Cursor names an edit's file only once it's made; the row waits for it.
             unnamedEdits.set(call.toolCallId, name);
-          else startTool(call.toolCallId, name, summary ?? call.title ?? "");
+          } else {
+            startTool(call.toolCallId, name, summary ?? call.title ?? "");
+          }
         },
         tool_call_update: (update) => {
-          const done = update.status === "completed" || update.status === "failed";
+          const isDone = update.status === "completed" || update.status === "failed";
           const unnamed = unnamedEdits.get(update.toolCallId);
+
           const path =
             update.locations?.[0]?.path ??
             update.content?.flatMap((part) => (part.type === "diff" ? [part.path] : []))[0];
-          if (unnamed !== undefined && (path !== undefined || done)) {
+
+          if (unnamed !== undefined && (path !== undefined || isDone)) {
             unnamedEdits.delete(update.toolCallId);
             startTool(update.toolCallId, unnamed, path ?? update.title ?? "");
           }
-          if (!done || !runningTools.delete(update.toolCallId)) return;
+
+          if (!isDone || !runningTools.delete(update.toolCallId)) return;
+
           emit(
             RuntimeEvent.cases["tool.completed"].make({
               threadId,
               toolId: update.toolCallId,
-              output: toolOutput(update),
+              output: formatToolOutput(update),
               isError: update.status === "failed",
             }),
           );
@@ -348,80 +381,71 @@ const start = ({
       });
     }
 
-    function ask(
-      rpcId: RpcId,
-      entry: Pending,
-      title: string,
-      detail: string,
-      questions?: ReadonlyArray<UserQuestion>,
-    ) {
-      // Each process numbers its requests from 0, and the transcript keeps approvals across relaunches.
-      const requestId = `cursor-${randomUUID()}`;
-      pending.set(requestId, entry);
-      emit(
-        RuntimeEvent.cases["thread.status"].make({
-          threadId,
-          status: questions ? "awaiting-answer" : "awaiting-approval",
-        }),
-      );
-      emit(
-        RuntimeEvent.cases["approval.requested"].make({
-          threadId,
-          requestId,
-          title,
-          detail,
-          questions,
-        }),
-      );
-    }
-
     function onRequest(rpcId: RpcId, method: string, params: Schema.Json | undefined) {
       if (method === "session/request_permission") {
         const request = Option.getOrUndefined(
           Schema.decodeUnknownOption(PermissionRequest)(params),
         );
+
         if (!request) return false;
+
         const { toolCall } = request;
         const command = commandOf.get(toolCall.toolCallId);
         const key = `${toolCall.kind}:${command ?? toolCall.title}`;
+
         if (permission === "full-access" || allowedForSession.has(key)) {
           answerPermission(rpcId, request, "allow_once");
+
           return true;
         }
-        ask(
-          rpcId,
+
+        approvals.request(
           { kind: "permission", rpcId, request, key },
-          toolCall.kind === "execute" ? "Run command" : (toolCall.title ?? "Allow this?"),
-          command ?? contentText(toolCall.content),
+          {
+            title: toolCall.kind === "execute" ? "Run command" : (toolCall.title ?? "Allow this?"),
+            detail: command ?? getContentText(toolCall.content),
+          },
         );
+
         return true;
       }
+
       if (method === "cursor/create_plan") {
         const plan = Option.getOrUndefined(Schema.decodeUnknownOption(CreatePlan)(params));
+
         if (!plan) return false;
+
         // Outside plan mode a plan is the agent's own outline: nothing to approve.
         if (permission !== "plan") rpc?.respond(rpcId, { outcome: { outcome: "accepted" } });
-        else ask(rpcId, { kind: "plan", rpcId }, "ExitPlanMode", plan.plan);
+        else
+          approvals.request({ kind: "plan", rpcId }, { title: "ExitPlanMode", detail: plan.plan });
+
         return true;
       }
+
       if (method === "cursor/ask_question") {
         const asked = Option.getOrUndefined(Schema.decodeUnknownOption(AskQuestion)(params));
+
         if (!asked) return false;
-        ask(
-          rpcId,
+
+        approvals.request(
           { kind: "question", rpcId, questions: asked.questions },
-          "AskUserQuestion",
-          asked.questions.map((question) => question.prompt).join("\n"),
-          asked.questions.map((question) => ({
-            id: question.id,
-            header: asked.title ?? "Question",
-            question: question.prompt,
-            options: question.options.map((option) => ({ label: option.label, description: "" })),
-            multiSelect: question.allowMultiple ?? false,
-          })),
+          {
+            title: "AskUserQuestion",
+            detail: asked.questions.map((question) => question.prompt).join("\n"),
+            questions: asked.questions.map((question) => ({
+              id: question.id,
+              header: asked.title ?? "Question",
+              question: question.prompt,
+              options: question.options.map((option) => ({ label: option.label, description: "" })),
+              multiSelect: question.allowMultiple ?? false,
+            })),
+          },
         );
+
         return true;
       }
+
       return false;
     }
 
@@ -435,36 +459,23 @@ const start = ({
       );
     }
 
-    async function connect() {
+    async function launchAgent() {
       const launched = ++generation;
       rpc?.close();
       launchedModel = model;
-      rpc = await connectAcp("Cursor", launch, acpArgs(launch, model), cwd, {
+      rpc = await connectAcp("Cursor", launch, buildAcpArgs(launch, model), cwd, {
         onUpdate,
         onRequest,
         onExit: (code, stderrTail) => {
-          if (launched !== generation) return;
-          const crashed = code !== 0 && code !== null;
-          if (crashed)
-            emit(
-              RuntimeEvent.cases.error.make({
-                threadId,
-                message: `Cursor exited unexpectedly (code ${code})${
-                  stderrTail.trim() ? `: ${stderrTail.trim().split("\n").at(-1)}` : ""
-                }. Send a message to pick the thread back up.`,
-              }),
-            );
-          emit(
-            RuntimeEvent.cases["thread.status"].make({
-              threadId,
-              status: crashed ? "error" : "closed",
-            }),
-          );
+          if (launched === generation)
+            handleHarnessExit("Cursor", threadId, emit)(code, stderrTail);
         },
       });
+
       const resumed = sessionId
         ? await (async () => {
-            replaying = true;
+            isReplaying = true;
+
             try {
               return await rpc.request(
                 "session/load",
@@ -475,93 +486,100 @@ const start = ({
               // Gone from Cursor's store (or another machine's): carry on in a new conversation.
               return null;
             } finally {
-              replaying = false;
+              isReplaying = false;
             }
           })()
         : null;
+
       const setup =
         resumed ?? (await rpc.request("session/new", { cwd, mcpServers }, SessionSetup));
+
       if (!resumed && setup.sessionId) {
         sessionId = setup.sessionId;
         onResumeToken(sessionId);
       }
+
       configOptions = setup.configOptions ?? configOptions;
     }
 
-    async function setOption(configId: string, value: string) {
+    async function setConfigOption(configId: string, value: string) {
       const current = configOptions.find((option) => option.id === configId);
+
       if (!current || current.currentValue === value) return;
+
       const result = await rpc!.request(
         "session/set_config_option",
         { sessionId, configId, value },
         SessionSetup,
       );
+
       configOptions = result.configOptions ?? configOptions;
     }
 
-    async function prompt(turn: TurnInput) {
-      const images = await Promise.all(
-        turn.attachments.flatMap((attachment) => {
-          const mimeType = IMAGE_TYPES.get(extname(attachment.path).toLowerCase());
-          return attachment.isImage && mimeType
-            ? [
-                readFile(attachment.path).then((data) => ({
-                  type: "image",
-                  mimeType,
-                  data: data.toString("base64"),
-                })),
-              ]
-            : [];
-        }),
-      );
-      const written = textWithFiles(turn);
+    async function buildPromptBlocks(turn: TurnInput) {
+      const images = await readImages(turn);
+
+      const written = formatTextWithFiles(turn);
+
       // Cursor takes a `/name` anywhere in the message as the skill to load.
-      const text = skillMentions(written, turn.skills).reduce(
+      const text = findSkillMentions(written, turn.skills).reduce(
         (result, mention) => `${result.slice(0, mention.start)}/${result.slice(mention.start + 1)}`,
         written,
       );
+
       return [
         ...(turn.handoff ? [{ type: "text", text: turn.handoff }] : []),
-        ...images,
+        ...images.map((image) => ({ type: "image", mimeType: image.mediaType, data: image.data })),
         ...(text ? [{ type: "text", text }] : []),
       ];
     }
 
     /** Applies the turn's settings and starts it; resolves once Cursor has it, not when it ends. */
-    async function begin(turn: TurnInput) {
+    async function beginTurn(turn: TurnInput) {
       emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
       permission = turn.permission;
-      if (!rpc || model !== launchedModel) await connect();
-      await setOption("mode", permission === "plan" ? "plan" : "agent");
-      const effort = effortOption(configOptions);
+
+      if (!rpc || model !== launchedModel) await launchAgent();
+
+      await setConfigOption("mode", permission === "plan" ? "plan" : "agent");
+      const effort = findEffortOption(configOptions);
+
       const effortValue = effort?.options?.find(
         (option) => turn.effort !== null && toEffort(option.value) === turn.effort,
       )?.value;
-      if (effort && effortValue) await setOption(effort.id, effortValue);
-      if (turn.fast !== undefined) await setOption("fast", String(turn.fast));
-      const blocks = await prompt(turn);
+
+      if (effort && effortValue) await setConfigOption(effort.id, effortValue);
+
+      if (turn.fast !== undefined) await setConfigOption("fast", String(turn.fast));
+
+      const blocks = await buildPromptBlocks(turn);
       const startedAt = Date.now();
       const launched = generation;
-      prompting = true;
+      isPrompting = true;
       void rpc!
         .request("session/prompt", { sessionId, prompt: blocks }, PromptResponse)
         .then(
           ({ stopReason }) => {
             finishText();
-            const stopped = STOPPED_EARLY.get(stopReason);
-            if (stopped) emit(RuntimeEvent.cases.error.make({ threadId, message: stopped }));
+            const stopMessage = STOPPED_EARLY.get(stopReason);
+
+            if (stopMessage)
+              emit(RuntimeEvent.cases.error.make({ threadId, message: stopMessage }));
           },
           (error) => {
             finishText();
+
             // A process that exited has said so already.
-            if (launched === generation && !message(error).startsWith("Cursor exited"))
-              emit(RuntimeEvent.cases.error.make({ threadId, message: message(error) }));
+            if (launched === generation && !Predicate.isTagged(error, "RpcExited")) {
+              emit(RuntimeEvent.cases.error.make({ threadId, message: getErrorMessage(error) }));
+            }
           },
         )
         .then(() => {
-          prompting = false;
+          isPrompting = false;
+
           // Tools still open when the turn ends were cut off: stopped, or the process went.
-          for (const toolId of runningTools)
+          for (const toolId of runningTools) {
             emit(
               RuntimeEvent.cases["tool.completed"].make({
                 threadId,
@@ -570,6 +588,8 @@ const start = ({
                 isError: false,
               }),
             );
+          }
+
           runningTools.clear();
           unnamedEdits.clear();
           emit(
@@ -578,49 +598,50 @@ const start = ({
               durationMs: Date.now() - startedAt,
             }),
           );
-          const next = afterTurn ?? (steered.length ? () => void run(steered.shift()!) : null);
+
+          const next = afterTurn ?? (steered.length ? () => void runTurn(steered.shift()!) : null);
           afterTurn = null;
+
           if (next) next();
           else emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
         });
     }
 
-    function run(turn: TurnInput) {
-      begin(turn).catch((error) => {
-        emit(RuntimeEvent.cases.error.make({ threadId, message: message(error) }));
+    function runTurn(turn: TurnInput) {
+      beginTurn(turn).catch((error) => {
+        emit(RuntimeEvent.cases.error.make({ threadId, message: getErrorMessage(error) }));
         emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
       });
     }
 
-    yield* Effect.tryPromise({ try: connect, catch: (e) => fail(message(e)) });
+    yield* tryProviderPromise("cursor", launchAgent);
 
     const session: ProviderSession = {
-      send: (turn) => Effect.tryPromise({ try: () => begin(turn), catch: (e) => fail(message(e)) }),
+      send: (turn) => tryProviderPromise("cursor", () => beginTurn(turn)),
       steer: (turn) =>
         Effect.suspend(() => {
-          if (!prompting) return session.send(turn);
+          if (!isPrompting) return session.send(turn);
+
           steered.push(turn);
+
           return Effect.void;
         }),
       compact: Effect.fail(
-        fail("Cursor can't compact a conversation. Start a new thread to free up context."),
+        createError("Cursor can't compact a conversation. Start a new thread to free up context."),
       ),
       commands: Effect.sync(() => commands),
       interrupt: Effect.sync(() => {
         steered.length = 0;
         afterTurn = null;
-        for (const [requestId, entry] of pending) {
+
+        for (const entry of approvals.withdrawAll())
           rpc?.respond(entry.rpcId, { outcome: { outcome: "cancelled" } });
-          emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
-        }
-        pending.clear();
         rpc?.notify("session/cancel", { sessionId });
       }),
       respondApproval: (requestId, decision, { permission: buildPermission, answers } = {}) =>
-        Effect.suspend(() => {
-          const entry = pending.get(requestId);
-          if (!entry) return Effect.fail(fail(`Unknown approval request ${requestId}`));
-          pending.delete(requestId);
+        Effect.gen(function* () {
+          const entry = yield* approvals.take(requestId);
+
           switch (entry.kind) {
             case "permission":
               if (decision === "allow-session") allowedForSession.add(entry.key);
@@ -634,11 +655,12 @@ const start = ({
               rpc?.respond(entry.rpcId, {
                 outcome: { outcome: decision === "deny" ? "rejected" : "accepted" },
               });
+
               // Cursor ends its turn with the plan; building it is the next one.
               if (decision !== "deny") {
                 permission = buildPermission ?? "auto-edit";
                 afterTurn = () =>
-                  run({
+                  runTurn({
                     messageId: randomUUID(),
                     text: "The user approved the plan. Implement it now.",
                     attachments: [],
@@ -648,6 +670,7 @@ const start = ({
                     handoff: null,
                   });
               }
+
               break;
             case "question":
               rpc?.respond(
@@ -667,70 +690,67 @@ const start = ({
                     },
               );
           }
-          emit(
-            RuntimeEvent.cases["approval.resolved"].make({
-              threadId,
-              requestId,
-              answers: entry.kind === "question" && decision !== "deny" ? answers : undefined,
-            }),
+
+          approvals.resolve(
+            requestId,
+            entry.kind === "question" && decision !== "deny" ? answers : undefined,
           );
-          emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
-          return Effect.void;
         }),
       // Cursor only takes a model at launch, so the next turn relaunches it.
       setModel: (next) => Effect.sync(() => void (model = next)),
       close: Effect.sync(() => rpc?.close()),
     };
+
     return session;
   });
+}
 
 /** Cursor lists skills among its slash commands, telling them apart by a note on the description. */
 const SKILL_NOTE = /\s*\((?:(?:builtin|user|project) )?skill\)$/;
 
 /** The skills Cursor reports in `cwd`, read from the commands a new session announces. */
-const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
-  Effect.tryPromise({
-    try: async () => {
-      let report: (
-        commands: ReadonlyArray<{ name: string; description: string }>,
-      ) => void = () => {};
-      const reported = new Promise<ReadonlyArray<{ name: string; description: string }>>(
-        (resolve) => (report = resolve),
-      );
-      const launch = harnessLaunch("cursor", harness);
-      const rpc = await connectAcp("Cursor", launch, acpArgs(launch, null), cwd, {
-        onUpdate: (update) => {
-          if (SessionUpdate.guards.available_commands_update(update))
-            report(update.availableCommands);
-        },
-      });
-      try {
-        await rpc.request("session/new", { cwd, mcpServers: [] }, SessionSetup);
-        const commands = await Promise.race([
-          reported,
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
-        ]);
-        if (commands === null) throw new Error("Cursor didn't list its skills within 15 s");
-        return commands.flatMap(({ name, description }) =>
-          SKILL_NOTE.test(description)
-            ? [{ name, description: description.replace(SKILL_NOTE, ""), path: null }]
-            : [],
-        );
-      } finally {
-        rpc.close();
+const listSkills: ProviderAdapter["listSkills"] = Effect.fn("CursorAdapter.listSkills")(function* ({
+  cwd,
+  harness,
+}) {
+  const launch = yield* resolveHarnessLaunch("cursor", harness);
+  const reported = yield* Deferred.make<ReadonlyArray<{ name: string; description: string }>>();
+
+  const rpc = yield* acquireCursorConnection(launch, cwd, {
+    onUpdate: (update) => {
+      if (SessionUpdate.guards.available_commands_update(update)) {
+        Deferred.doneUnsafe(reported, Effect.succeed(update.availableCommands));
       }
     },
-    catch: (e) => fail(message(e)),
   });
 
-const unsupported = (action: string) => () =>
-  Effect.fail(fail(`Cursor can't ${action} a conversation yet.`));
+  yield* tryProviderPromise("cursor", () =>
+    rpc.request("session/new", { cwd, mcpServers: [] }, SessionSetup),
+  );
+
+  const commands = yield* Deferred.await(reported).pipe(
+    Effect.timeoutOrElse({
+      duration: "15 seconds",
+      orElse: () => Effect.fail(createError("Cursor didn't list its skills within 15 s")),
+    }),
+  );
+
+  return commands.flatMap(({ name, description }) =>
+    SKILL_NOTE.test(description)
+      ? [{ name, description: description.replace(SKILL_NOTE, ""), path: null }]
+      : [],
+  );
+}, Effect.scoped);
+
+function failUnsupported(action: string) {
+  return () => Effect.fail(createError(`Cursor can't ${action} a conversation yet.`));
+}
 
 export const CursorAdapter: ProviderAdapter = {
   kind: "cursor",
   start,
-  rewind: unsupported("rewind"),
-  fork: unsupported("fork"),
+  rewind: failUnsupported("rewind"),
+  fork: failUnsupported("fork"),
   readUsage: () => Effect.succeed({ context: null, costUsd: null }),
   listSkills,
 };

@@ -27,6 +27,7 @@ type Setup =
 export function SimulatorPanel({ threadId }: { threadId: string }) {
   const { deviceId } = useSimulator(threadId);
   const aside = useRef<HTMLElement>(null);
+
   const panel = useResizable({
     key: "masscode.simulatorPanelWidth",
     initial: 400,
@@ -37,51 +38,170 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
         Math.min(width, (aside.current?.parentElement?.clientWidth ?? window.innerWidth) - 380),
       ),
   });
+
   const [setup, setSetup] = useState<Setup>({ status: "loading" });
-  const [booting, setBooting] = useState<string | null>(null);
+  const [bootingDeviceId, setBootingDeviceId] = useState<string | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
 
   /** Lists the devices again; false when that failed. */
-  async function refresh(install: boolean) {
+  async function refreshDevices(install: boolean) {
     const listed = await listDevices(install);
+
     if (!listed) setSetup({ status: "failed", message: "MassCode didn't answer. Try again." });
     else if (listed.error) setSetup({ status: "failed", message: listed.error });
     else if (!listed.hub) setSetup({ status: "missing" });
     else setSetup({ status: "ready", hub: listed.hub, devices: listed.devices });
+
     return Boolean(listed?.hub && !listed.error);
   }
 
-  async function load(install: boolean) {
+  async function loadDevices(install: boolean) {
     setSetup({ status: install ? "installing" : "loading" });
+
     // The hub forgets its streams when it restarts, so reattach the thread's device.
-    if ((await refresh(install)) && deviceId) await boot(deviceId);
+    if ((await refreshDevices(install)) && deviceId) await bootDevice(deviceId);
   }
 
-  async function boot(id: string) {
-    setBooting(id);
+  async function bootDevice(id: string) {
+    setBootingDeviceId(id);
     setBootError(null);
     const error = await attachDevice(threadId, id);
+
     // A booted emulator has a serial to stream by now.
-    if (!error) await refresh(false);
-    setBooting(null);
+    if (!error) await refreshDevices(false);
+    setBootingDeviceId(null);
     setBootError(error);
   }
 
   // Loads once the daemon answers, and again after it restarts, which also restarts the hub.
-  const connected = useStore((state) => state.connected);
-  const loadOnConnect = useEffectEvent(() => void load(false));
+  const isConnected = useStore((state) => state.connected);
+  const loadOnConnect = useEffectEvent(() => void loadDevices(false));
   useEffect(() => {
-    if (connected) loadOnConnect();
-  }, [connected]);
+    if (isConnected) loadOnConnect();
+  }, [isConnected]);
 
   const devices = setup.status === "ready" ? setup.devices : [];
   const device = devices.find((candidate) => candidate.id === deviceId);
 
   // An agent may attach a device this list hasn't seen started.
   const refreshForDevice = useEffectEvent(() => {
-    if (setup.status === "ready" && deviceId && !device?.streamId && !booting) void refresh(false);
+    if (setup.status === "ready" && deviceId && !device?.streamId && !bootingDeviceId)
+      void refreshDevices(false);
   });
+
   useEffect(() => refreshForDevice(), [deviceId]);
+
+  function renderPanelBody() {
+    if (setup.status === "loading") {
+      return (
+        <Message>
+          <LoaderCircle className="size-4 animate-spin" />
+          Starting the device hub…
+        </Message>
+      );
+    }
+
+    if (setup.status === "missing") {
+      return (
+        <Message>
+          <span>
+            Run iOS simulators and Android emulators here, for you and the agent. This installs
+            expo-device-hub and agent-device from npm into ~/.masscode/tools.
+          </span>
+          <ActionButton onClick={() => void loadDevices(true)}>Set up</ActionButton>
+        </Message>
+      );
+    }
+
+    if (setup.status === "installing") {
+      return (
+        <Message>
+          <LoaderCircle className="size-4 animate-spin" />
+          Installing the device tools. This can take a minute…
+        </Message>
+      );
+    }
+
+    if (setup.status === "failed") {
+      return (
+        <Message>
+          <span className="selectable">{setup.message}</span>
+          <ActionButton onClick={() => void loadDevices(false)}>Try again</ActionButton>
+        </Message>
+      );
+    }
+
+    if (bootingDeviceId) {
+      return (
+        <Message>
+          <LoaderCircle className="size-4 animate-spin" />
+          Starting{" "}
+          {devices.find((candidate) => candidate.id === bootingDeviceId)?.name ?? "the device"}…
+        </Message>
+      );
+    }
+
+    if (bootError) {
+      return (
+        <Message>
+          <span className="selectable">{bootError}</span>
+          {deviceId ? (
+            <ActionButton onClick={() => void bootDevice(deviceId)}>Try again</ActionButton>
+          ) : null}
+        </Message>
+      );
+    }
+
+    if (device?.streamId) {
+      return (
+        <DeviceScreen
+          key={`${device.id}:${device.streamId}`}
+          hub={setup.hub}
+          device={device}
+          streamId={device.streamId}
+        />
+      );
+    }
+
+    if (deviceId) {
+      return (
+        <Message>
+          <LoaderCircle className="size-4 animate-spin" />
+          Starting the device…
+        </Message>
+      );
+    }
+
+    if (devices.length === 0) {
+      return (
+        <Message>
+          This Mac has no iOS simulators or Android emulators. Add a simulator in Xcode → Settings →
+          Components, or an emulator in Android Studio's Device Manager, then try again.
+          <ActionButton onClick={() => void loadDevices(false)}>Try again</ActionButton>
+        </Message>
+      );
+    }
+
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">Choose a device to start</p>
+        {devices.map((candidate) => (
+          <button
+            key={candidate.id}
+            type="button"
+            onClick={() => void bootDevice(candidate.id)}
+            className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-2 text-left text-sm transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="truncate">{candidate.name}</span>
+            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+              {candidate.version}
+              {candidate.booted ? " · Running" : ""}
+            </span>
+          </button>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <aside
@@ -112,7 +232,10 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
             collisionPadding={8}
             className="max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto"
           >
-            <DropdownMenuRadioGroup value={deviceId ?? ""} onValueChange={(id) => void boot(id)}>
+            <DropdownMenuRadioGroup
+              value={deviceId ?? ""}
+              onValueChange={(id) => void bootDevice(id)}
+            >
               {devices.map((candidate) => (
                 <DropdownMenuRadioItem key={candidate.id} value={candidate.id}>
                   <span className="truncate">{candidate.name}</span>
@@ -137,78 +260,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
           <X className="size-3.5" />
         </IconButton>
       </div>
-      {setup.status === "loading" ? (
-        <Message>
-          <LoaderCircle className="size-4 animate-spin" />
-          Starting the device hub…
-        </Message>
-      ) : setup.status === "missing" ? (
-        <Message>
-          <span>
-            Run iOS simulators and Android emulators here, for you and the agent. This installs
-            expo-device-hub and agent-device from npm into ~/.masscode/tools.
-          </span>
-          <ActionButton onClick={() => void load(true)}>Set up</ActionButton>
-        </Message>
-      ) : setup.status === "installing" ? (
-        <Message>
-          <LoaderCircle className="size-4 animate-spin" />
-          Installing the device tools. This can take a minute…
-        </Message>
-      ) : setup.status === "failed" ? (
-        <Message>
-          <span className="selectable">{setup.message}</span>
-          <ActionButton onClick={() => void load(false)}>Try again</ActionButton>
-        </Message>
-      ) : booting ? (
-        <Message>
-          <LoaderCircle className="size-4 animate-spin" />
-          Starting {devices.find((candidate) => candidate.id === booting)?.name ?? "the device"}…
-        </Message>
-      ) : bootError ? (
-        <Message>
-          <span className="selectable">{bootError}</span>
-          {deviceId ? (
-            <ActionButton onClick={() => void boot(deviceId)}>Try again</ActionButton>
-          ) : null}
-        </Message>
-      ) : device?.streamId ? (
-        <DeviceScreen
-          key={`${device.id}:${device.streamId}`}
-          hub={setup.hub}
-          device={device}
-          streamId={device.streamId}
-        />
-      ) : deviceId ? (
-        <Message>
-          <LoaderCircle className="size-4 animate-spin" />
-          Starting the device…
-        </Message>
-      ) : devices.length === 0 ? (
-        <Message>
-          This Mac has no iOS simulators or Android emulators. Add a simulator in Xcode → Settings →
-          Components, or an emulator in Android Studio's Device Manager, then try again.
-          <ActionButton onClick={() => void load(false)}>Try again</ActionButton>
-        </Message>
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
-          <p className="px-2 py-1.5 text-xs text-muted-foreground">Choose a device to start</p>
-          {devices.map((candidate) => (
-            <button
-              key={candidate.id}
-              type="button"
-              onClick={() => void boot(candidate.id)}
-              className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-2 text-left text-sm transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <span className="truncate">{candidate.name}</span>
-              <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                {candidate.version}
-                {candidate.booted ? " · Running" : ""}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      {renderPanelBody()}
     </aside>
   );
 }
@@ -227,31 +279,35 @@ function DeviceScreen({
   const surface = useRef<HTMLDivElement>(null);
   const fallback = useRef<HTMLImageElement>(null);
   const stream = useRef<DeviceStream | null>(null);
-  const touching = useRef(false);
-  const [streaming, setStreaming] = useState(false);
+  const isTouching = useRef(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [mjpegUrl, setMjpegUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const connected = connectDeviceStream(hub, device.platform, streamId, canvas.current!, {
-      onStatus: (status) => setStreaming(status === "streaming"),
+    const deviceStream = connectDeviceStream(hub, device.platform, streamId, canvas.current!, {
+      onStatus: (status) => setIsStreaming(status === "streaming"),
       onMjpeg: setMjpegUrl,
     });
-    stream.current = connected;
-    return () => connected.stop();
+
+    stream.current = deviceStream;
+
+    return () => deviceStream.stop();
   }, [hub, device.platform, streamId]);
 
   // A multipart image may never fire `load`, so watch for its first frame instead.
   useEffect(() => {
     if (!mjpegUrl) return;
+
     const poll = setInterval(() => {
       if (!fallback.current?.naturalWidth) return;
-      setStreaming(true);
+      setIsStreaming(true);
       clearInterval(poll);
     }, 250);
+
     return () => clearInterval(poll);
   }, [mjpegUrl]);
 
-  function touch(type: "begin" | "move" | "end", event: React.PointerEvent<HTMLElement>) {
+  function sendTouch(type: "begin" | "move" | "end", event: React.PointerEvent<HTMLElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     stream.current?.touch(
       type,
@@ -264,36 +320,39 @@ function DeviceScreen({
     onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
       event.currentTarget.setPointerCapture(event.pointerId);
       surface.current?.focus();
-      touching.current = true;
-      touch("begin", event);
+      isTouching.current = true;
+      sendTouch("begin", event);
     },
     onPointerMove: (event: React.PointerEvent<HTMLElement>) => {
-      if (touching.current) touch("move", event);
+      if (isTouching.current) sendTouch("move", event);
     },
     onPointerUp: (event: React.PointerEvent<HTMLElement>) => {
-      touching.current = false;
-      touch("end", event);
+      isTouching.current = false;
+      sendTouch("end", event);
     },
     onPointerCancel: (event: React.PointerEvent<HTMLElement>) => {
-      touching.current = false;
-      touch("end", event);
+      isTouching.current = false;
+      sendTouch("end", event);
     },
   };
 
-  function key(phase: "down" | "up", event: React.KeyboardEvent) {
+  function sendKey(phase: "down" | "up", event: React.KeyboardEvent) {
     if (event.metaKey) {
       // Apple's Simulator shortcuts: ⌘⇧H for Home, ⌘→ to rotate.
       if (phase !== "down") return;
+
       if (event.shiftKey && event.code === "KeyH") stream.current?.press("home");
       else if (event.code === "ArrowRight") stream.current?.rotate();
       else return;
       event.preventDefault();
+
       return;
     }
+
     // Tab still moves focus out, so the screen never traps the keyboard.
     if (event.key === "Tab") return;
     event.preventDefault();
-    stream.current?.key(event.nativeEvent, phase);
+    stream.current?.sendKey(event.nativeEvent, phase);
   }
 
   return (
@@ -301,8 +360,8 @@ function DeviceScreen({
       ref={surface}
       tabIndex={0}
       aria-label="Device screen. Click to focus, then type to send keys."
-      onKeyDown={(event) => key("down", event)}
-      onKeyUp={(event) => key("up", event)}
+      onKeyDown={(event) => sendKey("down", event)}
+      onKeyUp={(event) => sendKey("up", event)}
       className="flex min-h-0 flex-1 flex-col items-center gap-3 p-4 outline-none"
     >
       <div className="relative flex min-h-0 w-full flex-1 items-center justify-center">
@@ -324,7 +383,7 @@ function DeviceScreen({
             className="max-h-full max-w-full touch-none rounded-[2rem] select-none"
           />
         ) : null}
-        {streaming ? null : (
+        {isStreaming ? null : (
           <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <LoaderCircle className="size-4 animate-spin" />
             Connecting…

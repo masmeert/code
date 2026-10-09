@@ -1,5 +1,7 @@
 import { BrowserAction, type BrowserResult } from "@masscode/contracts";
+import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
+import { readStored, writeStored } from "./storage.ts";
 
 export interface Webview extends HTMLElement {
   loadURL(url: string): Promise<void>;
@@ -12,17 +14,23 @@ export interface Webview extends HTMLElement {
   stop(): void;
 }
 
-export interface BrowserTab {
-  readonly id: string;
-  readonly url: string;
-  readonly title: string;
-}
+const BrowserTab = Schema.Struct({
+  id: Schema.String,
+  url: Schema.String,
+  title: Schema.String,
+});
 
-export interface ThreadBrowser {
-  readonly open: boolean;
-  readonly tabs: ReadonlyArray<BrowserTab>;
-  readonly activeTabId: string | null;
-}
+export type BrowserTab = typeof BrowserTab.Type;
+
+const ThreadBrowser = Schema.Struct({
+  open: Schema.Boolean,
+  tabs: Schema.Array(BrowserTab),
+  activeTabId: Schema.NullOr(Schema.String),
+});
+
+export type ThreadBrowser = typeof ThreadBrowser.Type;
+
+const ThreadBrowsers = Schema.Record(Schema.String, ThreadBrowser);
 
 export interface TabActivity {
   readonly canGoBack: boolean;
@@ -49,26 +57,23 @@ interface BrowserState {
 
 const STORAGE_KEY = "masscode.browser";
 
-function readThreads(): Record<string, ThreadBrowser> {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
-  } catch {
-    return {};
-  }
-}
+let state: BrowserState = {
+  threads: readStored(STORAGE_KEY, ThreadBrowsers, {}),
+  activity: {},
+  alive: [],
+  surface: null,
+};
 
-let state: BrowserState = { threads: readThreads(), activity: {}, alive: [], surface: null };
 const listeners = new Set<() => void>();
+
 const webviews = new Map<string, Webview>();
+
 const addressInputs = new Map<string, HTMLInputElement>();
 
 function setState(next: BrowserState) {
-  if (next.threads !== state.threads) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next.threads));
-    } catch {}
-  }
+  if (next.threads !== state.threads) writeStored(STORAGE_KEY, ThreadBrowsers, next.threads);
   state = next;
+
   for (const listener of listeners) listener();
 }
 
@@ -76,20 +81,21 @@ export function useBrowser<A>(select: (state: BrowserState) => A): A {
   return useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
+
       return () => listeners.delete(listener);
     },
     () => select(state),
   );
 }
 
-function threadBrowser(threadId: string): ThreadBrowser {
+function getThreadBrowser(threadId: string): ThreadBrowser {
   return state.threads[threadId] ?? { open: false, tabs: [], activeTabId: null };
 }
 
 function updateThread(threadId: string, update: (browser: ThreadBrowser) => ThreadBrowser) {
   setState({
     ...state,
-    threads: { ...state.threads, [threadId]: update(threadBrowser(threadId)) },
+    threads: { ...state.threads, [threadId]: update(getThreadBrowser(threadId)) },
   });
 }
 
@@ -103,12 +109,16 @@ export function isLocalUrl(url: string) {
 
 export function normalizeUrl(input: string): string | null {
   const trimmed = input.trim();
+
   if (!trimmed || /\s/.test(trimmed)) return null;
+
   const candidate = trimmed.includes("://")
     ? trimmed
     : `${isLocalUrl(`http://${trimmed}`) ? "http" : "https"}://${trimmed}`;
+
   try {
     const url = new URL(candidate);
+
     return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
   } catch {
     return null;
@@ -116,7 +126,8 @@ export function normalizeUrl(input: string): string | null {
 }
 
 export function toggleBrowser(threadId: string) {
-  const browser = threadBrowser(threadId);
+  const browser = getThreadBrowser(threadId);
+
   if (!browser.open && browser.tabs.length === 0) return openTab(threadId);
   updateThread(threadId, (current) => ({ ...current, open: !current.open }));
 }
@@ -132,13 +143,14 @@ export function openTab(threadId: string, url = "") {
 
 /** Shows `url` in the thread's browser: in the tab already on it, or a new one. */
 export function openPreview(threadId: string, url: string) {
-  const tab = threadBrowser(threadId).tabs.find((candidate) => candidate.url === url);
+  const tab = getThreadBrowser(threadId).tabs.find((candidate) => candidate.url === url);
+
   if (!tab) return openTab(threadId, url);
   updateThread(threadId, (current) => ({ ...current, open: true, activeTabId: tab.id }));
 }
 
 export function closeTab(threadId: string, tabId: string) {
-  const browser = threadBrowser(threadId);
+  const browser = getThreadBrowser(threadId);
   const index = browser.tabs.findIndex((tab) => tab.id === tabId);
   const tabs = browser.tabs.filter((tab) => tab.id !== tabId);
   const { [tabId]: _closed, ...activity } = state.activity;
@@ -196,12 +208,14 @@ export function updateActivity(tabId: string, patch: Partial<TabActivity>) {
 
 export function navigate(threadId: string, tabId: string, input: string) {
   const url = normalizeUrl(input);
+
   if (!url) return false;
   webviews
     .get(tabId)
     ?.loadURL(url)
     .catch(() => {});
   updateTab(threadId, tabId, { url });
+
   return true;
 }
 
@@ -232,6 +246,7 @@ export function showTab(threadId: string, tabId: string) {
 
 export function setSurface(threadId: string, rect: SurfaceRect) {
   const current = state.surface;
+
   if (
     current?.threadId === threadId &&
     current.rect.x === rect.x &&
@@ -240,6 +255,7 @@ export function setSurface(threadId: string, rect: SurfaceRect) {
     current.rect.height === rect.height
   )
     return;
+
   setState({ ...state, surface: { threadId, rect } });
 }
 
@@ -249,6 +265,7 @@ export function clearSurface(threadId: string) {
 
 export function registerWebview(tabId: string, webview: Webview) {
   webviews.set(tabId, webview);
+
   return () => {
     if (webviews.get(tabId) === webview) webviews.delete(tabId);
   };
@@ -256,6 +273,7 @@ export function registerWebview(tabId: string, webview: Webview) {
 
 export function registerAddressInput(threadId: string, input: HTMLInputElement) {
   addressInputs.set(threadId, input);
+
   return () => {
     if (addressInputs.get(threadId) === input) addressInputs.delete(threadId);
   };
@@ -265,34 +283,41 @@ export function focusAddress(threadId: string) {
   addressInputs.get(threadId)?.focus();
 }
 
-export function tabForWebContents(webContentsId: number) {
+export function findTabForWebContents(webContentsId: number) {
   for (const [tabId, webview] of webviews) {
     try {
       if (webview.getWebContentsId() !== webContentsId) continue;
     } catch {
       continue;
     }
+
     const threadId = Object.keys(state.threads).find((id) =>
-      state.threads[id]!.tabs.some((tab) => tab.id === tabId),
+      state.threads[id].tabs.some((tab) => tab.id === tabId),
     );
+
     return threadId ? { threadId, tabId } : null;
   }
+
   return null;
 }
 
-function activeTab(threadId: string) {
-  const browser = threadBrowser(threadId);
+function findActiveTab(threadId: string) {
+  const browser = getThreadBrowser(threadId);
+
   return browser.tabs.find((tab) => tab.id === browser.activeTabId);
 }
 
-async function attachedWebview(tabId: string) {
+async function waitForWebview(tabId: string) {
   for (let attempt = 0; attempt < 100; attempt++) {
     const webview = webviews.get(tabId);
+
     try {
       if (webview && webview.getWebContentsId() > 0) return webview;
     } catch {}
+
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+
   throw new Error("The browser tab didn't start");
 }
 
@@ -301,22 +326,31 @@ export async function performBrowserAction(
   action: BrowserAction,
 ): Promise<BrowserResult> {
   const desktop = window.desktop;
+
   if (!desktop) throw new Error("The browser is only available in the MassCode desktop app");
+
   const url = BrowserAction.guards.navigate(action) ? normalizeUrl(action.url) : null;
+
   if (BrowserAction.guards.navigate(action) && !url)
     throw new Error(`Not a web address: ${action.url}`);
-  const current = activeTab(threadId);
+  const current = findActiveTab(threadId);
+
   if (!current?.url && !url)
     throw new Error("No page is open in the browser; navigate to one first");
+
   if (!current) openTab(threadId, url!);
   else if (!current.url) updateTab(threadId, current.id, { url: url! });
-  if (!threadBrowser(threadId).open)
+
+  if (!getThreadBrowser(threadId).open)
     updateThread(threadId, (browser) => ({ ...browser, open: true }));
-  const tab = activeTab(threadId)!;
+
+  const tab = findActiveTab(threadId)!;
   showTab(threadId, tab.id);
   updateActivity(tab.id, { automating: (state.activity[tab.id]?.automating ?? 0) + 1 });
+
   try {
-    const webview = await attachedWebview(tab.id);
+    const webview = await waitForWebview(tab.id);
+
     return await desktop.automateBrowser(
       webview.getWebContentsId(),
       !current?.url

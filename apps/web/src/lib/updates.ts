@@ -6,7 +6,9 @@ export function useUpdateStatus() {
   useEffect(() => {
     if (!window.desktop) return;
     window.desktop.updateStatus().then(setStatus, () => {});
+
     return window.desktop.onUpdateStatus(setStatus);
   }, []);
+
   return status;
 }

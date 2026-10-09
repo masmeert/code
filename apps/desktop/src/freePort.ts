@@ -1,6 +1,6 @@
 import { type AddressInfo, createServer } from "node:net";
 
-export function freePort() {
+export function findFreePort() {
   return new Promise<number>((resolve, reject) => {
     const server = createServer()
       .once("error", reject)

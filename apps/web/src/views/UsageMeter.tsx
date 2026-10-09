@@ -3,7 +3,7 @@ import { cn } from "@masscode/ui/lib/utils";
 import { ClientCommand, type ContextUsage, type ProviderKind } from "@masscode/contracts";
 import { ChevronRight, LoaderCircle, Minimize2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { describe, useKeybinding } from "../lib/keybindings.ts";
+import { formatKeybinding, useKeybinding } from "../lib/keybindings.ts";
 import {
   readLimits,
   readUsage,
@@ -14,7 +14,10 @@ import {
 } from "../lib/store.ts";
 import { useNow } from "../lib/time.ts";
 
-const tokens = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
+export const tokenFormat = new Intl.NumberFormat("en", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
 
 /** Keyed by the category's name so a row keeps its colour whatever else is in the window. */
 const CATEGORY_COLOR = new Map([
@@ -27,22 +30,28 @@ const CATEGORY_COLOR = new Map([
   ["Custom agents", "bg-[#4a3aa7] dark:bg-[#9085e9]"],
 ]);
 
-function categoryColor(category: ContextUsage["categories"][number]) {
+function getCategoryColor(category: ContextUsage["categories"][number]) {
   if (category.kind === "free") return "bg-muted";
+
   if (category.kind !== "used") return "bg-muted-foreground/40";
+
   return CATEGORY_COLOR.get(category.name) ?? "bg-muted-foreground";
 }
 
-function percentOf(part: number, whole: number) {
+function getPercent(part: number, whole: number) {
   return whole > 0 ? Math.round((part / whole) * 100) : 0;
 }
 
 /** "Resets in 3 hr 21 min" within a day, else the weekday and time. */
-export function resetLabel(resetsAt: number, now: number) {
+export function formatResetLabel(resetsAt: number, now: number) {
   const minutes = Math.max(0, Math.round((resetsAt - now) / 60_000));
-  if (minutes >= 24 * 60)
+
+  if (minutes >= 24 * 60) {
     return `Resets ${new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }).format(resetsAt)}`;
+  }
+
   const hours = Math.floor(minutes / 60);
+
   return `Resets in ${hours ? `${hours} hr ` : ""}${minutes % 60} min`;
 }
 
@@ -50,44 +59,48 @@ export function resetLabel(resetsAt: number, now: number) {
 export function UsageMeter({
   threadId,
   provider,
-  busy,
+  isBusy,
 }: {
   threadId: string;
   provider: ProviderKind;
-  busy: boolean;
+  isBusy: boolean;
 }) {
-  const usage = useStore((s) => s.threads[threadId]?.usage);
-  const reading = useStore((s) => s.readingUsage[threadId] ?? false);
+  const usage = useStore((state) => state.threads[threadId]?.usage);
+  const isReading = useStore((state) => state.readingUsage[threadId] ?? false);
   const host = useThreadHost(threadId);
-  const [open, setOpen] = useState(false);
-  const missing = usage === undefined;
+  const [isOpen, setIsOpen] = useState(false);
+  const isMissing = usage === undefined;
+
   useEffect(() => {
-    if (missing) readUsage(threadId);
-  }, [missing, threadId]);
-  useKeybinding("usage.toggle", () => setOpen((wasOpen) => !wasOpen));
+    if (isMissing) readUsage(threadId);
+  }, [isMissing, threadId]);
+
+  useKeybinding("usage.toggle", () => setIsOpen((wasOpen) => !wasOpen));
+
   useEffect(() => {
-    if (open) readLimits(provider, host);
-  }, [open, provider, host]);
+    if (isOpen) readLimits(provider, host);
+  }, [isOpen, provider, host]);
 
   const context = usage?.context ?? null;
-  const percent = context ? percentOf(context.usedTokens, context.maxTokens) : 0;
+  const percent = context ? getPercent(context.usedTokens, context.maxTokens) : 0;
   const circumference = 2 * Math.PI * 6;
+
   return (
-    <MorphPopover open={open} onOpenChange={setOpen}>
+    <MorphPopover open={isOpen} onOpenChange={setIsOpen}>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
-        title={`${context ? `Context ${percent}% full` : "Context and usage"} (${describe("usage.toggle")})`}
+        onClick={() => setIsOpen(!isOpen)}
+        title={`${context ? `Context ${percent}% full` : "Context and usage"} (${formatKeybinding("usage.toggle")})`}
         aria-label={context ? `Context ${percent}% full` : "Context and usage"}
         className={cn(
           "flex h-8 items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring @max-md:w-8 @max-md:justify-center @max-md:px-0",
           percent >= 90 && "text-destructive hover:text-destructive",
         )}
       >
-        {reading ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+        {isReading ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}
         <svg
           viewBox="0 0 16 16"
-          className={cn("size-3.5 -rotate-90", reading && "hidden")}
+          className={cn("size-3.5 -rotate-90", isReading && "hidden")}
           aria-hidden="true"
         >
           <circle cx="8" cy="8" r="6" fill="none" strokeWidth="2.5" className="stroke-border" />
@@ -110,8 +123,8 @@ export function UsageMeter({
           threadId={threadId}
           context={context}
           costUsd={usage?.costUsd ?? null}
-          reading={reading}
-          busy={busy}
+          isReading={isReading}
+          isBusy={isBusy}
         />
         <LimitsSection provider={provider} host={host} />
       </MorphPopoverContent>
@@ -123,19 +136,19 @@ function ContextSection({
   threadId,
   context,
   costUsd,
-  reading,
-  busy,
+  isReading,
+  isBusy,
 }: {
   threadId: string;
   context: ContextUsage | null;
   costUsd: number | null;
-  reading: boolean;
-  busy: boolean;
+  isReading: boolean;
+  isBusy: boolean;
 }) {
-  if (!context)
+  if (!context) {
     return (
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        {reading ? (
+        {isReading ? (
           <>
             <LoaderCircle className="size-3.5 animate-spin" />
             Reading context usage…
@@ -145,10 +158,13 @@ function ContextSection({
         )}
       </p>
     );
+  }
+
   // Harnesses that don't break the window down (Codex) get one "used" row.
   const categories = context.categories.length
     ? context.categories.filter((category) => category.tokens > 0)
     : [{ name: "Used", tokens: context.usedTokens, kind: "used" as const }];
+
   return (
     <div className="text-xs">
       <details className="group">
@@ -156,8 +172,8 @@ function ContextSection({
           <div className="flex items-center justify-between gap-2">
             <span className="text-muted-foreground">Context window</span>
             <span className="flex items-center gap-1 tabular-nums">
-              {tokens.format(context.usedTokens)} / {tokens.format(context.maxTokens)} (
-              {percentOf(context.usedTokens, context.maxTokens)}%)
+              {tokenFormat.format(context.usedTokens)} / {tokenFormat.format(context.maxTokens)} (
+              {getPercent(context.usedTokens, context.maxTokens)}%)
               <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
             </span>
           </div>
@@ -167,8 +183,8 @@ function ContextSection({
               .map((category) => (
                 <div
                   key={category.name}
-                  title={`${category.name}: ${tokens.format(category.tokens)}`}
-                  className={cn("h-full", categoryColor(category))}
+                  title={`${category.name}: ${tokenFormat.format(category.tokens)}`}
+                  className={cn("h-full", getCategoryColor(category))}
                   style={{ width: `${(category.tokens / context.maxTokens) * 100}%` }}
                 />
               ))}
@@ -183,15 +199,15 @@ function ContextSection({
                 category.kind === "deferred" && "text-muted-foreground",
               )}
             >
-              <span className={cn("size-2 shrink-0 rounded-sm", categoryColor(category))} />
+              <span className={cn("size-2 shrink-0 rounded-sm", getCategoryColor(category))} />
               <span className="min-w-0 flex-1 truncate">{category.name}</span>
               <span className="text-muted-foreground tabular-nums">
-                {tokens.format(category.tokens)}
+                {tokenFormat.format(category.tokens)}
               </span>
               <span className="w-10 text-right tabular-nums">
                 {category.kind === "deferred"
                   ? "—"
-                  : `${percentOf(category.tokens, context.maxTokens)}%`}
+                  : `${getPercent(category.tokens, context.maxTokens)}%`}
               </span>
             </li>
           ))}
@@ -210,7 +226,7 @@ function ContextSection({
         )}
         <button
           type="button"
-          disabled={busy}
+          disabled={isBusy}
           onClick={() => send(ClientCommand.cases["thread.compact"].make({ threadId }))}
           title="Summarize the conversation so far to free up context"
           className="flex h-6 items-center gap-1 rounded-md px-1.5 text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
@@ -224,11 +240,13 @@ function ContextSection({
 }
 
 function LimitsSection({ provider, host }: { provider: ProviderKind; host: string | null }) {
-  const limits = useStore((s) =>
-    host === null ? s.limits[provider] : s.hosts[host]?.limits[provider],
+  const limits = useStore((state) =>
+    host === null ? state.limits[provider] : state.hosts[host]?.limits[provider],
   );
+
   const plan = useProviders(host).find((status) => status.kind === provider)?.plan;
   const now = useNow(60_000);
+
   return (
     <div className="mt-3 border-t border-border pt-3 text-xs">
       <div className="flex items-center justify-between">
@@ -262,7 +280,9 @@ function LimitsSection({ provider, host }: { provider: ProviderKind; host: strin
             <div className="flex items-baseline gap-2">
               <span className="min-w-0 flex-1 truncate">{limit.label}</span>
               {limit.resetsAt === null ? null : (
-                <span className="text-muted-foreground">{resetLabel(limit.resetsAt, now)}</span>
+                <span className="text-muted-foreground">
+                  {formatResetLabel(limit.resetsAt, now)}
+                </span>
               )}
               <span className="w-9 text-right tabular-nums">{Math.round(limit.usedPercent)}%</span>
             </div>

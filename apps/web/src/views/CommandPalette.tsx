@@ -1,4 +1,4 @@
-import { ProjectBadge, projectLabel } from "@/components/project-badge";
+import { ProjectBadge, formatProjectLabel } from "@/components/project-badge";
 import { searchCommands } from "@masscode/ui/lib/command-search";
 import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
 import { cn } from "@masscode/ui/lib/utils";
@@ -20,7 +20,7 @@ import {
 import { createPortal } from "react-dom";
 import { searchMessages, useStore } from "../lib/store.ts";
 
-export interface PaletteAction {
+interface PaletteAction {
   readonly id: string;
   readonly label: string;
   readonly hint?: string;
@@ -46,68 +46,81 @@ interface Row {
 }
 
 const MAX_THREADS = 8;
+
 const SEARCH_DELAY_MS = 150;
+
 const NO_HITS: ReadonlyArray<SearchHit> = [];
 
 /** A search snippet with the matched words highlighted (the daemon wraps them in U+E000 / U+E001). */
-const Snippet = ({ text }: { text: string }) => (
-  <>
-    {text.split("").map((part, index) => {
-      if (index === 0) return <Fragment key={index}>{part}</Fragment>;
-      const [match, rest] = part.split("");
-      return (
-        <Fragment key={index}>
-          <mark className="rounded-sm bg-brand/15 text-foreground">{match}</mark>
-          {rest}
-        </Fragment>
-      );
-    })}
-  </>
-);
+function Snippet({ text }: { text: string }) {
+  return (
+    <>
+      {text.split("").map((part, index) => {
+        if (index === 0) return <Fragment key={index}>{part}</Fragment>;
+        const [match, rest] = part.split("");
+
+        return (
+          <Fragment key={index}>
+            <mark className="rounded-sm bg-brand/15 text-foreground">{match}</mark>
+            {rest}
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
 
 /** A row's action: close, then act with the latest props, so rows needn't be rebuilt when the parent re-renders. */
-const choose = (latest: RefObject<PaletteProps>, act: (props: PaletteProps) => void) => () => {
-  latest.current.onClose();
-  act(latest.current);
-};
+function createRowAction(latest: RefObject<PaletteProps>, act: (props: PaletteProps) => void) {
+  return () => {
+    latest.current.onClose();
+    act(latest.current);
+  };
+}
 
 /**
  * ⌘K: jump to a thread or project, run an action, or find a message across every
  * thread. Start with ">" for actions only.
  */
-export const CommandPalette = ({ open, ...props }: PaletteProps & { readonly open: boolean }) =>
+export function CommandPalette({ isOpen, ...props }: PaletteProps & { readonly isOpen: boolean }) {
   // Portaled, so no ancestor's transform or stacking context can trap the overlay.
-  open ? createPortal(<Palette {...props} />, document.body) : null;
+  return isOpen ? createPortal(<Palette {...props} />, document.body) : null;
+}
 
 /** Mounted only while open, so a closed palette subscribes to nothing and searches nothing. */
-const Palette = (props: PaletteProps) => {
-  const threads = useStore((s) => s.threads);
-  const projects = useStore((s) => s.projects);
-  const projectHosts = useStore((s) => s.projectHosts);
+function Palette(props: PaletteProps) {
+  const threads = useStore((state) => state.threads);
+  const projects = useStore((state) => state.projects);
+  const projectHosts = useStore((state) => state.projectHosts);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState(NO_HITS);
-  const uid = useId();
-  const reduce = useReducedMotion() ?? false;
+  const idPrefix = useId();
+  const shouldReduceMotion = useReducedMotion() ?? false;
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const latest = useRef(props);
+
   useLayoutEffect(() => {
     latest.current = props;
   });
-  const actionsOnly = query.startsWith(">");
-  const needle = (actionsOnly ? query.slice(1) : query).trim();
-  const messageQuery = !actionsOnly && needle.length >= 2 ? needle.toLowerCase() : "";
+
+  const isActionsOnly = query.startsWith(">");
+  const needle = (isActionsOnly ? query.slice(1) : query).trim();
+  const messageQuery = !isActionsOnly && needle.length >= 2 ? needle.toLowerCase() : "";
 
   // Message search goes to the daemon once there's something to look for.
   useEffect(() => {
     if (!messageQuery) return setHits(NO_HITS);
-    let cancelled = false;
+
+    let isCancelled = false;
+
     const timer = setTimeout(
-      () => void searchMessages(messageQuery).then((found) => !cancelled && setHits(found)),
+      () => void searchMessages(messageQuery).then((found) => !isCancelled && setHits(found)),
       SEARCH_DELAY_MS,
     );
+
     return () => {
-      cancelled = true;
+      isCancelled = true;
       clearTimeout(timer);
     };
   }, [messageQuery]);
@@ -117,18 +130,20 @@ const Palette = (props: PaletteProps) => {
   const threadEntries = useMemo(
     () =>
       Object.values(threads)
-        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .sort((left, right) => right.updatedAt - left.updatedAt)
         .map((thread) => ({ label: thread.title, thread })),
     [threads],
   );
+
   const projectEntries = useMemo(
     () =>
       projects.map((project) => ({
-        label: projectLabel(project.name, projectHosts[project.id]),
+        label: formatProjectLabel(project.name, projectHosts[project.id]),
         project,
       })),
     [projects, projectHosts],
   );
+
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
@@ -137,23 +152,25 @@ const Palette = (props: PaletteProps) => {
   // One memo per section, so a message search landing rebuilds only the message rows.
   const threadRows = useMemo(
     (): ReadonlyArray<Row> =>
-      actionsOnly
+      isActionsOnly
         ? []
         : searchCommands(threadEntries, needle)
             .slice(0, MAX_THREADS)
             .map(({ thread }) => {
               const project = projectById.get(thread.projectId);
+
               return {
                 id: `thread:${thread.id}`,
                 section: needle ? "Threads" : "Recent threads",
                 icon: project ? <ProjectBadge project={project} /> : <MessageSquare />,
                 label: thread.title,
-                detail: `${project ? projectLabel(project.name, projectHosts[project.id]) : thread.cwd.split("/").at(-1)}${thread.archivedAt ? ", archived" : ""}`,
-                run: choose(latest, (p) => p.onOpenThread(thread.id)),
+                detail: `${project ? formatProjectLabel(project.name, projectHosts[project.id]) : thread.cwd.split("/").at(-1)}${thread.archivedAt ? ", archived" : ""}`,
+                run: createRowAction(latest, (latestProps) => latestProps.onOpenThread(thread.id)),
               };
             }),
-    [actionsOnly, needle, threadEntries, projectById, projectHosts],
+    [isActionsOnly, needle, threadEntries, projectById, projectHosts],
   );
+
   const actionRows = useMemo(
     (): ReadonlyArray<Row> =>
       searchCommands(props.actions, needle).map((action) => ({
@@ -162,26 +179,29 @@ const Palette = (props: PaletteProps) => {
         icon: action.icon,
         label: action.label,
         hint: action.hint,
-        run: choose(latest, () => action.run()),
+        run: createRowAction(latest, () => action.run()),
       })),
     [props.actions, needle],
   );
+
   const projectRows = useMemo(
     (): ReadonlyArray<Row> =>
-      actionsOnly || !needle
+      isActionsOnly || !needle
         ? []
         : searchCommands(projectEntries, needle).map(({ project }) => ({
             id: `project:${project.id}`,
             section: "New thread in",
             icon: <ProjectBadge project={project} />,
-            label: projectLabel(project.name, projectHosts[project.id]),
+            label: formatProjectLabel(project.name, projectHosts[project.id]),
             detail: project.path,
-            run: choose(latest, (p) => p.onNewThreadIn(project.path)),
+            run: createRowAction(latest, (latestProps) => latestProps.onNewThreadIn(project.path)),
           })),
-    [actionsOnly, needle, projectEntries, projectHosts],
+    [isActionsOnly, needle, projectEntries, projectHosts],
   );
+
   // Hits from an older query stay up until the new ones land, but not once there's no search at all.
   const shownHits = messageQuery ? hits : NO_HITS;
+
   const messageRows = useMemo(
     (): ReadonlyArray<Row> =>
       shownHits.map((hit) => ({
@@ -190,10 +210,11 @@ const Palette = (props: PaletteProps) => {
         icon: <Search />,
         label: <Snippet text={hit.snippet} />,
         detail: `${hit.from === "user" ? "You" : "Agent"} in ${threads[hit.threadId]?.title ?? ""}`,
-        run: choose(latest, (p) => p.onOpenThread(hit.threadId)),
+        run: createRowAction(latest, (latestProps) => latestProps.onOpenThread(hit.threadId)),
       })),
     [shownHits, threads],
   );
+
   // Empty sections drop out: with no query that leaves recent threads, then actions.
   const rows = useMemo(
     () => [...threadRows, ...actionRows, ...projectRows, ...messageRows],
@@ -201,31 +222,38 @@ const Palette = (props: PaletteProps) => {
   );
 
   const {
-    activeIndex: active,
-    pointed,
+    activeIndex,
+    pointed: isPointed,
     moveTo,
     moveActive,
   } = useRowCursor(rows, query, { loop: true });
+
   // The highlight glides after the pointer. Arrow keys and a new list jump it: the keyboard wants each
   // step at once, and gliding from wherever the old row ended up reads as the list scrolling.
-  const glide = pointed && !reduce;
+  const shouldGlide = isPointed && !shouldReduceMotion;
 
-  const activeId = rows[active]?.id;
+  const activeId = rows[activeIndex]?.id;
+
   useEffect(() => {
     const container = list.current;
-    if (!container) return;
-    // The first row brings its section header into view too.
-    if (active === 0) container.scrollTop = 0;
-    else container.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [active, activeId]);
 
-  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (!container) return;
+
+    // The first row brings its section header into view too.
+    if (activeIndex === 0) container.scrollTop = 0;
+    else
+      container
+        .querySelector(`[data-index="${activeIndex}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, activeId]);
+
+  function onKeyDown(event: React.KeyboardEvent) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       moveActive(event.key === "ArrowDown" ? 1 : -1);
     } else if (event.key === "Enter" && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      rows[active]?.run();
+      rows[activeIndex]?.run();
     } else if (event.key === "Escape") {
       // One layer per Escape: the settings modal may be open underneath.
       event.preventDefault();
@@ -238,7 +266,7 @@ const Palette = (props: PaletteProps) => {
       event.preventDefault();
       rows[Number(event.key) - 1]?.run();
     }
-  };
+  }
 
   return (
     <>
@@ -269,8 +297,8 @@ const Palette = (props: PaletteProps) => {
               placeholder="Search threads, projects and messages… (> for actions)"
               role="combobox"
               aria-expanded
-              aria-controls={`${uid}-list`}
-              aria-activedescendant={rows.length ? `${uid}-option-${active}` : undefined}
+              aria-controls={`${idPrefix}-list`}
+              aria-activedescendant={rows.length ? `${idPrefix}-option-${activeIndex}` : undefined}
               aria-autocomplete="list"
               className="h-11 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
             />
@@ -282,7 +310,7 @@ const Palette = (props: PaletteProps) => {
           */}
           <motion.div
             ref={list}
-            id={`${uid}-list`}
+            id={`${idPrefix}-list`}
             role="listbox"
             aria-label="Results"
             layoutScroll
@@ -309,9 +337,9 @@ const Palette = (props: PaletteProps) => {
                 <PaletteRow
                   row={row}
                   index={index}
-                  active={index === active}
-                  glide={index === active && glide}
-                  uid={uid}
+                  isActive={index === activeIndex}
+                  shouldGlide={index === activeIndex && shouldGlide}
+                  idPrefix={idPrefix}
                   onPoint={moveTo}
                 />
               </Fragment>
@@ -321,40 +349,41 @@ const Palette = (props: PaletteProps) => {
       </div>
     </>
   );
-};
+}
 
 /** Memoized, so moving the highlight re-renders only the two rows it moves between. */
 const PaletteRow = memo(function PaletteRow(props: {
   row: Row;
   index: number;
-  active: boolean;
-  uid: string;
+  isActive: boolean;
+  idPrefix: string;
   /** Whether the highlight glides in from the previous row, rather than appearing here. */
-  glide: boolean;
+  shouldGlide: boolean;
   onPoint: (id: string) => void;
 }) {
-  const { row, index, active } = props;
+  const { row, index, isActive } = props;
+
   return (
     <button
       type="button"
       role="option"
       tabIndex={-1}
-      id={`${props.uid}-option-${index}`}
+      id={`${props.idPrefix}-option-${index}`}
       data-index={index}
-      aria-selected={active}
+      aria-selected={isActive}
       // Not mouseenter: rows scrolling under a resting pointer would take the highlight from the keyboard.
-      onMouseMove={active ? undefined : () => props.onPoint(row.id)}
+      onMouseMove={isActive ? undefined : () => props.onPoint(row.id)}
       onClick={row.run}
       className={cn(
         "relative flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] outline-none",
-        active ? "text-foreground" : "text-muted-foreground",
+        isActive ? "text-foreground" : "text-muted-foreground",
       )}
     >
-      {active ? (
+      {isActive ? (
         <motion.span
-          layoutId={`${props.uid}-highlight`}
+          layoutId={`${props.idPrefix}-highlight`}
           transition={
-            props.glide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }
+            props.shouldGlide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }
           }
           className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-muted"
         />

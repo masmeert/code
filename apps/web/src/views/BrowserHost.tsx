@@ -1,4 +1,4 @@
-import { browserPartition, DesktopBrowserEvent } from "@masscode/contracts";
+import { getBrowserPartition, DesktopBrowserEvent } from "@masscode/contracts";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -8,7 +8,7 @@ import {
   openTab,
   registerWebview,
   type SurfaceRect,
-  tabForWebContents,
+  findTabForWebContents,
   updateActivity,
   updateTab,
   useBrowser,
@@ -27,7 +27,8 @@ export function BrowserHost() {
   useEffect(
     () =>
       window.desktop?.onBrowserEvent((event) => {
-        const owner = tabForWebContents(event.webContentsId);
+        const owner = findTabForWebContents(event.webContentsId);
+
         if (!owner) return;
         DesktopBrowserEvent.match(event, {
           "open-tab": ({ url }) => openTab(owner.threadId, url),
@@ -40,28 +41,33 @@ export function BrowserHost() {
   );
 
   if (!window.desktop) return null;
+
   const shown =
     surface && browsers[surface.threadId]?.open ? browsers[surface.threadId]?.activeTabId : null;
+
   return createPortal(
     alive.flatMap(({ threadId, tabId }) => {
       const tab = browsers[threadId]?.tabs.find((candidate) => candidate.id === tabId);
-      const info = threads[threadId];
-      if (!tab?.url || !info) return [];
+      const thread = threads[threadId];
+
+      if (!tab?.url || !thread) return [];
+
       // Shelved and archived threads' tabs unload unless on screen; showing them again reloads their URL.
       if (
-        (info.shelved || info.archivedAt !== null) &&
+        (thread.shelved || thread.archivedAt !== null) &&
         surface?.threadId !== threadId &&
         !activity[tabId]?.automating
       )
         return [];
+
       return [
         <HostedTab
           key={tabId}
           threadId={threadId}
-          partition={browserPartition(projectHosts[info.projectId] ?? null)}
+          partition={getBrowserPartition(projectHosts[thread.projectId] ?? null)}
           tab={tab}
           rect={shown === tabId && !activity[tabId]?.error ? (surface?.rect ?? null) : null}
-          automating={(activity[tabId]?.automating ?? 0) > 0}
+          isAutomating={(activity[tabId]?.automating ?? 0) > 0}
         />,
       ];
     }),
@@ -83,14 +89,14 @@ function HostedTab({
   partition,
   tab,
   rect,
-  automating,
+  isAutomating,
 }: {
   threadId: string;
   /** The thread's host's: its `localhost` is that host's. */
   partition: string;
   tab: BrowserTab;
   rect: SurfaceRect | null;
-  automating: boolean;
+  isAutomating: boolean;
 }) {
   const [initialUrl] = useState(tab.url);
   const [generation, setGeneration] = useState(0);
@@ -100,12 +106,14 @@ function HostedTab({
 
   const width = rect?.width;
   const height = rect?.height;
+
   useEffect(() => {
     if (width !== undefined && height !== undefined) setHiddenSize({ width, height });
   }, [width, height]);
 
   useLayoutEffect(() => {
     const element = webview.current!;
+
     function syncHistory() {
       try {
         updateActivity(tab.id, {
@@ -114,6 +122,7 @@ function HostedTab({
         });
       } catch {}
     }
+
     const handlers = {
       "dom-ready": syncHistory,
       "did-start-loading": () => updateActivity(tab.id, { loading: true, error: null }),
@@ -147,10 +156,13 @@ function HostedTab({
       },
       focus: () => element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })),
     };
+
     // SAFETY: Electron dispatches each of these events with the WebviewEvent fields its handler reads.
     const listeners = Object.entries(handlers) as Array<[string, EventListener]>;
+
     for (const [name, listener] of listeners) element.addEventListener(name, listener);
     const unregister = registerWebview(tab.id, element);
+
     return () => {
       for (const [name, listener] of listeners) element.removeEventListener(name, listener);
       unregister();
@@ -170,7 +182,7 @@ function HostedTab({
       style={
         rect
           ? { left: rect.x, top: rect.y, width: rect.width, height: rect.height }
-          : automating
+          : isAutomating
             ? { left: 0, top: 0, zIndex: -1, pointerEvents: "none", ...hiddenSize }
             : { left: -100_000, top: 0, ...hiddenSize }
       }

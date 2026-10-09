@@ -8,27 +8,27 @@ import { ArrowUp, Folder, FolderOpen, LoaderCircle, Monitor, Server } from "luci
 import { useEffect, useState } from "react";
 import { finishAddProject, pickLocalProject, useAddProjectOpen } from "../lib/projects.ts";
 import { addProjectOn, cloneProject, listFolders, useStore } from "../lib/store.ts";
-
-const THIS_MAC = "\u0000this-mac";
+import { buildMachineOptions, THIS_MAC, toMachine } from "../lib/machines.ts";
 
 /** Where a new project lives once there are remote hosts: this Mac, or a folder on one of them. */
 export function AddProjectDialog() {
-  const open = useAddProjectOpen();
+  const isOpen = useAddProjectOpen();
+
   return (
     <MorphingModal
-      viewId={open ? "add-project" : null}
+      viewId={isOpen ? "add-project" : null}
       onClose={() => finishAddProject(null)}
       placement="center"
       className="max-w-lg"
     >
-      {open ? <AddProject /> : null}
+      {isOpen ? <AddProject /> : null}
     </MorphingModal>
   );
 }
 
 function AddProject() {
-  const hosts = useStore((s) => s.hosts);
-  const addProjectFolder = useStore((s) => s.settings.addProjectFolder);
+  const hosts = useStore((state) => state.hosts);
+  const addProjectFolder = useStore((state) => state.settings.addProjectFolder);
   const [host, setHost] = useState<string | null>(null);
   // The remote folder on show, which a clone goes into.
   const [folder, setFolder] = useState<string | null>(null);
@@ -39,22 +39,20 @@ function AddProject() {
       <Tabs
         value={host ?? THIS_MAC}
         onValueChange={(value) => {
-          setHost(value === THIS_MAC ? null : value);
+          setHost(toMachine(value));
           setFolder(null);
         }}
       >
         <TabsList>
-          <TabsTrigger value={THIS_MAC}>
-            <span className="flex items-center gap-1.5">
-              <Monitor className="size-3.5" />
-              This Mac
-            </span>
-          </TabsTrigger>
-          {Object.keys(hosts).map((alias) => (
-            <TabsTrigger key={alias} value={alias}>
+          {buildMachineOptions(hosts).map((option) => (
+            <TabsTrigger key={option.value} value={option.value}>
               <span className="flex items-center gap-1.5">
-                <Server className="size-3.5" />
-                {alias}
+                {option.machine ? (
+                  <Server className="size-3.5" />
+                ) : (
+                  <Monitor className="size-3.5" />
+                )}
+                {option.label}
               </span>
             </TabsTrigger>
           ))}
@@ -85,8 +83,19 @@ function AddProject() {
   );
 }
 
-const parentOf = (path: string) => path.slice(0, path.lastIndexOf("/")) || "/";
-const nameOf = (path: string) => path.split("/").at(-1) || path;
+function getParentPath(path: string) {
+  return path.slice(0, path.lastIndexOf("/")) || "/";
+}
+
+function getFolderName(path: string) {
+  return path.split("/").at(-1) || path;
+}
+
+interface FolderList {
+  readonly path: string;
+  readonly folders: ReadonlyArray<string>;
+  readonly error: string | null;
+}
 
 /** Browses a remote host's folders, since this Mac's picker can't see them. */
 function RemoteFolders({
@@ -96,22 +105,18 @@ function RemoteFolders({
   host: string;
   onFolder: (path: string | null) => void;
 }) {
-  const connected = useStore((s) => s.hosts[host]?.connected ?? false);
-  const projectsFolder = useStore((s) => s.settings.hostProjectFolders?.[host] || "~");
+  const isConnected = useStore((state) => state.hosts[host]?.connected ?? false);
+  const projectsFolder = useStore((state) => state.settings.hostProjectFolders?.[host] || "~");
   const [path, setPath] = useState(projectsFolder);
   const [typed, setTyped] = useState(projectsFolder);
-  const [listing, setListing] = useState<{
-    readonly path: string;
-    readonly folders: ReadonlyArray<string>;
-    readonly error: string | null;
-  } | null>(null);
+  const [listing, setListing] = useState<FolderList | null>(null);
 
   useEffect(() => {
-    if (!connected) return;
-    let current = true;
+    if (!isConnected) return;
+    let isCurrent = true;
     setListing(null);
     void listFolders(host, path).then((result) => {
-      if (!current) return;
+      if (!isCurrent) return;
       setListing(
         result ?? {
           path,
@@ -119,20 +124,23 @@ function RemoteFolders({
           error: `${host} didn't answer. Check it in Settings → Connections.`,
         },
       );
+
       if (result) setTyped(result.path);
       onFolder(result && !result.error ? result.path : null);
     });
-    return () => {
-      current = false;
-    };
-  }, [host, path, connected, onFolder]);
 
-  if (!connected)
+    return () => {
+      isCurrent = false;
+    };
+  }, [host, path, isConnected, onFolder]);
+
+  if (!isConnected) {
     return (
       <p className="text-xs text-muted-foreground">
-        {host} isn't connected yet. Its status is in Settings → Connections.
+        {host} isn't isConnected yet. Its status is in Settings → Connections.
       </p>
     );
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -143,7 +151,7 @@ function RemoteFolders({
           aria-label="Parent folder"
           className="size-8 shrink-0 rounded-lg"
           disabled={!listing || listing.path === "/"}
-          onClick={() => listing && setPath(parentOf(listing.path))}
+          onClick={() => listing && setPath(getParentPath(listing.path))}
         >
           <ArrowUp className="size-4" />
         </Button>
@@ -153,38 +161,15 @@ function RemoteFolders({
           onChange={setTyped}
           spellCheck={false}
           autoComplete="off"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && typed.trim()) setPath(typed.trim());
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && typed.trim()) setPath(typed.trim());
           }}
           className="min-w-0 flex-1"
           classNames={{ field: "h-8 rounded-lg bg-background", input: "pl-2.5 font-mono text-xs" }}
         />
       </div>
       <ScrollArea className="h-56 rounded-xl border border-border bg-card">
-        {!listing ? (
-          <p className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
-            <LoaderCircle className="size-3.5 animate-spin" />
-            Reading folders…
-          </p>
-        ) : listing.error ? (
-          <p className="p-3 text-xs text-destructive">{listing.error}</p>
-        ) : listing.folders.length === 0 ? (
-          <p className="p-3 text-xs text-muted-foreground">No folders in here.</p>
-        ) : (
-          <div className="flex flex-col p-1">
-            {listing.folders.map((name) => (
-              <button
-                key={name}
-                type="button"
-                onClick={() => setPath(`${listing.path.replace(/\/$/, "")}/${name}`)}
-                className="flex h-8 items-center gap-2 rounded-lg px-2 text-left text-[13px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Folder className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate">{name}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        <FolderListing listing={listing} onOpen={setPath} />
       </ScrollArea>
       <Button
         className="self-end rounded-lg"
@@ -195,8 +180,47 @@ function RemoteFolders({
           finishAddProject(listing.path);
         }}
       >
-        Add {listing && !listing.error ? nameOf(listing.path) : "folder"}
+        Add {listing && !listing.error ? getFolderName(listing.path) : "folder"}
       </Button>
+    </div>
+  );
+}
+
+function FolderListing({
+  listing,
+  onOpen,
+}: {
+  listing: FolderList | null;
+  onOpen: (path: string) => void;
+}) {
+  if (!listing) {
+    return (
+      <p className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
+        <LoaderCircle className="size-3.5 animate-spin" />
+        Reading folders…
+      </p>
+    );
+  }
+
+  if (listing.error) return <p className="p-3 text-xs text-destructive">{listing.error}</p>;
+
+  if (listing.folders.length === 0) {
+    return <p className="p-3 text-xs text-muted-foreground">No folders in here.</p>;
+  }
+
+  return (
+    <div className="flex flex-col p-1">
+      {listing.folders.map((name) => (
+        <button
+          key={name}
+          type="button"
+          onClick={() => onOpen(`${listing.path.replace(/\/$/, "")}/${name}`)}
+          className="flex h-8 items-center gap-2 rounded-lg px-2 text-left text-[13px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Folder className="size-4 shrink-0 text-muted-foreground" />
+          <span className="truncate">{name}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -204,17 +228,19 @@ function RemoteFolders({
 /** Clones a repository into a new folder under `parent` and adds that as the project. */
 function CloneRepository({ host, parent }: { host: string | null; parent: string | null }) {
   const [url, setUrl] = useState("");
-  const [cloning, setCloning] = useState(false);
+  const [isCloning, setIsCloning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const clone = async () => {
-    if (!parent || !url.trim() || cloning) return;
-    setCloning(true);
+
+  async function cloneRepository() {
+    if (!parent || !url.trim() || isCloning) return;
+    setIsCloning(true);
     setError(null);
     const cloned = await cloneProject(host, url.trim(), parent);
-    setCloning(false);
+    setIsCloning(false);
+
     if (cloned.path) finishAddProject(cloned.path);
     else setError(cloned.error);
-  };
+  }
 
   return (
     <div className="flex flex-col gap-2 border-t border-border pt-4">
@@ -231,21 +257,21 @@ function CloneRepository({ host, parent }: { host: string | null; parent: string
           placeholder="https://github.com/owner/repo or git@…"
           spellCheck={false}
           autoComplete="off"
-          disabled={cloning}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void clone();
+          disabled={isCloning}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void cloneRepository();
           }}
           className="min-w-0 flex-1"
           classNames={{ field: "h-8 rounded-lg bg-background", input: "pl-2.5 font-mono text-xs" }}
         />
         <Button
           variant="secondary"
-          className={cn("h-8 rounded-lg", cloning && "pointer-events-none")}
-          disabled={!parent || !url.trim() || cloning}
-          onClick={() => void clone()}
+          className={cn("h-8 rounded-lg", isCloning && "pointer-events-none")}
+          disabled={!parent || !url.trim() || isCloning}
+          onClick={() => void cloneRepository()}
         >
-          {cloning ? <LoaderCircle className="size-4 animate-spin" /> : null}
-          {cloning ? "Cloning…" : "Clone"}
+          {isCloning ? <LoaderCircle className="size-4 animate-spin" /> : null}
+          {isCloning ? "Cloning…" : "Clone"}
         </Button>
       </div>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}

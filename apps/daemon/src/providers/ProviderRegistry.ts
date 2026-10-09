@@ -15,92 +15,129 @@ import { openJsonFile } from "../storage/jsonFile.ts";
 import { SettingsStore } from "../storage/SettingsStore.ts";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as FiberMap from "effect/FiberMap";
 import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import type * as Scope from "effect/Scope";
+import { execFile, spawn } from "node:child_process";
+import type { Writable } from "node:stream";
 import { promisify } from "node:util";
-import { CODEX_FAST_TIER, CodexNotification, connectCodex, type CodexRpc } from "./codexRpc.ts";
+import { acquireCodexConnection, CODEX_FAST_TIER, CodexNotification } from "./codexRpc.ts";
 import { readCursorModels } from "./CursorAdapter.ts";
-import { harnessLaunch, promptlessQuery, type HarnessLaunch } from "./launch.ts";
+import {
+  acquireClaudeQuery,
+  resolveHarnessLaunch,
+  startPromptlessQuery,
+  type HarnessLaunch,
+} from "./launch.ts";
+import { ProviderError, tryProviderPromise } from "./ProviderAdapter.ts";
+import { getErrorMessage } from "../errors.ts";
 
 const exec = promisify(execFile);
 
-const unknown = (kind: ProviderKind, error: string | null = null): ProviderStatus => ({
-  kind,
-  installed: false,
-  version: null,
-  linked: false,
-  account: null,
-  plan: null,
-  models: [],
-  error,
-});
+function buildUnknownStatus(kind: ProviderKind, error: string | null = null): ProviderStatus {
+  return {
+    kind,
+    installed: false,
+    version: null,
+    linked: false,
+    account: null,
+    plan: null,
+    models: [],
+    error,
+  };
+}
 
-const firstLine = (text: string) => text.trim().split("\n")[0] ?? "";
-function message(cause: unknown) {
-  return cause instanceof Error ? cause.message : String(cause);
+function getFirstLine(text: string) {
+  return text.trim().split("\n")[0] ?? "";
 }
 
 // --- probes ------------------------------------------------------------------
 
-const probeClaude = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
-  const version = firstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
-  const status = JSON.parse(
-    (
-      await exec(launch.bin, ["auth", "status"], { env: launch.env }).catch((e) => ({
-        stdout: e.stdout ?? "{}",
-      }))
-    ).stdout || "{}",
+function readVersion(kind: ProviderKind, launch: HarnessLaunch) {
+  return tryProviderPromise(kind, async () =>
+    getFirstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout),
   );
-  const linked = status.loggedIn === true;
-  let models: Array<ModelOption> = [];
-  if (linked) {
-    const q = promptlessQuery(launch);
-    try {
-      // Drop the "Default (recommended)" alias row and star the concrete model it resolves to instead.
-      const all = await q.supportedModels();
-      const fallback = all.find((m) => m.value === "default")?.resolvedModel;
-      const rows = all.filter((m) => m.value !== "default");
-      const starred = rows.find((m) => fallback && m.resolvedModel === fallback);
-      // The catalog doesn't carry default efforts; the session reports the one it would apply after each model switch.
-      // `getSettings` is untyped in the SDK, so its answer is decoded and failures just leave the default unknown.
-      for (const m of rows) {
-        const effort = await q
-          .setModel(m.value)
-          .then(() =>
-            "getSettings" in q && Predicate.isFunction(q.getSettings)
-              ? // Awaited before decoding: a request left pending rejects unhandled on close() and kills the daemon.
-                Promise.resolve(q.getSettings()).then(
-                  Schema.decodeUnknownPromise(
-                    Schema.Struct({
-                      applied: Schema.optional(Schema.Struct({ effort: Schema.optional(Effort) })),
-                    }),
-                  ),
-                )
-              : undefined,
-          )
-          .then((settings) => settings?.applied?.effort)
-          .catch(() => undefined);
-        const levels = m.supportedEffortLevels ?? [];
-        models.push({
-          id: m.value,
-          label: m.displayName,
-          recommended: m === starred || undefined,
-          defaultEffort: effort,
-          efforts: [
-            ...levels,
-            // Ultracode runs at xhigh, so only models with it can take it.
-            ...(levels.includes("xhigh") ? (["ultracode"] as const) : []),
-            ...(m.supportsAdaptiveThinking ? (["ultrathink"] as const) : []),
-          ],
-          fast: m.supportsFastMode || undefined,
-        });
-      }
-    } finally {
-      q.close();
+}
+
+const readClaudeModels = Effect.fn("readClaudeModels")(function* (launch: HarnessLaunch) {
+  const session = yield* acquireClaudeQuery(() => startPromptlessQuery(launch));
+
+  return yield* tryProviderPromise("claude", async () => {
+    // Drop the "Default (recommended)" alias row and star the concrete model it resolves to instead.
+    const catalog = await session.supportedModels();
+    const fallback = catalog.find((model) => model.value === "default")?.resolvedModel;
+    const rows = catalog.filter((model) => model.value !== "default");
+    const starred = rows.find((model) => fallback && model.resolvedModel === fallback);
+
+    const models: Array<ModelOption> = [];
+
+    // The catalog doesn't carry default efforts; the session reports the one it would apply after each model switch.
+    // `getSettings` is untyped in the SDK, so its answer is decoded and failures just leave the default unknown.
+    for (const model of rows) {
+      const effort = await session
+        .setModel(model.value)
+        .then(() =>
+          "getSettings" in session && Predicate.isFunction(session.getSettings)
+            ? // Awaited before decoding: a request left pending rejects unhandled on close() and kills the daemon.
+              Promise.resolve(session.getSettings()).then(
+                Schema.decodeUnknownPromise(
+                  Schema.Struct({
+                    applied: Schema.optional(Schema.Struct({ effort: Schema.optional(Effort) })),
+                  }),
+                ),
+              )
+            : undefined,
+        )
+        .then((settings) => settings?.applied?.effort)
+        .catch(() => undefined);
+
+      const levels = model.supportedEffortLevels ?? [];
+      models.push({
+        id: model.value,
+        label: model.displayName,
+        recommended: model === starred || undefined,
+        defaultEffort: effort,
+        efforts: [
+          ...levels,
+          // Ultracode runs at xhigh, so only models with it can take it.
+          ...(levels.includes("xhigh") ? (["ultracode"] as const) : []),
+          ...(model.supportsAdaptiveThinking ? (["ultrathink"] as const) : []),
+        ],
+        fast: model.supportsFastMode || undefined,
+      });
     }
-  }
+
+    return models;
+  });
+}, Effect.scoped);
+
+const ClaudeAuthStatus = Schema.Struct({
+  loggedIn: Schema.optional(Schema.Boolean),
+  email: Schema.optional(Schema.NullOr(Schema.String)),
+  subscriptionType: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+const probeClaude = Effect.fn("probeClaude")(function* (launch: HarnessLaunch) {
+  const version = yield* readVersion("claude", launch);
+
+  // Signed out, it exits non-zero with the status still on stdout.
+  const { stdout } = yield* tryProviderPromise("claude", () =>
+    exec(launch.bin, ["auth", "status"], { env: launch.env }).catch((error) => ({
+      stdout: String(error.stdout ?? "{}"),
+    })),
+  );
+
+  const status = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ClaudeAuthStatus))(
+    stdout || "{}",
+  ).pipe(
+    Effect.mapError((error) => new ProviderError({ provider: "claude", message: error.message })),
+  );
+
+  const linked = status.loggedIn === true;
+
   return {
     kind: "claude",
     installed: true,
@@ -108,15 +145,16 @@ const probeClaude = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
     linked,
     account: status.email ?? null,
     plan: status.subscriptionType ?? null,
-    models,
+    models: linked ? yield* readClaudeModels(launch) : [],
     error: null,
-  };
-};
+  } satisfies ProviderStatus;
+});
 
-const probeCodex = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
-  const version = firstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
-  const rpc = await connectCodex(undefined, {}, launch);
-  try {
+const probeCodex = Effect.fn("probeCodex")(function* (launch: HarnessLaunch) {
+  const version = yield* readVersion("codex", launch);
+  const rpc = yield* acquireCodexConnection(launch, undefined);
+
+  return yield* tryProviderPromise("codex", async (): Promise<ProviderStatus> => {
     const { account } = await rpc.request(
       "account/read",
       {},
@@ -130,7 +168,9 @@ const probeCodex = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
         ),
       }),
     );
+
     const linked = account !== null;
+
     const models: Array<ModelOption> = linked
       ? (
           await rpc.request(
@@ -153,20 +193,21 @@ const probeCodex = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
             }),
           )
         ).data
-          .filter((m) => !m.hidden)
-          .map((m) => ({
-            id: m.id,
-            label: m.displayName,
-            recommended: m.isDefault || undefined,
-            defaultEffort: Schema.is(Effort)(m.defaultReasoningEffort)
-              ? m.defaultReasoningEffort
+          .filter((model) => !model.hidden)
+          .map((model) => ({
+            id: model.id,
+            label: model.displayName,
+            recommended: model.isDefault || undefined,
+            defaultEffort: Schema.is(Effort)(model.defaultReasoningEffort)
+              ? model.defaultReasoningEffort
               : undefined,
-            efforts: m.supportedReasoningEfforts
+            efforts: model.supportedReasoningEfforts
               .map((level) => level.reasoningEffort)
               .filter(Schema.is(Effort)),
-            fast: m.serviceTiers.some((tier) => tier.id === CODEX_FAST_TIER) || undefined,
+            fast: model.serviceTiers.some((tier) => tier.id === CODEX_FAST_TIER) || undefined,
           }))
       : [];
+
     return {
       kind: "codex",
       installed: true,
@@ -177,17 +218,20 @@ const probeCodex = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
       models,
       error: null,
     };
-  } finally {
-    rpc.close();
-  }
-};
+  });
+}, Effect.scoped);
 
-const probeCursor = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
-  const version = firstLine((await exec(launch.bin, ["--version"], { env: launch.env })).stdout);
-  const { stdout } = await exec(launch.bin, ["status"], { env: launch.env }).catch((e) => ({
-    stdout: String(e.stdout ?? ""),
-  }));
+const probeCursor = Effect.fn("probeCursor")(function* (launch: HarnessLaunch) {
+  const version = yield* readVersion("cursor", launch);
+
+  const { stdout } = yield* tryProviderPromise("cursor", () =>
+    exec(launch.bin, ["status"], { env: launch.env }).catch((error) => ({
+      stdout: String(error.stdout ?? ""),
+    })),
+  );
+
   const account = stdout.match(new RegExp(String.raw`Logged in as ([^\s\u001b]+)`))?.[1] ?? null;
+
   return {
     kind: "cursor",
     installed: true,
@@ -195,12 +239,15 @@ const probeCursor = async (launch: HarnessLaunch): Promise<ProviderStatus> => {
     linked: account !== null,
     account,
     plan: null,
-    models: account === null ? [] : await readCursorModels(launch),
+    models: account === null ? [] : yield* readCursorModels(launch),
     error: null,
-  };
-};
+  } satisfies ProviderStatus;
+});
 
-const PROBE: Record<ProviderKind, (launch: HarnessLaunch) => Promise<ProviderStatus>> = {
+const PROBE: Record<
+  ProviderKind,
+  (launch: HarnessLaunch) => Effect.Effect<ProviderStatus, ProviderError>
+> = {
   claude: probeClaude,
   codex: probeCodex,
   cursor: probeCursor,
@@ -212,6 +259,7 @@ const ClaudeWindow = Schema.Struct({
   utilization: Schema.NullOr(Schema.Number),
   resets_at: Schema.NullOr(Schema.String),
 });
+
 const ClaudeUsage = Schema.Struct({
   rate_limits: Schema.NullOr(
     Schema.Struct({
@@ -227,38 +275,39 @@ const ClaudeUsage = Schema.Struct({
 });
 
 /** The plan's windows as `/usage` shows them; none for API-key logins. Decoded, since the SDK marks this call experimental. */
-const readClaudeLimits = async (launch: HarnessLaunch): Promise<Array<UsageLimit>> => {
-  const q = promptlessQuery(launch);
-  try {
-    const { rate_limits: limits } = await q
+const readClaudeLimits = Effect.fn("readClaudeLimits")(function* (launch: HarnessLaunch) {
+  const session = yield* acquireClaudeQuery(() => startPromptlessQuery(launch));
+
+  const { rate_limits: limits } = yield* tryProviderPromise("claude", () =>
+    session
       .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
-      .then(Schema.decodeUnknownPromise(ClaudeUsage));
-    if (!limits) return [];
-    return (
-      [
-        ["5-hour limit", limits.five_hour],
-        ["Weekly, all models", limits.seven_day],
-        ["Weekly, Opus", limits.seven_day_opus],
-        ["Weekly, Sonnet", limits.seven_day_sonnet],
-        ...(limits.model_scoped ?? []).map(
-          (window) => [`Weekly, ${window.display_name}`, window] as const,
-        ),
-      ] as const
-    ).flatMap(([label, window]) =>
-      window && window.utilization !== null
-        ? [
-            {
-              label,
-              usedPercent: window.utilization,
-              resetsAt: window.resets_at === null ? null : Date.parse(window.resets_at),
-            },
-          ]
-        : [],
-    );
-  } finally {
-    q.close();
-  }
-};
+      .then(Schema.decodeUnknownPromise(ClaudeUsage)),
+  );
+
+  if (!limits) return [];
+
+  return (
+    [
+      ["5-hour limit", limits.five_hour],
+      ["Weekly, all models", limits.seven_day],
+      ["Weekly, Opus", limits.seven_day_opus],
+      ["Weekly, Sonnet", limits.seven_day_sonnet],
+      ...(limits.model_scoped ?? []).map(
+        (window) => [`Weekly, ${window.display_name}`, window] as const,
+      ),
+    ] as const
+  ).flatMap(([label, window]): Array<UsageLimit> =>
+    window && window.utilization !== null
+      ? [
+          {
+            label,
+            usedPercent: window.utilization,
+            resetsAt: Date.parse(window.resets_at ?? "") || null,
+          },
+        ]
+      : [],
+  );
+}, Effect.scoped);
 
 const CodexWindow = Schema.NullOr(
   Schema.Struct({
@@ -268,44 +317,50 @@ const CodexWindow = Schema.NullOr(
   }),
 );
 
-function codexWindowLabel(minutes: number | null) {
+function formatCodexWindowLabel(minutes: number | null) {
   if (minutes === null) return "Usage limit";
+
   if (minutes === 7 * 24 * 60) return "Weekly limit";
+
   if (minutes % (24 * 60) === 0) return `${minutes / (24 * 60)}-day limit`;
+
   return `${Math.round(minutes / 60)}-hour limit`;
 }
 
-const readCodexLimits = async (launch: HarnessLaunch): Promise<Array<UsageLimit>> => {
-  const rpc = await connectCodex(undefined, {}, launch);
-  try {
-    const { rateLimits } = await rpc.request(
+const readCodexLimits = Effect.fn("readCodexLimits")(function* (launch: HarnessLaunch) {
+  const rpc = yield* acquireCodexConnection(launch, undefined);
+
+  const { rateLimits } = yield* tryProviderPromise("codex", () =>
+    rpc.request(
       "account/rateLimits/read",
       { excludeResetCreditDetails: true },
       Schema.Struct({
         rateLimits: Schema.Struct({ primary: CodexWindow, secondary: CodexWindow }),
       }),
-    );
-    return [rateLimits.primary, rateLimits.secondary].flatMap((window) =>
-      window
-        ? [
-            {
-              label: codexWindowLabel(window.windowDurationMins),
-              usedPercent: window.usedPercent,
-              resetsAt: window.resetsAt === null ? null : window.resetsAt * 1000,
-            },
-          ]
-        : [],
-    );
-  } finally {
-    rpc.close();
-  }
-};
+    ),
+  );
+
+  return [rateLimits.primary, rateLimits.secondary].flatMap((window): Array<UsageLimit> =>
+    window
+      ? [
+          {
+            label: formatCodexWindowLabel(window.windowDurationMins),
+            usedPercent: window.usedPercent,
+            resetsAt: window.resetsAt === null ? null : window.resetsAt * 1000,
+          },
+        ]
+      : [],
+  );
+}, Effect.scoped);
 
 // Cursor's CLI doesn't report its plan's limits.
-const READ_LIMITS: Record<ProviderKind, (launch: HarnessLaunch) => Promise<Array<UsageLimit>>> = {
+const READ_LIMITS: Record<
+  ProviderKind,
+  (launch: HarnessLaunch) => Effect.Effect<ReadonlyArray<UsageLimit>, ProviderError>
+> = {
   claude: readClaudeLimits,
   codex: readCodexLimits,
-  cursor: async () => [],
+  cursor: () => Effect.succeed([]),
 };
 
 const LOGOUT_ARGS: Record<ProviderKind, ReadonlyArray<string>> = {
@@ -318,8 +373,8 @@ const LOGOUT_ARGS: Record<ProviderKind, ReadonlyArray<string>> = {
 
 /** Single listener (the session manager) that fans changes out to clients. */
 interface ProviderListener {
-  readonly providers: (providers: ReadonlyArray<ProviderStatus>) => void;
-  readonly flow: (flow: AuthFlow) => void;
+  readonly onProviders: (providers: ReadonlyArray<ProviderStatus>) => void;
+  readonly onFlow: (flow: AuthFlow) => void;
 }
 
 export class ProviderRegistry extends Context.Service<
@@ -341,200 +396,237 @@ export class ProviderRegistry extends Context.Service<
 
 const make = Effect.gen(function* () {
   const settingsStore = yield* SettingsStore;
-  /** Throws when the CLI can't be found, like the spawns it feeds. */
-  const launchFor = async (kind: ProviderKind) =>
-    harnessLaunch(kind, (await Effect.runPromise(settingsStore.get)).providers[kind]);
-  const probe = (kind: ProviderKind) =>
-    launchFor(kind)
-      .then((launch) => PROBE[kind](launch))
-      .catch((e) => {
-        const text = message(e);
-        return unknown(kind, text.includes("Could not find") ? null : text);
-      });
+  const scope = yield* Effect.scope;
+
+  const resolveLaunch = Effect.fn("ProviderRegistry.resolveLaunch")(function* (kind: ProviderKind) {
+    const settings = yield* settingsStore.get;
+
+    return yield* resolveHarnessLaunch(kind, settings.providers[kind]);
+  });
+
+  function probeHarness(kind: ProviderKind) {
+    return resolveLaunch(kind).pipe(
+      Effect.flatMap((launch) => PROBE[kind](launch)),
+      Effect.catch((error) =>
+        Effect.succeed(
+          buildUnknownStatus(kind, error.message.includes("Could not find") ? null : error.message),
+        ),
+      ),
+    );
+  }
+
   // Checking the CLIs takes seconds; until it's done, clients get what the last check found rather
   // than "not installed", which hid every model picker and disabled sending on each launch.
   const lastChecked = yield* openJsonFile("providers.json", Schema.Array(ProviderStatus), []);
   const checked = yield* lastChecked.get;
+
   let providers = ProviderKind.literals.map(
     (kind) =>
-      checked.find((provider) => provider.kind === kind) ?? { ...unknown(kind), checking: true },
+      checked.find((provider) => provider.kind === kind) ?? {
+        ...buildUnknownStatus(kind),
+        checking: true,
+      },
   );
-  let listener: ProviderListener = { providers: () => {}, flow: () => {} };
-  /** In-flight sign-in per harness. */
-  const flows = new Map<ProviderKind, { child?: ChildProcess; rpc?: CodexRpc; loginId?: string }>();
 
-  const flow = (
+  let listener: ProviderListener = { onProviders: () => {}, onFlow: () => {} };
+  /** In-flight sign-in per harness: starting another or cancelling interrupts it, closing what it opened. */
+  const linkFlows = yield* FiberMap.make<ProviderKind>();
+  /** Where a code the user types in MassCode goes, while a sign-in waits for one. */
+  const codeInputs = new Map<ProviderKind, Writable>();
+
+  function reportLinkFlow(
     provider: ProviderKind,
     stage: AuthFlow["stage"],
     url: string | null = null,
     text: string | null = null,
-  ) => listener.flow({ provider, stage, url, message: text });
-
-  const refreshOne = async (kind: ProviderKind) => {
-    const next = await probe(kind);
-    providers = providers.map((p) => (p.kind === kind ? next : p));
-    listener.providers(providers);
-    await Effect.runPromise(lastChecked.set(providers));
-  };
-  async function refreshAll() {
-    await Promise.all(ProviderKind.literals.map(refreshOne));
+  ) {
+    listener.onFlow({ provider, stage, url, message: text });
   }
 
-  const finish = async (kind: ProviderKind, ok: boolean, text: string | null) => {
-    flows.delete(kind);
-    await refreshOne(kind);
-    flow(kind, ok ? "done" : "failed", null, text);
-  };
+  /** Runs `task` past the request that started it, for as long as the registry lives; failures are only logged. */
+  function runInBackground<E>(task: Effect.Effect<void, E>) {
+    return task.pipe(
+      Effect.catch((error) => Effect.logWarning("provider task failed", getErrorMessage(error))),
+      Effect.forkIn(scope),
+      Effect.asVoid,
+    );
+  }
 
-  const linkClaude = async () => {
-    const launch = await launchFor("claude");
-    const child = spawn(launch.bin, ["auth", "login", "--claudeai"], {
-      env: launch.env,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    flows.set("claude", { child });
-    let output = "";
-    let announced = false;
-    const onData = (chunk: Buffer) => {
-      output += chunk.toString();
-      // The CLI opens the browser itself and prints the URL wrapped in an OSC-8 hyperlink.
-      const url = output.match(new RegExp(String.raw`https://[^\s\u0007\u001b]+`))?.[0];
-      if (url && !announced) {
-        announced = true;
-        flow("claude", "awaiting-code", url);
-      }
-    };
-    child.stdout.on("data", onData);
-    child.stderr.on("data", onData);
-    child.on("exit", (code) => {
-      if (flows.get("claude")?.child !== child) return;
-      void finish(
-        "claude",
-        code === 0,
-        code === 0 ? null : firstLine(output.slice(-500)) || `exited with ${code}`,
-      );
-    });
-  };
+  const refreshProvider = Effect.fn("ProviderRegistry.refreshProvider")(function* (
+    kind: ProviderKind,
+  ) {
+    const next = yield* probeHarness(kind);
+    providers = providers.map((provider) => (provider.kind === kind ? next : provider));
+    listener.onProviders(providers);
+    yield* lastChecked.set(providers);
+  });
 
-  const linkCodex = async () => {
-    const rpc = await connectCodex(
-      undefined,
-      {
-        onNotification: (notification) => {
-          if (!CodexNotification.guards["account/login/completed"](notification)) return;
-          rpc.close();
-          const { success, error } = notification.params;
-          void finish("codex", success, success ? null : (error ?? "Sign-in failed"));
+  const refreshProviders = Effect.forEach(ProviderKind.literals, refreshProvider, {
+    concurrency: "unbounded",
+    discard: true,
+  });
+
+  /**
+   * Signs in with the CLI's own login command, which prints the page to open and exits once
+   * signed in. At "awaiting-code" the page shows a code for the user to paste back into it.
+   * Resolves to why it failed, null once signed in.
+   */
+  const linkCli = Effect.fn("ProviderRegistry.linkCli")(function* (
+    kind: ProviderKind,
+    args: ReadonlyArray<string>,
+    stage: "awaiting-code" | "browser",
+  ) {
+    const launch = yield* resolveLaunch(kind);
+    const exited = yield* Deferred.make<number | null>();
+
+    const child = yield* Effect.acquireRelease(
+      Effect.try({
+        try: () => {
+          const spawned = spawn(launch.bin, args, {
+            env: launch.env,
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+
+          spawned.on("exit", (code) => Deferred.doneUnsafe(exited, Effect.succeed(code)));
+
+          return spawned;
         },
-      },
-      await launchFor("codex"),
+        catch: (error) => new ProviderError({ provider: kind, message: getErrorMessage(error) }),
+      }),
+      (child) =>
+        Effect.sync(() => {
+          if (codeInputs.get(kind) === child.stdin) codeInputs.delete(kind);
+          child.kill();
+        }),
     );
-    flows.set("codex", { rpc });
-    const res = await rpc.request(
-      "account/login/start",
-      { type: "chatgpt" },
-      Schema.Struct({ loginId: Schema.String, authUrl: Schema.String }),
-    );
-    flows.set("codex", { rpc, loginId: res.loginId });
-    // Codex listens on a local callback, so opening the page is all that's needed. Elsewhere (a
-    // remote host) the app opens it, and the callback only lands when the browser runs there too.
-    if (process.platform === "darwin")
-      spawn("open", [res.authUrl], { stdio: "ignore", detached: true }).unref();
-    flow("codex", "browser", res.authUrl);
-  };
 
-  /** Cursor's login opens the browser itself and finishes when the page does. */
-  const linkCursor = async () => {
-    const launch = await launchFor("cursor");
-    const child = spawn(launch.bin, ["login"], {
-      env: launch.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    flows.set("cursor", { child });
+    // Nothing to type in: the CLI reads end-of-input, as it would from /dev/null.
+    if (stage === "browser") child.stdin.end();
+    else codeInputs.set(kind, child.stdin);
+
     let output = "";
-    let announced = false;
-    const onData = (chunk: Buffer) => {
+    let hasAnnouncedUrl = false;
+
+    function onData(chunk: Buffer) {
       output += chunk.toString();
+      // Claude's CLI prints the URL wrapped in an OSC-8 hyperlink.
       const url = output.match(new RegExp(String.raw`https://[^\s\u0007\u001b]+`))?.[0];
-      if (url && !announced) {
-        announced = true;
-        flow("cursor", "browser", url);
+
+      if (url && !hasAnnouncedUrl) {
+        hasAnnouncedUrl = true;
+        reportLinkFlow(kind, stage, url);
       }
-    };
+    }
+
     child.stdout.on("data", onData);
     child.stderr.on("data", onData);
-    child.on("exit", (code) => {
-      if (flows.get("cursor")?.child !== child) return;
-      void finish(
-        "cursor",
-        code === 0,
-        code === 0 ? null : firstLine(output.slice(-500)) || `exited with ${code}`,
-      );
+
+    const code = yield* Deferred.await(exited);
+
+    return code === 0 ? null : getFirstLine(output.slice(-500)) || `exited with ${code}`;
+  });
+
+  /** Codex's ChatGPT sign-in, finished through a local callback it listens on. Resolves like `linkCli`. */
+  const linkCodex = Effect.fn("ProviderRegistry.linkCodex")(function* () {
+    const launch = yield* resolveLaunch("codex");
+    const completed = yield* Deferred.make<string | null>();
+
+    const rpc = yield* acquireCodexConnection(launch, undefined, {
+      onNotification: (notification) => {
+        if (!CodexNotification.guards["account/login/completed"](notification)) return;
+
+        const { success, error } = notification.params;
+        Deferred.doneUnsafe(
+          completed,
+          Effect.succeed(success ? null : (error ?? "Sign-in failed")),
+        );
+      },
     });
-  };
 
-  const LINK: Record<ProviderKind, () => Promise<void>> = {
-    claude: linkClaude,
-    codex: linkCodex,
-    cursor: linkCursor,
-  };
+    const login = yield* tryProviderPromise("codex", () =>
+      rpc.request(
+        "account/login/start",
+        { type: "chatgpt" },
+        Schema.Struct({ loginId: Schema.String, authUrl: Schema.String }),
+      ),
+    );
 
-  const cancel = (kind: ProviderKind) => {
-    const active = flows.get(kind);
-    flows.delete(kind);
-    active?.child?.kill();
-    if (active?.rpc && active.loginId)
-      void active.rpc
-        .request("account/login/cancel", { loginId: active.loginId }, Schema.Unknown)
-        .catch(() => {});
-    active?.rpc?.close();
-  };
+    // Elsewhere (a remote host) the app opens the page, and the callback only lands when the
+    // browser runs there too.
+    if (process.platform === "darwin")
+      spawn("open", [login.authUrl], { stdio: "ignore", detached: true }).unref();
+    reportLinkFlow("codex", "browser", login.authUrl);
 
-  const background = (run: () => Promise<void>) =>
-    Effect.sync(() => {
-      void run().catch((e) =>
-        Effect.runFork(Effect.logWarning("provider task failed", message(e))),
+    return yield* Deferred.await(completed).pipe(
+      Effect.onInterrupt(() =>
+        Effect.sync(() => {
+          void rpc
+            .request("account/login/cancel", { loginId: login.loginId }, Schema.Unknown)
+            .catch(() => {});
+        }),
+      ),
+    );
+  });
+
+  const LINK: Record<ProviderKind, () => Effect.Effect<string | null, ProviderError, Scope.Scope>> =
+    {
+      claude: () => linkCli("claude", ["auth", "login", "--claudeai"], "awaiting-code"),
+      codex: linkCodex,
+      // Cursor's login opens the browser itself and finishes when the page does.
+      cursor: () => linkCli("cursor", ["login"], "browser"),
+    };
+
+  const runLinkFlow = Effect.fn("ProviderRegistry.runLinkFlow")(
+    function* (kind: ProviderKind) {
+      reportLinkFlow(kind, "starting");
+      const failure = yield* Effect.scoped(LINK[kind]());
+
+      // Outlives the flow, so cancelling or linking again meanwhile doesn't swallow the outcome.
+      yield* runInBackground(
+        Effect.gen(function* () {
+          yield* refreshProvider(kind);
+          reportLinkFlow(kind, failure === null ? "done" : "failed", null, failure);
+        }),
       );
-    });
+    },
+    (flow, kind) =>
+      Effect.catch(flow, (error) =>
+        Effect.sync(() => reportLinkFlow(kind, "failed", null, error.message)),
+      ),
+  );
 
   // Initial status, without blocking startup.
-  yield* background(refreshAll);
+  yield* runInBackground(refreshProviders);
 
   return ProviderRegistry.of({
     list: Effect.sync(() => providers),
-    refresh: background(refreshAll),
-    link: (kind) =>
-      background(async () => {
-        cancel(kind);
-        flow(kind, "starting");
-        try {
-          await LINK[kind]();
-        } catch (e) {
-          cancel(kind);
-          flow(kind, "failed", null, message(e));
-        }
-      }),
+    refresh: runInBackground(refreshProviders),
+    link: (kind) => FiberMap.run(linkFlows, kind, runLinkFlow(kind)).pipe(Effect.asVoid),
     submitCode: (kind, code) =>
       Effect.sync(() => {
-        flows.get(kind)?.child?.stdin?.write(`${code.trim()}\n`);
+        codeInputs.get(kind)?.write(`${code.trim()}\n`);
       }),
-    cancelLink: (kind) => Effect.sync(() => cancel(kind)),
+    cancelLink: (kind) => FiberMap.remove(linkFlows, kind),
     unlink: (kind) =>
-      background(async () => {
-        const launch = await launchFor(kind);
-        await exec(launch.bin, [...LOGOUT_ARGS[kind]], {
-          env: launch.env,
-        }).catch(() => {});
-        await refreshOne(kind);
-      }),
+      runInBackground(
+        Effect.gen(function* () {
+          const launch = yield* resolveLaunch(kind);
+          yield* Effect.promise(() =>
+            exec(launch.bin, [...LOGOUT_ARGS[kind]], { env: launch.env }).catch(() => {}),
+          );
+          yield* refreshProvider(kind);
+        }),
+      ),
     readLimits: (kind) =>
-      Effect.promise(() =>
-        launchFor(kind)
-          .then((launch) => READ_LIMITS[kind](launch))
-          .then(
-            (limits) => ({ limits, error: null }),
-            (e) => ({ limits: [], error: `Couldn't read usage limits: ${message(e)}` }),
-          ),
+      resolveLaunch(kind).pipe(
+        Effect.flatMap((launch) => READ_LIMITS[kind](launch)),
+        Effect.map((limits) => ({ limits, error: null })),
+        Effect.catch((error) =>
+          Effect.succeed({
+            limits: [],
+            error: `Couldn't read usage limits: ${error.message}`,
+          }),
+        ),
       ),
     setListener: (next) => {
       listener = next;
