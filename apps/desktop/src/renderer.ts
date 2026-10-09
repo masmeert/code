@@ -35,6 +35,7 @@ export function serveRenderer() {
     );
     return;
   }
+
   protocol.handle("app", async (request) => {
     const { pathname } = new URL(request.url);
     const response = await net.fetch(

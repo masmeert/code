@@ -31,12 +31,14 @@ export const ThreadStatus = Schema.Literals([
 export type ThreadStatus = typeof ThreadStatus.Type;
 
 /** The agent is stopped on the user: for an approval, or for answers. */
-export const isAwaitingUser = (status: ThreadStatus) =>
-  status === "awaiting-approval" || status === "awaiting-answer";
+export function isAwaitingUser(status: ThreadStatus) {
+  return status === "awaiting-approval" || status === "awaiting-answer";
+}
 
 /** A turn is going, whether the agent is working or waiting on the user. */
-export const isTurnActive = (status: ThreadStatus) =>
-  status === "running" || isAwaitingUser(status);
+export function isTurnActive(status: ThreadStatus) {
+  return status === "running" || isAwaitingUser(status);
+}
 
 export const ApprovalDecision = Schema.Literals(["allow", "allow-session", "deny"]);
 export type ApprovalDecision = typeof ApprovalDecision.Type;
@@ -69,8 +71,9 @@ export type Theme = typeof Theme.Type;
 export const BROWSER_PARTITION = "persist:masscode-browser";
 
 /** Each remote host browses through its own SSH tunnel, so its `localhost` is the host's. */
-export const browserPartition = (host: string | null) =>
-  host === null ? BROWSER_PARTITION : `${BROWSER_PARTITION}:${host}`;
+export function browserPartition(host: string | null) {
+  return host === null ? BROWSER_PARTITION : `${BROWSER_PARTITION}:${host}`;
+}
 
 export const BrowserAction = Schema.Union([
   Schema.TaggedStruct("navigate", { url: Schema.String }),
@@ -114,7 +117,10 @@ export const Device = Schema.Struct({
 export type Device = typeof Device.Type;
 
 /** Where this Mac's device hub serves simulator streams and input; the token gates all of it. */
-export const DeviceHub = Schema.Struct({ origin: Schema.String, token: Schema.String });
+export const DeviceHub = Schema.Struct({
+  origin: Schema.String,
+  token: Schema.String,
+});
 export type DeviceHub = typeof DeviceHub.Type;
 
 export const DesktopBrowserEvent = Schema.TaggedUnion({
@@ -336,7 +342,9 @@ export const Settings = Schema.Struct({
   notifications: Schema.optional(Schema.Boolean),
 });
 export type Settings = typeof Settings.Type;
+
 export const DEFAULT_AUTO_SHELVE_DAYS = 7;
+
 export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   lastProvider: "claude",
@@ -435,7 +443,7 @@ export function repositoryOf(url: string) {
   const match = url
     .trim()
     .match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?[^/:]+(?::\d+)?[/:](.+?)(?:\.git)?\/*$/i);
-  return match ? match[1]! : url.trim();
+  return match?.[1] ?? url.trim();
 }
 
 /** How full a thread's context window was after its last response. */
@@ -491,13 +499,12 @@ export const ThreadActivity = Schema.Struct({
 export type ThreadActivity = typeof ThreadActivity.Type;
 
 /** The permission or questions a thread is waiting on you for. */
-export const PendingRequest = Schema.Struct({
+const PendingRequest = Schema.Struct({
   requestId: Schema.String,
   title: Schema.String,
   detail: Schema.String,
   asksQuestions: Schema.Boolean,
 });
-export type PendingRequest = typeof PendingRequest.Type;
 
 /** A message written while the agent worked, held by the daemon until the turn reaches a point it takes messages at. */
 export const QueuedMessage = Schema.Struct({
@@ -594,6 +601,7 @@ export type CommandRun = typeof CommandRun.Type;
 export const WORKTREE_SETUP_TERMINAL_ID = "worktree-setup";
 
 const TerminalColumns = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 }));
+
 const TerminalRows = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }));
 
 // ---------------------------------------------------------------------------
@@ -638,7 +646,7 @@ export const PullRequest = Schema.Struct({
 export type PullRequest = typeof PullRequest.Type;
 
 /** In a linked worktree, the local branch its branch merges into. */
-export const BaseBranch = Schema.Struct({
+const BaseBranch = Schema.Struct({
   branch: Schema.String,
   /** Commits on the worktree's branch that the base doesn't have. */
   ahead: Schema.Number,
@@ -649,7 +657,6 @@ export const BaseBranch = Schema.Struct({
   /** The checkout that has the base out, whose files a merge updates; null when none does. */
   checkout: Schema.NullOr(Schema.String),
 });
-export type BaseBranch = typeof BaseBranch.Type;
 
 export const RepoStatus = Schema.Struct({
   /** Changed files, untracked included. */
@@ -691,9 +698,18 @@ export const RuntimeEvent = Schema.Union([
     threadId: Schema.String,
     archivedAt: Schema.NullOr(Schema.Number),
   }),
-  Schema.TaggedStruct("thread.status", { threadId: Schema.String, status: ThreadStatus }),
-  Schema.TaggedStruct("thread.shelved", { threadId: Schema.String, shelved: Schema.Boolean }),
-  Schema.TaggedStruct("thread.seen", { threadId: Schema.String, seenRev: Schema.Number }),
+  Schema.TaggedStruct("thread.status", {
+    threadId: Schema.String,
+    status: ThreadStatus,
+  }),
+  Schema.TaggedStruct("thread.shelved", {
+    threadId: Schema.String,
+    shelved: Schema.Boolean,
+  }),
+  Schema.TaggedStruct("thread.seen", {
+    threadId: Schema.String,
+    seenRev: Schema.Number,
+  }),
   Schema.TaggedStruct("thread.activity", {
     threadId: Schema.String,
     activity: Schema.NullOr(ThreadActivity),
@@ -741,7 +757,11 @@ export const RuntimeEvent = Schema.Union([
     provider: Schema.optionalKey(ProviderKind),
     /** What the harness was told ahead of it: the `messages` it missed while `from` had the thread. */
     handoff: Schema.optionalKey(
-      Schema.Struct({ from: ProviderKind, messages: Schema.Number, text: Schema.String }),
+      Schema.Struct({
+        from: ProviderKind,
+        messages: Schema.Number,
+        text: Schema.String,
+      }),
     ),
   }),
   Schema.TaggedStruct("assistant.delta", {
@@ -818,7 +838,10 @@ export const RuntimeEvent = Schema.Union([
     deletions: Schema.Number,
   }),
   /** The conversation was rewound to before `messageId`: it and everything after it are gone. */
-  Schema.TaggedStruct("thread.rewound", { threadId: Schema.String, messageId: Schema.String }),
+  Schema.TaggedStruct("thread.rewound", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+  }),
   /** Ends the transcript a fork starts with: where it was forked from. */
   Schema.TaggedStruct("thread.forked", {
     threadId: Schema.String,
@@ -859,7 +882,10 @@ export const RuntimeEvent = Schema.Union([
     truncated: Schema.Boolean,
     error: Schema.NullOr(Schema.String),
   }),
-  Schema.TaggedStruct("error", { threadId: Schema.NullOr(Schema.String), message: Schema.String }),
+  Schema.TaggedStruct("error", {
+    threadId: Schema.NullOr(Schema.String),
+    message: Schema.String,
+  }),
   Schema.TaggedStruct("settings.updated", { settings: Settings }),
   Schema.TaggedStruct("project.added", { project: Project }),
   Schema.TaggedStruct("project.removed", { projectId: Schema.String }),
@@ -872,7 +898,10 @@ export const RuntimeEvent = Schema.Union([
     error: Schema.NullOr(Schema.String),
   }),
   /** Files in the repo at `path`, relative to it, for `@` mentions. */
-  Schema.TaggedStruct("git.files", { path: Schema.String, files: Schema.Array(Schema.String) }),
+  Schema.TaggedStruct("git.files", {
+    path: Schema.String,
+    files: Schema.Array(Schema.String),
+  }),
   /** Uncommitted changes (vs HEAD, untracked files included) in the repo at `path`, as one unified patch. */
   Schema.TaggedStruct("git.diff", {
     path: Schema.String,
@@ -901,7 +930,10 @@ export const RuntimeEvent = Schema.Union([
     terminalId: Schema.String,
     command: Schema.optionalKey(Schema.String),
   }),
-  Schema.TaggedStruct("terminal.closed", { threadId: Schema.String, terminalId: Schema.String }),
+  Schema.TaggedStruct("terminal.closed", {
+    threadId: Schema.String,
+    terminalId: Schema.String,
+  }),
   /** The simulator the thread's Simulator panel shows; null when it shows none. */
   Schema.TaggedStruct("thread.device", {
     threadId: Schema.String,
@@ -922,9 +954,15 @@ const GitCommand = Schema.Union([
   Schema.TaggedStruct("git.listFiles", { path: Schema.String }),
   /** Answered with a `git.diff` event. */
   Schema.TaggedStruct("git.diff", { path: Schema.String }),
-  Schema.TaggedStruct("git.checkout", { path: Schema.String, branch: Schema.String }),
+  Schema.TaggedStruct("git.checkout", {
+    path: Schema.String,
+    branch: Schema.String,
+  }),
   /** Creates a branch from HEAD and switches to it. */
-  Schema.TaggedStruct("git.createBranch", { path: Schema.String, branch: Schema.String }),
+  Schema.TaggedStruct("git.createBranch", {
+    path: Schema.String,
+    branch: Schema.String,
+  }),
   /** Answered with a `git.status` event. */
   Schema.TaggedStruct("git.status", { path: Schema.String }),
   /** Stages everything and commits it, then pushes if `push`; answered with a `git.status` event. An empty `message` is written by the commit model. */
@@ -938,7 +976,10 @@ const GitCommand = Schema.Union([
   /** Pushes if needed, writes the title and body with the commit model, and opens it; answered with a `git.status` event. */
   Schema.TaggedStruct("git.createPullRequest", { path: Schema.String }),
   /** Merges the branch's open pull request on its host; answered with a `git.status` event. */
-  Schema.TaggedStruct("git.mergePullRequest", { path: Schema.String, method: MergeMethod }),
+  Schema.TaggedStruct("git.mergePullRequest", {
+    path: Schema.String,
+    method: MergeMethod,
+  }),
   /** Merges a worktree's branch into its base branch locally; answered with a `git.status` event. */
   Schema.TaggedStruct("git.mergeIntoBase", { path: Schema.String }),
   /** Answered with a `sourceControl.updated` event. */
@@ -997,7 +1038,10 @@ const BranchCommand = Schema.Union([
     sideChatId: Schema.String,
     text: Schema.String,
   }),
-  Schema.TaggedStruct("sideChat.close", { threadId: Schema.String, sideChatId: Schema.String }),
+  Schema.TaggedStruct("sideChat.close", {
+    threadId: Schema.String,
+    sideChatId: Schema.String,
+  }),
 ]);
 
 /** The Browser and Simulator panels; a union of their own for the same reason as `GitCommand`. */
@@ -1009,7 +1053,10 @@ const PanelCommand = Schema.Union([
     error: Schema.NullOr(Schema.String),
   }),
   /** Answered with a `device.listed` frame. `install` first sets up the simulator tools when they're missing. */
-  Schema.TaggedStruct("device.list", { requestId: Schema.String, install: Schema.Boolean }),
+  Schema.TaggedStruct("device.list", {
+    requestId: Schema.String,
+    install: Schema.Boolean,
+  }),
   /** Boots the simulator if needed and shows it in the thread's panel; null shows none. Answered with `device.attached`. */
   Schema.TaggedStruct("device.attach", {
     requestId: Schema.String,
@@ -1044,9 +1091,15 @@ export const ClientCommand = Schema.Union([
   /** Adds every git repo directly inside `path` as a project. */
   Schema.TaggedStruct("project.scan", { path: Schema.String }),
   /** Answered with a `folder.entries` frame. `~` is the daemon's home. */
-  Schema.TaggedStruct("folder.list", { path: Schema.String, requestId: Schema.String }),
+  Schema.TaggedStruct("folder.list", {
+    path: Schema.String,
+    requestId: Schema.String,
+  }),
   /** Reads the `masscode.toml` in the project folder `path`; answered with `project.config`. */
-  Schema.TaggedStruct("project.config", { path: Schema.String, requestId: Schema.String }),
+  Schema.TaggedStruct("project.config", {
+    path: Schema.String,
+    requestId: Schema.String,
+  }),
   /** Writes `config` as the `masscode.toml` in the project folder `path`; answered with `project.configSaved`. */
   Schema.TaggedStruct("project.saveConfig", {
     path: Schema.String,
@@ -1080,7 +1133,10 @@ export const ClientCommand = Schema.Union([
     messageId: Schema.optional(Schema.String),
   }),
   /** Sends a queued message right away: into the running turn, or as a new one. */
-  Schema.TaggedStruct("thread.sendQueued", { threadId: Schema.String, messageId: Schema.String }),
+  Schema.TaggedStruct("thread.sendQueued", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+  }),
   /** Takes queued messages back out, e.g. to edit them in the composer. */
   Schema.TaggedStruct("thread.unqueue", {
     threadId: Schema.String,
@@ -1091,27 +1147,51 @@ export const ClientCommand = Schema.Union([
   /** Answered with a `thread.commands` event. */
   Schema.TaggedStruct("thread.listCommands", { threadId: Schema.String }),
   /** Answered with a `skills.listed` event. */
-  Schema.TaggedStruct("skills.list", { provider: ProviderKind, path: Schema.String }),
+  Schema.TaggedStruct("skills.list", {
+    provider: ProviderKind,
+    path: Schema.String,
+  }),
   /** Reads the usage of a thread that ran before usage was recorded; answered with a `thread.usage` event. */
   Schema.TaggedStruct("thread.readUsage", { threadId: Schema.String }),
   /** Answered with a `checkpoint.diff` event. */
-  Schema.TaggedStruct("checkpoint.diff", { threadId: Schema.String, messageId: Schema.String }),
+  Schema.TaggedStruct("checkpoint.diff", {
+    threadId: Schema.String,
+    messageId: Schema.String,
+  }),
   /** Full-text search over messages; answered with a `search.results` frame. */
-  Schema.TaggedStruct("search", { query: Schema.String, requestId: Schema.String }),
+  Schema.TaggedStruct("search", {
+    query: Schema.String,
+    requestId: Schema.String,
+  }),
   GitCommand,
   NestedCommand,
   Schema.TaggedStruct("thread.interrupt", { threadId: Schema.String }),
   /** Stops one subagent, the one started by tool call `toolId`; the turn carries on without it. */
-  Schema.TaggedStruct("thread.stopAgent", { threadId: Schema.String, toolId: Schema.String }),
+  Schema.TaggedStruct("thread.stopAgent", {
+    threadId: Schema.String,
+    toolId: Schema.String,
+  }),
   Schema.TaggedStruct("thread.close", { threadId: Schema.String }),
   /** Archiving also stops the thread's agent process; it resumes on the next message. */
-  Schema.TaggedStruct("thread.archive", { threadId: Schema.String, archived: Schema.Boolean }),
+  Schema.TaggedStruct("thread.archive", {
+    threadId: Schema.String,
+    archived: Schema.Boolean,
+  }),
   /** You looked at the thread as of its `updatedAt` `rev`. */
-  Schema.TaggedStruct("thread.seen", { threadId: Schema.String, rev: Schema.Number }),
+  Schema.TaggedStruct("thread.seen", {
+    threadId: Schema.String,
+    rev: Schema.Number,
+  }),
   /** Answered with a `thread.meta` event; a blank title is ignored. */
-  Schema.TaggedStruct("thread.rename", { threadId: Schema.String, title: Schema.String }),
+  Schema.TaggedStruct("thread.rename", {
+    threadId: Schema.String,
+    title: Schema.String,
+  }),
   /** Shelve/Unshelve from the thread menu; holds until the thread's next turn starts. */
-  Schema.TaggedStruct("thread.shelve", { threadId: Schema.String, shelved: Schema.Boolean }),
+  Schema.TaggedStruct("thread.shelve", {
+    threadId: Schema.String,
+    shelved: Schema.Boolean,
+  }),
   /** Questions are answered with "allow" and `answers`, and skipped with "deny". */
   Schema.TaggedStruct("approval.respond", {
     threadId: Schema.String,
@@ -1126,7 +1206,10 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("providers.refresh", {}),
   Schema.TaggedStruct("provider.link", { provider: ProviderKind }),
   /** Claude's sign-in ends on a page showing a code to paste back. */
-  Schema.TaggedStruct("provider.linkCode", { provider: ProviderKind, code: Schema.String }),
+  Schema.TaggedStruct("provider.linkCode", {
+    provider: ProviderKind,
+    code: Schema.String,
+  }),
   Schema.TaggedStruct("provider.linkCancel", { provider: ProviderKind }),
   Schema.TaggedStruct("provider.unlink", { provider: ProviderKind }),
   /** Answered with a `provider.limits` event. */
@@ -1168,7 +1251,10 @@ export const ClientCommand = Schema.Union([
     rows: TerminalRows,
     options: TurnOptions,
   }),
-  Schema.TaggedStruct("terminal.detach", { threadId: Schema.String, terminalId: Schema.String }),
+  Schema.TaggedStruct("terminal.detach", {
+    threadId: Schema.String,
+    terminalId: Schema.String,
+  }),
   Schema.TaggedStruct("terminal.write", {
     threadId: Schema.String,
     terminalId: Schema.String,
@@ -1185,7 +1271,10 @@ export const ClientCommand = Schema.Union([
     terminalId: Schema.String,
     characters: Schema.Number,
   }),
-  Schema.TaggedStruct("terminal.close", { threadId: Schema.String, terminalId: Schema.String }),
+  Schema.TaggedStruct("terminal.close", {
+    threadId: Schema.String,
+    terminalId: Schema.String,
+  }),
 ]).pipe(Schema.toTaggedUnion("_tag"));
 export type ClientCommand = typeof ClientCommand.Type;
 
@@ -1194,11 +1283,17 @@ export type ClientCommand = typeof ClientCommand.Type;
 // ---------------------------------------------------------------------------
 
 /** A stored event with its id: ids only grow, so they work as a resume cursor across restarts. */
-export const StoredEvent = Schema.Struct({ id: Schema.Number, event: RuntimeEvent });
+export const StoredEvent = Schema.Struct({
+  id: Schema.Number,
+  event: RuntimeEvent,
+});
 export type StoredEvent = typeof StoredEvent.Type;
 
 /** Where a windowed transcript starts: `before` is the first loaded event id, `hasMore` if older ones exist. */
-export const PageInfo = Schema.Struct({ before: Schema.Number, hasMore: Schema.Boolean });
+export const PageInfo = Schema.Struct({
+  before: Schema.Number,
+  hasMore: Schema.Boolean,
+});
 export type PageInfo = typeof PageInfo.Type;
 
 /**
@@ -1294,7 +1389,6 @@ export const ServerFrame = Schema.Union([
     requestId: Schema.String,
     hits: Schema.Array(SearchHit),
   }),
-  /** Answers `folder.list`: `path` made absolute, and the folders in it. */
   /** Answers `project.config`: empty when there's no file, with `error` saying what's wrong when it's invalid. */
   Schema.TaggedStruct("project.config", {
     requestId: Schema.String,
@@ -1308,6 +1402,7 @@ export const ServerFrame = Schema.Union([
     requestId: Schema.String,
     error: Schema.NullOr(Schema.String),
   }),
+  /** Answers `folder.list`: `path` made absolute, and the folders in it. */
   Schema.TaggedStruct("folder.entries", {
     requestId: Schema.String,
     path: Schema.String,
@@ -1325,7 +1420,10 @@ export const ServerFrame = Schema.Union([
     error: Schema.NullOr(Schema.String),
   }),
   /** A live event; `id` is set on stored (transcript) events and advances the thread's cursor. */
-  Schema.TaggedStruct("event", { id: Schema.NullOr(Schema.Number), event: RuntimeEvent }),
+  Schema.TaggedStruct("event", {
+    id: Schema.NullOr(Schema.Number),
+    event: RuntimeEvent,
+  }),
   Schema.TaggedStruct("terminal.snapshot", {
     threadId: Schema.String,
     terminalId: Schema.String,

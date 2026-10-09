@@ -59,39 +59,51 @@ export function createWindow(url: string, bounds = restoredBounds()) {
       webviewTag: true,
     },
   });
+
   hostBrowser(window);
   window.once("ready-to-show", () => window.show());
+
   window.on("close", () => {
     try {
       writeFileSync(BOUNDS_PATH, JSON.stringify(window.getNormalBounds()));
     } catch {}
   });
+
   window.webContents.setWindowOpenHandler((details) => {
     openLink(details.url);
     return { action: "deny" };
   });
+
   window.webContents.on("will-navigate", (event, target) => {
     if (target.startsWith(APP_URL)) return;
+
     event.preventDefault();
     openLink(target);
   });
-  window.webContents.on("did-fail-load", (_event, _code, description, failedUrl, isMainFrame) => {
-    if (isMainFrame && description === "ERR_CONNECTION_REFUSED")
-      setTimeout(() => window.loadURL(failedUrl).catch(() => {}), 500);
-  });
-  window.webContents.on("context-menu", (_event, params) => {
-    if (!params.isEditable && !params.selectionText) return;
+
+  window.webContents.on(
+    "did-fail-load",
+    (_event, _errorCode, description, failedUrl, isMainFrame) => {
+      if (isMainFrame && description === "ERR_CONNECTION_REFUSED")
+        setTimeout(() => window.loadURL(failedUrl).catch(() => {}), 500);
+    },
+  );
+
+  window.webContents.on("context-menu", (_event, menu) => {
+    if (!menu.isEditable && !menu.selectionText) return;
+
     Menu.buildFromTemplate([
-      ...params.dictionarySuggestions.map((suggestion) => ({
+      ...menu.dictionarySuggestions.map((suggestion) => ({
         label: suggestion,
         click: () => window.webContents.replaceMisspelling(suggestion),
       })),
       { type: "separator" },
-      { role: "cut", enabled: params.editFlags.canCut },
-      { role: "copy", enabled: params.editFlags.canCopy },
-      { role: "paste", enabled: params.editFlags.canPaste },
+      { role: "cut", enabled: menu.editFlags.canCut },
+      { role: "copy", enabled: menu.editFlags.canCopy },
+      { role: "paste", enabled: menu.editFlags.canPaste },
       { role: "selectAll" },
     ]).popup({ window });
   });
+
   window.loadURL(url).catch(() => {});
 }

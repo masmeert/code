@@ -27,6 +27,7 @@ function tabShortcut(
     !(process.platform === "darwin" ? input.meta : input.control)
   )
     return null;
+
   switch (input.key.toLowerCase()) {
     case "t":
       return "new-tab";
@@ -47,8 +48,10 @@ function tabShortcut(
 
 function attachGuest(window: BrowserWindow, guest: WebContents) {
   recordConsole(guest);
+
   guest.setWindowOpenHandler(({ url, disposition }) => {
     if (!isWebUrl(url)) return { action: "deny" };
+
     if (disposition === "new-window") {
       return {
         action: "allow",
@@ -57,28 +60,33 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
         },
       };
     }
+
     sendToHost(
       window,
       DesktopBrowserEvent.cases["open-tab"].make({ webContentsId: guest.id, url }),
     );
     return { action: "deny" };
   });
+
   guest.on("did-create-window", (popup) =>
     popup.webContents.setWindowOpenHandler(() => ({ action: "deny" })),
   );
+
   guest.on("before-input-event", (event, input) => {
     const shortcut = tabShortcut(input);
     if (!shortcut) return;
+
     event.preventDefault();
     if (shortcut === "reload") guest.reload();
     else if (shortcut === "back") guest.navigationHistory.goBack();
     else if (shortcut === "forward") guest.navigationHistory.goForward();
     else sendToHost(window, DesktopBrowserEvent.cases[shortcut].make({ webContentsId: guest.id }));
   });
-  guest.on("context-menu", (_event, params) => {
+
+  guest.on("context-menu", (_event, menu) => {
     guest.focus();
     Menu.buildFromTemplate([
-      ...(isWebUrl(params.linkURL)
+      ...(isWebUrl(menu.linkURL)
         ? [
             {
               label: "Open Link in New Tab",
@@ -87,15 +95,15 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
                   window,
                   DesktopBrowserEvent.cases["open-tab"].make({
                     webContentsId: guest.id,
-                    url: params.linkURL,
+                    url: menu.linkURL,
                   }),
                 ),
             },
             {
               label: "Open Link in Default Browser",
-              click: () => shell.openExternal(params.linkURL).catch(() => {}),
+              click: () => shell.openExternal(menu.linkURL).catch(() => {}),
             },
-            { label: "Copy Link", click: () => clipboard.writeText(params.linkURL) },
+            { label: "Copy Link", click: () => clipboard.writeText(menu.linkURL) },
             { type: "separator" as const },
           ]
         : []),
@@ -111,18 +119,19 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
       },
       { label: "Reload", click: () => guest.reload() },
       { type: "separator" },
-      { role: "cut", enabled: params.editFlags.canCut },
-      { role: "copy", enabled: params.editFlags.canCopy },
-      { role: "paste", enabled: params.editFlags.canPaste },
+      { role: "cut", enabled: menu.editFlags.canCut },
+      { role: "copy", enabled: menu.editFlags.canCopy },
+      { role: "paste", enabled: menu.editFlags.canPaste },
       { role: "selectAll" },
       { type: "separator" },
-      { label: "Inspect Element", click: () => guest.inspectElement(params.x, params.y) },
+      { label: "Inspect Element", click: () => guest.inspectElement(menu.x, menu.y) },
     ]).popup({ window });
   });
 }
 
 export function configureBrowserSession(browserSession: Session) {
   const allowed = new Set(["clipboard-sanitized-write", "fullscreen"]);
+
   browserSession.setPermissionRequestHandler((_contents, permission, callback) =>
     callback(allowed.has(permission)),
   );
@@ -130,17 +139,19 @@ export function configureBrowserSession(browserSession: Session) {
 }
 
 export function hostBrowser(window: BrowserWindow) {
-  window.webContents.on("will-attach-webview", (event, webPreferences, params) => {
+  window.webContents.on("will-attach-webview", (event, webPreferences, attributes) => {
     // Remote hosts' tabs have partitions of their own, named after this one.
-    if (!params.partition?.startsWith(BROWSER_PARTITION) || !isWebUrl(params.src ?? "")) {
+    if (!attributes.partition?.startsWith(BROWSER_PARTITION) || !isWebUrl(attributes.src ?? "")) {
       event.preventDefault();
       return;
     }
+
     delete webPreferences.preload;
     webPreferences.sandbox = true;
     webPreferences.contextIsolation = true;
     webPreferences.nodeIntegration = false;
     webPreferences.nodeIntegrationInSubFrames = false;
   });
+
   window.webContents.on("did-attach-webview", (_event, guest) => attachGuest(window, guest));
 }

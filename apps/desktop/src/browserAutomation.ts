@@ -7,11 +7,13 @@ const consoleLines = new Map<number, Array<string>>();
 export function recordConsole(guest: WebContents) {
   const lines: Array<string> = [];
   consoleLines.set(guest.id, lines);
+
   guest.on("console-message", (details) => {
     if (details.message.startsWith("%cElectron Security Warning")) return;
     lines.push(`[${details.level}] ${details.message}`);
     if (lines.length > 100) lines.shift();
   });
+
   guest.once("destroyed", () => consoleLines.delete(guest.id));
 }
 
@@ -41,8 +43,10 @@ function snapshotPage() {
     ["SELECT", "combobox"],
     ["SUMMARY", "button"],
   ]);
+
   for (const element of document.querySelectorAll("[data-masscode-ref]"))
     element.removeAttribute("data-masscode-ref");
+
   const lines: Array<string> = [];
   for (const element of document.querySelectorAll<HTMLElement>(
     'a[href], button, input:not([type="hidden"]), textarea, select, summary, [role], [contenteditable="true"], [tabindex]:not([tabindex="-1"])',
@@ -60,16 +64,17 @@ function snapshotPage() {
         : (implicitRole.get(element.tagName) ??
           (element.isContentEditable ? "textbox" : "generic")));
     if (element.hasAttribute("role") && !roles.has(role)) continue;
-    const rect = element.getBoundingClientRect();
-    const style = getComputedStyle(element);
+
+    const bounds = element.getBoundingClientRect();
     if (
-      rect.width === 0 ||
-      rect.height === 0 ||
-      style.visibility === "hidden" ||
+      bounds.width === 0 ||
+      bounds.height === 0 ||
+      getComputedStyle(element).visibility === "hidden" ||
       element.closest('[aria-hidden="true"]')
     )
       continue;
     if (lines.length === 200) break;
+
     const ref = `e${lines.length + 1}`;
     element.setAttribute("data-masscode-ref", ref);
     const value =
@@ -95,9 +100,10 @@ function snapshotPage() {
           ? " checked"
           : " unchecked"
         : "";
-    const offscreen = rect.bottom < 0 || rect.top > innerHeight ? " (offscreen)" : "";
+    const offscreen = bounds.bottom < 0 || bounds.top > innerHeight ? " (offscreen)" : "";
     lines.push(`${ref} ${role} "${name}"${href}${current}${checked}${offscreen}`);
   }
+
   const text = (document.body?.innerText ?? "").replace(/\n{3,}/g, "\n\n").trim();
   return [
     `Viewport ${innerWidth}x${innerHeight}, scrolled to ${Math.round(scrollY)} of ${document.documentElement.scrollHeight}.`,
@@ -123,6 +129,7 @@ function targetElement(purpose: "point" | "focus", target: string) {
   }
   if (!(element instanceof HTMLElement))
     return { error: `Nothing matches ${target}; take a new snapshot for current refs` };
+
   element.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
   if (purpose === "focus") {
     element.focus();
@@ -131,8 +138,12 @@ function targetElement(purpose: "point" | "focus", target: string) {
     else if (element.isContentEditable) document.execCommand("selectAll");
     return { x: 0, y: 0 };
   }
-  const rect = element.getBoundingClientRect();
-  return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+
+  const bounds = element.getBoundingClientRect();
+  return {
+    x: Math.round(bounds.left + bounds.width / 2),
+    y: Math.round(bounds.top + bounds.height / 2),
+  };
 }
 
 function isExpression(source: string) {
@@ -144,7 +155,7 @@ function isExpression(source: string) {
   }
 }
 
-function withTimeout<A>(promise: Promise<A>, milliseconds: number, message: string) {
+function withTimeout<Value>(promise: Promise<Value>, milliseconds: number, message: string) {
   return Promise.race([
     promise,
     new Promise<never>((_resolve, reject) =>
@@ -156,6 +167,7 @@ function withTimeout<A>(promise: Promise<A>, milliseconds: number, message: stri
 async function settle(guest: WebContents, milliseconds: number) {
   await new Promise((resolve) => setTimeout(resolve, 300));
   if (!guest.isLoading()) return;
+
   await withTimeout(
     new Promise<void>((resolve) => guest.once("did-stop-loading", () => resolve())),
     milliseconds,
@@ -204,6 +216,7 @@ function run(guest: WebContents, action: BrowserAction): Promise<string> {
         true,
       );
       if ("error" in point) throw new Error(point.error);
+
       guest.sendInputEvent({ type: "mouseMove", x: point.x, y: point.y });
       guest.sendInputEvent({
         type: "mouseDown",
@@ -228,6 +241,7 @@ function run(guest: WebContents, action: BrowserAction): Promise<string> {
         true,
       );
       if ("error" in focused) throw new Error(focused.error);
+
       await guest.insertText(text);
       if (submit) pressKey(guest, "Enter");
       await settle(guest, 10_000);
@@ -266,6 +280,7 @@ export async function automateBrowser(
   ) {
     throw new Error("That browser tab isn't open in this window");
   }
+
   const text = await run(guest, action);
   return {
     url: guest.getURL(),

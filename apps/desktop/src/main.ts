@@ -40,6 +40,7 @@ registerBridge(() => daemonPort?.then((port) => ({ port, token: daemonToken })) 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+
 app.on("will-quit", () => {
   quitting = true;
   daemon?.kill();

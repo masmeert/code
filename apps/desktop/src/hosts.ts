@@ -34,7 +34,10 @@ interface Host {
 }
 
 const hosts = new Map<string, Host>();
-const listFile = () => join(app.getPath("userData"), "hosts.json");
+
+function listFile() {
+  return join(app.getPath("userData"), "hosts.json");
+}
 
 /** Never asks for a password (there's no terminal to type it in), and gives up on a dead link. */
 const SSH_OPTIONS = [
@@ -118,7 +121,7 @@ echo "token=$(cat "$dir/token")"
 `;
 
 function broadcast() {
-  const list = [...hosts.values()].map(({ alias, status }): RemoteHost => ({ alias, status }));
+  const list = listHosts();
   for (const window of BrowserWindow.getAllWindows())
     if (!window.isDestroyed()) window.webContents.send("hosts-changed", list);
 }
@@ -147,20 +150,23 @@ function ssh(alias: string, command: string, input: string | Readable) {
     const child = spawn("ssh", [...SSH_OPTIONS, "-T", alias, command]);
     let stdout = "";
     let stderr = "";
+
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
     child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
     child.on("error", (error) => reject(error));
     child.on("close", (code) =>
       code === 0 ? resolve(stdout) : reject(new Error(sshError(alias, stderr))),
     );
+
     if (typeof input === "string") child.stdin.end(input);
     else input.pipe(child.stdin).on("error", () => {});
   });
 }
 
 async function runScript(alias: string, version: string, mode: "start" | "restart" | "stop") {
-  const output = await ssh(alias, `sh -s -- ${version} ${mode}`, REMOTE_SCRIPT);
-  const lines = output.split("\n").filter((line) => line.includes("="));
+  const lines = (await ssh(alias, `sh -s -- ${version} ${mode}`, REMOTE_SCRIPT))
+    .split("\n")
+    .filter((line) => line.includes("="));
   const values = new Map(
     lines.map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
   );
@@ -192,6 +198,7 @@ function progress(total: number, report: (percent: number) => void) {
  */
 async function wantedVersion() {
   if (app.isPackaged) return app.getVersion();
+
   const built = await stat(devArchive("x64")).catch(() => stat(devArchive("arm64")));
   return `dev-${Math.round(built.mtimeMs)}`;
 }
@@ -203,18 +210,22 @@ function devArchive(arch: string) {
 /** The gzipped daemon for `arch`, downloaded from this version's release the first time. */
 async function daemonArchive(host: Host, arch: string, version: string) {
   if (!app.isPackaged) return devArchive(arch);
+
   const path = join(
     app.getPath("userData"),
     "remote",
     `masscode-daemon-${version}-linux-${arch}.gz`,
   );
   if (await stat(path).catch(() => null)) return path;
-  const url = `https://github.com/masmeert/code/releases/download/v${version}/masscode-daemon-linux-${arch}.gz`;
-  const response = await net.fetch(url);
+
+  const response = await net.fetch(
+    `https://github.com/masmeert/code/releases/download/v${version}/masscode-daemon-linux-${arch}.gz`,
+  );
   if (!response.ok || !response.body)
     throw new Error(
       `Couldn't download MassCode for ${host.alias} (${response.status} from GitHub). Check this Mac's connection, then retry.`,
     );
+
   await mkdir(join(path, ".."), { recursive: true });
   await pipeline(
     // SAFETY: Electron's fetch body is a web ReadableStream, which Readable.fromWeb takes.
@@ -234,10 +245,9 @@ async function daemonArchive(host: Host, arch: string, version: string) {
 async function upload(host: Host, arch: string, version: string) {
   const archive = await daemonArchive(host, arch, version);
   const { size } = await stat(archive);
-  const target = `masscode-daemon-${version}`;
   await ssh(
     host.alias,
-    `sh -c 'd="$HOME/.masscode/remote/bin"; mkdir -p "$d" && gzip -dc > "$d/.upload" && chmod +x "$d/.upload" && mv "$d/.upload" "$d/${target}"'`,
+    `sh -c 'd="$HOME/.masscode/remote/bin"; mkdir -p "$d" && gzip -dc > "$d/.upload" && chmod +x "$d/.upload" && mv "$d/.upload" "$d/masscode-daemon-${version}"'`,
     createReadStream(archive).pipe(
       progress(size, (percent) =>
         setStatus(
@@ -252,8 +262,10 @@ async function upload(host: Host, arch: string, version: string) {
 function waitForPort(port: number, tunnel: ChildProcess) {
   return new Promise<void>((resolve, reject) => {
     const deadline = Date.now() + 15000;
-    const attempt = () => {
+
+    function attempt() {
       if (tunnel.exitCode !== null) return reject(new Error("The SSH tunnel closed while opening"));
+
       const socket = connect(port, "127.0.0.1");
       socket.once("connect", () => {
         socket.destroy();
@@ -264,7 +276,8 @@ function waitForPort(port: number, tunnel: ChildProcess) {
         if (Date.now() > deadline) reject(new Error("The SSH tunnel didn't open in time"));
         else setTimeout(attempt, 100);
       });
-    };
+    }
+
     attempt();
   });
 }
@@ -306,6 +319,7 @@ async function openTunnel(host: Host, remotePort: number, token: string) {
     // app exits, crashes included, so no tunnel outlives it.
     "cat > /dev/null",
   ]);
+
   tunnel.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
   tunnel.once("exit", () => {
     if (host.tunnel?.process !== tunnel) return;
@@ -314,6 +328,7 @@ async function openTunnel(host: Host, remotePort: number, token: string) {
     if (hosts.get(host.alias) === host && HostStatus.guards.connected(host.status))
       setStatus(host, HostStatus.cases.connecting.make({ step: "Reconnecting" }));
   });
+
   try {
     await waitForPort(localPort, tunnel);
   } catch (error) {
@@ -326,6 +341,7 @@ async function openTunnel(host: Host, remotePort: number, token: string) {
           : String(error),
     );
   }
+
   await routeBrowser(host.alias, socksPort);
   host.tunnel?.process.kill();
   host.tunnel = { process: tunnel, remotePort, daemon: { port: localPort, token } };
@@ -335,9 +351,11 @@ async function openTunnel(host: Host, remotePort: number, token: string) {
 async function connectHost(host: Host, mode: "start" | "restart"): Promise<Daemon | null> {
   if (!HostStatus.guards.connected(host.status))
     setStatus(host, HostStatus.cases.connecting.make({ step: "Connecting" }));
+
   try {
     const version = await wantedVersion();
     if (!VERSION_PATTERN.test(version)) throw new Error(`Unexpected app version ${version}`);
+
     let { values, log } = await runScript(host.alias, version, mode);
     if (values.get("state") === "missing") {
       const arch = linuxArch(values.get("arch") ?? "");
@@ -349,25 +367,30 @@ async function connectHost(host: Host, mode: "start" | "restart"): Promise<Daemo
       setStatus(host, HostStatus.cases.connecting.make({ step: "Starting MassCode" }));
       ({ values, log } = await runScript(host.alias, version, mode));
     }
+
     const state = values.get("state");
     if (state === "unsupported")
       throw new Error(
         `MassCode runs on Linux hosts for now; ${host.alias} runs ${values.get("os")}.`,
       );
+
     if (state === "updating") {
       setStatus(host, HostStatus.cases.updating.make({}));
       return null;
     }
+
     const port = Number(values.get("port"));
     const token = values.get("token");
     if (state !== "running" || !port || !token)
       throw new Error(
         `MassCode didn't start on ${host.alias}${log.length ? `: ${log.join(" ")}` : "."}`,
       );
+
     const daemon =
       host.tunnel?.remotePort === port && host.tunnel.process.exitCode === null
         ? host.tunnel.daemon
         : await openTunnel(host, port, token);
+
     if (hosts.get(host.alias) !== host) return null;
     setStatus(host, HostStatus.cases.connected.make({}));
     return daemon;
@@ -395,6 +418,7 @@ async function saveList() {
 export async function loadHosts() {
   const saved: unknown = JSON.parse(await readFile(listFile(), "utf8").catch(() => "[]"));
   if (!Array.isArray(saved)) return;
+
   for (const alias of saved) {
     if (typeof alias !== "string") continue;
     hosts.set(alias, {
@@ -424,6 +448,7 @@ export async function addHost(alias: string) {
   const trimmed = alias.trim();
   // An alias starting with "-" would reach ssh as an option.
   if (!trimmed || trimmed.startsWith("-") || /\s/.test(trimmed) || hosts.has(trimmed)) return;
+
   hosts.set(trimmed, {
     alias: trimmed,
     status: HostStatus.cases.connecting.make({ step: "Connecting" }),
@@ -438,6 +463,7 @@ export async function addHost(alias: string) {
 export async function removeHost(alias: string) {
   const host = hosts.get(alias);
   if (!host) return;
+
   hosts.delete(alias);
   host.tunnel?.process.kill();
   broadcast();
@@ -448,6 +474,7 @@ export async function removeHost(alias: string) {
 export async function restartHost(alias: string) {
   const host = hosts.get(alias);
   if (!host) return;
+
   await host.connecting;
   await ensureConnected(host, "restart");
 }
@@ -460,28 +487,31 @@ const GIT_FORGES = new Set(["github.com", "gitlab.com", "bitbucket.org", "ssh.de
 
 /** Concrete `Host` names in ~/.ssh/config and the files it includes; patterns like `*.internal` can't be connected to as-is. */
 export async function sshAliases() {
-  const sshDir = join(homedir(), ".ssh");
-  const main = await readFile(join(sshDir, "config"), "utf8").catch(() => "");
+  const sshDirectory = join(homedir(), ".ssh");
+  const main = await readFile(join(sshDirectory, "config"), "utf8").catch(() => "");
   // ponytail: one level of Include without globs, which covers OrbStack's and most tools'
   const included = await Promise.all(
     [...main.matchAll(/^\s*Include\s+(.+)$/gim)]
-      .flatMap((match) => match[1]!.trim().split(/\s+/))
+      .flatMap((match) => match[1]?.trim().split(/\s+/) ?? [])
       .flatMap((path) =>
         /[*?]/.test(path)
           ? []
           : [
               readFile(
-                path.startsWith("~/") ? join(homedir(), path.slice(2)) : resolve(sshDir, path),
+                path.startsWith("~/")
+                  ? join(homedir(), path.slice(2))
+                  : resolve(sshDirectory, path),
                 "utf8",
               ).catch(() => ""),
             ],
       ),
   );
+
   return [
     ...new Set(
       [main, ...included]
         .flatMap((config) => [...config.matchAll(/^\s*Host\s+(.+)$/gim)])
-        .flatMap((match) => match[1]!.trim().split(/\s+/))
+        .flatMap((match) => match[1]?.trim().split(/\s+/) ?? [])
         // Git forges sit in most configs for pushing over SSH; nothing runs agents there.
         .filter((name) => !/[*?!]/.test(name) && !GIT_FORGES.has(name)),
     ),

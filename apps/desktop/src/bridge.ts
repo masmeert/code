@@ -9,16 +9,17 @@ import { addHost, hostDaemon, listHosts, removeHost, restartHost, sshAliases } f
 import { APP_URL } from "./renderer.ts";
 import { checkForUpdates, downloadUpdate, installUpdate, updateStatus } from "./updates.ts";
 
-function handle<S extends Schema.ConstraintDecoder<unknown>, Result>(
+function handle<Argument extends Schema.ConstraintDecoder<unknown>, Result>(
   channel: string,
-  schema: S,
-  listener: (window: BrowserWindow, arg: S["Type"]) => Result,
+  schema: Argument,
+  listener: (window: BrowserWindow, argument: Argument["Type"]) => Result,
 ) {
-  ipcMain.handle(channel, (event, arg) => {
+  ipcMain.handle(channel, (event, argument) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (!window || !event.senderFrame?.url.startsWith(APP_URL))
       throw new Error(`${channel} is only available to MassCode windows`);
-    return listener(window, Schema.decodeUnknownSync(schema)(arg));
+
+    return listener(window, Schema.decodeUnknownSync(schema)(argument));
   });
 }
 
@@ -33,6 +34,7 @@ const MEDIA_TYPES = new Map([
 
 /** When each thread change was last announced; every open window reports the same change. */
 const announced = new Map<string, number>();
+
 /** Shown notifications, kept referenced so their click handler outlives garbage collection. */
 const shown = new Set<Notification>();
 
@@ -98,20 +100,24 @@ export function registerBridge(daemon: () => Promise<{ port: number; token: stri
     Schema.Struct({ threadId: Schema.String, title: Schema.String, body: Schema.String }),
     (window, { threadId, title, body }) => {
       if (BrowserWindow.getFocusedWindow() || !Notification.isSupported()) return;
+
       const key = `${threadId}:${body}`;
       // ponytail: fixed 3s window to merge the windows' reports; per-event ids if it ever drops a real repeat
       if (Date.now() - (announced.get(key) ?? 0) < 3000) return;
       announced.set(key, Date.now());
+
       const notification = new Notification({ title, body });
       shown.add(notification);
       notification.on("close", () => shown.delete(notification));
       notification.on("click", () => {
         shown.delete(notification);
         if (window.isDestroyed()) return;
+
         window.show();
         window.focus();
         window.webContents.send("open-thread", threadId);
       });
+
       notification.show();
     },
   );
