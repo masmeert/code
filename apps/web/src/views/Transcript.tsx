@@ -11,7 +11,6 @@ import * as Match from "effect/Match";
 import { OrbFace } from "@masscode/ui/agents/orb-face";
 import { PromptSelect } from "@masscode/ui/agents/prompt-input";
 import { StreamingResponse } from "@masscode/ui/agents/streaming-response";
-import { ApprovalCard } from "@masscode/ui/agents/approval-card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,8 +19,6 @@ import {
   AlertDialogFooter,
   AlertDialogTitle,
 } from "@masscode/ui/components/alert-dialog";
-import { ScrollArea } from "@masscode/ui/components/scroll-area";
-import { ToolApproval, ToolApprovalCode } from "@masscode/ui/agents/tool-approval";
 import {
   livePhrase,
   summarize,
@@ -65,14 +62,8 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  approvePlan,
-  BUILD_WITH_LABEL,
-  PERMISSIONS,
-  toDraftAttachment,
-  useNeedsRootConsent,
-} from "../lib/composer.ts";
-import { focusComposer, getDraft, setDraft } from "../lib/drafts.ts";
+import { toDraftAttachment } from "../lib/composer.ts";
+import { focusComposer, setDraft } from "../lib/drafts.ts";
 import { formatHarnessLabel } from "../lib/models.ts";
 import {
   closeTerminal,
@@ -80,16 +71,14 @@ import {
   forkThread,
   fetchImageUrl,
   openSideChat,
-  respondApproval,
   type RunningCommand,
   send,
   switchToThread,
   useFileRestoreBlocker,
   useStore,
-  useThreadHost,
   type TranscriptItem,
 } from "../lib/store.ts";
-import { RootFullAccessDialog } from "./Composer.tsx";
+import { PlanApproval, QuestionsApproval, ToolApprovalRequest } from "./ApprovalBlocks.tsx";
 import {
   toTurns,
   toToolGroups,
@@ -99,6 +88,7 @@ import {
   type UserItem,
   type MarkerItem,
   type Block,
+  type ToolItem,
 } from "../lib/transcriptBlocks.ts";
 
 const TerminalView = lazy(() =>
@@ -730,7 +720,47 @@ interface AgentBlockProps {
 }
 
 export const AgentBlock = memo(
-  (props: AgentBlockProps) => <AgentBlockContent {...props} />,
+  function AgentBlock({ block, threadId, live, streaming, showActions }: AgentBlockProps) {
+    switch (block.kind) {
+      case "user":
+        return null;
+      case "assistant":
+        return (
+          <AssistantReply
+            item={block}
+            threadId={threadId}
+            live={live}
+            streaming={streaming}
+            showActions={showActions}
+          />
+        );
+      case "reasoning":
+        return (
+          <Reasoning label={thoughtTitle(block.id)} streaming={streaming}>
+            <Markdown streaming={streaming} className="selectable leading-relaxed">
+              {block.text}
+            </Markdown>
+          </Reasoning>
+        );
+      case "work":
+        return (
+          <WorkBlock items={block.items} threadId={threadId} live={live} streaming={streaming} />
+        );
+      case "tools":
+        return <RevealableToolGroup calls={block.calls} live={live} />;
+      case "approval":
+        if (block.title === "ExitPlanMode")
+          return <PlanApproval threadId={threadId} item={block} />;
+        if (block.questions) {
+          return <QuestionsApproval threadId={threadId} item={block} questions={block.questions} />;
+        }
+        return <ToolApprovalRequest threadId={threadId} item={block} />;
+      case "error":
+        return <div className="selectable text-xs text-destructive">{block.text}</div>;
+      case "checkpoint":
+        return <CheckpointChip item={block} />;
+    }
+  },
   // Tool groups are rebuilt by `toBlocks`; compare the calls they hold instead.
   (previous, next) =>
     previous.threadId === next.threadId &&
@@ -746,222 +776,64 @@ export const AgentBlock = memo(
         hasSameItems(previous.block.items, next.block.items))),
 );
 
-function getPlanStatus(plan: Extract<TranscriptItem, { kind: "approval" }>) {
-  if (plan.decision === "deny") return "denied";
-  if (!plan.decision) return "pending";
-  return plan.resolved ? "approved" : "approving";
+/** Opens and scrolls to the call last picked in the running-subagents list. */
+function RevealableToolGroup({ calls, live }: { calls: ReadonlyArray<ToolItem>; live: boolean }) {
+  return (
+    <ToolGroup
+      calls={calls satisfies ReadonlyArray<ToolCall>}
+      live={live}
+      reveal={use(RevealContext)}
+    />
+  );
 }
 
-function AgentBlockContent({ block, threadId, live, streaming, showActions }: AgentBlockProps) {
+/** The agent's text, with copy, fork and side-question actions once it's done. */
+function AssistantReply({
+  item,
+  threadId,
+  live,
+  streaming,
+  showActions,
+}: {
+  item: Extract<TranscriptItem, { kind: "assistant" }>;
+  threadId: string;
+  live: boolean;
+  streaming: boolean;
+  showActions: boolean;
+}) {
   const isForking = useStore(
-    (state) => state.forking?.messageId === block.id && state.forking.error === null,
+    (state) => state.forking?.messageId === item.id && state.forking.error === null,
   );
   const [isConfirmingFork, setIsConfirmingFork] = useState(false);
-  const host = useThreadHost(threadId);
-  const needsRootConsent = useNeedsRootConsent(host);
-  const [isConfirmingRoot, setIsConfirmingRoot] = useState(false);
   const runReplyCommand = use(RunCommandContext);
-  const resolveImage = useCallback((src: string) => fetchImageUrl(threadId, src), [threadId]);
-  const provider = useStore((state) => state.threads[threadId]?.provider);
 
-  switch (block.kind) {
-    case "user":
-      return null;
-    case "assistant":
-      return (
-        <MessageBubble variant="ghost" className="w-full">
-          <MessageBubbleContent>
-            <StreamingResponse
-              status={streaming ? "streaming" : "complete"}
-              copyText={block.text}
-              onFork={live ? undefined : () => setIsConfirmingFork(true)}
-              forking={isForking}
-              onAskAside={() => openSideChat(threadId, block.id)}
-              showActions={showActions}
-              showFeedback={false}
-            >
-              <Markdown
-                streaming={streaming}
-                onRunCommand={runReplyCommand}
-                resolveImage={resolveImage}
-                className="selectable leading-relaxed"
-              >
-                {block.text}
-              </Markdown>
-            </StreamingResponse>
-          </MessageBubbleContent>
-          {isConfirmingFork ? (
-            <ForkDialog
-              threadId={threadId}
-              item={block}
-              onClose={() => setIsConfirmingFork(false)}
-            />
-          ) : null}
-        </MessageBubble>
-      );
-    case "reasoning":
-      return (
-        <Reasoning label={thoughtTitle(block.id)} streaming={streaming}>
-          <Markdown streaming={streaming} className="selectable leading-relaxed">
-            {block.text}
+  const resolveImage = useCallback((src: string) => fetchImageUrl(threadId, src), [threadId]);
+
+  return (
+    <MessageBubble variant="ghost" className="w-full">
+      <MessageBubbleContent>
+        <StreamingResponse
+          status={streaming ? "streaming" : "complete"}
+          copyText={item.text}
+          onFork={live ? undefined : () => setIsConfirmingFork(true)}
+          forking={isForking}
+          onAskAside={() => openSideChat(threadId, item.id)}
+          showActions={showActions}
+          showFeedback={false}
+        >
+          <Markdown
+            streaming={streaming}
+            onRunCommand={runReplyCommand}
+            resolveImage={resolveImage}
+            className="selectable leading-relaxed"
+          >
+            {item.text}
           </Markdown>
-        </Reasoning>
-      );
-    case "work":
-      return (
-        <WorkBlock items={block.items} threadId={threadId} live={live} streaming={streaming} />
-      );
-    case "tools":
-      return (
-        <ToolGroup
-          calls={block.calls satisfies ReadonlyArray<ToolCall>}
-          live={live}
-          reveal={use(RevealContext)}
-        />
-      );
-    case "approval":
-      if (block.title === "ExitPlanMode") {
-        // Interrupted before an answer: the turn ended, so there's nothing left to approve.
-        if (block.resolved && !block.decision) return null;
-        return (
-          <>
-            <ToolApproval
-              title="Approve this plan?"
-              description={block.decision === "deny" ? "Rejected — say what to change" : undefined}
-              status={getPlanStatus(block)}
-              defaultOpen
-              approveLabel={BUILD_WITH_LABEL["auto-edit"]}
-              approveOptions={(["ask", "auto-edit", "auto", "full-access"] as const).flatMap(
-                (level) =>
-                  provider !== undefined && !PERMISSIONS[provider].includes(level)
-                    ? []
-                    : [
-                        {
-                          id: level,
-                          label: BUILD_WITH_LABEL[level],
-                          onSelect: () =>
-                            level === "full-access" && needsRootConsent
-                              ? setIsConfirmingRoot(true)
-                              : approvePlan(threadId, block.id, level),
-                        },
-                      ],
-              )}
-              denyLabel="Reject"
-              onApprove={() => approvePlan(threadId, block.id, "auto-edit")}
-              onDeny={() => respondApproval(threadId, block.id, "deny")}
-            >
-              {/* Radix wraps content in display:table, which lets wide code blocks stretch past the card. */}
-              <ScrollArea className="[&>[data-slot=scroll-area-viewport]]:max-h-96 [&>[data-slot=scroll-area-viewport]>div]:!block">
-                <Markdown className="selectable pr-3 leading-relaxed">{block.detail}</Markdown>
-              </ScrollArea>
-            </ToolApproval>
-            {isConfirmingRoot && host ? (
-              <RootFullAccessDialog
-                host={host}
-                onAllow={() => approvePlan(threadId, block.id, "full-access")}
-                onClose={() => setIsConfirmingRoot(false)}
-              />
-            ) : null}
-          </>
-        );
-      }
-      if (block.questions) {
-        const { questions, answers } = block;
-        return (
-          <ApprovalCard
-            autoFocus={
-              !getDraft(threadId).text.trim() &&
-              (document.activeElement === document.body ||
-                document.activeElement?.matches("textarea[data-composer]") === true)
-            }
-            status={
-              block.resolved
-                ? answers
-                  ? "answered"
-                  : "skipped"
-                : block.decision
-                  ? "submitting"
-                  : "pending"
-            }
-            questions={questions.map((question) => ({
-              id: question.id,
-              title: question.question,
-              description: block.agent ? `Asked by ${block.agent}` : undefined,
-              options: question.options.map((option) => {
-                const choice = {
-                  value: option.label,
-                  label: option.label,
-                  description: option.description,
-                };
-                return option.preview === undefined
-                  ? choice
-                  : {
-                      ...choice,
-                      preview: (
-                        <pre className="bg-muted/50 p-3 font-mono text-xs leading-relaxed">
-                          {option.preview}
-                        </pre>
-                      ),
-                    };
-              }),
-              multiple: question.multiSelect,
-              allowCustom: true,
-              customPlaceholder: "Something else…",
-            }))}
-            onSubmit={(chosen) =>
-              respondApproval(threadId, block.id, "allow", {
-                answers: Object.fromEntries(
-                  questions.map((question) => {
-                    const custom = chosen[question.id]?.custom?.trim();
-                    return [
-                      question.id,
-                      [...(chosen[question.id]?.selected ?? []), ...(custom ? [custom] : [])],
-                    ];
-                  }),
-                ),
-              })
-            }
-            onDismiss={
-              block.resolved || block.decision
-                ? undefined
-                : () => respondApproval(threadId, block.id, "deny")
-            }
-            result={
-              answers
-                ? questions
-                    .map(
-                      (question) =>
-                        `${questions.length > 1 ? `${question.header}: ` : ""}${(answers[question.id] ?? []).join(", ")}`,
-                    )
-                    .join("; ")
-                : "Went on without an answer"
-            }
-          />
-        );
-      }
-      // Once approved, the tool group shows what ran; only pending and denied requests stay visible.
-      if (block.resolved && block.decision !== "deny") return null;
-      return (
-        <ToolApproval
-          tool={block.title}
-          title={`Allow ${block.title}${block.agent ? ` for ${block.agent}` : ""}?`}
-          status={block.decision === "deny" ? "denied" : block.decision ? "approving" : "pending"}
-          defaultOpen
-          parameters={[
-            {
-              id: "input",
-              label: "Input",
-              value: <ToolApprovalCode code={block.detail} language="bash" />,
-            },
-          ]}
-          onApprove={() => respondApproval(threadId, block.id, "allow")}
-          onAlwaysAllow={() => respondApproval(threadId, block.id, "allow-session")}
-          onDeny={() => respondApproval(threadId, block.id, "deny")}
-        />
-      );
-    case "error":
-      return <div className="selectable text-xs text-destructive">{block.text}</div>;
-    case "checkpoint":
-      return <CheckpointChip item={block} />;
-  }
+        </StreamingResponse>
+      </MessageBubbleContent>
+      {isConfirmingFork ? (
+        <ForkDialog threadId={threadId} item={item} onClose={() => setIsConfirmingFork(false)} />
+      ) : null}
+    </MessageBubble>
+  );
 }
