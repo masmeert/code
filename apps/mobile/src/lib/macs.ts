@@ -9,7 +9,10 @@ export const PairedMac = Schema.Struct({
   /** This phone's id on that Mac. */
   id: Schema.String,
   name: Schema.String,
+  /** Its Tailscale address when it paired. */
   host: Schema.String,
+  /** Its MagicDNS name, which keeps working when the address changes; absent without MagicDNS. */
+  dnsName: Schema.optional(Schema.NullOr(Schema.String)),
   port: Schema.Number,
   token: Schema.String,
 });
@@ -45,7 +48,13 @@ export function parsePairingLink(link: string) {
     const port = Number(url.searchParams.get("port"));
 
     return host && code && port
-      ? { host, port, code, name: url.searchParams.get("name") ?? host }
+      ? {
+          host,
+          port,
+          code,
+          name: url.searchParams.get("name") ?? host,
+          dnsName: url.searchParams.get("dns"),
+        }
       : null;
   } catch {
     return null;
@@ -60,6 +69,7 @@ export async function pairWithMac(offer: {
   readonly port: number;
   readonly code: string;
   readonly name: string;
+  readonly dnsName?: string | null;
 }): Promise<PairedMac> {
   const request: PairingRequest = {
     code: offer.code,
@@ -105,6 +115,7 @@ export async function pairWithMac(offer: {
     id: grant.phoneId,
     name: grant.name,
     host: offer.host,
+    dnsName: offer.dnsName ?? null,
     port: offer.port,
     token: grant.token,
   };

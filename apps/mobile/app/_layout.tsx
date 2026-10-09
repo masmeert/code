@@ -1,6 +1,7 @@
 import "../src/polyfills.ts";
 import "../global.css";
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { HeroUINativeProvider } from "heroui-native";
 import { useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -39,6 +40,7 @@ export default function RootLayout() {
       <KeyboardProvider>
         <HeroUINativeProvider>
           <ThemeProvider value={isDark ? DARK : LIGHT}>
+            <StatusBar style="auto" />
             <Stack
               screenOptions={{ headerShadowVisible: false, headerBackButtonDisplayMode: "minimal" }}
             >

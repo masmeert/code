@@ -357,10 +357,13 @@ function connect(macId: string, connection: Connection) {
   if (mac.connection !== "connected")
     updateMac(macId, (current) => ({ ...current, connection: "connecting" }));
 
-  const socket = new WebSocket(
-    `ws://${mac.mac.host}:${mac.mac.port}/?protocol=${PROTOCOL_VERSION}`,
-    [`masscode.${mac.mac.token}`],
-  );
+  // The MagicDNS name survives the Mac's address changing; the address works without MagicDNS on
+  // this phone. Retries take turns between them.
+  const address = mac.mac.dnsName && connection.attempt % 2 === 0 ? mac.mac.dnsName : mac.mac.host;
+
+  const socket = new WebSocket(`ws://${address}:${mac.mac.port}/?protocol=${PROTOCOL_VERSION}`, [
+    `masscode.${mac.mac.token}`,
+  ]);
 
   connection.socket = socket;
 

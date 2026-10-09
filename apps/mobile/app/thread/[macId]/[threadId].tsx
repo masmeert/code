@@ -4,15 +4,10 @@ import { LegendList } from "@legendapp/list/react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Spinner } from "heroui-native";
 import { type ComponentRef, useEffect, useMemo, useRef, useState } from "react";
-import { Text, View } from "react-native";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
-import { withUniwind } from "uniwind";
+import { KeyboardAvoidingView, Text, View } from "react-native";
 import { Composer } from "../../../src/components/Composer.tsx";
 import { TranscriptTurn } from "../../../src/components/TranscriptTurn.tsx";
 import { loadOlder, openThread, send, transcriptKey, useStore } from "../../../src/lib/store.ts";
-
-// Uniwind only reads className on React Native's own components.
-const StyledKeyboardAvoidingView = withUniwind(KeyboardAvoidingView);
 
 export default function ThreadScreen() {
   const { macId, threadId } = useLocalSearchParams<{ macId: string; threadId: string }>();
@@ -54,7 +49,7 @@ export default function ThreadScreen() {
       onLayout={() => screen.current?.measureInWindow((_x, y) => setScreenTop(y))}
       className="flex-1"
     >
-      <StyledKeyboardAvoidingView
+      <KeyboardAvoidingView
         behavior="padding"
         keyboardVerticalOffset={screenTop}
         className="flex-1 bg-background"
@@ -96,7 +91,7 @@ export default function ThreadScreen() {
           </Text>
         )}
         <Composer macId={macId} thread={thread} settings={mac.settings} />
-      </StyledKeyboardAvoidingView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

@@ -16,7 +16,13 @@ export default function PairScreen() {
   // The camera reports a code many times a second; only the first starts pairing.
   const isPairing = useRef(false);
 
-  async function pair(offer: { host: string; port: number; code: string; name: string }) {
+  async function pair(offer: {
+    host: string;
+    port: number;
+    code: string;
+    name: string;
+    dnsName?: string | null;
+  }) {
     if (isPairing.current) return;
 
     isPairing.current = true;
@@ -42,6 +48,7 @@ export default function PairScreen() {
     port?: string;
     code?: string;
     name?: string;
+    dns?: string;
   }>();
 
   const pairFromLink = useEffectEvent(() => {
@@ -51,6 +58,7 @@ export default function PairScreen() {
         port: Number(link.port),
         code: link.code,
         name: link.name ?? link.host,
+        dnsName: link.dns ?? null,
       });
   });
 

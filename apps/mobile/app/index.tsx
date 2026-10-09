@@ -2,10 +2,11 @@ import { describeActivity, formatAge, useNow } from "@masscode/client";
 import { ClientCommand, type ThreadInfo } from "@masscode/contracts";
 import * as Haptics from "expo-haptics";
 import { router, Stack } from "expo-router";
-import { Button } from "heroui-native";
+import { Button, useToast } from "heroui-native";
 import { Laptop } from "lucide-react-native";
 import { useMemo } from "react";
 import { FlatList, Pressable, RefreshControl, Text, View } from "react-native";
+import Swipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useCSSVariable } from "uniwind";
 import { type MacState, reconnectAll, send, useStore } from "../src/lib/store.ts";
 
@@ -141,6 +142,11 @@ function ThreadRowView({ row, showMac }: { row: ThreadRow; showMac: boolean }) {
   const isUnread = thread.seenRev < thread.updatedAt;
   const request = thread.request;
   const now = useNow();
+  const { toast } = useToast();
+
+  function archive(archived: boolean) {
+    send(row.macId, ClientCommand.cases["thread.archive"].make({ threadId: thread.id, archived }));
+  }
 
   function respond(decision: "allow" | "deny") {
     if (!request) return;
@@ -157,50 +163,76 @@ function ThreadRowView({ row, showMac }: { row: ThreadRow; showMac: boolean }) {
   }
 
   return (
-    <Pressable
-      onPress={() => router.push(`/thread/${row.macId}/${thread.id}`)}
-      className="active:bg-surface-secondary flex-row gap-3 px-4 py-3"
+    <Swipeable
+      friction={2}
+      rightThreshold={40}
+      renderRightActions={() => (
+        <Pressable
+          accessibilityLabel={`Archive ${thread.title}`}
+          onPress={() => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            archive(true);
+            toast.show({
+              label: "Thread archived",
+              description: thread.title,
+              actionLabel: "Undo",
+              onActionPress: ({ hide }) => {
+                archive(false);
+                hide();
+              },
+            });
+          }}
+          className="bg-surface-tertiary w-24 items-center justify-center"
+        >
+          <Text className="text-[15px] font-medium text-foreground">Archive</Text>
+        </Pressable>
+      )}
     >
-      <View className="w-2 items-center pt-2">
-        <View className={`size-2 rounded-full ${findDotTone(thread, isUnread)}`} />
-      </View>
-      <View className="flex-1 gap-0.5">
-        <View className="flex-row items-baseline gap-2">
-          <Text
-            numberOfLines={1}
-            className={
-              isUnread
-                ? "flex-1 text-[16px] font-semibold text-foreground"
-                : "flex-1 text-[16px] text-foreground"
-            }
-          >
-            {thread.title || "New thread"}
-          </Text>
-          <Text className={`text-[13px] ${needsYou?.labelTone ?? "text-muted"}`}>
-            {needsYou?.label ?? formatAge(thread.updatedAt, now)}
-          </Text>
+      <Pressable
+        onPress={() => router.push(`/thread/${row.macId}/${thread.id}`)}
+        className="active:bg-surface-secondary flex-row gap-3 bg-background px-4 py-3"
+      >
+        <View className="w-2 items-center pt-2">
+          <View className={`size-2 rounded-full ${findDotTone(thread, isUnread)}`} />
         </View>
-        <Text numberOfLines={1} className="text-[14px] text-muted">
-          {thread.status === "running"
-            ? describeActivity(thread.activity)
-            : [row.projectName, showMac ? row.macName : null].filter(Boolean).join(" · ")}
-        </Text>
-        {request && !request.asksQuestions ? (
-          <View className="bg-surface-secondary mt-2 gap-2 rounded-xl p-3">
-            <Text numberOfLines={3} className="font-mono text-[13px] text-foreground">
-              {request.detail || request.title}
+        <View className="flex-1 gap-0.5">
+          <View className="flex-row items-baseline gap-2">
+            <Text
+              numberOfLines={1}
+              className={
+                isUnread
+                  ? "flex-1 text-[16px] font-semibold text-foreground"
+                  : "flex-1 text-[16px] text-foreground"
+              }
+            >
+              {thread.title || "New thread"}
             </Text>
-            <View className="flex-row gap-2">
-              <Button size="sm" onPress={() => respond("allow")}>
-                Allow
-              </Button>
-              <Button size="sm" variant="secondary" onPress={() => respond("deny")}>
-                Deny
-              </Button>
-            </View>
+            <Text className={`text-[13px] ${needsYou?.labelTone ?? "text-muted"}`}>
+              {needsYou?.label ?? formatAge(thread.updatedAt, now)}
+            </Text>
           </View>
-        ) : null}
-      </View>
-    </Pressable>
+          <Text numberOfLines={1} className="text-[14px] text-muted">
+            {thread.status === "running"
+              ? describeActivity(thread.activity)
+              : [row.projectName, showMac ? row.macName : null].filter(Boolean).join(" · ")}
+          </Text>
+          {request && !request.asksQuestions ? (
+            <View className="bg-surface-secondary mt-2 gap-2 rounded-xl p-3">
+              <Text numberOfLines={3} className="font-mono text-[13px] text-foreground">
+                {request.detail || request.title}
+              </Text>
+              <View className="flex-row gap-2">
+                <Button size="sm" onPress={() => respond("allow")}>
+                  Allow
+                </Button>
+                <Button size="sm" variant="secondary" onPress={() => respond("deny")}>
+                  Deny
+                </Button>
+              </View>
+            </View>
+          ) : null}
+        </View>
+      </Pressable>
+    </Swipeable>
   );
 }
