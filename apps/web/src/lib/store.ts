@@ -1348,8 +1348,7 @@ function addConnection(host: string | null) {
 }
 
 /** Drops a removed host's connection and everything it showed. */
-function removeConnection(connection: Connection & { readonly host: string }) {
-  const { host } = connection;
+function removeConnection(connection: Connection, host: string) {
   connection.removed = true;
   if (connection.retry) clearTimeout(connection.retry);
   connection.socket?.close();
@@ -1387,7 +1386,7 @@ function syncHosts(list: ReadonlyArray<RemoteHost>) {
   const aliases = new Set(list.map((remote) => remote.alias));
   for (const connection of connections.values()) {
     if (connection.host !== null && !aliases.has(connection.host))
-      removeConnection({ ...connection, host: connection.host });
+      removeConnection(connection, connection.host);
   }
 
   setState({
