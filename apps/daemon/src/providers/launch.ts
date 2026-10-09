@@ -1,9 +1,12 @@
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import type { ProviderKind, ProviderSettings } from "@masscode/contracts";
+import * as Effect from "effect/Effect";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { getErrorMessage } from "../errors.ts";
 import { expandHome } from "../folders.ts";
 import { DATA_DIR } from "../storage/jsonFile.ts";
+import { ProviderError } from "./ProviderAdapter.ts";
 import { resolveExecutable } from "./resolveExecutable.ts";
 
 /** How to run one harness CLI, from its Settings. */
@@ -29,16 +32,24 @@ const CLI: Record<
   },
 };
 
-export function resolveHarnessLaunch(
+export const resolveHarnessLaunch = Effect.fn("resolveHarnessLaunch")(function* (
   kind: ProviderKind,
   settings: ProviderSettings,
-): HarnessLaunch {
+) {
   const cli = CLI[kind];
   const bin = settings.binaryPath?.trim()
     ? expandHome(settings.binaryPath)
-    : resolveExecutable(cli.name, cli.pathEnv);
-  if (!existsSync(bin))
-    throw new Error(`No file at ${bin}. Fix the binary path in Settings → Harnesses.`);
+    : yield* Effect.try({
+        // ponytail: blocks on the login shell the first time a CLI is looked up; cached after.
+        try: () => resolveExecutable(cli.name, cli.pathEnv),
+        catch: (error) => new ProviderError({ provider: kind, message: getErrorMessage(error) }),
+      });
+  if (!existsSync(bin)) {
+    return yield* new ProviderError({
+      provider: kind,
+      message: `No file at ${bin}. Fix the binary path in Settings → Harnesses.`,
+    });
+  }
 
   const env = { ...process.env, ...settings.env };
   const configDir = settings.configDir?.trim()
@@ -47,7 +58,7 @@ export function resolveHarnessLaunch(
   if (configDir) env[cli.configEnv] = configDir;
 
   return { bin, args: settings.launchArgs ?? [], env };
-}
+});
 
 /**
  * The Claude SDK takes extra CLI flags as a record: `--flag value`, `--flag=value`, or a bare `--flag`.

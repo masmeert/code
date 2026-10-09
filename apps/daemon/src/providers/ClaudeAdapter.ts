@@ -45,7 +45,12 @@ import {
   type StartSessionInput,
   type TurnInput,
 } from "./ProviderAdapter.ts";
-import { toClaudeExtraArgs, resolveHarnessLaunch, startPromptlessQuery } from "./launch.ts";
+import {
+  toClaudeExtraArgs,
+  resolveHarnessLaunch,
+  startPromptlessQuery,
+  type HarnessLaunch,
+} from "./launch.ts";
 import { DEVICES_SUPPORTED } from "../devices.ts";
 import { findSkillMentions } from "../skills.ts";
 import { getErrorMessage } from "../errors.ts";
@@ -210,554 +215,558 @@ function toContextUsage(usage: SDKControlGetContextUsageResponse) {
   };
 }
 
-function start({
-  threadId,
-  cwd,
-  harness,
-  model,
-  resumeToken,
-  effort: initialEffort,
-  permission: initialPermission,
-  onResumeToken,
-  onCwd,
-  emit,
-  mcpServer,
-}: StartSessionInput) {
-  return Effect.try({
-    try: () => {
-      const launch = resolveHarnessLaunch("claude", harness);
-      const inbox = createInbox<SDKUserMessage>();
-      const approvals = createApprovalBook<PendingApproval>("claude", threadId, emit);
+const start = Effect.fn("ClaudeAdapter.start")(function* (input: StartSessionInput) {
+  const launch = yield* resolveHarnessLaunch("claude", input.harness);
+  return yield* Effect.try({
+    try: () => openSession(launch, input),
+    catch: (error) => createError(getErrorMessage(error)),
+  });
+});
 
-      const canUseTool: CanUseTool = (toolName, input, { signal, suggestions, agentID }) =>
-        new Promise<PermissionResult>((resolve) => {
-          const questions: ReadonlyArray<UserQuestion> | undefined =
-            toolName === "AskUserQuestion"
-              ? Option.getOrUndefined(decodeAskUserQuestion(input))?.questions.map(
-                  // AskUserQuestion's questions carry no ids; their position is theirs.
-                  (question, index) => ({
-                    id: String(index),
-                    header: question.header,
-                    question: question.question,
-                    options: question.options.map((option) => ({
-                      ...option,
-                      description: option.description ?? "",
-                    })),
-                    multiSelect: question.multiSelect === true,
-                  }),
-                )
-              : undefined;
-          const requestId = approvals.request(
-            { toolName, input, suggestions, questions, resolve },
-            {
-              title: toolName,
-              detail: questions
-                ? questions.map((question) => question.question).join("\n")
-                : toolName === "ExitPlanMode" && Predicate.isString(input.plan)
-                  ? input.plan
-                  : summarizeToolInput(Option.getOrNull(decodeToolInput(input))),
-              agent: agentID === undefined ? undefined : agentNames.get(agentID),
-              questions,
-            },
-          );
+function openSession(
+  launch: HarnessLaunch,
+  {
+    threadId,
+    cwd,
+    model,
+    resumeToken,
+    effort: initialEffort,
+    permission: initialPermission,
+    onResumeToken,
+    onCwd,
+    emit,
+    mcpServer,
+  }: StartSessionInput,
+) {
+  const inbox = createInbox<SDKUserMessage>();
+  const approvals = createApprovalBook<PendingApproval>("claude", threadId, emit);
 
-          signal.addEventListener("abort", () => {
-            if (approvals.withdraw(requestId)) resolve({ behavior: "deny", message: "Aborted" });
-          });
-        });
-
-      const options: Options = {
-        cwd,
-        permissionMode: PERMISSION_MODE[initialPermission],
-        // Only lets the composer switch to "Full access" later; the mode above still applies.
-        allowDangerouslySkipPermissions: true,
-        pathToClaudeCodeExecutable: launch.bin,
-        // Thinking streams empty unless shown summarized; launch arguments can still say otherwise.
-        extraArgs: { "thinking-display": "summarized", ...toClaudeExtraArgs(launch.args) },
-        settingSources: ["user", "project", "local"],
-        includePartialMessages: true,
-        agentProgressSummaries: true,
-        canUseTool,
-        env: {
-          // Claude Code exits at startup when skip-permissions is allowed as root, which is how
-          // many SSH hosts sign in; IS_SANDBOX is its opt-out.
-          ...(process.getuid?.() === 0 && { IS_SANDBOX: "1" }),
-          ...launch.env,
-          ...(mcpServer && { MASSCODE_MCP_TOKEN: mcpServer.token }),
-          CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
-        },
-        mcpServers: mcpServer
-          ? {
-              browser: {
-                type: "http",
-                url: mcpServer.url,
-                headers: { Authorization: "Bearer ${MASSCODE_MCP_TOKEN}" },
-              },
-              masscode: {
-                type: "http",
-                url: `${mcpServer.url}/masscode`,
-                headers: { Authorization: "Bearer ${MASSCODE_MCP_TOKEN}" },
-              },
-              ...(DEVICES_SUPPORTED && {
-                device: {
-                  type: "http",
-                  url: `${mcpServer.url}/device`,
-                  headers: { Authorization: "Bearer ${MASSCODE_MCP_TOKEN}" },
-                },
+  const canUseTool: CanUseTool = (toolName, input, { signal, suggestions, agentID }) =>
+    new Promise<PermissionResult>((resolve) => {
+      const questions: ReadonlyArray<UserQuestion> | undefined =
+        toolName === "AskUserQuestion"
+          ? Option.getOrUndefined(decodeAskUserQuestion(input))?.questions.map(
+              // AskUserQuestion's questions carry no ids; their position is theirs.
+              (question, index) => ({
+                id: String(index),
+                header: question.header,
+                question: question.question,
+                options: question.options.map((option) => ({
+                  ...option,
+                  description: option.description ?? "",
+                })),
+                multiSelect: question.multiSelect === true,
               }),
-            }
-          : {},
-        allowedTools: [
-          "mcp__browser__snapshot",
-          "mcp__browser__console",
-          "mcp__device__device_screenshot",
-          "mcp__masscode__list_threads",
-          "mcp__masscode__read_thread",
-          "mcp__masscode__wait_for_thread",
-        ],
-        hooks: {
-          PostToolUse: [
-            {
-              matcher: "EnterWorktree|ExitWorktree",
-              hooks: [
-                async (input) => {
-                  // A subagent's worktree is its own; the session stays where it was.
-                  if (input.hook_event_name === "PostToolUse" && input.agent_id === undefined)
-                    onCwd(input.cwd);
-                  return {};
-                },
-              ],
+            )
+          : undefined;
+      const requestId = approvals.request(
+        { toolName, input, suggestions, questions, resolve },
+        {
+          title: toolName,
+          detail: questions
+            ? questions.map((question) => question.question).join("\n")
+            : toolName === "ExitPlanMode" && Predicate.isString(input.plan)
+              ? input.plan
+              : summarizeToolInput(Option.getOrNull(decodeToolInput(input))),
+          agent: agentID === undefined ? undefined : agentNames.get(agentID),
+          questions,
+        },
+      );
+
+      signal.addEventListener("abort", () => {
+        if (approvals.withdraw(requestId)) resolve({ behavior: "deny", message: "Aborted" });
+      });
+    });
+
+  const options: Options = {
+    cwd,
+    permissionMode: PERMISSION_MODE[initialPermission],
+    // Only lets the composer switch to "Full access" later; the mode above still applies.
+    allowDangerouslySkipPermissions: true,
+    pathToClaudeCodeExecutable: launch.bin,
+    // Thinking streams empty unless shown summarized; launch arguments can still say otherwise.
+    extraArgs: { "thinking-display": "summarized", ...toClaudeExtraArgs(launch.args) },
+    settingSources: ["user", "project", "local"],
+    includePartialMessages: true,
+    agentProgressSummaries: true,
+    canUseTool,
+    env: {
+      // Claude Code exits at startup when skip-permissions is allowed as root, which is how
+      // many SSH hosts sign in; IS_SANDBOX is its opt-out.
+      ...(process.getuid?.() === 0 && { IS_SANDBOX: "1" }),
+      ...launch.env,
+      ...(mcpServer && { MASSCODE_MCP_TOKEN: mcpServer.token }),
+      CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
+    },
+    mcpServers: mcpServer
+      ? {
+          browser: {
+            type: "http",
+            url: mcpServer.url,
+            headers: { Authorization: "Bearer ${MASSCODE_MCP_TOKEN}" },
+          },
+          masscode: {
+            type: "http",
+            url: `${mcpServer.url}/masscode`,
+            headers: { Authorization: "Bearer ${MASSCODE_MCP_TOKEN}" },
+          },
+          ...(DEVICES_SUPPORTED && {
+            device: {
+              type: "http",
+              url: `${mcpServer.url}/device`,
+              headers: { Authorization: "Bearer ${MASSCODE_MCP_TOKEN}" },
+            },
+          }),
+        }
+      : {},
+    allowedTools: [
+      "mcp__browser__snapshot",
+      "mcp__browser__console",
+      "mcp__device__device_screenshot",
+      "mcp__masscode__list_threads",
+      "mcp__masscode__read_thread",
+      "mcp__masscode__wait_for_thread",
+    ],
+    hooks: {
+      PostToolUse: [
+        {
+          matcher: "EnterWorktree|ExitWorktree",
+          hooks: [
+            async (input) => {
+              // A subagent's worktree is its own; the session stays where it was.
+              if (input.hook_event_name === "PostToolUse" && input.agent_id === undefined)
+                onCwd(input.cwd);
+              return {};
             },
           ],
         },
-      };
-      if (model) options.model = model;
-      if (resumeToken) options.resume = resumeToken;
-      const initialLevel = initialEffort && toEffortLevel(initialEffort);
-      if (initialLevel) options.effort = initialLevel;
+      ],
+    },
+  };
+  if (model) options.model = model;
+  if (resumeToken) options.resume = resumeToken;
+  const initialLevel = initialEffort && toEffortLevel(initialEffort);
+  if (initialLevel) options.effort = initialLevel;
 
-      const conversation: Query = query({ prompt: inbox.iterable, options });
+  const conversation: Query = query({ prompt: inbox.iterable, options });
 
-      // Message ids that streamed partial deltas, so we don't re-emit their full text.
-      const streamed = new Set<string>();
-      // Text accumulated per streamed block, flushed as `assistant.completed` when the block stops.
-      const blocks = new Map<string, string>();
-      // The same for thinking blocks, flushed as `reasoning.completed`.
-      const thoughts = new Map<string, string>();
-      let currentMessageId = "";
-      // Subagents launched in the background: their tool call returns a placeholder at once, and the
-      // real end comes later as a task notification, so the call stays running until then.
-      const agentTools = new Map<string, string>();
-      // Subagents' descriptions by task id, to say which one asks for an approval.
-      const agentNames = new Map<string, string>();
-      const backgroundAgents = new Set<string>();
-      const questionTools = new Set<string>();
-      // Claude Code's own running/idle, which covers turns it starts itself and waits out background
-      // agents. CLIs too old to send it get idle at the end of each turn instead.
-      let hasSessionStateEvents = false;
-      let sessionId = resumeToken;
-      let permission = initialPermission;
-      // Ultracode and ultrathink can't be start options; the first turn applies them.
-      let effort = initialLevel ? initialEffort : null;
-      // Unknown until a turn sets it, so the user's own Claude Code setting can't linger unseen.
-      let isFastMode: boolean | undefined;
-      // The plan's limit refused a request this turn: when it resets (epoch ms, null if unsaid),
-      // undefined while it hasn't. Told only if the turn then fails, since extra usage can pay on.
-      let limitResetsAt: number | null | undefined;
+  // Message ids that streamed partial deltas, so we don't re-emit their full text.
+  const streamed = new Set<string>();
+  // Text accumulated per streamed block, flushed as `assistant.completed` when the block stops.
+  const blocks = new Map<string, string>();
+  // The same for thinking blocks, flushed as `reasoning.completed`.
+  const thoughts = new Map<string, string>();
+  let currentMessageId = "";
+  // Subagents launched in the background: their tool call returns a placeholder at once, and the
+  // real end comes later as a task notification, so the call stays running until then.
+  const agentTools = new Map<string, string>();
+  // Subagents' descriptions by task id, to say which one asks for an approval.
+  const agentNames = new Map<string, string>();
+  const backgroundAgents = new Set<string>();
+  const questionTools = new Set<string>();
+  // Claude Code's own running/idle, which covers turns it starts itself and waits out background
+  // agents. CLIs too old to send it get idle at the end of each turn instead.
+  let hasSessionStateEvents = false;
+  let sessionId = resumeToken;
+  let permission = initialPermission;
+  // Ultracode and ultrathink can't be start options; the first turn applies them.
+  let effort = initialLevel ? initialEffort : null;
+  // Unknown until a turn sets it, so the user's own Claude Code setting can't linger unseen.
+  let isFastMode: boolean | undefined;
+  // The plan's limit refused a request this turn: when it resets (epoch ms, null if unsaid),
+  // undefined while it hasn't. Told only if the turn then fails, since extra usage can pay on.
+  let limitResetsAt: number | null | undefined;
 
-      /** "summary" estimates the breakdown locally; "full" would make a token-count request per category. */
-      async function reportUsage(costUsd: number) {
-        const context = await conversation
-          .getContextUsage({ detail: "summary" })
-          .then(toContextUsage)
-          .catch(() => null);
-        emit(RuntimeEvent.cases["thread.usage"].make({ threadId, usage: { context, costUsd } }));
-      }
+  /** "summary" estimates the breakdown locally; "full" would make a token-count request per category. */
+  async function reportUsage(costUsd: number) {
+    const context = await conversation
+      .getContextUsage({ detail: "summary" })
+      .then(toContextUsage)
+      .catch(() => null);
+    emit(RuntimeEvent.cases["thread.usage"].make({ threadId, usage: { context, costUsd } }));
+  }
 
-      function handleMessage(message: SDKMessage) {
-        if (message.session_id !== undefined && message.session_id !== sessionId) {
-          sessionId = message.session_id;
-          onResumeToken(sessionId);
+  function handleMessage(message: SDKMessage) {
+    if (message.session_id !== undefined && message.session_id !== sessionId) {
+      sessionId = message.session_id;
+      onResumeToken(sessionId);
+    }
+
+    switch (message.type) {
+      case "stream_event": {
+        if (message.parent_tool_use_id) return; // subagent chatter
+
+        const event = message.event;
+        if (event.type === "message_start") currentMessageId = event.message.id;
+        const blockId = `${currentMessageId}:${"index" in event ? event.index : 0}`;
+
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          streamed.add(currentMessageId);
+          blocks.set(blockId, (blocks.get(blockId) ?? "") + event.delta.text);
+          emit(
+            RuntimeEvent.cases["assistant.delta"].make({
+              threadId,
+              messageId: blockId,
+              delta: event.delta.text,
+            }),
+          );
         }
 
-        switch (message.type) {
-          case "stream_event": {
-            if (message.parent_tool_use_id) return; // subagent chatter
+        if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "thinking_delta" &&
+          event.delta.thinking
+        ) {
+          thoughts.set(blockId, (thoughts.get(blockId) ?? "") + event.delta.thinking);
+          emit(
+            RuntimeEvent.cases["reasoning.delta"].make({
+              threadId,
+              messageId: blockId,
+              delta: event.delta.thinking,
+            }),
+          );
+        }
 
-            const event = message.event;
-            if (event.type === "message_start") currentMessageId = event.message.id;
-            const blockId = `${currentMessageId}:${"index" in event ? event.index : 0}`;
+        const thought = thoughts.get(blockId);
+        if (event.type === "content_block_stop" && thought !== undefined) {
+          emit(
+            RuntimeEvent.cases["reasoning.completed"].make({
+              threadId,
+              messageId: blockId,
+              text: thought,
+            }),
+          );
+          thoughts.delete(blockId);
+        }
 
-            if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-              streamed.add(currentMessageId);
-              blocks.set(blockId, (blocks.get(blockId) ?? "") + event.delta.text);
-              emit(
-                RuntimeEvent.cases["assistant.delta"].make({
-                  threadId,
-                  messageId: blockId,
-                  delta: event.delta.text,
-                }),
-              );
-            }
+        const text = blocks.get(blockId);
+        if (event.type === "content_block_stop" && text !== undefined) {
+          emit(
+            RuntimeEvent.cases["assistant.completed"].make({
+              threadId,
+              messageId: blockId,
+              text,
+            }),
+          );
+          blocks.delete(blockId);
+        }
+        return;
+      }
+      case "rate_limit_event": {
+        const info = message.rate_limit_info;
+        limitResetsAt =
+          info.status === "rejected" && !info.isUsingOverage
+            ? info.resetsAt === undefined
+              ? null
+              : info.resetsAt * 1000
+            : undefined;
+        return;
+      }
+      case "assistant": {
+        const parentToolId = message.parent_tool_use_id;
+        if (message.error === "rate_limit" && !parentToolId) limitResetsAt ??= null;
 
-            if (
-              event.type === "content_block_delta" &&
-              event.delta.type === "thinking_delta" &&
-              event.delta.thinking
-            ) {
-              thoughts.set(blockId, (thoughts.get(blockId) ?? "") + event.delta.thinking);
-              emit(
-                RuntimeEvent.cases["reasoning.delta"].make({
-                  threadId,
-                  messageId: blockId,
-                  delta: event.delta.thinking,
-                }),
-              );
-            }
-
-            const thought = thoughts.get(blockId);
-            if (event.type === "content_block_stop" && thought !== undefined) {
-              emit(
-                RuntimeEvent.cases["reasoning.completed"].make({
-                  threadId,
-                  messageId: blockId,
-                  text: thought,
-                }),
-              );
-              thoughts.delete(blockId);
-            }
-
-            const text = blocks.get(blockId);
-            if (event.type === "content_block_stop" && text !== undefined) {
-              emit(
-                RuntimeEvent.cases["assistant.completed"].make({
-                  threadId,
-                  messageId: blockId,
-                  text,
-                }),
-              );
-              blocks.delete(blockId);
-            }
-            return;
-          }
-          case "rate_limit_event": {
-            const info = message.rate_limit_info;
-            limitResetsAt =
-              info.status === "rejected" && !info.isUsingOverage
-                ? info.resetsAt === undefined
-                  ? null
-                  : info.resetsAt * 1000
-                : undefined;
-            return;
-          }
-          case "assistant": {
-            const parentToolId = message.parent_tool_use_id;
-            if (message.error === "rate_limit" && !parentToolId) limitResetsAt ??= null;
-
-            for (const block of message.message.content) {
-              if (block.type === "text" && !parentToolId && !streamed.has(message.message.id)) {
-                emit(
-                  RuntimeEvent.cases["assistant.completed"].make({
-                    threadId,
-                    messageId: message.message.id,
-                    text: block.text,
-                  }),
-                );
-              } else if (block.type === "tool_use" && block.name === "AskUserQuestion") {
-                // Shown as its question card instead.
-                questionTools.add(block.id);
-              } else if (block.type === "tool_use") {
-                emit(
-                  RuntimeEvent.cases["tool.started"].make({
-                    threadId,
-                    toolId: block.id,
-                    name: block.name,
-                    summary: summarizeToolInput(Option.getOrNull(decodeToolInput(block.input))),
-                    parentToolId: parentToolId ?? undefined,
-                  }),
-                );
-              }
-            }
-            return;
-          }
-          case "user": {
-            if (!Array.isArray(message.message.content)) return;
-
-            for (const block of message.message.content) {
-              if (
-                block.type !== "tool_result" ||
-                backgroundAgents.has(block.tool_use_id) ||
-                questionTools.delete(block.tool_use_id)
-              )
-                continue;
-              emit(
-                RuntimeEvent.cases["tool.completed"].make({
-                  threadId,
-                  toolId: block.tool_use_id,
-                  output: Array.isArray(block.content)
-                    ? block.content
-                        .map((part) => (part.type === "text" ? part.text : `[${part.type}]`))
-                        .join("\n")
-                    : (block.content ?? ""),
-                  isError: block.is_error === true,
-                }),
-              );
-            }
-            return;
-          }
-          case "system": {
-            if (message.subtype === "init") {
-              // A resumed session goes back into the worktree it was in, or not, after a rewind to before it.
-              onCwd(message.cwd);
-            } else if (message.subtype === "session_state_changed") {
-              hasSessionStateEvents = true;
-              if (message.state !== "requires_action")
-                emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: message.state }));
-            } else if (
-              message.subtype === "task_started" &&
-              message.task_type === "local_agent" &&
-              message.tool_use_id
-            ) {
-              agentTools.set(message.task_id, message.tool_use_id);
-              agentNames.set(message.task_id, message.description);
-              if (message.is_backgrounded) backgroundAgents.add(message.tool_use_id);
-            } else if (message.subtype === "task_updated" && message.patch.is_backgrounded) {
-              const toolId = agentTools.get(message.task_id);
-              if (toolId) backgroundAgents.add(toolId);
-            } else if (message.subtype === "task_progress") {
-              const toolId = agentTools.get(message.task_id);
-              if (toolId) {
-                emit(
-                  RuntimeEvent.cases["tool.progress"].make({
-                    threadId,
-                    toolId,
-                    summary: message.summary,
-                    tokens: message.usage.total_tokens,
-                    durationMs: message.usage.duration_ms,
-                  }),
-                );
-              }
-            } else if (message.subtype === "task_notification") {
-              agentTools.delete(message.task_id);
-              agentNames.delete(message.task_id);
-              if (!message.tool_use_id || !backgroundAgents.delete(message.tool_use_id)) return;
-
-              emit(
-                RuntimeEvent.cases["tool.completed"].make({
-                  threadId,
-                  toolId: message.tool_use_id,
-                  output: message.status === "stopped" ? "Stopped" : message.summary,
-                  isError: message.status === "failed",
-                }),
-              );
-            }
-            return;
-          }
-          case "result": {
-            if (message.is_error && limitResetsAt !== undefined) {
-              emit(
-                RuntimeEvent.cases["thread.limitStop"].make({
-                  threadId,
-                  limitStop: { provider: "claude", resetsAt: limitResetsAt, resumeAtReset: null },
-                }),
-              );
-            }
-            limitResetsAt = undefined;
-
-            if (message.subtype !== "success") {
-              emit(
-                RuntimeEvent.cases.error.make({
-                  threadId,
-                  message: `Turn ended: ${message.subtype}`,
-                }),
-              );
-            }
+        for (const block of message.message.content) {
+          if (block.type === "text" && !parentToolId && !streamed.has(message.message.id)) {
             emit(
-              RuntimeEvent.cases["turn.completed"].make({
+              RuntimeEvent.cases["assistant.completed"].make({
                 threadId,
-                durationMs: message.duration_ms,
+                messageId: message.message.id,
+                text: block.text,
               }),
             );
-            if (!hasSessionStateEvents)
-              emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
-            void reportUsage(message.total_cost_usd);
-            return;
+          } else if (block.type === "tool_use" && block.name === "AskUserQuestion") {
+            // Shown as its question card instead.
+            questionTools.add(block.id);
+          } else if (block.type === "tool_use") {
+            emit(
+              RuntimeEvent.cases["tool.started"].make({
+                threadId,
+                toolId: block.id,
+                name: block.name,
+                summary: summarizeToolInput(Option.getOrNull(decodeToolInput(block.input))),
+                parentToolId: parentToolId ?? undefined,
+              }),
+            );
           }
-          default:
-            return;
         }
+        return;
       }
+      case "user": {
+        if (!Array.isArray(message.message.content)) return;
 
-      void (async () => {
-        try {
-          for await (const message of conversation) handleMessage(message);
-          emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "closed" }));
-        } catch (error) {
+        for (const block of message.message.content) {
+          if (
+            block.type !== "tool_result" ||
+            backgroundAgents.has(block.tool_use_id) ||
+            questionTools.delete(block.tool_use_id)
+          )
+            continue;
+          emit(
+            RuntimeEvent.cases["tool.completed"].make({
+              threadId,
+              toolId: block.tool_use_id,
+              output: Array.isArray(block.content)
+                ? block.content
+                    .map((part) => (part.type === "text" ? part.text : `[${part.type}]`))
+                    .join("\n")
+                : (block.content ?? ""),
+              isError: block.is_error === true,
+            }),
+          );
+        }
+        return;
+      }
+      case "system": {
+        if (message.subtype === "init") {
+          // A resumed session goes back into the worktree it was in, or not, after a rewind to before it.
+          onCwd(message.cwd);
+        } else if (message.subtype === "session_state_changed") {
+          hasSessionStateEvents = true;
+          if (message.state !== "requires_action")
+            emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: message.state }));
+        } else if (
+          message.subtype === "task_started" &&
+          message.task_type === "local_agent" &&
+          message.tool_use_id
+        ) {
+          agentTools.set(message.task_id, message.tool_use_id);
+          agentNames.set(message.task_id, message.description);
+          if (message.is_backgrounded) backgroundAgents.add(message.tool_use_id);
+        } else if (message.subtype === "task_updated" && message.patch.is_backgrounded) {
+          const toolId = agentTools.get(message.task_id);
+          if (toolId) backgroundAgents.add(toolId);
+        } else if (message.subtype === "task_progress") {
+          const toolId = agentTools.get(message.task_id);
+          if (toolId) {
+            emit(
+              RuntimeEvent.cases["tool.progress"].make({
+                threadId,
+                toolId,
+                summary: message.summary,
+                tokens: message.usage.total_tokens,
+                durationMs: message.usage.duration_ms,
+              }),
+            );
+          }
+        } else if (message.subtype === "task_notification") {
+          agentTools.delete(message.task_id);
+          agentNames.delete(message.task_id);
+          if (!message.tool_use_id || !backgroundAgents.delete(message.tool_use_id)) return;
+
+          emit(
+            RuntimeEvent.cases["tool.completed"].make({
+              threadId,
+              toolId: message.tool_use_id,
+              output: message.status === "stopped" ? "Stopped" : message.summary,
+              isError: message.status === "failed",
+            }),
+          );
+        }
+        return;
+      }
+      case "result": {
+        if (message.is_error && limitResetsAt !== undefined) {
+          emit(
+            RuntimeEvent.cases["thread.limitStop"].make({
+              threadId,
+              limitStop: { provider: "claude", resetsAt: limitResetsAt, resumeAtReset: null },
+            }),
+          );
+        }
+        limitResetsAt = undefined;
+
+        if (message.subtype !== "success") {
           emit(
             RuntimeEvent.cases.error.make({
               threadId,
-              message: getErrorMessage(error),
+              message: `Turn ended: ${message.subtype}`,
             }),
           );
-          emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "error" }));
         }
-      })();
-
-      const session: ProviderSession = {
-        send: (turn) =>
-          tryProviderPromise("claude", async () => {
-            emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
-            if (turn.permission !== permission) {
-              await conversation.setPermissionMode(PERMISSION_MODE[turn.permission]);
-              permission = turn.permission;
-            }
-
-            if (turn.effort && turn.effort !== effort) {
-              await conversation.applyFlagSettings(toEffortSettings(turn.effort));
-              effort = turn.effort;
-            }
-
-            if (turn.fast !== undefined && turn.fast !== isFastMode) {
-              await conversation.applyFlagSettings({ fastMode: turn.fast });
-              isFastMode = turn.fast;
-            }
-
-            const content = await toContent(appendUltrathink(turn));
-            inbox.push({
-              type: "user",
-              message: { role: "user", content },
-              parent_tool_use_id: null,
-              uuid: turn.messageId,
-            });
+        emit(
+          RuntimeEvent.cases["turn.completed"].make({
+            threadId,
+            durationMs: message.duration_ms,
           }),
-        // Claude Code takes a message sent mid-turn in at its next step.
-        steer: (turn) =>
-          tryProviderPromise("claude", async () => {
-            const content = await toContent(appendUltrathink(turn));
-            inbox.push({
-              type: "user",
-              message: { role: "user", content },
-              parent_tool_use_id: null,
-              uuid: turn.messageId,
-              priority: "now",
-            });
-          }),
-        compact: Effect.sync(() => {
-          emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
-          inbox.push({
-            type: "user",
-            message: { role: "user", content: "/compact" },
-            parent_tool_use_id: null,
+        );
+        if (!hasSessionStateEvents)
+          emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "idle" }));
+        void reportUsage(message.total_cost_usd);
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  void (async () => {
+    try {
+      for await (const message of conversation) handleMessage(message);
+      emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "closed" }));
+    } catch (error) {
+      emit(
+        RuntimeEvent.cases.error.make({
+          threadId,
+          message: getErrorMessage(error),
+        }),
+      );
+      emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "error" }));
+    }
+  })();
+
+  const session: ProviderSession = {
+    send: (turn) =>
+      tryProviderPromise("claude", async () => {
+        emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
+        if (turn.permission !== permission) {
+          await conversation.setPermissionMode(PERMISSION_MODE[turn.permission]);
+          permission = turn.permission;
+        }
+
+        if (turn.effort && turn.effort !== effort) {
+          await conversation.applyFlagSettings(toEffortSettings(turn.effort));
+          effort = turn.effort;
+        }
+
+        if (turn.fast !== undefined && turn.fast !== isFastMode) {
+          await conversation.applyFlagSettings({ fastMode: turn.fast });
+          isFastMode = turn.fast;
+        }
+
+        const content = await toContent(appendUltrathink(turn));
+        inbox.push({
+          type: "user",
+          message: { role: "user", content },
+          parent_tool_use_id: null,
+          uuid: turn.messageId,
+        });
+      }),
+    // Claude Code takes a message sent mid-turn in at its next step.
+    steer: (turn) =>
+      tryProviderPromise("claude", async () => {
+        const content = await toContent(appendUltrathink(turn));
+        inbox.push({
+          type: "user",
+          message: { role: "user", content },
+          parent_tool_use_id: null,
+          uuid: turn.messageId,
+          priority: "now",
+        });
+      }),
+    compact: Effect.sync(() => {
+      emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
+      inbox.push({
+        type: "user",
+        message: { role: "user", content: "/compact" },
+        parent_tool_use_id: null,
+      });
+    }),
+    commands: Effect.tryPromise({
+      try: async () =>
+        (await conversation.supportedCommands()).map((command) => ({
+          name: command.name,
+          description: command.description,
+          argumentHint: command.argumentHint,
+        })),
+      catch: (error) => createError(String(error)),
+    }),
+    interrupt: Effect.tryPromise({
+      try: () =>
+        Promise.all([
+          conversation.interrupt(),
+          ...[...agentTools].flatMap(([taskId, toolId]) =>
+            backgroundAgents.has(toolId) ? [conversation.stopTask(taskId)] : [],
+          ),
+        ]),
+      catch: (error) => createError(String(error)),
+    }).pipe(Effect.asVoid),
+    stopAgent: (toolId) =>
+      Effect.tryPromise({
+        try: async () => {
+          const taskId = [...agentTools].find(([, id]) => id === toolId)?.[0];
+          // Already finished: its notification is on the way.
+          if (taskId) await conversation.stopTask(taskId);
+        },
+        catch: (error) => createError(`Couldn't stop the subagent: ${String(error)}`),
+      }),
+    respondApproval: (
+      requestId,
+      decision,
+      { permission: buildPermission = "auto-edit", answers } = {},
+    ) =>
+      Effect.gen(function* () {
+        const entry = yield* approvals.take(requestId);
+        const answered = entry.questions && decision !== "deny" ? answers : undefined;
+
+        // Approving a plan leaves plan mode for the level picked with it; the composer follows.
+        if (entry.toolName === "ExitPlanMode" && decision !== "deny") {
+          permission = buildPermission;
+          entry.resolve({
+            behavior: "allow",
+            updatedInput: entry.input,
+            updatedPermissions: [
+              { type: "setMode", mode: PERMISSION_MODE[permission], destination: "session" },
+            ],
           });
-        }),
-        commands: Effect.tryPromise({
-          try: async () =>
-            (await conversation.supportedCommands()).map((command) => ({
-              name: command.name,
-              description: command.description,
-              argumentHint: command.argumentHint,
-            })),
-          catch: (error) => createError(String(error)),
-        }),
-        interrupt: Effect.tryPromise({
-          try: () =>
-            Promise.all([
-              conversation.interrupt(),
-              ...[...agentTools].flatMap(([taskId, toolId]) =>
-                backgroundAgents.has(toolId) ? [conversation.stopTask(taskId)] : [],
+        } else if (entry.toolName === "ExitPlanMode") {
+          // Not an interrupt: that ends the turn as an error, when the user just wants a different plan.
+          entry.resolve({
+            behavior: "deny",
+            message:
+              "The user rejected this plan and will reply with what to change. End your turn now, without calling any tools.",
+          });
+        } else if (entry.questions && !answered) {
+          entry.resolve({ behavior: "deny", message: "The user chose not to answer" });
+        } else if (entry.questions && answered) {
+          // Claude reads answers keyed by question text, several choices comma-separated.
+          entry.resolve({
+            behavior: "allow",
+            updatedInput: {
+              ...entry.input,
+              answers: Object.fromEntries(
+                entry.questions.map((question) => [
+                  question.question,
+                  (answered[question.id] ?? []).join(", "),
+                ]),
               ),
-            ]),
-          catch: (error) => createError(String(error)),
-        }).pipe(Effect.asVoid),
-        stopAgent: (toolId) =>
-          Effect.tryPromise({
-            try: async () => {
-              const taskId = [...agentTools].find(([, id]) => id === toolId)?.[0];
-              // Already finished: its notification is on the way.
-              if (taskId) await conversation.stopTask(taskId);
+              // Tells Claude which mockup the user picked, as its own dialog does.
+              annotations: Object.fromEntries(
+                entry.questions.flatMap((question) => {
+                  const preview = question.options.find((option) =>
+                    answered[question.id]?.includes(option.label),
+                  )?.preview;
+                  return preview ? [[question.question, { preview }]] : [];
+                }),
+              ),
             },
-            catch: (error) => createError(`Couldn't stop the subagent: ${String(error)}`),
-          }),
-        respondApproval: (
-          requestId,
-          decision,
-          { permission: buildPermission = "auto-edit", answers } = {},
-        ) =>
-          Effect.gen(function* () {
-            const entry = yield* approvals.take(requestId);
-            const answered = entry.questions && decision !== "deny" ? answers : undefined;
+          });
+        } else if (decision === "deny") {
+          entry.resolve({ behavior: "deny", message: "Denied by user" });
+        } else if (decision === "allow-session" && entry.suggestions) {
+          entry.resolve({
+            behavior: "allow",
+            updatedInput: entry.input,
+            updatedPermissions: entry.suggestions,
+          });
+        } else {
+          entry.resolve({ behavior: "allow", updatedInput: entry.input });
+        }
 
-            // Approving a plan leaves plan mode for the level picked with it; the composer follows.
-            if (entry.toolName === "ExitPlanMode" && decision !== "deny") {
-              permission = buildPermission;
-              entry.resolve({
-                behavior: "allow",
-                updatedInput: entry.input,
-                updatedPermissions: [
-                  { type: "setMode", mode: PERMISSION_MODE[permission], destination: "session" },
-                ],
-              });
-            } else if (entry.toolName === "ExitPlanMode") {
-              // Not an interrupt: that ends the turn as an error, when the user just wants a different plan.
-              entry.resolve({
-                behavior: "deny",
-                message:
-                  "The user rejected this plan and will reply with what to change. End your turn now, without calling any tools.",
-              });
-            } else if (entry.questions && !answered) {
-              entry.resolve({ behavior: "deny", message: "The user chose not to answer" });
-            } else if (entry.questions && answered) {
-              // Claude reads answers keyed by question text, several choices comma-separated.
-              entry.resolve({
-                behavior: "allow",
-                updatedInput: {
-                  ...entry.input,
-                  answers: Object.fromEntries(
-                    entry.questions.map((question) => [
-                      question.question,
-                      (answered[question.id] ?? []).join(", "),
-                    ]),
-                  ),
-                  // Tells Claude which mockup the user picked, as its own dialog does.
-                  annotations: Object.fromEntries(
-                    entry.questions.flatMap((question) => {
-                      const preview = question.options.find((option) =>
-                        answered[question.id]?.includes(option.label),
-                      )?.preview;
-                      return preview ? [[question.question, { preview }]] : [];
-                    }),
-                  ),
-                },
-              });
-            } else if (decision === "deny") {
-              entry.resolve({ behavior: "deny", message: "Denied by user" });
-            } else if (decision === "allow-session" && entry.suggestions) {
-              entry.resolve({
-                behavior: "allow",
-                updatedInput: entry.input,
-                updatedPermissions: entry.suggestions,
-              });
-            } else {
-              entry.resolve({ behavior: "allow", updatedInput: entry.input });
-            }
+        approvals.resolve(requestId, answered);
+      }),
+    setModel: (next) =>
+      Effect.tryPromise({
+        try: () => conversation.setModel(next ?? undefined),
+        catch: (error) => createError(String(error)),
+      }),
+    close: Effect.sync(() => {
+      inbox.end();
+      conversation.close();
+    }),
+  };
 
-            approvals.resolve(requestId, answered);
-          }),
-        setModel: (next) =>
-          Effect.tryPromise({
-            try: () => conversation.setModel(next ?? undefined),
-            catch: (error) => createError(String(error)),
-          }),
-        close: Effect.sync(() => {
-          inbox.end();
-          conversation.close();
-        }),
-      };
-
-      return session;
-    },
-    catch: (error) => createError(getErrorMessage(error)),
-  });
+  return session;
 }
 
 /** A real prompt in the session log, rather than a tool result or something injected. */
@@ -786,48 +795,63 @@ function isPrompt(entry: SessionMessage) {
  * intact, and the fork is what later turns resume. Messages carry our id when we sent
  * them; older ones are found by counting prompts.
  */
-async function forkBefore({ cwd, harness, resumeToken, messageId, keep }: ForkInput) {
+const forkBefore = Effect.fn("ClaudeAdapter.forkBefore")(function* ({
+  cwd,
+  harness,
+  resumeToken,
+  messageId,
+  keep,
+}: ForkInput) {
   if (messageId !== null && keep === 0) return null;
 
-  // The SDK's session-log helpers read CLAUDE_CONFIG_DIR from our own env, not from options.
-  // ponytail: swaps process.env for the call; a CLI spawned meanwhile without its own config dir would see it.
-  const configDir = resolveHarnessLaunch("claude", harness).env.CLAUDE_CONFIG_DIR;
-  const previous = process.env.CLAUDE_CONFIG_DIR;
-  if (configDir !== undefined) process.env.CLAUDE_CONFIG_DIR = configDir;
-  try {
-    if (messageId === null) return (await forkSession(resumeToken, { dir: cwd })).sessionId;
+  const launch = yield* resolveHarnessLaunch("claude", harness);
+  return yield* tryProviderPromise("claude", async () => {
+    // The SDK's session-log helpers read CLAUDE_CONFIG_DIR from our own env, not from options.
+    // ponytail: swaps process.env for the call; a CLI spawned meanwhile without its own config dir would see it.
+    const configDir = launch.env.CLAUDE_CONFIG_DIR;
+    const previous = process.env.CLAUDE_CONFIG_DIR;
+    if (configDir !== undefined) process.env.CLAUDE_CONFIG_DIR = configDir;
+    try {
+      if (messageId === null) return (await forkSession(resumeToken, { dir: cwd })).sessionId;
 
-    const entries = await getSessionMessages(resumeToken, { dir: cwd });
-    let index = entries.findIndex((entry) => entry.uuid === messageId);
-    if (index === -1) {
-      let prompts = 0;
-      index = entries.findIndex((entry) => isPrompt(entry) && prompts++ === keep);
+      const entries = await getSessionMessages(resumeToken, { dir: cwd });
+      let index = entries.findIndex((entry) => entry.uuid === messageId);
+      if (index === -1) {
+        let prompts = 0;
+        index = entries.findIndex((entry) => isPrompt(entry) && prompts++ === keep);
+      }
+      if (index <= 0) throw new Error("couldn't find that message in Claude's session log");
+
+      const { sessionId } = await forkSession(resumeToken, {
+        dir: cwd,
+        upToMessageId: entries[index - 1]!.uuid,
+      });
+      return sessionId;
+    } finally {
+      if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = previous;
     }
-    if (index <= 0) throw new Error("couldn't find that message in Claude's session log");
-
-    const { sessionId } = await forkSession(resumeToken, {
-      dir: cwd,
-      upToMessageId: entries[index - 1]!.uuid,
-    });
-    return sessionId;
-  } finally {
-    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
-    else process.env.CLAUDE_CONFIG_DIR = previous;
-  }
-}
+  });
+});
 
 const rewind: ProviderAdapter["rewind"] = (input) =>
-  tryProviderPromise("claude", () => forkBefore(input)).pipe(prefixErrorMessage("Couldn't rewind"));
+  forkBefore(input).pipe(prefixErrorMessage("Couldn't rewind"));
 
 const fork: ProviderAdapter["fork"] = (input) =>
-  tryProviderPromise("claude", () => forkBefore(input)).pipe(prefixErrorMessage("Couldn't fork"));
+  forkBefore(input).pipe(prefixErrorMessage("Couldn't fork"));
 
 /** A prompt-less session resumed from the log answers as the live one would; the cost call is experimental, so it may come back empty. */
-const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, model }) =>
-  tryProviderPromise("claude", async () => {
+const readUsage: ProviderAdapter["readUsage"] = Effect.fn("ClaudeAdapter.readUsage")(function* ({
+  cwd,
+  harness,
+  resumeToken,
+  model,
+}) {
+  const launch = yield* resolveHarnessLaunch("claude", harness);
+  return yield* tryProviderPromise("claude", async () => {
     const options: Options = { cwd, resume: resumeToken };
     if (model) options.model = model;
-    const conversation = startPromptlessQuery(resolveHarnessLaunch("claude", harness), options);
+    const conversation = startPromptlessQuery(launch, options);
     try {
       const context = toContextUsage(await conversation.getContextUsage({ detail: "summary" }));
       const costUsd = await conversation
@@ -840,12 +864,17 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
     } finally {
       conversation.close();
     }
-  }).pipe(prefixErrorMessage("Couldn't read usage"));
+  });
+}, prefixErrorMessage("Couldn't read usage"));
 
 /** Bundled, plugin, user and project skills alike, as the session in `cwd` would load them. */
-const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
-  tryProviderPromise("claude", async () => {
-    const conversation = startPromptlessQuery(resolveHarnessLaunch("claude", harness), {
+const listSkills: ProviderAdapter["listSkills"] = Effect.fn("ClaudeAdapter.listSkills")(function* ({
+  cwd,
+  harness,
+}) {
+  const launch = yield* resolveHarnessLaunch("claude", harness);
+  return yield* tryProviderPromise("claude", async () => {
+    const conversation = startPromptlessQuery(launch, {
       cwd,
       settingSources: ["user", "project", "local"],
     });
@@ -860,6 +889,7 @@ const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
       conversation.close();
     }
   });
+});
 
 export const ClaudeAdapter: ProviderAdapter = {
   kind: "claude",

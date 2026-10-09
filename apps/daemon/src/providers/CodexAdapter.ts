@@ -516,9 +516,9 @@ function start({
       });
     }
 
-    const rpc = yield* tryProviderPromise("codex", () => {
-      const launch = resolveHarnessLaunch("codex", harness);
-      return connectCodex(
+    const launch = yield* resolveHarnessLaunch("codex", harness);
+    const rpc = yield* tryProviderPromise("codex", () =>
+      connectCodex(
         cwd,
         {
           onNotification,
@@ -579,8 +579,8 @@ function start({
           ],
           env: { ...launch.env, ...(mcpServer && { MASSCODE_MCP_TOKEN: mcpServer.token }) },
         },
-      );
-    });
+      ),
+    );
 
     function sendRequest<A>(method: string, params: Schema.Json, response: Schema.Decoder<A>) {
       return tryProviderPromise("codex", () => rpc.request(method, params, response)).pipe(
@@ -730,9 +730,15 @@ async function dropLastTurns(rpc: CodexRpc, threadId: string, dropTurns: number)
 }
 
 /** Loads the thread in a short-lived app-server and drops its last turns. The thread id stays. */
-const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, dropTurns }) =>
-  tryProviderPromise("codex", async () => {
-    const rpc = await connectCodex(cwd, {}, resolveHarnessLaunch("codex", harness));
+const rewind: ProviderAdapter["rewind"] = Effect.fn("CodexAdapter.rewind")(function* ({
+  cwd,
+  harness,
+  resumeToken,
+  dropTurns,
+}) {
+  const launch = yield* resolveHarnessLaunch("codex", harness);
+  return yield* tryProviderPromise("codex", async () => {
+    const rpc = await connectCodex(cwd, {}, launch);
     try {
       await rpc.request(
         "thread/resume",
@@ -744,12 +750,19 @@ const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, dropTurn
     } finally {
       rpc.close();
     }
-  }).pipe(prefixErrorMessage("Couldn't rewind"));
+  });
+}, prefixErrorMessage("Couldn't rewind"));
 
 /** Forks the thread in a short-lived app-server and drops the fork's last turns. */
-const fork: ProviderAdapter["fork"] = ({ cwd, harness, resumeToken, dropTurns }) =>
-  tryProviderPromise("codex", async () => {
-    const rpc = await connectCodex(cwd, {}, resolveHarnessLaunch("codex", harness));
+const fork: ProviderAdapter["fork"] = Effect.fn("CodexAdapter.fork")(function* ({
+  cwd,
+  harness,
+  resumeToken,
+  dropTurns,
+}) {
+  const launch = yield* resolveHarnessLaunch("codex", harness);
+  return yield* tryProviderPromise("codex", async () => {
+    const rpc = await connectCodex(cwd, {}, launch);
     try {
       const { thread } = await rpc.request(
         "thread/fork",
@@ -761,11 +774,18 @@ const fork: ProviderAdapter["fork"] = ({ cwd, harness, resumeToken, dropTurns })
     } finally {
       rpc.close();
     }
-  }).pipe(prefixErrorMessage("Couldn't fork"));
+  });
+}, prefixErrorMessage("Couldn't fork"));
 
 /** Codex reports a thread's token usage as it loads it, so a short-lived app-server resumes it and waits for that. */
-const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, model }) =>
-  tryProviderPromise("codex", async () => {
+const readUsage: ProviderAdapter["readUsage"] = Effect.fn("CodexAdapter.readUsage")(function* ({
+  cwd,
+  harness,
+  resumeToken,
+  model,
+}) {
+  const launch = yield* resolveHarnessLaunch("codex", harness);
+  return yield* tryProviderPromise("codex", async () => {
     let report: (usage: TokenUsage) => void = () => {};
     const reported = new Promise<TokenUsage>((resolve) => (report = resolve));
     const rpc = await connectCodex(
@@ -780,7 +800,7 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
           }
         },
       },
-      resolveHarnessLaunch("codex", harness),
+      launch,
     );
     try {
       const resumed = await rpc.request(
@@ -799,11 +819,16 @@ const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, mo
     } finally {
       rpc.close();
     }
-  }).pipe(prefixErrorMessage("Couldn't read usage"));
+  });
+}, prefixErrorMessage("Couldn't read usage"));
 
-const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
-  tryProviderPromise("codex", async () => {
-    const rpc = await connectCodex(cwd, {}, resolveHarnessLaunch("codex", harness));
+const listSkills: ProviderAdapter["listSkills"] = Effect.fn("CodexAdapter.listSkills")(function* ({
+  cwd,
+  harness,
+}) {
+  const launch = yield* resolveHarnessLaunch("codex", harness);
+  return yield* tryProviderPromise("codex", async () => {
+    const rpc = await connectCodex(cwd, {}, launch);
     try {
       const { data } = await rpc.request(
         "skills/list",
@@ -832,6 +857,7 @@ const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
       rpc.close();
     }
   });
+});
 
 export const CodexAdapter: ProviderAdapter = {
   kind: "codex",

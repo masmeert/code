@@ -4,6 +4,7 @@
  */
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import type { ProviderKind, ProviderSettings, Settings } from "@masscode/contracts";
+import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { CodexNotification, connectCodex, ThreadResponse } from "./providers/codexRpc.ts";
@@ -67,7 +68,7 @@ async function writeWithClaude(
   prompt: string,
   signal: AbortSignal,
 ) {
-  const launch = resolveHarnessLaunch("claude", harness);
+  const launch = await Effect.runPromise(resolveHarnessLaunch("claude", harness));
   const options: Options = {
     cwd,
     // Thinking is most of the wait on a message this short.
@@ -111,7 +112,7 @@ async function writeWithCodex(
   });
   let text = "";
 
-  const launch = resolveHarnessLaunch("codex", harness);
+  const launch = await Effect.runPromise(resolveHarnessLaunch("codex", harness));
   const rpc = await connectCodex(
     cwd,
     {
@@ -174,7 +175,7 @@ async function writeWithCursor(
   prompt: string,
   signal: AbortSignal,
 ) {
-  const launch = resolveHarnessLaunch("cursor", harness);
+  const launch = await Effect.runPromise(resolveHarnessLaunch("cursor", harness));
   const { stdout } = await promisify(execFile)(
     launch.bin,
     [

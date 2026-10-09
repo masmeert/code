@@ -352,9 +352,13 @@ export class ProviderRegistry extends Context.Service<
 const make = Effect.gen(function* () {
   const settingsStore = yield* SettingsStore;
 
-  /** Throws when the CLI can't be found, like the spawns it feeds. */
-  async function resolveLaunch(kind: ProviderKind) {
-    return resolveHarnessLaunch(kind, (await Effect.runPromise(settingsStore.get)).providers[kind]);
+  /** Rejects when the CLI can't be found, like the spawns it feeds. */
+  function resolveLaunch(kind: ProviderKind) {
+    return Effect.runPromise(
+      Effect.flatMap(settingsStore.get, (settings) =>
+        resolveHarnessLaunch(kind, settings.providers[kind]),
+      ),
+    );
   }
 
   function probeHarness(kind: ProviderKind) {

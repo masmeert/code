@@ -197,10 +197,7 @@ function start({
   mcpServer,
 }: StartSessionInput) {
   return Effect.gen(function* () {
-    const launch = yield* Effect.try({
-      try: () => resolveHarnessLaunch("cursor", harness),
-      catch: (error) => createError(getErrorMessage(error)),
-    });
+    const launch = yield* resolveHarnessLaunch("cursor", harness);
 
     let rpc: JsonRpc | undefined;
     // Bumped on each launch, so a process closed for a relaunch doesn't report its exit.
@@ -691,13 +688,16 @@ function start({
 const SKILL_NOTE = /\s*\((?:(?:builtin|user|project) )?skill\)$/;
 
 /** The skills Cursor reports in `cwd`, read from the commands a new session announces. */
-const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
-  tryProviderPromise("cursor", async () => {
+const listSkills: ProviderAdapter["listSkills"] = Effect.fn("CursorAdapter.listSkills")(function* ({
+  cwd,
+  harness,
+}) {
+  const launch = yield* resolveHarnessLaunch("cursor", harness);
+  return yield* tryProviderPromise("cursor", async () => {
     let report: (commands: ReadonlyArray<{ name: string; description: string }>) => void = () => {};
     const reported = new Promise<ReadonlyArray<{ name: string; description: string }>>(
       (resolve) => (report = resolve),
     );
-    const launch = resolveHarnessLaunch("cursor", harness);
     const rpc = await connectAcp("Cursor", launch, buildAcpArgs(launch, null), cwd, {
       onUpdate: (update) => {
         if (SessionUpdate.guards.available_commands_update(update)) {
@@ -722,6 +722,7 @@ const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
       rpc.close();
     }
   });
+});
 
 function failUnsupported(action: string) {
   return () => Effect.fail(createError(`Cursor can't ${action} a conversation yet.`));
