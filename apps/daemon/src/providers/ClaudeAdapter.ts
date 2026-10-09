@@ -28,6 +28,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import {
@@ -224,11 +225,10 @@ function start({
       const launch = harnessLaunch("claude", harness);
       const inbox = makeInbox<SDKUserMessage>();
       const pending = new Map<string, PendingApproval>();
-      let nextRequest = 0;
 
       const canUseTool: CanUseTool = (toolName, input, { signal, suggestions, agentID }) =>
         new Promise<PermissionResult>((resolve) => {
-          const requestId = `claude-perm-${++nextRequest}`;
+          const requestId = `claude-perm-${randomUUID()}`;
           const questions: ReadonlyArray<UserQuestion> | undefined =
             toolName === "AskUserQuestion"
               ? Option.getOrUndefined(decodeAskUserQuestion(input))?.questions.map(
