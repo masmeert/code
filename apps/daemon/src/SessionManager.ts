@@ -92,7 +92,7 @@ import {
 } from "./providers/ProviderAdapter.ts";
 import { ProviderRegistry } from "./providers/ProviderRegistry.ts";
 import { DATA_DIR } from "./storage/jsonFile.ts";
-import { ProjectsStore } from "./storage/ProjectsStore.ts";
+import { type ProjectNotFound, ProjectsStore } from "./storage/ProjectsStore.ts";
 import { SettingsStore } from "./storage/SettingsStore.ts";
 import {
   type Coverage,
@@ -108,7 +108,7 @@ import { createMcp, type Mcp, type SendMessageInput, type StartThreadInput } fro
 import { createTerminals, type Terminals } from "./terminals.ts";
 import { readProjectConfig } from "./projectConfig.ts";
 import { createSkillCatalog } from "./skills.ts";
-import { getErrorMessage } from "./errors.ts";
+import { CommandError, getErrorMessage } from "./errors.ts";
 
 const ADAPTERS: Record<ProviderKind, ProviderAdapter> = {
   claude: ClaudeAdapter,
@@ -295,7 +295,9 @@ function coalesceLoads<A>(load: (key: string) => Promise<A>) {
 export class SessionManager extends Context.Service<
   SessionManager,
   {
-    readonly dispatch: (command: ClientCommand) => Effect.Effect<void, ProviderError>;
+    readonly dispatch: (
+      command: ClientCommand,
+    ) => Effect.Effect<void, CommandError | ProviderError | ProjectNotFound>;
     /** Subscribes, then snapshots the shell synchronously, so the stream continues exactly where it ends. */
     readonly subscribe: Effect.Effect<
       {
@@ -335,10 +337,6 @@ export class SessionManager extends Context.Service<
     readonly hasActiveTurns: () => boolean;
   }
 >()("masscode/SessionManager") {}
-
-function createError(message: string) {
-  return new ProviderError({ provider: "none", message });
-}
 
 /** What the agent reads after the user runs a command from its reply. */
 function formatCommandRun({ command, exitCode, output }: CommandRun) {
@@ -393,7 +391,8 @@ function resolveAttachments(inputs: ReadonlyArray<AttachmentInput>) {
           }),
         ),
       ),
-    catch: (error) => createError(`Couldn't attach files: ${getErrorMessage(error)}`),
+    catch: (error) =>
+      new CommandError({ message: `Couldn't attach files: ${getErrorMessage(error)}` }),
   });
 }
 
@@ -711,7 +710,7 @@ const make = Effect.gen(function* () {
 
   const getEntry = Effect.fn("getEntry")(function* (threadId: string) {
     const entry = threads.get(threadId);
-    if (!entry) return yield* Effect.fail(createError(`No thread ${threadId}`));
+    if (!entry) return yield* new CommandError({ message: `No thread ${threadId}` });
 
     return entry;
   });
@@ -785,9 +784,9 @@ const make = Effect.gen(function* () {
     });
     if (entry.generation !== generation) {
       yield* session.close;
-      return yield* Effect.fail(
-        createError("The agent stopped as it started. Send the message again."),
-      );
+      return yield* new CommandError({
+        message: "The agent stopped as it started. Send the message again.",
+      });
     }
 
     entry.session = session;
@@ -1083,7 +1082,7 @@ const make = Effect.gen(function* () {
    * would otherwise go to no thread, since the command names none.
    */
   function reportErrorsOn(entry: ThreadEntry) {
-    return <A, R>(effect: Effect.Effect<A, ProviderError, R>) =>
+    return <A, E extends { readonly message: string }, R>(effect: Effect.Effect<A, E, R>) =>
       Effect.tapError(effect, (error) =>
         Effect.sync(() =>
           publish(
@@ -1108,7 +1107,7 @@ const make = Effect.gen(function* () {
     }: { run?: CommandRun; queue?: boolean | undefined; messageId?: string | undefined } = {},
   ) {
     if (!UUID_PATTERN.test(messageId))
-      return yield* Effect.fail(createError(`Message ids must be UUIDs, not "${messageId}"`));
+      return yield* new CommandError({ message: `Message ids must be UUIDs, not "${messageId}"` });
     if (
       store.hasMessage(entry.info.id, messageId) ||
       entry.queue.some((queued) => queued.id === messageId)
@@ -1142,21 +1141,24 @@ const make = Effect.gen(function* () {
   ) {
     const entry = yield* getEntry(command.threadId);
     const { id: threadId, cwd, provider } = entry.info;
-    if (isBusy(entry)) return yield* Effect.fail(createError("Stop the agent before rewinding"));
+    if (isBusy(entry))
+      return yield* new CommandError({ message: "Stop the agent before rewinding" });
 
     const found = store.findUserMessage(threadId, command.messageId);
-    if (!found) return yield* Effect.fail(createError("That message is gone"));
+    if (!found) return yield* new CommandError({ message: "That message is gone" });
     if (found.event.steer)
-      return yield* Effect.fail(createError("A message sent mid-turn can't be rewound to"));
+      return yield* new CommandError({ message: "A message sent mid-turn can't be rewound to" });
 
     if (command.restoreFiles) {
       const blocker = fileRestoreBlocker(
         entry.info,
         [...threads.values()].map((other) => other.info),
       );
-      if (blocker) return yield* Effect.fail(createError(blocker));
+      if (blocker) return yield* new CommandError({ message: blocker });
       if (!(yield* Effect.promise(() => hasCheckpoint(cwd, threadId, command.messageId)))) {
-        return yield* Effect.fail(createError("There's no snapshot of the files from that point"));
+        return yield* new CommandError({
+          message: "There's no snapshot of the files from that point",
+        });
       }
     }
 
@@ -1193,9 +1195,9 @@ const make = Effect.gen(function* () {
       found.from.map((message) => message.messageId),
     );
     if (error)
-      return yield* Effect.fail(
-        createError(`Rewound the conversation, but couldn't restore the files: ${error}`),
-      );
+      return yield* new CommandError({
+        message: `Rewound the conversation, but couldn't restore the files: ${error}`,
+      });
   });
 
   /**
@@ -1207,10 +1209,11 @@ const make = Effect.gen(function* () {
   ) {
     const source = yield* getEntry(command.threadId);
     const { cwd, provider } = source.info;
-    if (isBusy(source)) return yield* Effect.fail(createError("Stop the agent before forking"));
+    if (isBusy(source))
+      return yield* new CommandError({ message: "Stop the agent before forking" });
 
     const cut = store.findTurnsAfter(source.info.id, command.messageId);
-    if (!cut) return yield* Effect.fail(createError("That message is gone"));
+    if (!cut) return yield* new CommandError({ message: "That message is gone" });
 
     const sourceToken = source.resumeTokens[provider];
     // A thread that switched harness forks like a rewind: afresh, handed the conversation.
@@ -1301,7 +1304,7 @@ const make = Effect.gen(function* () {
     yield* ensureHarnessReady(provider);
 
     const cut = store.findTurnsAfter(threadId, messageId);
-    if (!cut) return yield* Effect.fail(createError("That reply is gone"));
+    if (!cut) return yield* new CommandError({ message: "That reply is gone" });
 
     const settings = yield* settingsStore.get;
     const harness = settings.providers[provider];
@@ -1382,9 +1385,9 @@ const make = Effect.gen(function* () {
       const source = yield* getEntry(threadId);
       const session = sideChats.get(sideChatId)?.session;
       if (sideChats.has(sideChatId) && !session)
-        return yield* Effect.fail(
-          createError("The side chat is still starting. Ask again in a moment."),
-        );
+        return yield* new CommandError({
+          message: "The side chat is still starting. Ask again in a moment.",
+        });
 
       const questionId = crypto.randomUUID();
       publishSideChat(
@@ -1445,23 +1448,23 @@ const make = Effect.gen(function* () {
     const status = (yield* registry.list).find((harness) => harness.kind === provider);
 
     if (status?.checking)
-      return yield* Effect.fail(
-        createError(`Still checking whether ${name} is set up. Try again in a moment.`),
-      );
+      return yield* new CommandError({
+        message: `Still checking whether ${name} is set up. Try again in a moment.`,
+      });
     if (!status?.installed)
-      return yield* Effect.fail(
-        createError(`${name} isn't installed on this machine. Install its CLI, then try again.`),
-      );
+      return yield* new CommandError({
+        message: `${name} isn't installed on this machine. Install its CLI, then try again.`,
+      });
     if (!status.linked)
-      return yield* Effect.fail(
-        createError(`${name} isn't signed in. Sign in under Settings → Harnesses, then try again.`),
-      );
+      return yield* new CommandError({
+        message: `${name} isn't signed in. Sign in under Settings → Harnesses, then try again.`,
+      });
   });
 
   const compact = Effect.fn("compact")(function* (threadId: string) {
     const entry = yield* getEntry(threadId);
     if (isBusy(entry))
-      return yield* Effect.fail(createError("Wait for the agent to finish before compacting"));
+      return yield* new CommandError({ message: "Wait for the agent to finish before compacting" });
     if (!entry.resumeTokens[entry.info.provider] && !entry.session) return;
 
     yield* entry.lock.withPermit(
@@ -1733,7 +1736,9 @@ const make = Effect.gen(function* () {
   ) {
     const root = yield* Effect.promise(() => readRepoRoot(projectPath));
     if (!root)
-      return yield* Effect.fail(createError("New worktrees need the project to be a git repo"));
+      return yield* new CommandError({
+        message: "New worktrees need the project to be a git repo",
+      });
 
     const slug = `${
       title
@@ -1747,7 +1752,7 @@ const make = Effect.gen(function* () {
     const error = yield* Effect.promise(() =>
       addWorktree(projectPath, path, `masscode/${slug}`, worktreeFromOrigin === true),
     );
-    if (error) return yield* Effect.fail(createError(`Couldn't create a worktree: ${error}`));
+    if (error) return yield* new CommandError({ message: `Couldn't create a worktree: ${error}` });
 
     return join(path, relative(root, projectPath));
   });
@@ -1841,9 +1846,7 @@ const make = Effect.gen(function* () {
   const createThread = Effect.fn("createThread")(function* (
     command: Extract<ClientCommand, { _tag: "thread.create" }>,
   ) {
-    const { project, isNew } = yield* projectsStore
-      .ensure(command.path)
-      .pipe(Effect.mapError((error) => createError(error.message)));
+    const { project, isNew } = yield* projectsStore.ensure(command.path);
     if (isNew) publish(RuntimeEvent.cases["project.added"].make({ project }));
 
     const now = Date.now();
@@ -1921,15 +1924,19 @@ const make = Effect.gen(function* () {
     return getPermissionRank(level) <= getPermissionRank(ceiling)
       ? Effect.succeed(level)
       : Effect.fail(
-          createError(
-            `Your thread runs with "${ceiling}" access, so it can't give another "${level}". Ask for "${ceiling}" or less.`,
-          ),
+          new CommandError({
+            message: `Your thread runs with "${ceiling}" access, so it can't give another "${level}". Ask for "${ceiling}" or less.`,
+          }),
         );
   }
 
   function getTargetEntry(threadId: string) {
-    return Effect.mapError(getEntry(threadId), () =>
-      createError(`There's no thread ${threadId}. list_threads shows the ones in your project.`),
+    return Effect.mapError(
+      getEntry(threadId),
+      () =>
+        new CommandError({
+          message: `There's no thread ${threadId}. list_threads shows the ones in your project.`,
+        }),
     );
   }
 
@@ -2018,7 +2025,9 @@ const make = Effect.gen(function* () {
     const caller = yield* getEntry(callerId);
     const target = yield* getTargetEntry(input.threadId);
     if (target === caller)
-      return yield* Effect.fail(createError("That's your own thread; reply in your turn instead."));
+      return yield* new CommandError({
+        message: "That's your own thread; reply in your turn instead.",
+      });
 
     const ceiling = caller.permission ?? "ask";
     // The target's own level, unless that's more than the caller may give.
@@ -2100,9 +2109,9 @@ const make = Effect.gen(function* () {
     model: string | null,
   ) {
     if (isBusy(entry))
-      return yield* Effect.fail(
-        createError("Stop the agent, or wait for its turn to end, before switching harness"),
-      );
+      return yield* new CommandError({
+        message: "Stop the agent, or wait for its turn to end, before switching harness",
+      });
 
     yield* ensureHarnessReady(provider);
     yield* dropSession(entry, null);
@@ -2150,7 +2159,9 @@ const make = Effect.gen(function* () {
     for (const entry of threads.values()) if (entry.info.cwd === path) refreshMeta(entry);
   });
 
-  function dispatch(command: ClientCommand): Effect.Effect<void, ProviderError> {
+  function dispatch(
+    command: ClientCommand,
+  ): Effect.Effect<void, CommandError | ProviderError | ProjectNotFound> {
     return ClientCommand.match(command, {
       "thread.create": createThread,
       "thread.send": (command) =>
@@ -2306,12 +2317,13 @@ const make = Effect.gen(function* () {
           if (entry.session) yield* entry.session.setModel(model);
         }),
       "project.add": (command) =>
-        projectsStore.ensure(command.path).pipe(
-          Effect.mapError((error) => createError(error.message)),
-          Effect.map(({ project, isNew }) =>
-            isNew ? publish(RuntimeEvent.cases["project.added"].make({ project })) : undefined,
+        projectsStore
+          .ensure(command.path)
+          .pipe(
+            Effect.map(({ project, isNew }) =>
+              isNew ? publish(RuntimeEvent.cases["project.added"].make({ project })) : undefined,
+            ),
           ),
-        ),
       "project.scan": (command) =>
         Effect.gen(function* () {
           async function findRepos(folder: string, levels: number): Promise<Array<string>> {
@@ -2408,7 +2420,9 @@ const make = Effect.gen(function* () {
             );
           });
           return runError
-            ? Effect.fail(createError(`Couldn't run the command: ${runError.message}`))
+            ? Effect.fail(
+                new CommandError({ message: `Couldn't run the command: ${runError.message}` }),
+              )
             : Effect.void;
         }),
       // Per connection; the server answers these.

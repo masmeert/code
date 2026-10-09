@@ -10,7 +10,7 @@ import { expandHome } from "../folders.ts";
 import { readRemoteUrl, readRepoFolder } from "../git.ts";
 import { openJsonFile } from "./jsonFile.ts";
 
-class ProjectNotFound extends Schema.TaggedError<ProjectNotFound>()("ProjectNotFound", {
+export class ProjectNotFound extends Schema.TaggedError<ProjectNotFound>()("ProjectNotFound", {
   message: Schema.String,
 }) {}
 
