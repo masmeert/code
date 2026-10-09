@@ -100,7 +100,7 @@ export function serve(port: number) {
     function streamToClient(socket: ServerWebSocket<ConnectionData>) {
       return Effect.scoped(
         Effect.gen(function* () {
-          const { dataId, settings, projects, providers, threads, terminals, live } =
+          const { dataId, settings, projects, providers, threads, terminals, phones, live } =
             yield* manager.subscribe;
 
           send(
@@ -112,6 +112,7 @@ export function serve(port: number) {
               providers,
               threads,
               terminals,
+              phones,
               root: process.getuid?.() === 0,
               protocol: PROTOCOL_VERSION,
             }),
@@ -309,6 +310,19 @@ export function serve(port: number) {
                 Effect.match({ onSuccess: () => null, onFailure: (error) => error }),
                 Effect.map((error) =>
                   send(socket, ServerFrame.cases["device.attached"].make({ requestId, error })),
+                ),
+              ),
+            "pairing.start": ({ requestId }) =>
+              manager.phones.startPairing().pipe(
+                Effect.match({
+                  onSuccess: (offer) => ({ offer, error: null }),
+                  onFailure: (error) => ({ offer: null, error: error.message }),
+                }),
+                Effect.map((started) =>
+                  send(
+                    socket,
+                    ServerFrame.cases["pairing.started"].make({ requestId, ...started }),
+                  ),
                 ),
               ),
             "browser.respond": (command) => {

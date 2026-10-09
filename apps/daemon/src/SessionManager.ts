@@ -24,6 +24,7 @@ import { expandHome, listFolders } from "./folders.ts";
 import { checkoutBranch, createBranch, listFiles, readCheckpointDiff } from "./git.ts";
 import { ADAPTERS } from "./harnesses.ts";
 import { createMcp, type Mcp } from "./mcp.ts";
+import { createPhones, type Phones } from "./phones.ts";
 import { ProviderError } from "./providers/ProviderAdapter.ts";
 import { ProviderRegistry } from "./providers/ProviderRegistry.ts";
 import { createRepoPanel } from "./repoPanel.ts";
@@ -65,6 +66,7 @@ export class SessionManager extends Context.Service<
     readonly terminals: Terminals;
     readonly browsers: Browsers;
     readonly devices: Devices;
+    readonly phones: Phones;
     readonly mcp: Mcp;
     /**
      * A thread's transcript: what was missed since `after`, or the latest `turnLimit` turns.
@@ -149,6 +151,12 @@ const make = Effect.gen(function* () {
   const devices = createDevices((threadId, deviceId) =>
     publish(RuntimeEvent.cases["thread.device"].make({ threadId, deviceId })),
   );
+
+  const phones = yield* createPhones({
+    isRemoteAccessOn: Effect.map(settingsStore.get, (settings) => settings.remoteAccess === true),
+    onChanged: (paired) =>
+      publish(RuntimeEvent.cases["phones.updated"].make({ phones: [...paired] })),
+  });
 
   const skills = yield* createSkillCatalog({
     readSkills: (provider, cwd) =>
@@ -512,6 +520,8 @@ const make = Effect.gen(function* () {
         "browser.respond": () => Effect.void,
         "device.list": () => Effect.void,
         "device.attach": () => Effect.void,
+        "pairing.start": () => Effect.void,
+        "phone.unpair": ({ phoneId }) => phones.unpair(phoneId),
         "settings.update": (command) =>
           Effect.gen(function* () {
             // A different binary, config dir or env can mean another version or account.
@@ -552,12 +562,14 @@ const make = Effect.gen(function* () {
         providers: yield* providerRegistry.list,
         threads: [...threads.values()].map((entry) => entry.info),
         terminals: terminals.list(),
+        phones: yield* phones.list,
         live,
       };
     }),
     terminals,
     browsers,
     devices,
+    phones,
     mcp,
     readThread,
     readOlder,

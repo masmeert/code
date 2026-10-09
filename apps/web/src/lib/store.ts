@@ -1229,6 +1229,7 @@ function onFrame(connection: Connection, frame: ServerFrame) {
     "project.cloned": resolveReply,
     "device.listed": resolveReply,
     "device.attached": resolveReply,
+    "pairing.started": resolveReply,
     "terminal.snapshot": ({ threadId, terminalId, data }) =>
       screens.get(getScreenKey(threadId, terminalId))?.reset(data),
     "terminal.output": ({ threadId, terminalId, data }) =>

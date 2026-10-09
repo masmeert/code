@@ -250,6 +250,10 @@ export const ClientCommand = Schema.TaggedUnion({
     permission: Schema.optional(PermissionLevel),
     answers: Schema.optional(UserAnswers),
   },
+  /** Starts a one-time pairing for a phone; answered with `pairing.started`. Desktop only. */
+  "pairing.start": { requestId: Schema.String },
+  /** Revokes the phone's token and closes its connections. Desktop only. */
+  "phone.unpair": { phoneId: Schema.String },
   "settings.update": { settings: Settings },
   "project.remove": { projectId: Schema.String },
   "providers.refresh": {},

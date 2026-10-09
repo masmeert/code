@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { BrowserAction } from "./browser.ts";
 import { Device, DeviceHub } from "./devices.ts";
 import { RuntimeEvent, StoredEvent } from "./events.ts";
+import { PairedPhone, PairingOffer } from "./phones.ts";
 import { Project, ProjectConfig } from "./projects.ts";
 import { ProviderStatus } from "./providers.ts";
 import { Settings } from "./settings.ts";
@@ -29,6 +30,7 @@ export const ServerFrame = Schema.TaggedUnion({
     providers: Schema.Array(ProviderStatus),
     threads: Schema.Array(ThreadInfo),
     terminals: Schema.Array(TerminalInfo),
+    phones: Schema.Array(PairedPhone),
     /** The daemon runs as root, so Full access lets agents change anything on its machine. */
     root: Schema.Boolean,
     /** Its `PROTOCOL_VERSION`; missing from daemons older than the check. */
@@ -85,6 +87,12 @@ export const ServerFrame = Schema.TaggedUnion({
   "image.signed": {
     requestId: Schema.String,
     url: Schema.NullOr(Schema.String),
+  },
+  /** Answers `pairing.start`: the offer to show, or why a phone can't pair, like Tailscale not running. */
+  "pairing.started": {
+    requestId: Schema.String,
+    offer: Schema.NullOr(PairingOffer),
+    error: Schema.NullOr(Schema.String),
   },
   "project.cloned": {
     requestId: Schema.String,

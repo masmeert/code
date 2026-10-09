@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { GitAction, RepoStatus, SourceControlStatus } from "./git.ts";
+import { PairedPhone } from "./phones.ts";
 import { Project } from "./projects.ts";
 import {
   AuthFlow,
@@ -235,6 +236,8 @@ export const RuntimeEvent = Schema.TaggedUnion({
   "project.added": { project: Project },
   "project.removed": { projectId: Schema.String },
   "providers.updated": { providers: Schema.Array(ProviderStatus) },
+  /** A phone paired, unpaired or connected. */
+  "phones.updated": { phones: Schema.Array(PairedPhone) },
   /** Local branches of the repo at `path`; `error` is set when a checkout failed. */
   "git.branches": {
     path: Schema.String,
