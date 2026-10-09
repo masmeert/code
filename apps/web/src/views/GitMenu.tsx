@@ -4,6 +4,8 @@ import {
   MorphPopoverMenu,
 } from "@masscode/ui/motion/popover-morph";
 import { cn } from "@masscode/ui/lib/utils";
+import { Button } from "@masscode/ui/motion/button/base";
+import { SOURCE_CONTROL_LABEL } from "@/components/source-control-logo";
 import { ClientCommand, MergeMethod, type GitAction } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import {
@@ -106,6 +108,15 @@ export function GitMenu({
   const textarea = useRef<HTMLTextAreaElement>(null);
   const mergeButton = useRef<HTMLButtonElement>(null);
 
+  function openPanel(next: Panel) {
+    setPanel(next);
+    setIsConfirmingDelete(false);
+    if (next === "commit") requestAnimationFrame(() => textarea.current?.focus());
+    if (next === "merge-into-base") requestAnimationFrame(() => mergeButton.current?.focus());
+    if (next === "merge") setMergeMethod(defaultMergeMethod ?? readLastMergeMethod());
+    if (next) send(ClientCommand.cases["git.status"].make({ path: cwd }));
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(
       () => send(ClientCommand.cases["git.status"].make({ path: cwd })),
@@ -124,7 +135,7 @@ export function GitMenu({
     if (!repo.error) {
       if (repo.action === "commit" || repo.action === "commit-push") setMessage("");
       // Back to the menu, where deleting the merged thread is offered.
-      setPanel(repo.action === "merge-into-base" ? "menu" : null);
+      openPanel(repo.action === "merge-into-base" ? "menu" : null);
     } else if (repo.status?.changes === 0) {
       // The commit landed even though the push after it failed.
       setMessage("");
@@ -132,14 +143,6 @@ export function GitMenu({
   });
 
   useEffect(() => resolvePendingAction(), [repo]);
-
-  useEffect(() => {
-    if (panel === "commit") requestAnimationFrame(() => textarea.current?.focus());
-    if (panel === "merge-into-base") requestAnimationFrame(() => mergeButton.current?.focus());
-    setIsConfirmingDelete(false);
-    if (panel === "merge") setMergeMethod(defaultMergeMethod ?? readLastMergeMethod());
-    if (panel) send(ClientCommand.cases["git.status"].make({ path: cwd }));
-  }, [panel, cwd, defaultMergeMethod]);
 
   const status = repo?.status;
   if (!repo || !status) return null;
@@ -198,35 +201,50 @@ export function GitMenu({
     }
   }
 
-  // With nothing to commit, the main button pushes, or opens the branch's pull request (pushing first).
-  const primaryOpensPullRequest = status.changes === 0 && canCreatePullRequest;
-  const primaryPushes = status.changes === 0 && canPush && !primaryOpensPullRequest;
-  // Nothing left to do locally: the main button shows the pull request.
-  const primaryViewsPullRequest =
-    status.changes === 0 && !canPush && !primaryOpensPullRequest && isPullRequestOpen;
-  // Without a pull request to go through, a worktree's next step is merging it locally.
-  const primaryMerges =
-    canMergeIntoBase && !primaryOpensPullRequest && !primaryPushes && !primaryViewsPullRequest;
-
-  function runPrimaryAction() {
-    if (primaryOpensPullRequest) runGitAction("pull-request");
-    else if (primaryPushes) runGitAction("push");
-    else if (primaryViewsPullRequest) window.open(pullRequest!.url, "_blank", "noreferrer");
-    else if (primaryMerges) setPanel(panel === "merge-into-base" ? null : "merge-into-base");
-    else setPanel(panel === "commit" ? null : "commit");
-  }
-
-  const primaryLabel = primaryOpensPullRequest
-    ? canPush || !status.upstream
-      ? `Push & create ${pullRequestName}`
-      : `Create ${pullRequestName}`
-    : primaryPushes
-      ? "Push"
-      : primaryViewsPullRequest
-        ? `View ${pullRequestName}`
-        : primaryMerges
-          ? `Merge into ${base!.branch}`
-          : "Commit";
+  // With nothing to commit, the main button opens the branch's pull request (pushing first), or
+  // pushes, or shows the open pull request. Without a pull request to go through, a worktree's
+  // next step is merging it locally.
+  const primary =
+    status.changes === 0 && canCreatePullRequest
+      ? {
+          icon: GitPullRequestArrow,
+          label:
+            canPush || !status.upstream
+              ? `Push & create ${pullRequestName}`
+              : `Create ${pullRequestName}`,
+          title: `Open a ${pullRequestName} for ${status.branch} into ${status.defaultBranch}`,
+          run: () => runGitAction("pull-request"),
+        }
+      : status.changes === 0 && canPush
+        ? {
+            icon: ArrowUp,
+            label: "Push",
+            title: "Push commits",
+            run: () => runGitAction("push"),
+            count: status.upstream ? status.ahead : undefined,
+          }
+        : status.changes === 0 && isPullRequestOpen
+          ? {
+              icon: ExternalLink,
+              label: `View ${pullRequestName}`,
+              title: `Open #${pullRequest.number} on ${SOURCE_CONTROL_LABEL[status.sourceControl ?? "github"]}`,
+              run: () => window.open(pullRequest.url, "_blank", "noreferrer"),
+            }
+          : canMergeIntoBase
+            ? {
+                icon: GitMerge,
+                label: `Merge into ${base.branch}`,
+                title: `Merge ${status.branch} into ${base.branch}`,
+                run: () => openPanel(panel === "merge-into-base" ? null : "merge-into-base"),
+              }
+            : {
+                icon: GitCommitHorizontal,
+                label: "Commit",
+                title: status.changes
+                  ? `Commit ${status.changes} changed ${status.changes === 1 ? "file" : "files"}`
+                  : "Nothing to commit",
+                run: status.changes ? () => openPanel(panel === "commit" ? null : "commit") : null,
+              };
 
   // An empty message is written by the commit model first, which takes a moment.
   const pendingLabel =
@@ -241,51 +259,24 @@ export function GitMenu({
   ) : null;
 
   return (
-    <MorphPopover open={panel !== null} onOpenChange={(isOpen) => !isOpen && setPanel(null)}>
+    <MorphPopover open={panel !== null} onOpenChange={(isOpen) => !isOpen && openPanel(null)}>
       <div className="flex h-7 items-stretch overflow-hidden rounded-lg border border-border text-muted-foreground">
         <button
           type="button"
-          onClick={runPrimaryAction}
-          disabled={
-            !!pending ||
-            (!canCommit &&
-              !primaryPushes &&
-              !primaryOpensPullRequest &&
-              !primaryViewsPullRequest &&
-              !primaryMerges)
-          }
-          title={
-            primaryOpensPullRequest
-              ? `Open a ${pullRequestName} for ${status.branch} into ${status.defaultBranch}`
-              : primaryViewsPullRequest
-                ? `Open #${pullRequest!.number} on ${status.sourceControl === "gitlab" ? "GitLab" : "GitHub"}`
-                : primaryMerges
-                  ? `Merge ${status.branch} into ${base!.branch}`
-                  : primaryPushes
-                    ? "Push commits"
-                    : status.changes
-                      ? `Commit ${status.changes} changed ${status.changes === 1 ? "file" : "files"}`
-                      : "Nothing to commit"
-          }
+          onClick={() => primary.run?.()}
+          disabled={!!pending || !primary.run}
+          title={primary.title}
           className="flex items-center gap-1.5 pr-2.5 pl-2 text-xs font-medium transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-50"
         >
           {pending ? (
             <LoaderCircle className="size-4 animate-spin" />
-          ) : primaryOpensPullRequest ? (
-            <GitPullRequestArrow className="size-4" />
-          ) : primaryViewsPullRequest ? (
-            <ExternalLink className="size-4" />
-          ) : primaryMerges ? (
-            <GitMerge className="size-4" />
-          ) : primaryPushes ? (
-            <ArrowUp className="size-4" />
           ) : (
-            <GitCommitHorizontal className="size-4" />
+            <primary.icon className="size-4" />
           )}
           {/* Collapses to the icon when the thread pane is narrow; the header is the container. */}
-          <span className="@max-md:sr-only">{pending ? pendingLabel : primaryLabel}</span>
-          {!pending && primaryPushes && status.upstream ? (
-            <span className="font-mono tabular-nums opacity-70">{status.ahead}</span>
+          <span className="@max-md:sr-only">{pending ? pendingLabel : primary.label}</span>
+          {!pending && primary.count !== undefined ? (
+            <span className="font-mono tabular-nums opacity-70">{primary.count}</span>
           ) : null}
         </button>
         <button
@@ -293,7 +284,7 @@ export function GitMenu({
           aria-label="Git actions"
           aria-haspopup="menu"
           aria-expanded={panel === "menu"}
-          onClick={() => setPanel(panel === "menu" ? null : "menu")}
+          onClick={() => openPanel(panel === "menu" ? null : "menu")}
           className={cn(
             "grid w-6 place-items-center border-l border-border transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:bg-muted/60",
             panel === "menu" && "bg-muted/60 text-foreground",
@@ -333,21 +324,23 @@ export function GitMenu({
             </p>
             {errorNote}
             <div className="flex justify-end gap-1.5">
-              <button
-                type="button"
-                onClick={() => setPanel(null)}
-                className="h-7 rounded-lg border border-border px-2.5 text-xs font-medium text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2.5"
+                onClick={() => openPanel(null)}
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
                 ref={mergeButton}
                 type="submit"
                 disabled={!canMergeIntoBase}
-                className="h-7 rounded-lg bg-foreground px-2.5 text-xs font-medium text-background transition-opacity outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                size="sm"
+                className="h-7 px-2.5"
               >
                 {pending === "merge-into-base" ? pendingLabel : "Merge"}
-              </button>
+              </Button>
             </div>
           </form>
         ) : panel === "merge" && pullRequest ? (
@@ -380,20 +373,17 @@ export function GitMenu({
             </div>
             {errorNote}
             <div className="flex justify-end gap-1.5">
-              <button
-                type="button"
-                onClick={() => setPanel(null)}
-                className="h-7 rounded-lg border border-border px-2.5 text-xs font-medium text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2.5"
+                onClick={() => openPanel(null)}
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={!!pending}
-                className="h-7 rounded-lg bg-foreground px-2.5 text-xs font-medium text-background transition-opacity outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-              >
+              </Button>
+              <Button type="submit" disabled={!!pending} size="sm" className="h-7 px-2.5">
                 {pending === "merge" ? pendingLabel : MERGE_LABEL[mergeMethod]}
-              </button>
+              </Button>
             </div>
           </form>
         ) : panel === "commit" ? (
@@ -425,30 +415,32 @@ export function GitMenu({
             {errorNote}
             <div className="flex justify-end gap-1.5">
               {status.hasRemote && !status.detached ? (
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  size="sm"
                   title="⌘⇧↩"
                   disabled={!canCommit}
                   onClick={() => runGitAction("commit-push")}
-                  className="h-7 rounded-lg border border-border px-2.5 text-xs font-medium text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                  className="h-7 px-2.5"
                 >
                   Commit & push
-                </button>
+                </Button>
               ) : null}
-              <button
+              <Button
                 type="submit"
                 title="⌘↩"
                 disabled={!canCommit}
-                className="h-7 rounded-lg bg-foreground px-2.5 text-xs font-medium text-background transition-opacity outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                size="sm"
+                className="h-7 px-2.5"
               >
                 {pending === "commit" || pending === "commit-push" ? pendingLabel : "Commit"}
-              </button>
+              </Button>
             </div>
           </form>
         ) : (
           <MorphPopoverMenu>
             <MenuItem
-              onClick={() => setPanel("commit")}
+              onClick={() => openPanel("commit")}
               disabled={!canCommit}
               hint={status.changes || undefined}
             >
@@ -479,7 +471,7 @@ export function GitMenu({
                 </MenuItem>
               ) : (
                 <MenuItem
-                  onClick={() => setPanel("merge-into-base")}
+                  onClick={() => openPanel("merge-into-base")}
                   disabled={!canMergeIntoBase}
                   hint={
                     base.conflicts.length > 0
@@ -504,7 +496,7 @@ export function GitMenu({
                     href={pullRequest.url}
                     target="_blank"
                     rel="noreferrer"
-                    onClick={() => setPanel(null)}
+                    onClick={() => openPanel(null)}
                     className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:bg-muted/60 [&_svg]:size-4 [&_svg]:text-muted-foreground"
                   >
                     <ExternalLink />
@@ -514,7 +506,7 @@ export function GitMenu({
                     </span>
                   </a>
                   <MenuItem
-                    onClick={() => setPanel("merge")}
+                    onClick={() => openPanel("merge")}
                     disabled={!!pending || pullRequest.state === "draft"}
                     hint={pullRequest.state === "draft" ? "draft" : undefined}
                   >
