@@ -3,7 +3,7 @@ import {
   RuntimeEvent,
   type PageInfo,
   LimitStop,
-  type ProviderKind,
+  ProviderKind,
   QueuedMessage,
   type SearchHit,
   type StoredEvent,
@@ -31,13 +31,15 @@ export interface ThreadHome {
 }
 
 /** Per harness, the conversation id to resume it from. */
-export type ResumeTokens = Partial<Record<ProviderKind, string>>;
+const ResumeTokens = Schema.Record(ProviderKind, Schema.optionalKey(Schema.String));
+export type ResumeTokens = typeof ResumeTokens.Type;
 
 /**
  * Per harness not caught up on the thread, the stored event id its own conversation goes up
  * to; 0 for one that has none. The harness in use is missing unless it has a handoff coming.
  */
-export type Coverage = Partial<Record<ProviderKind, number>>;
+const Coverage = Schema.Record(ProviderKind, Schema.optionalKey(Schema.Number));
+export type Coverage = typeof Coverage.Type;
 
 interface StoredThread {
   readonly info: ThreadInfo;
@@ -183,23 +185,8 @@ const decodeUsage = Schema.decodeUnknownOption(Schema.fromJsonString(ThreadUsage
 const decodeQueue = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(QueuedMessage)));
 const decodeLimitStop = Schema.decodeUnknownOption(Schema.fromJsonString(LimitStop));
 
-const decodeTokens = Schema.decodeUnknownOption(
-  Schema.fromJsonString(
-    Schema.Struct({
-      claude: Schema.optionalKey(Schema.String),
-      codex: Schema.optionalKey(Schema.String),
-    }),
-  ),
-);
-
-const decodeCoverage = Schema.decodeUnknownOption(
-  Schema.fromJsonString(
-    Schema.Struct({
-      claude: Schema.optionalKey(Schema.Number),
-      codex: Schema.optionalKey(Schema.Number),
-    }),
-  ),
-);
+const decodeTokens = Schema.decodeUnknownOption(Schema.fromJsonString(ResumeTokens));
+const decodeCoverage = Schema.decodeUnknownOption(Schema.fromJsonString(Coverage));
 
 /** Per-harness tokens, with the one stored before there were several counted for the thread's harness. */
 function legacyTokens(
@@ -207,8 +194,9 @@ function legacyTokens(
 ): ResumeTokens {
   const tokens: ResumeTokens =
     row.resume_tokens === null ? {} : Option.getOrElse(decodeTokens(row.resume_tokens), () => ({}));
-  if (row.resume_token !== null) tokens[row.provider] ??= row.resume_token;
-  return tokens;
+  return row.resume_token === null || tokens[row.provider] !== undefined
+    ? tokens
+    : { ...tokens, [row.provider]: row.resume_token };
 }
 
 const make = Effect.acquireRelease(
