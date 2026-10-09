@@ -6,6 +6,8 @@ import { PortalHost } from "@rn-primitives/portal";
 import { useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import { SafeAreaListener } from "react-native-safe-area-context";
+import { Uniwind } from "uniwind";
 
 // The desktop's font, for the native headers too.
 const FONTS = {
@@ -47,23 +49,26 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView>
-      <KeyboardProvider>
-        <ThemeProvider value={isDark ? DARK : LIGHT}>
-          <StatusBar style="auto" />
-          <Stack
-            screenOptions={{ headerShadowVisible: false, headerBackButtonDisplayMode: "minimal" }}
-          >
-            <Stack.Screen name="index" options={{ title: "Threads", headerLargeTitle: true }} />
-            <Stack.Screen name="hosts" options={{ title: "Computers" }} />
-            <Stack.Screen
-              name="pair"
-              options={{ title: "Pair a computer", presentation: "modal" }}
-            />
-            <Stack.Screen name="thread/[hostId]/[threadId]" options={{ title: "" }} />
-          </Stack>
-          <PortalHost />
-        </ThemeProvider>
-      </KeyboardProvider>
+      {/* Uniwind's safe-area classes (pb-safe…) read the insets it's handed here. */}
+      <SafeAreaListener onChange={({ insets }) => Uniwind.updateInsets(insets)}>
+        <KeyboardProvider>
+          <ThemeProvider value={isDark ? DARK : LIGHT}>
+            <StatusBar style="auto" />
+            <Stack
+              screenOptions={{ headerShadowVisible: false, headerBackButtonDisplayMode: "minimal" }}
+            >
+              <Stack.Screen name="index" options={{ title: "Threads", headerLargeTitle: true }} />
+              <Stack.Screen name="hosts" options={{ title: "Computers" }} />
+              <Stack.Screen
+                name="pair"
+                options={{ title: "Pair a computer", presentation: "modal" }}
+              />
+              <Stack.Screen name="thread/[hostId]/[threadId]" options={{ title: "" }} />
+            </Stack>
+            <PortalHost />
+          </ThemeProvider>
+        </KeyboardProvider>
+      </SafeAreaListener>
     </GestureHandlerRootView>
   );
 }

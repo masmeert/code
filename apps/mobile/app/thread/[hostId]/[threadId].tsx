@@ -1,10 +1,12 @@
 import { formatProjectLabel, isShowingWork, toTurns } from "@masscode/client";
 import { ClientCommand } from "@masscode/contracts";
-import { LegendList } from "@legendapp/list/react-native";
+import { KeyboardAwareLegendList, useKeyboardChatComposerInset } from "@legendapp/list/keyboard";
+import type { LegendListRef } from "@legendapp/list/react-native";
 import { BlurView } from "expo-blur";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { type ComponentRef, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, View } from "react-native";
+import { type ComponentRef, useEffect, useMemo, useRef } from "react";
+import { ActivityIndicator, Platform, View } from "react-native";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { withUniwind } from "uniwind";
 import { Composer } from "@/components/Composer.tsx";
 import { ProjectBadge } from "@/components/ProjectBadge.tsx";
@@ -21,9 +23,14 @@ export default function ThreadScreen() {
   const thread = host?.threads[threadId];
   const transcript = useStore((state) => state.transcripts[transcriptKey(hostId, threadId)]);
   const turns = useMemo(() => toTurns(transcript?.items ?? []), [transcript?.items]);
-  const screen = useRef<ComponentRef<typeof View>>(null);
-  // How far down the window the screen starts (below the header); the keyboard is measured from the top.
-  const [screenTop, setScreenTop] = useState(0);
+  const list = useRef<LegendListRef>(null);
+  const composer = useRef<ComponentRef<typeof View>>(null);
+
+  // The composer floats over the transcript; its height is how far the transcript's end sits above the bottom.
+  const { contentInsetEndAdjustment, onComposerLayout } = useKeyboardChatComposerInset(
+    list,
+    composer,
+  );
 
   useEffect(() => openThread(hostId, threadId), [hostId, threadId]);
 
@@ -51,108 +58,109 @@ export default function ThreadScreen() {
   const isThinking = thread.status === "running" && !isShowingWork(transcript?.items ?? []);
 
   return (
-    <View
-      ref={screen}
-      onLayout={() => screen.current?.measureInWindow((_x, y) => setScreenTop(y))}
-      className="flex-1"
-    >
-      <KeyboardAvoidingView
-        behavior="padding"
-        keyboardVerticalOffset={screenTop}
-        className="flex-1 bg-background"
-      >
-        <Stack.Screen
-          options={{
-            // iOS draws its glass bar over the transcript, which scrolls on underneath.
-            headerTransparent: Platform.OS === "ios",
-            headerBackground:
-              Platform.OS === "ios"
-                ? () => (
-                    <StyledBlurView
-                      tint="systemChromeMaterial"
-                      intensity={100}
-                      className="flex-1 border-b-[0.5px] border-border-strong"
-                    />
-                  )
-                : undefined,
-            headerTitle: () => (
-              <View className="max-w-60 items-center gap-0.5">
-                <Text numberOfLines={1} className="text-[15px] leading-5 font-semibold">
-                  {thread.title || "New thread"}
-                </Text>
-                {project ? (
-                  <View className="flex-row items-center gap-1">
-                    <ProjectBadge project={project} />
-                    <Text
-                      numberOfLines={1}
-                      className="shrink text-xs leading-4 text-muted-foreground"
-                    >
-                      {formatProjectLabel(project.name, null)}
-                    </Text>
-                    {thread.branch ? (
-                      <>
-                        <View className="mx-1 h-3 w-px bg-border-strong" />
-                        <Text
-                          numberOfLines={1}
-                          className="shrink text-xs leading-4 text-muted-foreground/70"
-                        >
-                          {thread.branch}
-                        </Text>
-                      </>
-                    ) : null}
-                  </View>
-                ) : null}
-              </View>
-            ),
-          }}
-        />
-        {/* First in the screen even while loading, so iOS finds it and blurs it under the glass header. */}
-        <LegendList
-          data={turns}
-          keyExtractor={(turn) => turn.id}
-          renderItem={({ item }) => (
-            <TranscriptTurn hostId={hostId} threadId={threadId} turn={item} />
-          )}
-          estimatedItemSize={120}
-          contentInsetAdjustmentBehavior="automatic"
-          initialScrollAtEnd
-          maintainScrollAtEnd
-          alignItemsAtEnd
-          onStartReached={() => loadOlder(hostId, threadId)}
-          ListEmptyComponent={
-            transcript?.status === "loading" ? (
-              <View className="items-center py-8">
-                <ActivityIndicator />
-              </View>
-            ) : null
-          }
-          ListHeaderComponent={
-            transcript?.loadingOlder ? (
-              <View className="items-center py-3">
-                <ActivityIndicator size="small" />
-              </View>
-            ) : null
-          }
-          ListFooterComponent={
-            isThinking ? (
-              <Pulsing className="px-4 py-2">
-                <Text className="text-sm text-muted-foreground">Thinking…</Text>
-              </Pulsing>
-            ) : null
-          }
-        />
-        {host.connection === "connected" ? null : (
-          <Text className="px-4 py-1 text-center text-xs text-warning">
-            Not connected to {host.paired.name}; showing what was last loaded.
-          </Text>
+    <View className="flex-1 bg-background">
+      <Stack.Screen
+        options={{
+          // iOS draws its glass bar over the transcript, which scrolls on underneath.
+          headerTransparent: Platform.OS === "ios",
+          headerBackground:
+            Platform.OS === "ios"
+              ? () => (
+                  <StyledBlurView
+                    tint="systemChromeMaterial"
+                    intensity={100}
+                    className="flex-1 border-b-[0.5px] border-border-strong"
+                  />
+                )
+              : undefined,
+          headerTitle: () => (
+            <View className="max-w-60 items-center gap-0.5">
+              <Text numberOfLines={1} className="text-[15px] leading-5 font-semibold">
+                {thread.title || "New thread"}
+              </Text>
+              {project ? (
+                <View className="flex-row items-center gap-1">
+                  <ProjectBadge project={project} />
+                  <Text
+                    numberOfLines={1}
+                    className="shrink text-xs leading-4 text-muted-foreground"
+                  >
+                    {formatProjectLabel(project.name, null)}
+                  </Text>
+                  {thread.branch ? (
+                    <>
+                      <View className="mx-1 h-3 w-px bg-border-strong" />
+                      <Text
+                        numberOfLines={1}
+                        className="shrink text-xs leading-4 text-muted-foreground/70"
+                      >
+                        {thread.branch}
+                      </Text>
+                    </>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+          ),
+        }}
+      />
+      {/* First in the screen even while loading, so iOS finds it and blurs it under the glass header. */}
+      <KeyboardAwareLegendList
+        ref={list}
+        data={turns}
+        keyExtractor={(turn) => turn.id}
+        renderItem={({ item }) => (
+          <TranscriptTurn hostId={hostId} threadId={threadId} turn={item} />
         )}
-        <Composer
-          hostId={hostId}
-          thread={thread}
-          settings={host.settings}
-          providers={host.providers}
-        />
-      </KeyboardAvoidingView>
+        estimatedItemSize={120}
+        contentInsetAdjustmentBehavior="automatic"
+        contentInsetEndAdjustment={contentInsetEndAdjustment}
+        // Opening the keyboard lifts the transcript only when its end is showing, as ChatGPT does.
+        keyboardLiftBehavior="whenAtEnd"
+        keyboardShouldPersistTaps="handled"
+        initialScrollAtEnd
+        maintainScrollAtEnd
+        alignItemsAtEnd
+        onStartReached={() => loadOlder(hostId, threadId)}
+        ListEmptyComponent={
+          transcript?.status === "loading" ? (
+            <View className="items-center py-8">
+              <ActivityIndicator />
+            </View>
+          ) : null
+        }
+        ListHeaderComponent={
+          transcript?.loadingOlder ? (
+            <View className="items-center py-3">
+              <ActivityIndicator size="small" />
+            </View>
+          ) : null
+        }
+        ListFooterComponent={
+          isThinking ? (
+            <Pulsing className="px-4 py-2">
+              <Text className="text-sm text-muted-foreground">Thinking…</Text>
+            </Pulsing>
+          ) : null
+        }
+      />
+      <View pointerEvents="box-none" className="absolute inset-x-0 bottom-0">
+        <KeyboardStickyView>
+          <View ref={composer} onLayout={onComposerLayout} className="bg-background">
+            {host.connection === "connected" ? null : (
+              <Text className="px-4 pt-2 text-center text-xs text-warning">
+                Not connected to {host.paired.name}; showing what was last loaded.
+              </Text>
+            )}
+            <Composer
+              hostId={hostId}
+              thread={thread}
+              settings={host.settings}
+              providers={host.providers}
+            />
+          </View>
+        </KeyboardStickyView>
+      </View>
     </View>
   );
 }

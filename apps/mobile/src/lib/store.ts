@@ -22,6 +22,7 @@ import {
 import * as Schema from "effect/Schema";
 import * as SecureStore from "expo-secure-store";
 import ReconnectingWebSocket from "partysocket/ws";
+import * as Network from "expo-network";
 import { AppState } from "react-native";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -404,4 +405,9 @@ export function loadOlder(hostId: string, threadId: string) {
 // iOS suspends the app in the background and its sockets die; coming back reconnects at once.
 AppState.addEventListener("change", (status) => {
   if (status === "active") reconnectAll();
+});
+
+// A new network (Wi-Fi to cellular, Tailscale back on) can reach hosts the old one couldn't.
+Network.addNetworkStateListener(({ isConnected }) => {
+  if (isConnected) reconnectAll();
 });
