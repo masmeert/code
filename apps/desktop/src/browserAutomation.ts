@@ -168,11 +168,15 @@ async function settle(guest: WebContents, milliseconds: number) {
   await new Promise((resolve) => setTimeout(resolve, 300));
   if (!guest.isLoading()) return;
 
+  let handleStopLoading = () => {};
   await withTimeout(
-    new Promise<void>((resolve) => guest.once("did-stop-loading", () => resolve())),
+    new Promise<void>((resolve) => {
+      handleStopLoading = resolve;
+      guest.once("did-stop-loading", handleStopLoading);
+    }),
     milliseconds,
     "",
-  ).catch(() => {});
+  ).catch(() => guest.off("did-stop-loading", handleStopLoading));
 }
 
 async function capture(guest: WebContents) {
