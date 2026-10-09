@@ -197,8 +197,8 @@ function start({
     // The plan's limit refused the turn; Codex says so in an error before the turn fails.
     let isLimited = false;
     // Subagents run as Codex threads of their own, and their notifications arrive here tagged with
-    // that thread's id. Each maps to the Agent row it shows under, `open` until it ends; a subagent's
-    // own subagents are `nested` and fold into the same row.
+    // that thread's id. Each maps to the Agent row it shows under, `isOpen` until it ends; a subagent's
+    // own subagents are `isNested` and fold into the same row.
     const subagents = new Map<
       string,
       {

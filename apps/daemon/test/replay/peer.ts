@@ -79,10 +79,10 @@ export const decodeFixture = Schema.decodeUnknownSync(Schema.fromJsonString(Fixt
 const decodeRecorded = Schema.decodeUnknownSync(Schema.fromJsonString(Recorded));
 
 /** Every field of `pattern` is in `value`, recursively. */
-export function matches(pattern: Schema.Json, value: Schema.Json | undefined): boolean {
+export function isMatch(pattern: Schema.Json, value: Schema.Json | undefined): boolean {
   if (!isObject(pattern) || Array.isArray(pattern)) return pattern === value;
   if (value === undefined || !isObject(value) || Array.isArray(value)) return false;
-  return Object.entries(pattern).every(([key, expected]) => matches(expected, value[key]));
+  return Object.entries(pattern).every(([key, expected]) => isMatch(expected, value[key]));
 }
 
 function isRequest(frame: Frame) {
@@ -90,7 +90,7 @@ function isRequest(frame: Frame) {
 }
 
 /** The response to `request` in its own protocol. */
-function answer(request: Frame, outcome: { result: Schema.Json } | { error: string }): Frame {
+function buildAnswer(request: Frame, outcome: { result: Schema.Json } | { error: string }): Frame {
   if (Schema.is(ControlRequest)(request))
     return {
       type: "control_response",
@@ -106,7 +106,7 @@ function answer(request: Frame, outcome: { result: Schema.Json } | { error: stri
     : { id, result: outcome.result };
 }
 
-function replay(fixturePath: string) {
+function runReplay(fixturePath: string) {
   const logPath = `${fixturePath}.log.jsonl`;
   const spawnIndex = existsSync(logPath)
     ? readFileSync(logPath, "utf8")
@@ -132,7 +132,7 @@ function replay(fixturePath: string) {
 
   const inbox: Array<Frame> = [];
   let wake: (() => void) | null = null;
-  let stdinClosed = false;
+  let isStdinClosed = false;
 
   const lines = createInterface({ input: process.stdin });
   lines.on("line", (line) => {
@@ -144,17 +144,17 @@ function replay(fixturePath: string) {
     wake?.();
   });
   lines.on("close", () => {
-    stdinClosed = true;
+    isStdinClosed = true;
     wake?.();
   });
 
-  function write(frame: Frame) {
+  function writeFrame(frame: Frame) {
     process.stdout.write(`${JSON.stringify(frame)}\n`);
   }
 
-  async function next(): Promise<Frame | null> {
+  async function readNextFrame(): Promise<Frame | null> {
     while (inbox.length === 0) {
-      if (stdinClosed) return null;
+      if (isStdinClosed) return null;
       await new Promise<void>((resolve) => (wake = resolve));
       wake = null;
     }
@@ -168,25 +168,28 @@ function replay(fixturePath: string) {
     for (const step of steps) {
       if ("await" in step) {
         while (true) {
-          const frame = await next();
+          const frame = await readNextFrame();
           if (frame === null) process.exit(0);
 
-          if (matches(step.await, frame)) {
+          if (isMatch(step.await, frame)) {
             last = frame;
             if (step.as) awaited.set(step.as, frame);
             break;
           }
-          if (isRequest(frame)) write(answer(frame, { result: {} }));
+          if (isRequest(frame)) writeFrame(buildAnswer(frame, { result: {} }));
         }
       } else if ("reply" in step || "replyError" in step) {
         const request = step.to ? awaited.get(step.to) : last;
         if (!request) throw new Error(`replay peer: nothing awaited to answer (${step.to})`);
 
-        write(
-          answer(request, "reply" in step ? { result: step.reply } : { error: step.replyError }),
+        writeFrame(
+          buildAnswer(
+            request,
+            "reply" in step ? { result: step.reply } : { error: step.replyError },
+          ),
         );
       } else if ("send" in step) {
-        write(step.send);
+        writeFrame(step.send);
       } else if ("sleepMs" in step) {
         await new Promise((resolve) => setTimeout(resolve, step.sleepMs));
       } else {
@@ -198,14 +201,14 @@ function replay(fixturePath: string) {
 
     // Out of steps: idle like a CLI waiting for its next message, until stdin closes.
     while (true) {
-      const frame = await next();
+      const frame = await readNextFrame();
       if (frame === null) process.exit(0);
-      if (isRequest(frame)) write(answer(frame, { result: {} }));
+      if (isRequest(frame)) writeFrame(buildAnswer(frame, { result: {} }));
     }
   })();
 }
 
-function record(realBin: string, recordingPath: string) {
+function runRecording(realBin: string, recordingPath: string) {
   const args = process.argv.slice(2);
   const child = spawn(realBin, args, { stdio: ["pipe", "pipe", "inherit"] });
   process.stdin.pipe(child.stdin);
@@ -217,27 +220,27 @@ function record(realBin: string, recordingPath: string) {
     return;
   }
 
-  function log(entry: Recorded) {
+  function logEntry(entry: Recorded) {
     appendFileSync(recordingPath, `${JSON.stringify(entry)}\n`);
   }
 
   const pid = process.pid;
-  log({ pid, spawn: args });
+  logEntry({ pid, spawn: args });
   createInterface({ input: process.stdin }).on("line", (line) => {
-    if (line.trim()) log({ pid, out: decodeFrame(line) });
+    if (line.trim()) logEntry({ pid, out: decodeFrame(line) });
   });
   createInterface({ input: child.stdout }).on("line", (line) => {
-    if (line.trim()) log({ pid, in: decodeFrame(line) });
+    if (line.trim()) logEntry({ pid, in: decodeFrame(line) });
     process.stdout.write(`${line}\n`);
   });
   child.on("exit", (code) => {
-    log({ pid, exit: code });
+    logEntry({ pid, exit: code });
     process.exit(code ?? 1);
   });
 }
 
 /** What the adapter sent, as a wait for that kind of frame, named for the reply to find it by. */
-function awaitFor(frame: Frame): Step {
+function toAwaitStep(frame: Frame): Step {
   if (Schema.is(ControlRequest)(frame))
     return {
       await: { type: "control_request", request: { subtype: frame.request.subtype } },
@@ -252,7 +255,7 @@ function awaitFor(frame: Frame): Step {
 }
 
 /** What the CLI sent: a reply to something awaited, or a frame sent as recorded. */
-function replyOrSend(frame: Frame): Step {
+function toReplyOrSendStep(frame: Frame): Step {
   if (Schema.is(ControlResponse)(frame)) {
     const { request_id, response, error } = frame.response;
     return frame.response.subtype === "success"
@@ -281,8 +284,8 @@ export function toFixture(recorded: ReadonlyArray<Recorded>): Fixture {
     const steps = sessions.get(entry.pid);
     if (!steps) continue;
 
-    if ("out" in entry) steps.push(awaitFor(entry.out));
-    else if ("in" in entry) steps.push(replyOrSend(entry.in));
+    if ("out" in entry) steps.push(toAwaitStep(entry.out));
+    else if ("in" in entry) steps.push(toReplyOrSendStep(entry.in));
     else if (entry.exit !== 0 && entry.exit !== null) steps.push({ exit: entry.exit });
   }
 
@@ -300,9 +303,9 @@ if (import.meta.main) {
   if (process.argv[2] === "fixture" && process.argv[3]) {
     process.stdout.write(`${JSON.stringify(toFixture(readRecording(process.argv[3])), null, 2)}\n`);
   } else if (process.env.MASSCODE_REPLAY) {
-    replay(resolve(process.env.MASSCODE_REPLAY));
+    runReplay(resolve(process.env.MASSCODE_REPLAY));
   } else if (process.env.MASSCODE_REAL_BIN && process.env.MASSCODE_RECORD) {
-    record(process.env.MASSCODE_REAL_BIN, resolve(process.env.MASSCODE_RECORD));
+    runRecording(process.env.MASSCODE_REAL_BIN, resolve(process.env.MASSCODE_RECORD));
   } else {
     process.stderr.write(
       "replay peer: set MASSCODE_REPLAY, or MASSCODE_REAL_BIN and MASSCODE_RECORD\n",

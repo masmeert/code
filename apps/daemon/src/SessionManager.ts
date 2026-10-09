@@ -196,13 +196,13 @@ interface ThreadEntry {
    * Stop was pressed during the turn: the queue waits for the user instead of starting the next
    * message, and a turn still starting is interrupted as soon as it has.
    */
-  stopRequested: boolean;
+  isStopRequested: boolean;
   /** Tool calls made inside subagents: one ending isn't a point the main agent takes messages at. */
   readonly subagentTools: Set<string>;
   /** Access of the last message sent: the most the thread's agent can give threads it starts. */
   permission: PermissionLevel | null;
   /** Its new worktree's setup command is running, and messages queue until it ends. */
-  settingUp: boolean;
+  isSettingUp: boolean;
 }
 
 /** A read-only side conversation about one reply (BTW), never stored. */
@@ -211,7 +211,7 @@ interface SideChat {
   session: ProviderSession | null;
 }
 
-function newEntry(
+function createEntry(
   info: ThreadInfo,
   home: ThreadHome,
   resumeTokens: ResumeTokens = {},
@@ -230,22 +230,22 @@ function newEntry(
     lock: Semaphore.makeUnsafe(1),
     generation: 0,
     queue: info.queue ?? [],
-    stopRequested: false,
+    isStopRequested: false,
     subagentTools: new Set(),
     permission: null,
-    settingUp: false,
+    isSettingUp: false,
   };
 }
 
 /** Levels go from least to most access, so a higher rank gives more. */
-function permissionRank(level: PermissionLevel) {
+function getPermissionRank(level: PermissionLevel) {
   return PermissionLevel.literals.indexOf(level);
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The same id for the same caller and request, so a retried tool call finds what the first one made. */
-function requestUuid(caller: string, requestId: string) {
+function deriveRequestUuid(caller: string, requestId: string) {
   const hex = createHash("sha256").update(`${caller}\0${requestId}`).digest("hex");
 
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
@@ -259,11 +259,11 @@ const AGENT_GONE =
  * follow-up run, so a burst of refreshes costs at most two, and no caller gets a
  * result that started before it asked.
  */
-function coalesced<A>(load: (key: string) => Promise<A>) {
+function coalesceLoads<A>(load: (key: string) => Promise<A>) {
   const inFlight = new Map<string, Promise<A>>();
   const queued = new Map<string, Promise<A>>();
 
-  function run(key: string): Promise<A> {
+  function startLoad(key: string): Promise<A> {
     const promise: Promise<A> = load(key).finally(() => {
       if (inFlight.get(key) === promise) inFlight.delete(key);
     });
@@ -273,7 +273,7 @@ function coalesced<A>(load: (key: string) => Promise<A>) {
 
   return (key: string): Promise<A> => {
     const current = inFlight.get(key);
-    if (!current) return run(key);
+    if (!current) return startLoad(key);
 
     const next = queued.get(key);
     if (next) return next;
@@ -282,7 +282,7 @@ function coalesced<A>(load: (key: string) => Promise<A>) {
       .catch(() => undefined)
       .then(() => {
         queued.delete(key);
-        return run(key);
+        return startLoad(key);
       });
     queued.set(key, follow);
     return follow;
@@ -329,34 +329,34 @@ export class SessionManager extends Context.Service<
     readonly search: (query: string) => ReadonlyArray<SearchHit>;
     readonly shutdown: Effect.Effect<void>;
     /** Some thread's turn is going, the agent working or waiting on the user. */
-    readonly busy: () => boolean;
+    readonly hasActiveTurns: () => boolean;
   }
 >()("masscode/SessionManager") {}
 
-function fail(message: string) {
+function createError(message: string) {
   return new ProviderError({ provider: "none", message });
 }
 
 /** What the agent reads after the user runs a command from its reply. */
-function describeRun({ command, exitCode, output }: CommandRun) {
+function formatCommandRun({ command, exitCode, output }: CommandRun) {
   // Longer than any backtick run inside, so neither the command nor its output can close it early.
-  function fence(text: string) {
+  function buildFence(text: string) {
     return "`".repeat(Math.max(3, ...(text.match(/`+/g) ?? []).map((run) => run.length + 1)));
   }
 
-  const ran = `I ran this command from your reply, in the thread's folder:\n\n${fence(command)}bash\n${command}\n${fence(command)}`;
+  const ran = `I ran this command from your reply, in the thread's folder:\n\n${buildFence(command)}bash\n${command}\n${buildFence(command)}`;
   return output
-    ? `${ran}\n\nIt exited with code ${exitCode} and printed:\n\n${fence(output)}\n${output}\n${fence(output)}`
+    ? `${ran}\n\nIt exited with code ${exitCode} and printed:\n\n${buildFence(output)}\n${output}\n${buildFence(output)}`
     : `${ran}\n\nIt exited with code ${exitCode} and printed nothing.`;
 }
 
 /** The harness's name as the user set it in Settings, else its own; the same one the app shows. */
-function harnessName(settings: Settings, provider: ProviderKind) {
+function getHarnessName(settings: Settings, provider: ProviderKind) {
   return settings.providers[provider].displayName?.trim() || PROVIDER_NAME[provider];
 }
 
 /** A thread is named after its first message, like a chat title. */
-function titleFrom(text: string, fallback: string) {
+function deriveTitle(text: string, fallback: string) {
   const line = text.trim().split("\n")[0]!.trim();
   if (!line) return fallback;
 
@@ -391,7 +391,9 @@ function resolveAttachments(inputs: ReadonlyArray<AttachmentInput>) {
         ),
       ),
     catch: (error) =>
-      fail(`Couldn't attach files: ${error instanceof Error ? error.message : String(error)}`),
+      createError(
+        `Couldn't attach files: ${error instanceof Error ? error.message : String(error)}`,
+      ),
   });
 }
 
@@ -415,7 +417,7 @@ const make = Effect.gen(function* () {
   for (const { info, home, resumeTokens, coverage, shelveOverride, queue } of yield* store.load) {
     threads.set(
       info.id,
-      newEntry(
+      createEntry(
         {
           ...info,
           shelved: isShelved(info, shelveOverride, Date.now(), latestSettings),
@@ -430,8 +432,8 @@ const make = Effect.gen(function* () {
   }
 
   /** Set as the daemon goes away: agents still running then mustn't touch its state. */
-  let stopped = false;
-  yield* Effect.addFinalizer(() => Effect.sync(() => void (stopped = true)));
+  let isShuttingDown = false;
+  yield* Effect.addFinalizer(() => Effect.sync(() => void (isShuttingDown = true)));
 
   // Approvals pending when the daemon stopped died with their agent process.
   for (const [requestId, threadId] of store.listUnresolvedApprovals()) {
@@ -448,7 +450,7 @@ const make = Effect.gen(function* () {
     const text = store.readFirstUserMessage(entry.info.id);
     if (text === null) continue;
 
-    entry.info = { ...entry.info, title: titleFrom(text, entry.info.title) };
+    entry.info = { ...entry.info, title: deriveTitle(text, entry.info.title) };
     store.setMeta(entry.info.id, { title: entry.info.title, updatedAt: entry.info.updatedAt });
   }
 
@@ -480,14 +482,14 @@ const make = Effect.gen(function* () {
     });
   }
 
-  function retitle(entry: ThreadEntry, title: string) {
+  function setTitle(entry: ThreadEntry, title: string) {
     entry.info = { ...entry.info, title };
     store.setMeta(entry.info.id, { title, updatedAt: entry.info.updatedAt });
     refreshMeta(entry);
   }
 
   /** The agent switched into a worktree or back out of one: the thread's folder follows it. */
-  async function followAgent(entry: ThreadEntry, reported: string) {
+  async function followAgentCwd(entry: ThreadEntry, reported: string) {
     // The agent may report the home folder with its symlinks resolved.
     const [real, home] = await Promise.all([realpath(reported), realpath(entry.home.path)]).catch(
       () => [reported, entry.home.path],
@@ -503,7 +505,7 @@ const make = Effect.gen(function* () {
   }
 
   /** Marks activity on a thread: new message or finished turn. */
-  function touch(threadId: string) {
+  function markUpdated(threadId: string) {
     const entry = threads.get(threadId);
     if (!entry) return;
 
@@ -521,7 +523,7 @@ const make = Effect.gen(function* () {
 
     const batch = [...pendingDeltas.values()];
     pendingDeltas.clear();
-    for (const event of batch) emit(event);
+    for (const event of batch) recordAndPublish(event);
   }
 
   function publish(event: RuntimeEvent) {
@@ -536,11 +538,11 @@ const make = Effect.gen(function* () {
     }
 
     flushDeltas();
-    emit(event);
+    recordAndPublish(event);
   }
 
-  function emit(event: RuntimeEvent) {
-    if (stopped) return;
+  function recordAndPublish(event: RuntimeEvent) {
+    if (isShuttingDown) return;
 
     let id: number | null = null;
     if (isTextDelta(event)) {
@@ -576,10 +578,11 @@ const make = Effect.gen(function* () {
 
     if ("threadId" in event && event.threadId) {
       const entry = threads.get(event.threadId);
-      if (entry) trackLive(entry, event);
+      if (entry) trackLiveState(entry, event);
     }
 
-    if (RuntimeEvent.isAnyOf(["user.message", "turn.completed"])(event)) touch(event.threadId);
+    if (RuntimeEvent.isAnyOf(["user.message", "turn.completed"])(event))
+      markUpdated(event.threadId);
 
     if (RuntimeEvent.guards["settings.updated"](event)) {
       latestSettings = event.settings;
@@ -593,13 +596,14 @@ const make = Effect.gen(function* () {
   }
 
   /** Keeps the thread's in-flight tool call and pending request current, announcing each change. */
-  function trackLive(entry: ThreadEntry, event: RuntimeEvent) {
+  function trackLiveState(entry: ThreadEntry, event: RuntimeEvent) {
     const threadId = entry.info.id;
     const { activity, request } = entry.info;
-    const notRunning = RuntimeEvent.guards["thread.status"](event) && event.status !== "running";
+    const hasStoppedRunning =
+      RuntimeEvent.guards["thread.status"](event) && event.status !== "running";
     const nextActivity = RuntimeEvent.guards["tool.started"](event)
       ? { toolId: event.toolId, tool: event.name, summary: event.summary }
-      : notRunning ||
+      : hasStoppedRunning ||
           (RuntimeEvent.guards["tool.completed"](event) && event.toolId === activity?.toolId)
         ? undefined
         : activity;
@@ -659,7 +663,7 @@ const make = Effect.gen(function* () {
         Date.now() >= stop.resetsAt + LIMIT_RESET_GRACE_MS
       )
         Effect.runFork(
-          resumeAfterLimit(entry, stop.resumeAtReset).pipe(reportOn(entry), Effect.ignore),
+          resumeAfterLimit(entry, stop.resumeAtReset).pipe(reportErrorsOn(entry), Effect.ignore),
         );
     }
   }, 60_000);
@@ -700,7 +704,7 @@ const make = Effect.gen(function* () {
   function getEntry(threadId: string) {
     return Effect.suspend(() => {
       const entry = threads.get(threadId);
-      return entry ? Effect.succeed(entry) : Effect.fail(fail(`No thread ${threadId}`));
+      return entry ? Effect.succeed(entry) : Effect.fail(createError(`No thread ${threadId}`));
     });
   }
 
@@ -715,7 +719,7 @@ const make = Effect.gen(function* () {
   }
 
   /** The thread has run on more than one harness, so no single harness's conversation holds all of it. */
-  function switched(entry: ThreadEntry) {
+  function hasSwitchedHarness(entry: ThreadEntry) {
     return (
       Object.keys(entry.coverage).length > 0 ||
       Object.keys(entry.resumeTokens).some((provider) => provider !== entry.info.provider)
@@ -741,7 +745,7 @@ const make = Effect.gen(function* () {
           permission: options.permission,
           onResumeToken: (token) =>
             setResumeTokens(entry, { ...entry.resumeTokens, [entry.info.provider]: token }),
-          onCwd: (cwd) => void followAgent(entry, cwd),
+          onCwd: (cwd) => void followAgentCwd(entry, cwd),
           emit: (event) => {
             if (entry.generation !== generation || threads.get(threadId) !== entry) return;
 
@@ -766,7 +770,7 @@ const make = Effect.gen(function* () {
 
             publish(event);
             if (RuntimeEvent.guards["turn.completed"](event)) endTurn(entry);
-            takeQueueCue(entry, event);
+            sendQueuedOnCue(entry, event);
           },
           mcpServer: mcp.issue(threadId),
         }),
@@ -776,7 +780,7 @@ const make = Effect.gen(function* () {
 
           return Effect.andThen(
             session.close,
-            Effect.fail(fail("The agent stopped as it started. Send the message again.")),
+            Effect.fail(createError("The agent stopped as it started. Send the message again.")),
           );
         }),
       );
@@ -818,14 +822,14 @@ const make = Effect.gen(function* () {
       entry.subagentTools.clear();
 
       const threadId = entry.info.id;
-      const turnCut = threads.get(threadId) === entry && isTurnActive(entry.info.status);
-      if (turnCut) {
+      const isTurnCut = threads.get(threadId) === entry && isTurnActive(entry.info.status);
+      if (isTurnCut) {
         publish(RuntimeEvent.cases["turn.completed"].make({ threadId, durationMs: null }));
         endTurn(entry);
         if (reason) publish(RuntimeEvent.cases.error.make({ threadId, message: reason }));
       }
 
-      if (turnCut || status === "error")
+      if (isTurnCut || status === "error")
         publish(RuntimeEvent.cases["thread.status"].make({ threadId, status }));
 
       return session?.close ?? Effect.void;
@@ -888,7 +892,7 @@ const make = Effect.gen(function* () {
       entry.queue.filter((queued) => queued.id !== message.id),
     );
     Effect.runFork(
-      deliver(entry, message).pipe(
+      deliverMessage(entry, message).pipe(
         Effect.catch((error) =>
           Effect.sync(() =>
             publish(
@@ -904,24 +908,24 @@ const make = Effect.gen(function* () {
    * The agent takes messages in after a tool call of its own ends (t3code sends queued ones
    * there too), and when its turn is over: the next queued message goes out then.
    */
-  function takeQueueCue(entry: ThreadEntry, event: RuntimeEvent) {
+  function sendQueuedOnCue(entry: ThreadEntry, event: RuntimeEvent) {
     if (RuntimeEvent.guards["tool.started"](event) && event.parentToolId)
       entry.subagentTools.add(event.toolId);
 
-    const toolEnded =
+    const hasToolEnded =
       RuntimeEvent.guards["tool.completed"](event) &&
       !entry.subagentTools.delete(event.toolId) &&
       isTurnActive(entry.info.status);
-    const turnEnded = RuntimeEvent.guards["thread.status"](event) && event.status === "idle";
+    const hasTurnEnded = RuntimeEvent.guards["thread.status"](event) && event.status === "idle";
     const [next] = entry.queue;
-    if (next && !entry.stopRequested && !entry.info.limitStop && (toolEnded || turnEnded))
+    if (next && !entry.isStopRequested && !entry.info.limitStop && (hasToolEnded || hasTurnEnded))
       sendQueued(entry, next);
   }
 
   /** Stops the thread's turn and holds its queue, then does the same for threads its agent started. */
   function interrupt(entry: ThreadEntry): Effect.Effect<void, ProviderError> {
     return Effect.gen(function* () {
-      if (isTurnActive(entry.info.status)) entry.stopRequested = true;
+      if (isTurnActive(entry.info.status)) entry.isStopRequested = true;
       if (entry.session) yield* entry.session.interrupt;
       for (const started of threads.values())
         if (started.info.startedBy === entry.info.id && isTurnActive(started.info.status))
@@ -930,7 +934,7 @@ const make = Effect.gen(function* () {
   }
 
   /** Runs `action` against the thread's live session, if it has one. */
-  function withLiveSession(
+  function runOnLiveSession(
     threadId: string,
     action: (session: ProviderSession) => Effect.Effect<void, ProviderError>,
   ) {
@@ -974,15 +978,15 @@ const make = Effect.gen(function* () {
     });
   }
 
-  function setArchived(entry: ThreadEntry, archived: boolean) {
+  function setArchived(entry: ThreadEntry, isArchived: boolean) {
     return Effect.gen(function* () {
-      if ((entry.info.archivedAt !== null) === archived) return;
+      if ((entry.info.archivedAt !== null) === isArchived) return;
 
-      const archivedAt = archived ? Date.now() : null;
+      const archivedAt = isArchived ? Date.now() : null;
       entry.info = { ...entry.info, archivedAt };
       store.setArchived(entry.info.id, archivedAt);
       publish(RuntimeEvent.cases["thread.archived"].make({ threadId: entry.info.id, archivedAt }));
-      if (!archived) return;
+      if (!isArchived) return;
 
       terminals.closeThread(entry.info.id);
       devices.release(entry.info.id);
@@ -993,7 +997,7 @@ const make = Effect.gen(function* () {
   }
 
   /** Sends a message: into the running turn, or as the start of a new one. */
-  function deliver(entry: ThreadEntry, message: QueuedMessage, run?: CommandRun) {
+  function deliverMessage(entry: ThreadEntry, message: QueuedMessage, run?: CommandRun) {
     return entry.lock.withPermit(
       Effect.gen(function* () {
         const threadId = entry.info.id;
@@ -1025,7 +1029,7 @@ const make = Effect.gen(function* () {
             : buildHandoff({
                 events: store.readAfter(threadId, since).map((stored) => stored.event),
                 isFresh: entry.resumeTokens[provider] === undefined,
-                getHarnessName: (kind) => harnessName(settings, kind),
+                getHarnessName: (kind) => getHarnessName(settings, kind),
               });
         const event = RuntimeEvent.cases["user.message"].make({
           threadId,
@@ -1044,7 +1048,7 @@ const make = Effect.gen(function* () {
           return yield* entry.session.steer(turn);
         }
 
-        entry.stopRequested = false;
+        entry.isStopRequested = false;
         if (entry.info.limitStop) setLimitStop(entry, null);
         publish(event);
         publish(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
@@ -1067,7 +1071,7 @@ const make = Effect.gen(function* () {
         }
 
         // Stop came while the agent was starting, with no turn yet to interrupt.
-        if (entry.stopRequested) yield* session.interrupt;
+        if (entry.isStopRequested) yield* session.interrupt;
       }),
     );
   }
@@ -1076,7 +1080,7 @@ const make = Effect.gen(function* () {
    * Reports a failure on the thread itself. For commands that start a thread, whose failure
    * would otherwise go to no thread, since the command names none.
    */
-  function reportOn(entry: ThreadEntry) {
+  function reportErrorsOn(entry: ThreadEntry) {
     return <A, R>(effect: Effect.Effect<A, ProviderError, R>) =>
       Effect.tapError(effect, (error) =>
         Effect.sync(() =>
@@ -1103,7 +1107,7 @@ const make = Effect.gen(function* () {
   ) {
     return Effect.gen(function* () {
       if (!UUID_PATTERN.test(messageId))
-        return yield* Effect.fail(fail(`Message ids must be UUIDs, not "${messageId}"`));
+        return yield* Effect.fail(createError(`Message ids must be UUIDs, not "${messageId}"`));
       if (
         store.hasMessage(entry.info.id, messageId) ||
         entry.queue.some((queued) => queued.id === messageId)
@@ -1118,10 +1122,10 @@ const make = Effect.gen(function* () {
         fast: options.fast,
         permission: options.permission,
       };
-      if ((queue && isTurnActive(entry.info.status)) || entry.settingUp)
+      if ((queue && isTurnActive(entry.info.status)) || entry.isSettingUp)
         return setQueue(entry, [...entry.queue, message]);
 
-      yield* deliver(entry, message, run);
+      yield* deliverMessage(entry, message, run);
     });
   }
 
@@ -1137,28 +1141,30 @@ const make = Effect.gen(function* () {
     return Effect.gen(function* () {
       const entry = yield* getEntry(command.threadId);
       const { id: threadId, cwd, provider } = entry.info;
-      if (isBusy(entry)) return yield* Effect.fail(fail("Stop the agent before rewinding"));
+      if (isBusy(entry)) return yield* Effect.fail(createError("Stop the agent before rewinding"));
 
       const found = store.findUserMessage(threadId, command.messageId);
-      if (!found) return yield* Effect.fail(fail("That message is gone"));
+      if (!found) return yield* Effect.fail(createError("That message is gone"));
       if (found.event.steer)
-        return yield* Effect.fail(fail("A message sent mid-turn can't be rewound to"));
+        return yield* Effect.fail(createError("A message sent mid-turn can't be rewound to"));
 
       if (command.restoreFiles) {
         const blocker = fileRestoreBlocker(
           entry.info,
           [...threads.values()].map((other) => other.info),
         );
-        if (blocker) return yield* Effect.fail(fail(blocker));
+        if (blocker) return yield* Effect.fail(createError(blocker));
         if (!(yield* Effect.promise(() => hasCheckpoint(cwd, threadId, command.messageId)))) {
-          return yield* Effect.fail(fail("There's no snapshot of the files from that point"));
+          return yield* Effect.fail(
+            createError("There's no snapshot of the files from that point"),
+          );
         }
       }
 
       yield* dropSession(entry, null);
 
       const resumeToken = entry.resumeTokens[provider];
-      if (switched(entry)) {
+      if (hasSwitchedHarness(entry)) {
         // Each harness's own conversation holds only its turns, so none can be cut back to the
         // same point: the next message starts this one afresh, handed what's left of the thread.
         setResumeTokens(entry, {});
@@ -1179,7 +1185,7 @@ const make = Effect.gen(function* () {
       publish(
         RuntimeEvent.cases["thread.rewound"].make({ threadId, messageId: command.messageId }),
       );
-      touch(threadId);
+      markUpdated(threadId);
 
       const error = command.restoreFiles
         ? yield* Effect.promise(() => restoreCheckpoint(cwd, threadId, command.messageId))
@@ -1191,7 +1197,7 @@ const make = Effect.gen(function* () {
       );
       if (error)
         return yield* Effect.fail(
-          fail(`Rewound the conversation, but couldn't restore the files: ${error}`),
+          createError(`Rewound the conversation, but couldn't restore the files: ${error}`),
         );
     });
   }
@@ -1204,15 +1210,15 @@ const make = Effect.gen(function* () {
     return Effect.gen(function* () {
       const source = yield* getEntry(command.threadId);
       const { cwd, provider } = source.info;
-      if (isBusy(source)) return yield* Effect.fail(fail("Stop the agent before forking"));
+      if (isBusy(source)) return yield* Effect.fail(createError("Stop the agent before forking"));
 
       const cut = store.findTurnsAfter(source.info.id, command.messageId);
-      if (!cut) return yield* Effect.fail(fail("That message is gone"));
+      if (!cut) return yield* Effect.fail(createError("That message is gone"));
 
       const sourceToken = source.resumeTokens[provider];
       // A thread that switched harness forks like a rewind: afresh, handed the conversation.
       const resumeToken =
-        sourceToken && !switched(source)
+        sourceToken && !hasSwitchedHarness(source)
           ? yield* ADAPTERS[provider].fork({
               cwd: source.home.path,
               harness: (yield* settingsStore.get).providers[provider],
@@ -1232,7 +1238,7 @@ const make = Effect.gen(function* () {
         cwd,
         title: source.info.title.startsWith("Fork of ")
           ? source.info.title
-          : titleFrom(`Fork of ${source.info.title}`, source.info.title),
+          : deriveTitle(`Fork of ${source.info.title}`, source.info.title),
         status: "idle",
         createdAt: now,
         updatedAt: now,
@@ -1243,10 +1249,10 @@ const make = Effect.gen(function* () {
         shelved: false,
       };
 
-      const coverage: Coverage = switched(source) ? { [provider]: 0 } : {};
+      const coverage: Coverage = hasSwitchedHarness(source) ? { [provider]: 0 } : {};
       threads.set(
         info.id,
-        newEntry(info, source.home, resumeToken ? { [provider]: resumeToken } : {}, coverage),
+        createEntry(info, source.home, resumeToken ? { [provider]: resumeToken } : {}, coverage),
       );
       store.insertThread(info, source.home);
       store.copyEvents(source.info.id, info.id, cut.seq);
@@ -1282,7 +1288,7 @@ const make = Effect.gen(function* () {
 
   /** Side chat events go out unstored and unbatched, to the connection that asked. */
   function publishSideChat(event: RuntimeEvent) {
-    if (!stopped) PubSub.publishUnsafe(pubsub, { seq: ++seq, id: null, event });
+    if (!isShuttingDown) PubSub.publishUnsafe(pubsub, { seq: ++seq, id: null, event });
   }
 
   /**
@@ -1293,10 +1299,10 @@ const make = Effect.gen(function* () {
   function startSideChat(source: ThreadEntry, messageId: string, sideChatId: string) {
     return Effect.gen(function* () {
       const { id: threadId, provider } = source.info;
-      yield* harnessReady(provider);
+      yield* ensureHarnessReady(provider);
 
       const cut = store.findTurnsAfter(threadId, messageId);
-      if (!cut) return yield* Effect.fail(fail("That reply is gone"));
+      if (!cut) return yield* Effect.fail(createError("That reply is gone"));
 
       const settings = yield* settingsStore.get;
       const harness = settings.providers[provider];
@@ -1304,7 +1310,7 @@ const make = Effect.gen(function* () {
       // A running turn is still writing the harness's log, and some harnesses can't copy theirs:
       // the agent then starts afresh, handed the transcript instead.
       const resumeToken =
-        sourceToken && !switched(source) && !isBusy(source)
+        sourceToken && !hasSwitchedHarness(source) && !isBusy(source)
           ? yield* ADAPTERS[provider]
               .fork({
                 cwd: source.home.path,
@@ -1324,7 +1330,7 @@ const make = Effect.gen(function* () {
               .filter((stored) => cut.seq === null || stored.id < cut.seq)
               .map((stored) => stored.event),
             isFresh: true,
-            getHarnessName: (kind) => harnessName(settings, kind),
+            getHarnessName: (kind) => getHarnessName(settings, kind),
           });
 
       const chat: SideChat = { session: null };
@@ -1378,7 +1384,9 @@ const make = Effect.gen(function* () {
       const source = yield* getEntry(threadId);
       const session = sideChats.get(sideChatId)?.session;
       if (sideChats.has(sideChatId) && !session)
-        return yield* Effect.fail(fail("The side chat is still starting. Ask again in a moment."));
+        return yield* Effect.fail(
+          createError("The side chat is still starting. Ask again in a moment."),
+        );
 
       const questionId = crypto.randomUUID();
       publishSideChat(
@@ -1436,22 +1444,24 @@ const make = Effect.gen(function* () {
   }
 
   /** Fails, saying how to fix it, unless `provider`'s CLI is installed and signed in. */
-  function harnessReady(provider: ProviderKind) {
+  function ensureHarnessReady(provider: ProviderKind) {
     return Effect.gen(function* () {
-      const name = harnessName(yield* settingsStore.get, provider);
+      const name = getHarnessName(yield* settingsStore.get, provider);
       const status = (yield* registry.list).find((harness) => harness.kind === provider);
 
       if (status?.checking)
         return yield* Effect.fail(
-          fail(`Still checking whether ${name} is set up. Try again in a moment.`),
+          createError(`Still checking whether ${name} is set up. Try again in a moment.`),
         );
       if (!status?.installed)
         return yield* Effect.fail(
-          fail(`${name} isn't installed on this machine. Install its CLI, then try again.`),
+          createError(`${name} isn't installed on this machine. Install its CLI, then try again.`),
         );
       if (!status.linked)
         return yield* Effect.fail(
-          fail(`${name} isn't signed in. Sign in under Settings → Harnesses, then try again.`),
+          createError(
+            `${name} isn't signed in. Sign in under Settings → Harnesses, then try again.`,
+          ),
         );
     });
   }
@@ -1460,7 +1470,7 @@ const make = Effect.gen(function* () {
     return Effect.gen(function* () {
       const entry = yield* getEntry(threadId);
       if (isBusy(entry))
-        return yield* Effect.fail(fail("Wait for the agent to finish before compacting"));
+        return yield* Effect.fail(createError("Wait for the agent to finish before compacting"));
       if (!entry.resumeTokens[entry.info.provider] && !entry.session) return;
 
       yield* entry.lock.withPermit(
@@ -1569,7 +1579,7 @@ const make = Effect.gen(function* () {
   const pulledAt = new Map<string, number>();
 
   // Plain refreshes (every window, every finished tool call) coalesce per repo.
-  const refreshStatus = coalesced(async (path) => {
+  const refreshStatus = coalesceLoads(async (path) => {
     const { autoPull: enabled } = await Effect.runPromise(settingsStore.get);
     if (enabled && Date.now() - (pulledAt.get(path) ?? 0) > AUTO_PULL_INTERVAL_MS) {
       pulledAt.set(path, Date.now());
@@ -1580,14 +1590,14 @@ const make = Effect.gen(function* () {
     publish(RuntimeEvent.cases["git.status"].make({ path, status, action: null, error: null }));
   });
 
-  const readLimits = coalesced(async (provider) => {
+  const readLimits = coalesceLoads(async (provider) => {
     if (!Schema.is(ProviderKind)(provider)) return;
 
     const { limits, error } = await Effect.runPromise(registry.readLimits(provider));
     publish(RuntimeEvent.cases["provider.limits"].make({ provider, limits: [...limits], error }));
   });
 
-  const readUsage = coalesced(async (threadId) => {
+  const readUsage = coalesceLoads(async (threadId) => {
     const entry = threads.get(threadId);
     if (!entry) return;
 
@@ -1611,7 +1621,7 @@ const make = Effect.gen(function* () {
     publish(RuntimeEvent.cases["thread.usage"].make({ threadId, usage }));
   });
 
-  const refreshDiff = coalesced((path) =>
+  const refreshDiff = coalesceLoads((path) =>
     readDiff(path).then((diff) => publish(RuntimeEvent.cases["git.diff"].make({ path, ...diff }))),
   );
 
@@ -1619,12 +1629,12 @@ const make = Effect.gen(function* () {
    * Who writes thread titles and source control text at `path`: the commit model in settings,
    * else the last harness's default.
    */
-  function writerFor(path: string, settings: Settings, recent: ReadonlyArray<string>) {
+  function buildWriterInput(path: string, settings: Settings, recent: ReadonlyArray<string>) {
     const split = settings.commitModel?.indexOf(":") ?? -1;
     const commitProvider = settings.commitModel?.slice(0, split);
-    const pinned = split > 0 && Schema.is(ProviderKind)(commitProvider);
-    const provider = pinned ? commitProvider : settings.lastProvider;
-    const model = pinned
+    const isPinned = split > 0 && Schema.is(ProviderKind)(commitProvider);
+    const provider = isPinned ? commitProvider : settings.lastProvider;
+    const model = isPinned
       ? settings.commitModel!.slice(split + 1)
       : settings.providers[provider].defaultModel;
 
@@ -1650,7 +1660,7 @@ const make = Effect.gen(function* () {
 
       return yield* Effect.tryPromise({
         try: () =>
-          generateCommitMessage({ ...writerFor(path, settings, recent), patch: diff.patch }),
+          generateCommitMessage({ ...buildWriterInput(path, settings, recent), patch: diff.patch }),
         catch: (error) =>
           `Couldn't write a commit message: ${error instanceof Error ? error.message : String(error)}`,
       }).pipe(
@@ -1672,8 +1682,8 @@ const make = Effect.gen(function* () {
       return `You're on ${status.branch}; create a branch for the pull request first`;
     if (status.changes) return "Commit your changes before opening a pull request";
 
-    const open = status.pullRequest?.state === "open" || status.pullRequest?.state === "draft";
-    if (open) return `#${status.pullRequest.number} is already open for this branch`;
+    const isOpen = status.pullRequest?.state === "open" || status.pullRequest?.state === "draft";
+    if (isOpen) return `#${status.pullRequest.number} is already open for this branch`;
 
     if (!status.upstream || status.ahead) {
       const pushed = await pushBranch(path);
@@ -1698,7 +1708,7 @@ const make = Effect.gen(function* () {
     let text: { title: string; body: string };
     try {
       text = await generatePullRequest({
-        ...writerFor(path, settings, recent),
+        ...buildWriterInput(path, settings, recent),
         ...range,
         head: status.branch,
         template,
@@ -1716,7 +1726,7 @@ const make = Effect.gen(function* () {
   /** Commits and pushes on one repo run one at a time. */
   const gitLocks = new Map<string, Semaphore.Semaphore>();
 
-  function withRepoLock<A, E>(path: string, effect: Effect.Effect<A, E>) {
+  function runWithRepoLock<A, E>(path: string, effect: Effect.Effect<A, E>) {
     return Effect.gen(function* () {
       let lock = gitLocks.get(path);
       if (!lock) {
@@ -1732,10 +1742,11 @@ const make = Effect.gen(function* () {
    * A worktree of the project's repo on a new branch named after the thread, under the
    * data dir. Resolves to the thread's folder in it (the project may be a repo subfolder).
    */
-  function makeWorktree(projectPath: string, title: string, threadId: string) {
+  function createWorktree(projectPath: string, title: string, threadId: string) {
     return Effect.gen(function* () {
       const root = yield* Effect.promise(() => readRepoRoot(projectPath));
-      if (!root) return yield* Effect.fail(fail("New worktrees need the project to be a git repo"));
+      if (!root)
+        return yield* Effect.fail(createError("New worktrees need the project to be a git repo"));
 
       const slug = `${
         title
@@ -1749,7 +1760,7 @@ const make = Effect.gen(function* () {
       const error = yield* Effect.promise(() =>
         addWorktree(projectPath, path, `masscode/${slug}`, worktreeFromOrigin === true),
       );
-      if (error) return yield* Effect.fail(fail(`Couldn't create a worktree: ${error}`));
+      if (error) return yield* Effect.fail(createError(`Couldn't create a worktree: ${error}`));
 
       return join(path, relative(root, projectPath));
     });
@@ -1774,39 +1785,39 @@ const make = Effect.gen(function* () {
       const command = config.worktree?.setup?.trim();
       if (!command) return;
 
-      const failed = terminals.run(
+      const setupError = terminals.run(
         threadId,
         WORKTREE_SETUP_TERMINAL_ID,
         command,
         120,
         30,
-        ({ exitCode, output, wasStopped: stopped }) => {
+        ({ exitCode, output, wasStopped }) => {
           if (threads.get(threadId) !== entry) return;
 
           publish(
             RuntimeEvent.cases["worktree.setup"].make({
               threadId,
               run: { command, exitCode, output },
-              stopped,
+              stopped: wasStopped,
             }),
           );
-          if (!entry.settingUp) return;
+          if (!entry.isSettingUp) return;
 
-          entry.settingUp = false;
+          entry.isSettingUp = false;
           const [next] = entry.queue;
           if (next && entry.info.archivedAt === null) sendQueued(entry, next);
         },
         { MASSCODE_PROJECT_ROOT: projectPath },
       );
-      if (failed)
+      if (setupError)
         return publish(
           RuntimeEvent.cases.error.make({
             threadId,
-            message: `Couldn't run the worktree setup: ${failed.message}`,
+            message: `Couldn't run the worktree setup: ${setupError.message}`,
           }),
         );
 
-      entry.settingUp = config.worktree?.wait_for_setup !== false;
+      entry.isSettingUp = config.worktree?.wait_for_setup !== false;
     });
   }
 
@@ -1816,17 +1827,20 @@ const make = Effect.gen(function* () {
    */
   function openThread(info: ThreadInfo, home: ThreadHome, text: string, requestId: string | null) {
     return Effect.gen(function* () {
-      const entry = newEntry(info, home);
+      const entry = createEntry(info, home);
       threads.set(info.id, entry);
       store.insertThread(info, home);
       publish(RuntimeEvent.cases["thread.created"].make({ thread: info, requestId }));
 
       const { title } = info;
-      void generateThreadTitle({ ...writerFor(info.cwd, yield* settingsStore.get, []), text })
+      void generateThreadTitle({
+        ...buildWriterInput(info.cwd, yield* settingsStore.get, []),
+        text,
+      })
         .then((summary) => {
           // Unless it's been renamed meanwhile.
           if (threads.get(info.id) === entry && entry.info.title === title)
-            retitle(entry, titleFrom(summary, title));
+            setTitle(entry, deriveTitle(summary, title));
         })
         .catch(() => {});
 
@@ -1834,19 +1848,19 @@ const make = Effect.gen(function* () {
     });
   }
 
-  function create(command: Extract<ClientCommand, { _tag: "thread.create" }>) {
+  function createThread(command: Extract<ClientCommand, { _tag: "thread.create" }>) {
     return Effect.gen(function* () {
       const { project, isNew } = yield* projectsStore
         .ensure(command.path)
-        .pipe(Effect.mapError((error) => fail(error.message)));
+        .pipe(Effect.mapError((error) => createError(error.message)));
       if (isNew) publish(RuntimeEvent.cases["project.added"].make({ project }));
 
       const now = Date.now();
       const id = crypto.randomUUID();
-      const title = titleFrom(command.text, project.name);
+      const title = deriveTitle(command.text, project.name);
       const cwd =
         command.workspace === "worktree"
-          ? yield* makeWorktree(project.path, title, id)
+          ? yield* createWorktree(project.path, title, id)
           : project.path;
 
       const entry = yield* openThread(
@@ -1879,14 +1893,14 @@ const make = Effect.gen(function* () {
         publish(RuntimeEvent.cases["settings.updated"].make({ settings: next }));
       }
 
-      yield* send(entry, command.text, command.options).pipe(reportOn(entry), Effect.ignore);
+      yield* send(entry, command.text, command.options).pipe(reportErrorsOn(entry), Effect.ignore);
     });
   }
 
   // --- orchestration: what agents do through MassCode's MCP tools -------------------------
 
   /** A thread as the tools describe it. */
-  function summary({ info }: ThreadEntry) {
+  function summarizeThread({ info }: ThreadEntry) {
     return {
       threadId: info.id,
       title: info.title,
@@ -1898,7 +1912,7 @@ const make = Effect.gen(function* () {
   }
 
   /** The thread's last answer, and the error it ended on, if it did. */
-  function lastTurn(threadId: string) {
+  function readLastTurn(threadId: string) {
     let answer: string | null = null;
     let error: string | null = null;
     for (const { event } of store.readTurns(threadId, 1).events) {
@@ -1910,22 +1924,22 @@ const make = Effect.gen(function* () {
   }
 
   /** The most `caller`'s agent can give another: its own access. */
-  function withinCeiling(caller: ThreadEntry, wanted: PermissionLevel | null | undefined) {
+  function checkPermissionCeiling(caller: ThreadEntry, wanted: PermissionLevel | null | undefined) {
     const ceiling = caller.permission ?? "ask";
     const level = wanted ?? ceiling;
 
-    return permissionRank(level) <= permissionRank(ceiling)
+    return getPermissionRank(level) <= getPermissionRank(ceiling)
       ? Effect.succeed(level)
       : Effect.fail(
-          fail(
+          createError(
             `Your thread runs with "${ceiling}" access, so it can't give another "${level}". Ask for "${ceiling}" or less.`,
           ),
         );
   }
 
-  function agentEntry(threadId: string) {
+  function getTargetEntry(threadId: string) {
     return Effect.mapError(getEntry(threadId), () =>
-      fail(`There's no thread ${threadId}. list_threads shows the ones in your project.`),
+      createError(`There's no thread ${threadId}. list_threads shows the ones in your project.`),
     );
   }
 
@@ -1934,31 +1948,33 @@ const make = Effect.gen(function* () {
     return Effect.gen(function* () {
       const deadline = Date.now() + timeoutMs;
       // ponytail: polls the thread's status; a per-thread signal if many agents wait at once.
-      while (entry.settingUp || isTurnActive(entry.info.status)) {
-        if (Date.now() >= deadline) return { ...summary(entry), timedOut: true };
+      while (entry.isSettingUp || isTurnActive(entry.info.status)) {
+        if (Date.now() >= deadline) return { ...summarizeThread(entry), timedOut: true };
         yield* Effect.sleep("200 millis");
       }
 
-      return { ...summary(entry), ...lastTurn(entry.info.id) };
+      return { ...summarizeThread(entry), ...readLastTurn(entry.info.id) };
     });
   }
 
   function startThread(callerId: string, input: StartThreadInput) {
     return Effect.gen(function* () {
       const caller = yield* getEntry(callerId);
-      const id = input.requestId ? requestUuid(callerId, input.requestId) : crypto.randomUUID();
+      const id = input.requestId
+        ? deriveRequestUuid(callerId, input.requestId)
+        : crypto.randomUUID();
       let entry = threads.get(id);
       if (!entry) {
-        const permission = yield* withinCeiling(caller, input.permission);
+        const permission = yield* checkPermissionCeiling(caller, input.permission);
         const provider = input.provider ?? caller.info.provider;
-        yield* harnessReady(provider);
+        yield* ensureHarnessReady(provider);
 
         const project = (yield* projectsStore.list).find(
           (candidate) => candidate.id === caller.info.projectId,
         );
-        const title = titleFrom(input.prompt, caller.info.title);
+        const title = deriveTitle(input.prompt, caller.info.title);
         const cwd = input.worktree
-          ? yield* makeWorktree(project?.path ?? caller.info.cwd, title, id)
+          ? yield* createWorktree(project?.path ?? caller.info.cwd, title, id)
           : caller.info.cwd;
         const now = Date.now();
         entry = yield* openThread(
@@ -1998,41 +2014,43 @@ const make = Effect.gen(function* () {
           }),
         );
         yield* send(entry, input.prompt, { effort: null, permission, attachments: [] }).pipe(
-          reportOn(entry),
+          reportErrorsOn(entry),
         );
       }
 
       return input.wait
         ? yield* waitForTurn(entry, (input.timeoutSeconds ?? 600) * 1000)
-        : summary(entry);
+        : summarizeThread(entry);
     });
   }
 
   function sendMessage(callerId: string, input: SendMessageInput) {
     return Effect.gen(function* () {
       const caller = yield* getEntry(callerId);
-      const target = yield* agentEntry(input.threadId);
+      const target = yield* getTargetEntry(input.threadId);
       if (target === caller)
-        return yield* Effect.fail(fail("That's your own thread; reply in your turn instead."));
+        return yield* Effect.fail(
+          createError("That's your own thread; reply in your turn instead."),
+        );
 
       const ceiling = caller.permission ?? "ask";
       // The target's own level, unless that's more than the caller may give.
       const fallback =
-        target.permission && permissionRank(target.permission) < permissionRank(ceiling)
+        target.permission && getPermissionRank(target.permission) < getPermissionRank(ceiling)
           ? target.permission
           : ceiling;
-      const permission = yield* withinCeiling(caller, input.permission ?? fallback);
+      const permission = yield* checkPermissionCeiling(caller, input.permission ?? fallback);
       yield* send(
         target,
         input.text,
         { effort: null, permission, attachments: [] },
         {
           queue: input.queue,
-          messageId: input.requestId ? requestUuid(callerId, input.requestId) : undefined,
+          messageId: input.requestId ? deriveRequestUuid(callerId, input.requestId) : undefined,
         },
       );
 
-      return summary(target);
+      return summarizeThread(target);
     });
   }
 
@@ -2048,10 +2066,10 @@ const make = Effect.gen(function* () {
           )
           .sort((first, second) => second.info.updatedAt - first.info.updatedAt)
           .slice(0, 50)
-          .map(summary),
+          .map(summarizeThread),
       })),
     readThread: (_callerId: string, threadId: string, after: number | undefined) =>
-      Effect.map(agentEntry(threadId), (entry) => {
+      Effect.map(getTargetEntry(threadId), (entry) => {
         const messages = store.readAfter(threadId, after ?? 0).flatMap(({ id, event }) =>
           RuntimeEvent.isAnyOf(["user.message", "assistant.completed"])(event)
             ? [
@@ -2065,7 +2083,7 @@ const make = Effect.gen(function* () {
         );
 
         return {
-          ...summary(entry),
+          ...summarizeThread(entry),
           messages: messages.slice(0, 50),
           ...(messages.length > 50 && { more: true }),
         };
@@ -2073,9 +2091,11 @@ const make = Effect.gen(function* () {
     startThread,
     sendMessage,
     waitForThread: (_callerId: string, threadId: string, timeoutMs: number) =>
-      Effect.flatMap(agentEntry(threadId), (entry) => waitForTurn(entry, timeoutMs)),
+      Effect.flatMap(getTargetEntry(threadId), (entry) => waitForTurn(entry, timeoutMs)),
     stopThread: (_callerId: string, threadId: string) =>
-      Effect.flatMap(agentEntry(threadId), (entry) => Effect.as(interrupt(entry), summary(entry))),
+      Effect.flatMap(getTargetEntry(threadId), (entry) =>
+        Effect.as(interrupt(entry), summarizeThread(entry)),
+      ),
   };
 
   const mcp = createMcp(
@@ -2092,10 +2112,10 @@ const make = Effect.gen(function* () {
     return Effect.gen(function* () {
       if (isBusy(entry))
         return yield* Effect.fail(
-          fail("Stop the agent, or wait for its turn to end, before switching harness"),
+          createError("Stop the agent, or wait for its turn to end, before switching harness"),
         );
 
-      yield* harnessReady(provider);
+      yield* ensureHarnessReady(provider);
       yield* dropSession(entry, null);
 
       const threadId = entry.info.id;
@@ -2141,7 +2161,7 @@ const make = Effect.gen(function* () {
 
   function dispatch(command: ClientCommand): Effect.Effect<void, ProviderError> {
     return ClientCommand.match(command, {
-      "thread.create": create,
+      "thread.create": createThread,
       "thread.send": (command) =>
         Effect.flatMap(getEntry(command.threadId), (entry) =>
           send(entry, command.text, command.options, command),
@@ -2205,7 +2225,7 @@ const make = Effect.gen(function* () {
       "git.commit": (command) => {
         const { path } = command;
         const action: GitAction = command.push ? "commit-push" : "commit";
-        return withRepoLock(
+        return runWithRepoLock(
           path,
           Effect.gen(function* () {
             const written = command.message.trim()
@@ -2225,7 +2245,7 @@ const make = Effect.gen(function* () {
         );
       },
       "git.push": ({ path }) =>
-        withRepoLock(
+        runWithRepoLock(
           path,
           Effect.gen(function* () {
             const error = yield* Effect.promise(() => pushBranch(path));
@@ -2233,7 +2253,7 @@ const make = Effect.gen(function* () {
           }),
         ),
       "git.createPullRequest": ({ path }) =>
-        withRepoLock(
+        runWithRepoLock(
           path,
           Effect.gen(function* () {
             const error = yield* Effect.promise(() => createPullRequest(path));
@@ -2242,7 +2262,7 @@ const make = Effect.gen(function* () {
           }),
         ),
       "git.mergePullRequest": ({ path, method }) =>
-        withRepoLock(
+        runWithRepoLock(
           path,
           Effect.gen(function* () {
             const status = yield* Effect.promise(() => readRepo(path));
@@ -2261,7 +2281,7 @@ const make = Effect.gen(function* () {
           }),
         ),
       "git.mergeIntoBase": ({ path }) =>
-        withRepoLock(
+        runWithRepoLock(
           path,
           Effect.gen(function* () {
             const error = yield* Effect.promise(() => mergeIntoBase(path));
@@ -2296,25 +2316,27 @@ const make = Effect.gen(function* () {
         }),
       "project.add": (command) =>
         projectsStore.ensure(command.path).pipe(
-          Effect.mapError((error) => fail(error.message)),
+          Effect.mapError((error) => createError(error.message)),
           Effect.map(({ project, isNew }) =>
             isNew ? publish(RuntimeEvent.cases["project.added"].make({ project })) : undefined,
           ),
         ),
       "project.scan": (command) =>
         Effect.gen(function* () {
-          async function reposIn(folder: string, levels: number): Promise<Array<string>> {
+          async function findRepos(folder: string, levels: number): Promise<Array<string>> {
             if (existsSync(join(folder, ".git"))) return [folder];
             if (levels === 0) return [];
             const { path, folders } = await listFolders(folder);
             return (
-              await Promise.all(folders.map((name) => reposIn(join(path, name), levels - 1)))
+              await Promise.all(folders.map((name) => findRepos(join(path, name), levels - 1)))
             ).flat();
           }
 
           // Three levels, never inside a repo: the home folder's default still finds ~/code/group/repo,
           // without walking dependency and cache trees.
-          const repos = yield* Effect.promise(() => reposIn(resolve(expandHome(command.path)), 3));
+          const repos = yield* Effect.promise(() =>
+            findRepos(resolve(expandHome(command.path)), 3),
+          );
           yield* Effect.forEach(repos, (folder) =>
             projectsStore.ensure(folder).pipe(
               Effect.map(({ project, isNew }) =>
@@ -2332,12 +2354,12 @@ const make = Effect.gen(function* () {
       "provider.readLimits": (command) => Effect.promise(() => readLimits(command.provider)),
       "thread.interrupt": (command) => Effect.flatMap(getEntry(command.threadId), interrupt),
       "thread.stopAgent": (command) =>
-        withLiveSession(
+        runOnLiveSession(
           command.threadId,
           (session) => session.stopAgent?.(command.toolId) ?? Effect.void,
         ),
       "approval.respond": (command) =>
-        withLiveSession(command.threadId, (session) =>
+        runOnLiveSession(command.threadId, (session) =>
           session.respondApproval(command.requestId, command.decision, command),
         ),
       "thread.close": (command) => removeThread(command.threadId),
@@ -2354,7 +2376,7 @@ const make = Effect.gen(function* () {
         }),
       "thread.rename": ({ threadId, title }) =>
         Effect.map(getEntry(threadId), (entry) =>
-          retitle(entry, titleFrom(title, entry.info.title)),
+          setTitle(entry, deriveTitle(title, entry.info.title)),
         ),
       "thread.shelve": ({ threadId, shelved }) =>
         Effect.map(getEntry(threadId), (entry) => {
@@ -2381,11 +2403,11 @@ const make = Effect.gen(function* () {
         Effect.sync(() => terminals.close(command.threadId, command.terminalId)),
       "terminal.run": ({ threadId, terminalId, command, columns, rows, options }) =>
         Effect.flatMap(getEntry(threadId), (entry) => {
-          const failed = terminals.run(threadId, terminalId, command, columns, rows, (exit) => {
+          const runError = terminals.run(threadId, terminalId, command, columns, rows, (exit) => {
             if (exit.wasStopped) return;
             const run = { command, exitCode: exit.exitCode, output: exit.output };
             Effect.runFork(
-              send(entry, describeRun(run), options, { run }).pipe(
+              send(entry, formatCommandRun(run), options, { run }).pipe(
                 Effect.catch((error) =>
                   Effect.sync(() =>
                     publish(RuntimeEvent.cases.error.make({ threadId, message: error.message })),
@@ -2394,8 +2416,8 @@ const make = Effect.gen(function* () {
               ),
             );
           });
-          return failed
-            ? Effect.fail(fail(`Couldn't run the command: ${failed.message}`))
+          return runError
+            ? Effect.fail(createError(`Couldn't run the command: ${runError.message}`))
             : Effect.void;
         }),
       // Per connection; the server answers these.
@@ -2422,7 +2444,7 @@ const make = Effect.gen(function* () {
           publish(RuntimeEvent.cases["settings.updated"].make({ settings }));
 
           // A different binary, config dir or env can mean another version or account.
-          function launchOf(value: Settings) {
+          function serializeLaunchSettings(value: Settings) {
             return JSON.stringify(
               ProviderKind.literals.map((kind) => {
                 const { binaryPath, configDir, env, launchArgs } = value.providers[kind];
@@ -2431,7 +2453,8 @@ const make = Effect.gen(function* () {
             );
           }
 
-          if (launchOf(before) !== launchOf(settings)) yield* registry.refresh;
+          if (serializeLaunchSettings(before) !== serializeLaunchSettings(settings))
+            yield* registry.refresh;
         }),
     });
   }
@@ -2506,7 +2529,7 @@ const make = Effect.gen(function* () {
       return { events, page: page ?? { before, hasMore: false } };
     },
     search: (query) => store.search(query, 50).filter((hit) => threads.has(hit.threadId)),
-    busy: () => [...threads.values()].some(isBusy),
+    hasActiveTurns: () => [...threads.values()].some(isBusy),
     shutdown: Effect.suspend(() => {
       flushDeltas();
       terminals.closeAll();

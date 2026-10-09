@@ -24,7 +24,7 @@ const program = Effect.gen(function* () {
 
     isDraining = true;
     const drain = setInterval(() => {
-      if (manager.busy()) return;
+      if (manager.hasActiveTurns()) return;
       clearInterval(drain);
       process.kill(process.pid, "SIGTERM");
     }, 2000);
