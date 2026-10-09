@@ -2,6 +2,34 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.7](https://github.com/masmeert/code/compare/v0.1.6...v0.1.7) (2026-10-09)
+
+
+### Fixed
+
+* close the harness when writing a title, commit or pull request times out ([2d30bae](https://github.com/masmeert/code/commit/2d30baead7cb0798594eac6443c761533e23a165))
+* **daemon:** type dispatch's command match with its full error union ([dc2fe06](https://github.com/masmeert/code/commit/dc2fe06fad3e5f3d7adaa1cc9ad3c70c09a05828))
+* fail a host install when the daemon archive can't be read instead of hanging ([6694935](https://github.com/masmeert/code/commit/669493579c7ff1e1b90c4fb16f78db6879e44857))
+* forget a script terminal's script when it's closed ([daf4f3e](https://github.com/masmeert/code/commit/daf4f3e34d3a10e00506fc38ff0a5bd6874e171d))
+* ignore an unreadable ssh config when suggesting hosts ([c76812f](https://github.com/masmeert/code/commit/c76812fdcadd2a6d4f048e5ec673f7b8abef6a7a))
+* keep cursor's resume token and catch-up point across restarts ([efc9bdc](https://github.com/masmeert/code/commit/efc9bdcae552943b57c266cd5fe80a7272697287))
+* keep Settings open when a harness has every model hidden ([e29a24b](https://github.com/masmeert/code/commit/e29a24b51bd01b33cdc333cc561ef49e65f5343d))
+* name a script's terminal tab by its script for screen readers ([86e9d92](https://github.com/masmeert/code/commit/86e9d92a2a689c688e4ee40ca8a9a4adec251800))
+* retry reading skills after the harness crashes while listing them ([96ed74b](https://github.com/masmeert/code/commit/96ed74bb81638fbe267b7fd29c9de3657327332c))
+* say when a host's CPU architecture couldn't be detected ([6fe34c7](https://github.com/masmeert/code/commit/6fe34c7626b1b6071426d050d7f4b2277db3832c))
+* send replies and limit resumes only with an effort and fast mode the model takes ([8c1a586](https://github.com/masmeert/code/commit/8c1a5864348efc3f5aad6f2cc164eac3ded188c6))
+* send the pasted sign-in code without surrounding spaces ([d38581e](https://github.com/masmeert/code/commit/d38581eae799bc3d869b44055ec15c29e0877a36))
+* show an attachment's name when its image can't be loaded ([ab2ca60](https://github.com/masmeert/code/commit/ab2ca602f558cdbd51e36c67a2b2a560514a122c))
+* show only the commit's own progress on the commit button ([be8e057](https://github.com/masmeert/code/commit/be8e05796d1005b40369fff5d357175f49f8bdff))
+* still shut an idle simulator down after opening it again fails ([7fb2889](https://github.com/masmeert/code/commit/7fb28896733df18941577d7d2069e52ac320ad0c))
+* stop blaming the writer when opening a pull request fails ([f9b993c](https://github.com/masmeert/code/commit/f9b993c9c00905dad35153814f63081508c2db71))
+* stop browser actions from piling up page-load listeners when a page keeps loading ([091641e](https://github.com/masmeert/code/commit/091641eef12ce5c43c7572b70a8c3d28b3c5bac8))
+* stop claude approvals from answering another thread's request ([5872930](https://github.com/masmeert/code/commit/58729304736a36fa31d61b9368f18a65fe44da20))
+* stop reconnecting to a remote host after it's removed ([80daf5f](https://github.com/masmeert/code/commit/80daf5f11bd0e19a523bee0b15af1aae6620de5d))
+* stop showing a side chat as working after it's closed while starting ([294cfd8](https://github.com/masmeert/code/commit/294cfd8ac14425214a4ae4d38504e2718b6a4b63))
+* tell the user when settings couldn't be saved ([21f7333](https://github.com/masmeert/code/commit/21f733382431f4132cb313b8de44e6bd4c2b9fa4))
+* treat an unreadable claude limit reset time as unknown ([d1e4859](https://github.com/masmeert/code/commit/d1e4859e7a6472ca9b86ef469773e7af1133f74c))
+
 ## [0.1.6](https://github.com/masmeert/code/compare/v0.1.5...v0.1.6) (2026-10-09)
 
 
