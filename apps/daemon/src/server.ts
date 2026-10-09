@@ -1,6 +1,7 @@
 import {
   ClientCommand,
   isTranscriptEvent,
+  PairingRequest,
   PROTOCOL_MISMATCH,
   PROTOCOL_VERSION,
   ServerFrame,
@@ -10,13 +11,14 @@ import * as FiberMap from "effect/FiberMap";
 import * as FiberSet from "effect/FiberSet";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import type { ServerWebSocket } from "bun";
+import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 import { timingSafeEqual } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ASSET_ROUTE_PREFIX, serveAsset, signImage } from "./assets.ts";
 import { listFolders } from "./folders.ts";
-import { getErrorMessage } from "./errors.ts";
+import { REMOTE_PORT } from "./phones.ts";
+import { CommandError, getErrorMessage } from "./errors.ts";
 import { cloneRepository } from "./git.ts";
 import { setPort } from "./port.ts";
 import { parseProjectConfig, readProjectConfigText, writeProjectConfig } from "./projectConfig.ts";
@@ -58,6 +60,16 @@ function findTokenProtocol(request: Request) {
   );
 }
 
+/** The token a paired phone offers as its subprotocol; whose it is, the phones decide. */
+function findOfferedToken(request: Request) {
+  const offered = (request.headers.get("sec-websocket-protocol") ?? "")
+    .split(",")
+    .map((protocol) => protocol.trim())
+    .find((protocol) => protocol.startsWith(TOKEN_PROTOCOL_PREFIX));
+
+  return offered?.slice(TOKEN_PROTOCOL_PREFIX.length) || null;
+}
+
 /**
  * A client this far behind (bytes queued in the socket) is dropped rather than buffered
  * without bound; it reconnects and resumes from its cursors. Same idea as t3code's
@@ -67,9 +79,21 @@ const MAX_BUFFERED_BYTES = 8 * 1024 * 1024;
 
 const decodeCommand = Schema.decodeUnknownEffect(Schema.fromJsonString(ClientCommand));
 
+const decodePairingRequest = Schema.decodeUnknownEffect(Schema.fromJsonString(PairingRequest));
+
+/** What only the desktop does: pairing, and hosting the browser panel. */
+const DESKTOP_ONLY_COMMANDS = new Set<ClientCommand["_tag"]>([
+  "pairing.start",
+  "phone.unpair",
+  "browser.host",
+  "browser.respond",
+]);
+
 interface ConnectionData {
   /** The protocol the client says it speaks; null from clients older than the check. */
   protocol: string | null;
+  /** The paired phone on the other end; null for the desktop. */
+  phoneId: string | null;
   /**
    * Threads whose transcript this client follows, each with the publish position its
    * read was taken at: live events up to there are already in what it got.
@@ -134,6 +158,9 @@ export function serve(port: number) {
 
     /** Transcript subscriptions are per connection, so they're handled here rather than by the manager. */
     function handleCommand(socket: ServerWebSocket<ConnectionData>, command: ClientCommand) {
+      if (socket.data.phoneId && DESKTOP_ONLY_COMMANDS.has(command._tag))
+        return Effect.logWarning(`A phone sent ${command._tag}, which only the desktop may`);
+
       return Effect.suspend(() =>
         ClientCommand.matchOrElse(
           command,
@@ -313,7 +340,8 @@ export function serve(port: number) {
                 ),
               ),
             "pairing.start": ({ requestId }) =>
-              manager.phones.startPairing().pipe(
+              syncPhoneListener.pipe(
+                Effect.andThen(manager.phones.startPairing()),
                 Effect.match({
                   onSuccess: (offer) => ({ offer, error: null }),
                   onFailure: (error) => ({ offer: null, error: error.message }),
@@ -325,6 +353,21 @@ export function serve(port: number) {
                   ),
                 ),
               ),
+            "phone.unpair": (command) =>
+              manager.dispatch(command).pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    for (const phoneSocket of phoneSockets)
+                      if (phoneSocket.data.phoneId === command.phoneId)
+                        phoneSocket.close(
+                          4001,
+                          "This phone was unpaired. Pair it again on your Mac.",
+                        );
+                  }),
+                ),
+              ),
+            "settings.update": (command) =>
+              manager.dispatch(command).pipe(Effect.ensuring(Effect.ignore(syncPhoneListener))),
             "browser.respond": (command) => {
               if (socket.data.browserHost)
                 manager.browsers.respond(
@@ -341,6 +384,131 @@ export function serve(port: number) {
         ),
       );
     }
+
+    const websocket: WebSocketHandler<ConnectionData> = {
+      open(socket) {
+        // Upgraded before closing: a refused upgrade reaches a browser with no reason attached.
+        if (socket.data.protocol !== String(PROTOCOL_VERSION))
+          return socket.close(
+            PROTOCOL_MISMATCH,
+            "This app and MassCode on this machine are different versions. Update the older one.",
+          );
+
+        if (socket.data.phoneId) phoneSockets.add(socket);
+
+        socket.data.viewer = { send: (frame) => send(socket, frame) };
+        runFork(FiberMap.run(streams, socket, streamToClient(socket)));
+      },
+      message(socket, raw) {
+        if (socket.data.protocol !== String(PROTOCOL_VERSION)) return;
+
+        runFork(
+          decodeCommand(raw.toString()).pipe(
+            Effect.flatMap((command) => handleCommand(socket, command)),
+            Effect.catch((error) => Effect.logWarning("command failed", error)),
+          ),
+        );
+      },
+      close(socket) {
+        phoneSockets.delete(socket);
+
+        if (socket.data.viewer) manager.terminals.detachViewer(socket.data.viewer);
+
+        if (socket.data.browserHost) manager.browsers.detach(socket.data.browserHost);
+        runFork(FiberMap.remove(streams, socket));
+
+        // Uninterruptible, so a server shutting down waits for the agents to close.
+        for (const [sideChatId, threadId] of socket.data.sideChats)
+          runFork(
+            Effect.uninterruptible(
+              manager.dispatch(
+                ClientCommand.cases["sideChat.close"].make({ threadId, sideChatId }),
+              ),
+            ),
+          );
+      },
+    };
+
+    const phoneSockets = new Set<ServerWebSocket<ConnectionData>>();
+    let phoneListener: Server<ConnectionData> | null = null;
+
+    /** Paired phones only: no origin check, since no browser can carry a phone's token. */
+    async function fetchFromPhone(request: Request, server: Server<ConnectionData>) {
+      const { pathname, searchParams } = new URL(request.url);
+
+      if (pathname.startsWith(ASSET_ROUTE_PREFIX))
+        return serveAsset(pathname.slice(ASSET_ROUTE_PREFIX.length));
+
+      if (pathname === "/pair" && request.method === "POST")
+        return Effect.runPromise(
+          decodePairingRequest(await request.text()).pipe(
+            Effect.mapError(
+              () =>
+                new CommandError({
+                  message:
+                    "MassCode on this Mac doesn't understand this phone. Update the older one.",
+                }),
+            ),
+            Effect.flatMap(manager.phones.redeem),
+            Effect.match({
+              onSuccess: (grant) => Response.json(grant),
+              onFailure: (error) => Response.json({ error: error.message }, { status: 403 }),
+            }),
+          ),
+        );
+
+      const token = findOfferedToken(request);
+      const phoneId = token && (await Effect.runPromise(manager.phones.authenticate(token)));
+
+      if (!phoneId) return new Response("Unauthorized", { status: 401 });
+
+      const data: ConnectionData = {
+        protocol: searchParams.get("protocol"),
+        phoneId,
+        threads: new Map(),
+        sideChats: new Map(),
+      };
+
+      const upgraded = server.upgrade(request, {
+        data,
+        headers: { "Sec-WebSocket-Protocol": TOKEN_PROTOCOL_PREFIX + token },
+      });
+
+      if (upgraded) return undefined;
+
+      return new Response("MassCode daemon", { status: 426 });
+    }
+
+    /** Starts, moves or stops the phones' listener to follow the setting and the Tailscale address. */
+    const syncPhoneListener = Effect.flatMap(manager.phones.remoteAddress, (address) => {
+      if (phoneListener?.hostname === address) return Effect.void;
+
+      void phoneListener?.stop(true);
+      phoneListener = null;
+
+      if (!address) return Effect.void;
+
+      return Effect.try({
+        try: () => {
+          phoneListener = Bun.serve<ConnectionData>({
+            hostname: address,
+            port: REMOTE_PORT,
+            // Pairing requests are tiny; the rest arrives over the socket.
+            maxRequestBodySize: 64 * 1024,
+            fetch: fetchFromPhone,
+            websocket,
+          });
+        },
+        catch: (error) =>
+          new CommandError({
+            message: `Phones can't reach MassCode: port ${REMOTE_PORT} on ${address} is taken (${getErrorMessage(error)}). Quit what's using it, or set MASSCODE_REMOTE_PORT.`,
+          }),
+      }).pipe(
+        Effect.tap(() =>
+          Effect.logInfo(`Paired phones reach MassCode on ws://${address}:${REMOTE_PORT}`),
+        ),
+      );
+    });
 
     const server = yield* Effect.acquireRelease(
       Effect.sync(() =>
@@ -367,6 +535,7 @@ export function serve(port: number) {
 
             const data: ConnectionData = {
               protocol: searchParams.get("protocol"),
+              phoneId: null,
               threads: new Map(),
               sideChats: new Map(),
             };
@@ -380,45 +549,7 @@ export function serve(port: number) {
 
             return new Response("MassCode daemon", { status: 426 });
           },
-          websocket: {
-            open(socket) {
-              // Upgraded before closing: a refused upgrade reaches a browser with no reason attached.
-              if (socket.data.protocol !== String(PROTOCOL_VERSION))
-                return socket.close(
-                  PROTOCOL_MISMATCH,
-                  "This app and MassCode on this machine are different versions. Update the older one.",
-                );
-
-              socket.data.viewer = { send: (frame) => send(socket, frame) };
-              runFork(FiberMap.run(streams, socket, streamToClient(socket)));
-            },
-            message(socket, raw) {
-              if (socket.data.protocol !== String(PROTOCOL_VERSION)) return;
-
-              runFork(
-                decodeCommand(raw.toString()).pipe(
-                  Effect.flatMap((command) => handleCommand(socket, command)),
-                  Effect.catch((error) => Effect.logWarning("command failed", error)),
-                ),
-              );
-            },
-            close(socket) {
-              if (socket.data.viewer) manager.terminals.detachViewer(socket.data.viewer);
-
-              if (socket.data.browserHost) manager.browsers.detach(socket.data.browserHost);
-              runFork(FiberMap.remove(streams, socket));
-
-              // Uninterruptible, so a server shutting down waits for the agents to close.
-              for (const [sideChatId, threadId] of socket.data.sideChats)
-                runFork(
-                  Effect.uninterruptible(
-                    manager.dispatch(
-                      ClientCommand.cases["sideChat.close"].make({ threadId, sideChatId }),
-                    ),
-                  ),
-                );
-            },
-          },
+          websocket,
         }),
       ),
       (server) => Effect.promise(() => server.stop(true)),
@@ -433,5 +564,7 @@ export function serve(port: number) {
     if (portFile) yield* Effect.promise(() => writeFile(portFile, String(server.port)));
 
     yield* Effect.logInfo(`MassCode daemon listening on ws://127.0.0.1:${server.port}`);
+    yield* Effect.addFinalizer(() => Effect.promise(async () => phoneListener?.stop(true)));
+    yield* syncPhoneListener.pipe(Effect.catch((error) => Effect.logWarning(error.message)));
   });
 }

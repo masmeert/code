@@ -152,7 +152,30 @@ export function createPhones(options: {
       );
     }
 
-    return { list, startPairing, redeem, unpair };
+    /** The paired phone's id, noting it was seen; null for a token no phone holds. */
+    function authenticate(token: string) {
+      const tokenHash = hashToken(token);
+
+      return Effect.flatMap(file.get, (stored) => {
+        const phone = stored.find((candidate) => candidate.tokenHash === tokenHash);
+
+        if (!phone) return Effect.succeed(null);
+
+        // Being seen is only bookkeeping; a failed write mustn't lock the phone out.
+        return save(
+          stored.map((candidate) =>
+            candidate.id === phone.id ? { ...candidate, lastSeenAt: Date.now() } : candidate,
+          ),
+        ).pipe(Effect.ignore, Effect.as(phone.id));
+      });
+    }
+
+    /** Where phones can reach the daemon: its Tailscale address while phone access is on, else null. */
+    const remoteAddress = Effect.map(options.isRemoteAccessOn, (isOn) =>
+      isOn ? findTailnetAddress() : null,
+    );
+
+    return { list, startPairing, redeem, unpair, authenticate, remoteAddress };
   });
 }
 
