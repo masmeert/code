@@ -266,9 +266,10 @@ function isWork(item: TranscriptItem) {
   );
 }
 
-function toBlocks(items: ReadonlyArray<TranscriptItem>): Array<Block> {
+function toBlocks(items: ReadonlyArray<TranscriptItem>, heldAnswerId?: string): Array<Block> {
   const lastWork = items.findLast(isWork);
-  const answer = lastWork?.kind === "assistant" ? lastWork : undefined;
+  const answer =
+    lastWork?.kind === "assistant" && lastWork.id !== heldAnswerId ? lastWork : undefined;
   const blocks: Array<Block> = [];
   for (const item of items) {
     if (item.kind !== "tool" && (item === answer || !isWork(item))) {
@@ -279,11 +280,11 @@ function toBlocks(items: ReadonlyArray<TranscriptItem>): Array<Block> {
     if (last?.kind === "work") last.items.push(item);
     else blocks.push({ kind: "work", id: item.id, items: [item] });
   }
-  // A lone thinking block or tool group already folds to one row.
+  // A lone thinking block or tool group already folds to one row; lone held text still needs the work row to fold into.
   return blocks.flatMap((block) => {
     if (block.kind !== "work") return [block];
     const inner = toToolGroups(block.items);
-    return inner.length === 1 ? inner : [block];
+    return inner.length === 1 && inner[0]!.id !== heldAnswerId ? inner : [block];
   });
 }
 
@@ -2138,10 +2139,12 @@ interface AssistantTurnProps {
 
 const AssistantTurn = memo(
   ({ items, threadId, busy, last }: AssistantTurnProps) => {
-    const blocks = useMemo(() => toBlocks(items), [items]);
     const lastItem = items.at(-1);
-    const finalTextId = blocks.findLast((block) => block.kind === "assistant")?.id;
     const live = busy && last;
+    // Until the turn ends, trailing text may be a note before the next tool call; showing it as the answer only to fold it away is noise.
+    const heldAnswerId = live && lastItem?.kind === "assistant" ? lastItem.id : undefined;
+    const blocks = useMemo(() => toBlocks(items, heldAnswerId), [items, heldAnswerId]);
+    const finalTextId = blocks.findLast((block) => block.kind === "assistant")?.id;
     return (
       // The face hangs in the margin once there's room, so replies share the composer's left edge.
       // The row widens rather than the face overflowing it: older turns clip to their box.
