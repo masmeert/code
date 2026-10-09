@@ -2,7 +2,6 @@ import {
   AttachmentInput,
   ClientCommand,
   fileRestoreBlocker,
-  isAwaitingUser,
   isTurnActive,
   PermissionLevel,
   ProviderKind,
@@ -22,13 +21,12 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
-import * as PubSub from "effect/PubSub";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { existsSync } from "node:fs";
-import { mkdir, realpath, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
 import {
   addWorktree,
@@ -59,14 +57,7 @@ import * as SettingsStoreLive from "./storage/SettingsStore.ts";
 import * as ThreadStoreLive from "./storage/ThreadStore.ts";
 import { type ProjectNotFound, ProjectsStore } from "./storage/ProjectsStore.ts";
 import { SettingsStore } from "./storage/SettingsStore.ts";
-import {
-  type Coverage,
-  isPersisted,
-  type ResumeTokens,
-  type ShelveOverride,
-  type ThreadHome,
-  ThreadStore,
-} from "./storage/ThreadStore.ts";
+import { type Coverage, type ThreadHome, ThreadStore } from "./storage/ThreadStore.ts";
 import { type Browsers, createBrowsers } from "./browsers.ts";
 import { createDevices, type Devices } from "./devices.ts";
 import { createMcp, type Mcp, type SendMessageInput, type StartThreadInput } from "./mcp.ts";
@@ -74,6 +65,7 @@ import { createTerminals, type Terminals } from "./terminals.ts";
 import { readProjectConfig } from "./projectConfig.ts";
 import { createSkillCatalog } from "./skills.ts";
 import { createRepoPanel } from "./repoPanel.ts";
+import { createThreadRegistry, type SequencedEvent, type ThreadRead } from "./threads/registry.ts";
 import { CommandError, getErrorMessage } from "./errors.ts";
 import { coalesceLoads } from "./coalesceLoads.ts";
 import { ADAPTERS, buildWriterInput, getHarnessName } from "./harnesses.ts";
@@ -86,36 +78,8 @@ import {
   getPermissionRank,
   hasSwitchedHarness,
   isBusy,
-  isShelved,
   type ThreadEntry,
 } from "./threads/entry.ts";
-
-interface SequencedEvent {
-  /** Publish order, in memory only; lets a connection skip what a transcript read already covered. */
-  readonly seq: number;
-  /** Stored events' id, the clients' resume cursor. */
-  readonly id: number | null;
-  readonly event: RuntimeEvent;
-}
-
-/** A transcript read, taken at publish position `seq`. */
-interface ThreadRead {
-  readonly seq: number;
-  readonly frame: Extract<ServerFrame, { _tag: "thread.snapshot" | "thread.replay" }>;
-}
-
-/** A client further behind than this gets a fresh snapshot instead of a replay. */
-const MAX_REPLAY = 2000;
-
-/** Same, by size: a replay this big costs more than the snapshot (t3code's budget is 8MB too). */
-const MAX_REPLAY_BYTES = 8 * 1024 * 1024;
-
-/**
- * Streamed text is merged into one delta per message per window before it goes out,
- * instead of a frame (and a client re-render) per token. Any other event flushes first,
- * so order is kept.
- */
-const DELTA_FLUSH_MS = 40;
 
 /** An agent process idle this long is stopped; the next message resumes it (t3code reaps at 30 min too). */
 const SESSION_IDLE_MS = 30 * 60 * 1000;
@@ -124,10 +88,6 @@ const SESSION_IDLE_MS = 30 * 60 * 1000;
 const LIMIT_RESET_GRACE_MS = 30_000;
 
 const REAP_INTERVAL_MS = 5 * 60 * 1000;
-
-type TextDelta = Extract<RuntimeEvent, { _tag: "assistant.delta" | "reasoning.delta" }>;
-
-const isTextDelta = RuntimeEvent.isAnyOf(["assistant.delta", "reasoning.delta"]);
 
 /** A read-only side conversation about one reply (BTW), never stored. */
 interface SideChat {
@@ -232,280 +192,45 @@ const make = Effect.gen(function* () {
   const settingsStore = yield* SettingsStore;
   const projectsStore = yield* ProjectsStore;
   const store = yield* ThreadStore;
-  const registry = yield* ProviderRegistry;
-  const pubsub = yield* PubSub.unbounded<SequencedEvent>();
-  const threads = new Map<string, ThreadEntry>();
-  /** Messages and thoughts still streaming, as one delta of all their text so far, keyed by id; dropped once they complete. */
-  const streaming = new Map<string, TextDelta>();
-  /** Deltas waiting for the next flush, merged per message. */
-  const pendingDeltas = new Map<string, TextDelta>();
-  let flushTimer: ReturnType<typeof setTimeout> | null = null;
-  let seq = 0;
+  const providerRegistry = yield* ProviderRegistry;
+  const {
+    threads,
+    getEntry,
+    publish,
+    publishSideChat,
+    flushDeltas,
+    reportErrorsIn,
+    refreshMeta,
+    setTitle,
+    followAgentCwd,
+    markUpdated,
+    refreshShelved,
+    setShelveOverride,
+    setResumeTokens,
+    setCoverage,
+    setQueue,
+    setLimitStop,
+    saveSettings,
+    subscribe,
+    forgetStreaming,
+    readThread,
+    readOlder,
+    search,
+  } = yield* createThreadRegistry({
+    store,
+    settingsStore,
+    onShelve: (entry) => {
+      terminals.closeIdle(entry.info.id);
+      // Shelved threads never have a turn going; like the idle reaper, the next message resumes from the token.
+      if (entry.session) runFork(dropSession(entry, null));
+    },
+  });
 
-  let latestSettings = yield* settingsStore.get;
-
-  // --- restore -------------------------------------------------------------
-  for (const { info, home, resumeTokens, coverage, shelveOverride, queue } of yield* store.load) {
-    threads.set(
-      info.id,
-      createEntry(
-        {
-          ...info,
-          shelved: isShelved(info, shelveOverride, Date.now(), latestSettings),
-          ...(queue.length > 0 && { queue }),
-        },
-        home,
-        resumeTokens,
-        coverage,
-        shelveOverride,
-      ),
-    );
-  }
-
-  /**
-   * Set as the daemon goes away: agents still running then mustn't touch its state. Their
-   * callbacks run outside any fiber, so closing the scope doesn't stop them.
-   */
-  let isShuttingDown = false;
-  yield* Effect.addFinalizer(() => Effect.sync(() => void (isShuttingDown = true)));
-
-  // Approvals pending when the daemon stopped died with their agent process.
-  for (const [requestId, threadId] of store.listUnresolvedApprovals()) {
-    store.appendEvent(
-      threadId,
-      RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }),
-    );
-  }
-
-  // Threads from before auto-titles are still named after their project folder.
-  for (const entry of threads.values()) {
-    if (entry.info.title !== basename(entry.info.cwd)) continue;
-
-    const text = store.readFirstUserMessage(entry.info.id);
-    if (text === null) continue;
-
-    entry.info = { ...entry.info, title: deriveTitle(text, entry.info.title) };
-    store.setMeta(entry.info.id, { title: entry.info.title, updatedAt: entry.info.updatedAt });
-  }
-
-  // --- event flow ----------------------------------------------------------
-  registry.setListener({
+  providerRegistry.setListener({
     onProviders: (providers) =>
       publish(RuntimeEvent.cases["providers.updated"].make({ providers: [...providers] })),
     onFlow: (flow) => publish(RuntimeEvent.cases["auth.flow"].make({ flow })),
   });
-
-  /** Re-reads the branch (a turn may have switched it) and announces the thread's current meta. */
-  function refreshMeta(entry: ThreadEntry) {
-    const { cwd } = entry.info;
-    void readBranch(cwd).then((branch) => {
-      if (threads.get(entry.info.id) !== entry || entry.info.cwd !== cwd) return;
-
-      entry.info = { ...entry.info, branch };
-      const { id: threadId, title, updatedAt, worktree } = entry.info;
-      publish(
-        RuntimeEvent.cases["thread.meta"].make({
-          threadId,
-          title,
-          updatedAt,
-          branch,
-          cwd,
-          worktree,
-        }),
-      );
-    });
-  }
-
-  function setTitle(entry: ThreadEntry, title: string) {
-    entry.info = { ...entry.info, title };
-    store.setMeta(entry.info.id, { title, updatedAt: entry.info.updatedAt });
-    refreshMeta(entry);
-  }
-
-  /** The agent switched into a worktree or back out of one: the thread's folder follows it. */
-  async function followAgentCwd(entry: ThreadEntry, reported: string) {
-    // The agent may report the home folder with its symlinks resolved.
-    const [real, home] = await Promise.all([realpath(reported), realpath(entry.home.path)]).catch(
-      () => [reported, entry.home.path],
-    );
-    const cwd = real === home ? entry.home.path : reported;
-    if (cwd === entry.info.cwd || threads.get(entry.info.id) !== entry) return;
-
-    // The turn's start snapshot is of the folder it left, so there's nothing to compare its end with.
-    entry.currentTurn = null;
-    entry.info = { ...entry.info, cwd, worktree: entry.home.isWorktree || cwd !== entry.home.path };
-    store.setAgentCwd(entry.info.id, cwd === entry.home.path ? null : cwd);
-    refreshMeta(entry);
-  }
-
-  /** Marks activity on a thread: new message or finished turn. */
-  function markUpdated(threadId: string) {
-    const entry = threads.get(threadId);
-    if (!entry) return;
-
-    entry.info = { ...entry.info, updatedAt: Date.now() };
-    store.setMeta(threadId, { title: entry.info.title, updatedAt: entry.info.updatedAt });
-    refreshMeta(entry);
-  }
-
-  function flushDeltas() {
-    if (flushTimer) {
-      clearTimeout(flushTimer);
-      flushTimer = null;
-    }
-    if (pendingDeltas.size === 0) return;
-
-    const batch = [...pendingDeltas.values()];
-    pendingDeltas.clear();
-    for (const event of batch) recordAndPublish(event);
-  }
-
-  function publish(event: RuntimeEvent) {
-    if (isTextDelta(event)) {
-      const pending = pendingDeltas.get(event.messageId);
-      pendingDeltas.set(
-        event.messageId,
-        pending ? { ...pending, delta: pending.delta + event.delta } : event,
-      );
-      flushTimer ??= setTimeout(flushDeltas, DELTA_FLUSH_MS);
-      return;
-    }
-
-    flushDeltas();
-    recordAndPublish(event);
-  }
-
-  function recordAndPublish(event: RuntimeEvent) {
-    if (isShuttingDown) return;
-
-    let id: number | null = null;
-    if (isTextDelta(event)) {
-      const sent = streaming.get(event.messageId)?.delta ?? "";
-      streaming.set(event.messageId, { ...event, delta: sent + event.delta });
-    } else if (isPersisted(event)) {
-      if (RuntimeEvent.isAnyOf(["assistant.completed", "reasoning.completed"])(event))
-        streaming.delete(event.messageId);
-      id = store.appendEvent(event.threadId, event);
-    }
-
-    const entry = "threadId" in event && event.threadId ? threads.get(event.threadId) : undefined;
-    if (entry) {
-      if (RuntimeEvent.guards["thread.status"](event)) {
-        entry.info = { ...entry.info, status: event.status };
-        if (isTurnActive(event.status) && entry.shelveOverride !== null)
-          setShelveOverride(entry, null);
-      }
-
-      if (RuntimeEvent.guards["thread.usage"](event) && event.usage) {
-        entry.info = { ...entry.info, usage: event.usage };
-        store.setUsage(entry.info.id, event.usage);
-      }
-
-      entry.activeAt = Date.now();
-    }
-
-    PubSub.publishUnsafe(pubsub, { seq: ++seq, id, event });
-
-    if (entry) trackLiveState(entry, event);
-
-    if (RuntimeEvent.isAnyOf(["user.message", "turn.completed"])(event))
-      markUpdated(event.threadId);
-
-    if (RuntimeEvent.guards["settings.updated"](event)) {
-      latestSettings = event.settings;
-      for (const other of threads.values()) refreshShelved(other);
-    }
-
-    if (entry) refreshShelved(entry);
-  }
-
-  /** Keeps the thread's in-flight tool call and pending request current, announcing each change. */
-  function trackLiveState(entry: ThreadEntry, event: RuntimeEvent) {
-    const threadId = entry.info.id;
-    const { activity, request } = entry.info;
-    const hasStoppedRunning =
-      RuntimeEvent.guards["thread.status"](event) && event.status !== "running";
-    const nextActivity = RuntimeEvent.guards["tool.started"](event)
-      ? { toolId: event.toolId, tool: event.name, summary: event.summary }
-      : hasStoppedRunning ||
-          (RuntimeEvent.guards["tool.completed"](event) && event.toolId === activity?.toolId)
-        ? undefined
-        : activity;
-    const nextRequest = RuntimeEvent.guards["approval.requested"](event)
-      ? {
-          requestId: event.requestId,
-          title: event.title,
-          detail: event.detail,
-          asksQuestions: event.questions !== undefined,
-        }
-      : (RuntimeEvent.guards["thread.status"](event) && !isAwaitingUser(event.status)) ||
-          (RuntimeEvent.guards["approval.resolved"](event) &&
-            event.requestId === request?.requestId)
-        ? undefined
-        : request;
-    if (nextActivity === activity && nextRequest === request) return;
-
-    const { activity: _activity, request: _request, ...rest } = entry.info;
-    let info: ThreadInfo = rest;
-    if (nextActivity) info = { ...info, activity: nextActivity };
-    if (nextRequest) info = { ...info, request: nextRequest };
-    entry.info = info;
-
-    if (nextActivity !== activity)
-      publish(
-        RuntimeEvent.cases["thread.activity"].make({ threadId, activity: nextActivity ?? null }),
-      );
-    if (nextRequest !== request)
-      publish(
-        RuntimeEvent.cases["thread.request"].make({ threadId, request: nextRequest ?? null }),
-      );
-  }
-
-  /** Announces the thread's shelved state when it changed. */
-  function refreshShelved(entry: ThreadEntry) {
-    const shelved = isShelved(entry.info, entry.shelveOverride, Date.now(), latestSettings);
-    if (shelved === entry.info.shelved) return;
-
-    entry.info = { ...entry.info, shelved };
-    publish(RuntimeEvent.cases["thread.shelved"].make({ threadId: entry.info.id, shelved }));
-    if (!shelved) return;
-
-    terminals.closeIdle(entry.info.id);
-    // Shelved threads never have a turn going; like the idle reaper, the next message resumes from the token.
-    if (entry.session) runFork(dropSession(entry, null));
-  }
-
-  // Idle threads shelve with time alone; the threshold is in days, so a check a minute is plenty.
-  // Resuming at a usage limit's reset rides along: a minute late is fine, and it survives sleep.
-  yield* Effect.forkScoped(
-    Effect.schedule(
-      Effect.sync(() => {
-        for (const entry of threads.values()) {
-          refreshShelved(entry);
-          const stop = entry.info.limitStop;
-          if (
-            stop?.resumeAtReset &&
-            stop.resetsAt !== null &&
-            Date.now() >= stop.resetsAt + LIMIT_RESET_GRACE_MS
-          )
-            runFork(
-              resumeAfterLimit(entry, stop.resumeAtReset).pipe(
-                reportErrorsIn(entry.info.id),
-                Effect.ignore,
-              ),
-            );
-        }
-      }),
-      Schedule.spaced("1 minute"),
-    ),
-  );
-
-  function setShelveOverride(entry: ThreadEntry, override: ShelveOverride) {
-    entry.shelveOverride = override;
-    store.setShelveOverride(entry.info.id, override);
-  }
-
-  for (const entry of threads.values()) refreshMeta(entry);
 
   const terminals = createTerminals({
     findFolder: (threadId) => threads.get(threadId)?.info.cwd ?? null,
@@ -531,23 +256,6 @@ const make = Effect.gen(function* () {
         }),
       ),
   });
-
-  const getEntry = Effect.fn("getEntry")(function* (threadId: string) {
-    const entry = threads.get(threadId);
-    if (!entry) return yield* new CommandError({ message: `No thread ${threadId}` });
-
-    return entry;
-  });
-
-  function setResumeTokens(entry: ThreadEntry, tokens: ResumeTokens) {
-    entry.resumeTokens = tokens;
-    store.setResumeTokens(entry.info.id, tokens);
-  }
-
-  function setCoverage(entry: ThreadEntry, coverage: Coverage) {
-    entry.coverage = coverage;
-    store.setCoverage(entry.info.id, coverage);
-  }
 
   /** Takes in what a thread's agent reports, unless it's from a session since dropped. */
   function receiveAgentEvent(entry: ThreadEntry, generation: number, event: RuntimeEvent) {
@@ -676,29 +384,13 @@ const make = Effect.gen(function* () {
     endTurn(entry);
   }
 
-  function setQueue(entry: ThreadEntry, queue: ReadonlyArray<QueuedMessage>) {
-    const { queue: _queue, ...info } = entry.info;
-    entry.info = queue.length > 0 ? { ...info, queue } : info;
-    store.setQueue(entry.info.id, queue);
-    publish(
-      RuntimeEvent.cases["thread.queue"].make({ threadId: entry.info.id, queue: [...queue] }),
-    );
-  }
-
-  function setLimitStop(entry: ThreadEntry, limitStop: LimitStop | null) {
-    const { limitStop: _limitStop, ...info } = entry.info;
-    entry.info = limitStop ? { ...info, limitStop } : info;
-    store.setLimitStop(entry.info.id, limitStop);
-    publish(RuntimeEvent.cases["thread.limitStop"].make({ threadId: entry.info.id, limitStop }));
-  }
-
   /** Holds the thread's queue on a usage limit, and asks for the reset when the harness didn't say. */
   function stopForLimit(entry: ThreadEntry, limitStop: LimitStop) {
     setLimitStop(entry, limitStop);
     if (limitStop.resetsAt !== null) return;
 
     runFork(
-      Effect.map(registry.readLimits(limitStop.provider), ({ limits }) => {
+      Effect.map(providerRegistry.readLimits(limitStop.provider), ({ limits }) => {
         const spent = limits.flatMap((limit) =>
           limit.usedPercent >= 100 && limit.resetsAt !== null ? [limit.resetsAt] : [],
         );
@@ -782,10 +474,7 @@ const make = Effect.gen(function* () {
       }
     })();
 
-    for (const [messageId, message] of streaming)
-      if (message.threadId === threadId) streaming.delete(messageId);
-    for (const [messageId, delta] of pendingDeltas)
-      if (delta.threadId === threadId) pendingDeltas.delete(messageId);
+    forgetStreaming(threadId);
 
     publish(RuntimeEvent.cases["thread.removed"].make({ threadId }));
   });
@@ -882,19 +571,6 @@ const make = Effect.gen(function* () {
     },
     (effect, entry) => entry.lock.withPermit(effect),
   );
-
-  /**
-   * Reports a failure in a thread's transcript (in none when null), then passes it on: for
-   * failures nobody waits on, and commands that start a thread, which name none themselves.
-   */
-  function reportErrorsIn(threadId: string | null, announce = publish) {
-    return <A, E extends { readonly message: string }, R>(effect: Effect.Effect<A, E, R>) =>
-      Effect.tapError(effect, (error) =>
-        Effect.sync(() =>
-          announce(RuntimeEvent.cases.error.make({ threadId, message: error.message })),
-        ),
-      );
-  }
 
   /**
    * Sends a message, or queues it with `queue` while a turn runs. A `messageId` already sent
@@ -1075,11 +751,6 @@ const make = Effect.gen(function* () {
   /** Side chats (BTW) by id; closing one forgets it. */
   const sideChats = new Map<string, SideChat>();
 
-  /** Side chat events go out unstored and unbatched, to the connection that asked. */
-  function publishSideChat(event: RuntimeEvent) {
-    if (!isShuttingDown) PubSub.publishUnsafe(pubsub, { seq: ++seq, id: null, event });
-  }
-
   /**
    * Starts a side chat's agent in plan mode, with no MassCode tools, on a copy of the thread's
    * conversation through the turn of `messageId`. Resolves to what to hand it with the first
@@ -1233,7 +904,7 @@ const make = Effect.gen(function* () {
   /** Fails, saying how to fix it, unless `provider`'s CLI is installed and signed in. */
   const ensureHarnessReady = Effect.fn("ensureHarnessReady")(function* (provider: ProviderKind) {
     const name = getHarnessName(yield* settingsStore.get, provider);
-    const status = (yield* registry.list).find((harness) => harness.kind === provider);
+    const status = (yield* providerRegistry.list).find((harness) => harness.kind === provider);
 
     if (status?.checking)
       return yield* new CommandError({
@@ -1278,6 +949,31 @@ const make = Effect.gen(function* () {
     );
   });
 
+  // Idle threads shelve with time alone; the threshold is in days, so a check a minute is plenty.
+  // Resuming at a usage limit's reset rides along: a minute late is fine, and it survives sleep.
+  yield* Effect.forkScoped(
+    Effect.schedule(
+      Effect.sync(() => {
+        for (const entry of threads.values()) {
+          refreshShelved(entry);
+          const stop = entry.info.limitStop;
+          if (
+            stop?.resumeAtReset &&
+            stop.resetsAt !== null &&
+            Date.now() >= stop.resetsAt + LIMIT_RESET_GRACE_MS
+          )
+            runFork(
+              resumeAfterLimit(entry, stop.resumeAtReset).pipe(
+                reportErrorsIn(entry.info.id),
+                Effect.ignore,
+              ),
+            );
+        }
+      }),
+      Schedule.spaced("1 minute"),
+    ),
+  );
+
   /** Stops agent processes nobody has used in a while; they resume from their token on the next message. */
   const reapIdleSessions = Effect.gen(function* () {
     const now = Date.now();
@@ -1297,7 +993,7 @@ const make = Effect.gen(function* () {
     Effect.fn("readLimits")(function* (provider: string) {
       if (!Schema.is(ProviderKind)(provider)) return;
 
-      const { limits, error } = yield* registry.readLimits(provider);
+      const { limits, error } = yield* providerRegistry.readLimits(provider);
       publish(RuntimeEvent.cases["provider.limits"].make({ provider, limits: [...limits], error }));
     }),
   );
@@ -1326,17 +1022,6 @@ const make = Effect.gen(function* () {
       publish(RuntimeEvent.cases["thread.usage"].make({ threadId, usage }));
     }),
   );
-
-  /** Applies `settings` and announces them; when they couldn't be saved, fails after. */
-  function saveSettings(settings: Settings) {
-    return settingsStore
-      .update(settings)
-      .pipe(
-        Effect.ensuring(
-          Effect.sync(() => publish(RuntimeEvent.cases["settings.updated"].make({ settings }))),
-        ),
-      );
-  }
 
   /**
    * A worktree of the project's repo on a new branch named after the thread, under the
@@ -1877,11 +1562,12 @@ const make = Effect.gen(function* () {
               ),
             );
           }),
-        "providers.refresh": () => registry.refresh,
-        "provider.link": (command) => registry.link(command.provider),
-        "provider.linkCode": (command) => registry.submitCode(command.provider, command.code),
-        "provider.linkCancel": (command) => registry.cancelLink(command.provider),
-        "provider.unlink": (command) => registry.unlink(command.provider),
+        "providers.refresh": () => providerRegistry.refresh,
+        "provider.link": (command) => providerRegistry.link(command.provider),
+        "provider.linkCode": (command) =>
+          providerRegistry.submitCode(command.provider, command.code),
+        "provider.linkCancel": (command) => providerRegistry.cancelLink(command.provider),
+        "provider.unlink": (command) => providerRegistry.unlink(command.provider),
         "provider.readLimits": (command) => readLimits(command.provider),
         "thread.interrupt": (command) => Effect.flatMap(getEntry(command.threadId), interrupt),
         "thread.stopAgent": (command) =>
@@ -1987,7 +1673,7 @@ const make = Effect.gen(function* () {
               Effect.ensuring(
                 serializeLaunchSettings(before) === serializeLaunchSettings(command.settings)
                   ? Effect.void
-                  : registry.refresh,
+                  : providerRegistry.refresh,
               ),
             );
           }),
@@ -1999,62 +1685,25 @@ const make = Effect.gen(function* () {
     dispatch: (command) =>
       dispatch(command).pipe(reportErrorsIn("threadId" in command ? command.threadId : null)),
     subscribe: Effect.gen(function* () {
-      const subscription = yield* PubSub.subscribe(pubsub);
+      const live = yield* subscribe;
 
       return {
         dataId: store.dataId,
         settings: yield* settingsStore.get,
         projects: yield* projectsStore.list,
-        providers: yield* registry.list,
+        providers: yield* providerRegistry.list,
         threads: [...threads.values()].map((entry) => entry.info),
         terminals: terminals.list(),
-        live: Stream.fromSubscription(subscription),
+        live,
       };
     }),
     terminals,
     browsers,
     devices,
     mcp,
-    readThread: (threadId, after, turnLimit) => {
-      if (!threads.has(threadId)) return null;
-
-      const live = [...streaming.values()].filter((delta) => delta.threadId === threadId);
-      const cursor = store.readCursor(threadId);
-      // A cursor past the end means the cache is from another database: start over.
-      // Sized before anything is decoded, so a huge gap never gets read.
-      if (after !== null && after <= cursor) {
-        const { count, bytes } = store.measureAfter(threadId, after);
-        if (count <= MAX_REPLAY && bytes <= MAX_REPLAY_BYTES) {
-          return {
-            seq,
-            frame: ServerFrame.cases["thread.replay"].make({
-              threadId,
-              events: store.readAfter(threadId, after),
-              streaming: live,
-              cursor,
-            }),
-          };
-        }
-      }
-      const { events, page } = store.readTurns(threadId, turnLimit);
-      return {
-        seq,
-        frame: ServerFrame.cases["thread.snapshot"].make({
-          threadId,
-          events,
-          streaming: live,
-          cursor,
-          page,
-        }),
-      };
-    },
-    readOlder: (threadId, before, turnLimit) => {
-      if (!threads.has(threadId)) return null;
-
-      const { events, page } = store.readTurns(threadId, turnLimit, before);
-      return { events, page: page ?? { before, hasMore: false } };
-    },
-    search: (query) => store.search(query, 50).filter((hit) => threads.has(hit.threadId)),
+    readThread,
+    readOlder,
+    search,
     hasActiveTurns: () => [...threads.values()].some(isBusy),
     shutdown: Effect.gen(function* () {
       flushDeltas();
