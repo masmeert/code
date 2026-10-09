@@ -9,13 +9,8 @@ import {
   RuntimeEvent,
   ServerFrame,
   type Attachment,
-  type GitAction,
   type LimitStop,
-  type MergeMethod,
   type QueuedMessage,
-  type PullRequest,
-  type RepoStatus,
-  type SourceControlKind,
   type SearchHit,
   type Settings,
   type CommandRun,
@@ -28,54 +23,34 @@ import * as Effect from "effect/Effect";
 import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
-import * as Result from "effect/Result";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
-import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { existsSync } from "node:fs";
 import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
 import {
   addWorktree,
-  fastForwardDefaultBranch,
   captureCheckpoint,
   checkoutBranch,
   getCheckpointRef,
-  commitAll,
   copyCheckpoints,
   createBranch,
   deleteCheckpoints,
   deleteThreadCheckpoints,
   hasCheckpoint,
-  listBranches,
   listFiles,
-  mergeIntoBase,
-  pushBranch,
   readBranch,
   readCheckpointDiff,
   readCheckpointStats,
-  readDiff,
-  readPullRequestRange,
-  readRecentSubjects,
-  readRemoteUrl,
-  readStatus,
   removeWorktreeIfClean,
   readRepoRoot,
   restoreCheckpoint,
 } from "./git.ts";
 import { expandHome, listFolders } from "./folders.ts";
 import { buildHandoff } from "./handoff.ts";
-import {
-  detectSourceControl,
-  mergePullRequest,
-  openPullRequest,
-  probeSourceControl,
-  readPullRequest,
-  readPullRequestTemplate,
-} from "./sourceControl.ts";
-import { generateCommitMessage, generatePullRequest, generateThreadTitle } from "./writer.ts";
+import { generateThreadTitle } from "./writer.ts";
 import { ProviderError, type ProviderSession } from "./providers/ProviderAdapter.ts";
 import { ProviderRegistry } from "./providers/ProviderRegistry.ts";
 import { DATA_DIR } from "./storage/jsonFile.ts";
@@ -98,6 +73,7 @@ import { createMcp, type Mcp, type SendMessageInput, type StartThreadInput } fro
 import { createTerminals, type Terminals } from "./terminals.ts";
 import { readProjectConfig } from "./projectConfig.ts";
 import { createSkillCatalog } from "./skills.ts";
+import { createRepoPanel } from "./repoPanel.ts";
 import { CommandError, getErrorMessage } from "./errors.ts";
 import { coalesceLoads } from "./coalesceLoads.ts";
 import { ADAPTERS, buildWriterInput, getHarnessName } from "./harnesses.ts";
@@ -1315,81 +1291,7 @@ const make = Effect.gen(function* () {
   });
   yield* Effect.forkScoped(Effect.schedule(reapIdleSessions, Schedule.spaced(REAP_INTERVAL_MS)));
 
-  /** Announces the branches at `path`; `error` reports a failed checkout alongside them. */
-  function publishBranches(path: string, error: string | null = null) {
-    return Effect.promise(() => listBranches(path)).pipe(
-      Effect.map(({ current, branches }) =>
-        publish(RuntimeEvent.cases["git.branches"].make({ path, current, branches, error })),
-      ),
-    );
-  }
-
-  // Asking the host means a network call, so answers are kept a while (t3code keeps them 60 s).
-  const PULL_REQUEST_TTL_MS = 60_000;
-  const hosts = new Map<string, Promise<SourceControlKind | null>>();
-  const pullRequests = new Map<string, { at: number; pr: Promise<PullRequest | null> }>();
-
-  /** The repo state at `path`, with its host and the branch's pull request. */
-  async function readRepo(path: string): Promise<RepoStatus | null> {
-    const status = await readStatus(path);
-    if (!status) return null;
-
-    const url = await readRemoteUrl(path);
-    let host = hosts.get(url ?? "");
-    if (!host) {
-      host = detectSourceControl(url);
-      hosts.set(url ?? "", host);
-    }
-    const sourceControl = await host;
-
-    const key = `${path}\0${status.branch}`;
-    let cached = pullRequests.get(key);
-    if (
-      sourceControl &&
-      status.branch &&
-      (!cached || Date.now() - cached.at > PULL_REQUEST_TTL_MS)
-    ) {
-      cached = { at: Date.now(), pr: readPullRequest(path, sourceControl, status.branch) };
-      pullRequests.set(key, cached);
-    }
-
-    return { ...status, sourceControl, pullRequest: (sourceControl && (await cached?.pr)) || null };
-  }
-
-  function forgetPullRequest(path: string) {
-    for (const key of pullRequests.keys())
-      if (key.startsWith(`${path}\0`)) pullRequests.delete(key);
-  }
-
-  /** Announces the repo state at `path`; `action`/`error` report the git action it answers. */
-  function publishStatus(
-    path: string,
-    action: GitAction | null = null,
-    error: string | null = null,
-  ) {
-    return Effect.promise(() => readRepo(path)).pipe(
-      Effect.map((status) =>
-        publish(RuntimeEvent.cases["git.status"].make({ path, status, action, error })),
-      ),
-    );
-  }
-
-  // At most one fetch per repo this often, however many windows ask (t3code fetches every 30 s).
-  const AUTO_PULL_INTERVAL_MS = 30_000;
-  const pulledAt = new Map<string, number>();
-
-  // Plain refreshes (every window, every finished tool call) coalesce per repo.
-  const refreshStatus = yield* coalesceLoads(
-    Effect.fn("refreshStatus")(function* (path: string) {
-      const { autoPull } = yield* settingsStore.get;
-      if (autoPull && Date.now() - (pulledAt.get(path) ?? 0) > AUTO_PULL_INTERVAL_MS) {
-        pulledAt.set(path, Date.now());
-        yield* Effect.promise(() => fastForwardDefaultBranch(path));
-      }
-
-      yield* publishStatus(path);
-    }),
-  );
+  const repoPanel = yield* createRepoPanel({ settingsStore, publish, threads, refreshMeta });
 
   const readLimits = yield* coalesceLoads(
     Effect.fn("readLimits")(function* (provider: string) {
@@ -1425,104 +1327,6 @@ const make = Effect.gen(function* () {
     }),
   );
 
-  function publishDiff(path: string) {
-    return Effect.map(
-      Effect.promise(() => readDiff(path)),
-      (diff) => publish(RuntimeEvent.cases["git.diff"].make({ path, ...diff })),
-    );
-  }
-
-  const refreshDiff = yield* coalesceLoads(publishDiff);
-
-  /** A message for everything uncommitted at `path`, from the commit model in settings. */
-  const writeCommitMessage = Effect.fn("writeCommitMessage")(function* (path: string) {
-    const settings = yield* settingsStore.get;
-    const [diff, recent] = yield* Effect.promise(() =>
-      Promise.all([readDiff(path), readRecentSubjects(path, 20)]),
-    );
-    if (diff.error) return { error: diff.error };
-    if (!diff.patch) return { error: "Nothing to commit" };
-
-    return yield* Effect.tryPromise({
-      try: () =>
-        generateCommitMessage({ ...buildWriterInput(path, settings, recent), patch: diff.patch }),
-      catch: (error) => `Couldn't write a commit message: ${getErrorMessage(error)}`,
-    }).pipe(
-      Effect.map((message) => ({ message })),
-      Effect.catch((error) => Effect.succeed({ error })),
-    );
-  });
-
-  /**
-   * Pushes the branch if the host doesn't have all of it, writes the title and body with the
-   * commit model, and opens the pull request. Resolves to an error message on failure.
-   */
-  const createPullRequest = Effect.fn("createPullRequest")(function* (path: string) {
-    const status = yield* Effect.promise(() => readRepo(path));
-    if (!status?.sourceControl) return "This repo's remote isn't on GitHub or GitLab";
-    if (!status.branch) return "Check out a branch first";
-    if (status.branch === status.defaultBranch)
-      return `You're on ${status.branch}; create a branch for the pull request first`;
-    if (status.changes) return "Commit your changes before opening a pull request";
-
-    const isOpen = status.pullRequest?.state === "open" || status.pullRequest?.state === "draft";
-    if (isOpen) return `#${status.pullRequest.number} is already open for this branch`;
-
-    const { sourceControl, branch } = status;
-    if (!status.upstream || status.ahead) {
-      const pushed = yield* Effect.promise(() => pushBranch(path));
-      if (pushed) return pushed;
-    }
-
-    const settings = yield* settingsStore.get;
-    const [range, recent, root] = yield* Effect.promise(() =>
-      Promise.all([
-        readPullRequestRange(path, branch),
-        readRecentSubjects(path, 20),
-        readRepoRoot(path),
-      ]),
-    );
-    if (!range) return "Couldn't find the branch to open the pull request against";
-    if (!range.commits) return `This branch has no commits that ${range.base} doesn't have`;
-
-    // t3code only follows templates on GitHub; GitLab keeps its own in .gitlab/.
-    const template =
-      settings.followTemplates !== false && sourceControl === "github" && root
-        ? yield* Effect.promise(() => readPullRequestTemplate(root))
-        : null;
-
-    const text = yield* Effect.tryPromise({
-      try: () =>
-        generatePullRequest({
-          ...buildWriterInput(path, settings, recent),
-          ...range,
-          head: branch,
-          template,
-        }),
-      catch: (error) => `Couldn't write the pull request: ${getErrorMessage(error)}`,
-    }).pipe(Effect.result);
-    if (Result.isFailure(text)) return text.failure;
-
-    return yield* Effect.promise(() =>
-      openPullRequest(path, sourceControl, { base: range.base, head: branch, ...text.success }),
-    );
-  });
-
-  /** Merges the branch's open pull request on its host. Resolves to an error message on failure. */
-  async function mergeOpenPullRequest(path: string, method: MergeMethod) {
-    const status = await readRepo(path);
-    const sourceControl = status?.sourceControl;
-    const pullRequest = status?.pullRequest;
-    if (
-      !sourceControl ||
-      !pullRequest ||
-      (pullRequest.state !== "open" && pullRequest.state !== "draft")
-    )
-      return "This branch has no open pull request";
-
-    return mergePullRequest(path, sourceControl, pullRequest.number, method);
-  }
-
   /** Applies `settings` and announces them; when they couldn't be saved, fails after. */
   function saveSettings(settings: Settings) {
     return settingsStore
@@ -1533,28 +1337,6 @@ const make = Effect.gen(function* () {
         ),
       );
   }
-
-  /** Commits and pushes on one repo run one at a time. */
-  const gitLocks = new Map<string, Semaphore.Semaphore>();
-
-  function withRepoLock<A, E>(path: string, effect: Effect.Effect<A, E>) {
-    let lock = gitLocks.get(path);
-    if (!lock) {
-      lock = Semaphore.makeUnsafe(1);
-      gitLocks.set(path, lock);
-    }
-
-    return lock.withPermit(effect);
-  }
-
-  /** Runs a git action on the repo at `path`, one at a time, and announces the repo state after it. */
-  const runGitAction = Effect.fn("runGitAction")(
-    function* (path: string, action: GitAction, run: Effect.Effect<string | null>) {
-      const error = yield* run;
-      yield* publishStatus(path, action, error);
-    },
-    (effect, path) => withRepoLock(path, effect),
-  );
 
   /**
    * A worktree of the project's repo on a new branch named after the thread, under the
@@ -1971,16 +1753,6 @@ const make = Effect.gen(function* () {
     yield* send(entry, "Continue where you left off.", options);
   });
 
-  /** Announces the branches after `run` switched or created one, and the meta of threads in `path`. */
-  const changeBranch = Effect.fn("changeBranch")(function* (
-    path: string,
-    run: () => Promise<string | null>,
-  ) {
-    const error = yield* Effect.promise(run);
-    yield* publishBranches(path, error);
-    for (const entry of threads.values()) if (entry.info.cwd === path) refreshMeta(entry);
-  });
-
   function dispatch(command: ClientCommand) {
     return ClientCommand.match<Effect.Effect<void, CommandError | ProviderError | ProjectNotFound>>(
       command,
@@ -2036,74 +1808,23 @@ const make = Effect.gen(function* () {
               }),
             );
           }),
-        "git.listBranches": (command) => publishBranches(command.path),
+        "git.listBranches": (command) => repoPanel.publishBranches(command.path),
         "git.listFiles": ({ path }) =>
           Effect.promise(() => listFiles(path)).pipe(
             Effect.map((files) => publish(RuntimeEvent.cases["git.files"].make({ path, files }))),
           ),
-        "git.diff": (command) => refreshDiff(command.path),
+        "git.diff": (command) => repoPanel.refreshDiff(command.path),
         "git.checkout": ({ path, branch }) =>
-          changeBranch(path, () => checkoutBranch(path, branch)),
+          repoPanel.changeBranch(path, () => checkoutBranch(path, branch)),
         "git.createBranch": ({ path, branch }) =>
-          changeBranch(path, () => createBranch(path, branch)),
-        "git.status": (command) => refreshStatus(command.path),
-        "git.commit": (command) => {
-          const { path } = command;
-          const action: GitAction = command.push ? "commit-push" : "commit";
-          return withRepoLock(
-            path,
-            Effect.gen(function* () {
-              const written = command.message.trim()
-                ? { message: command.message }
-                : yield* writeCommitMessage(path);
-              let error =
-                "error" in written
-                  ? written.error
-                  : yield* Effect.promise(() => commitAll(path, written.message));
-              if (!error && command.push) error = yield* Effect.promise(() => pushBranch(path));
-
-              yield* publishStatus(path, action, error);
-              yield* publishDiff(path);
-            }),
-          );
-        },
-        "git.push": ({ path }) =>
-          runGitAction(
-            path,
-            "push",
-            Effect.promise(() => pushBranch(path)),
-          ),
-        "git.createPullRequest": ({ path }) =>
-          runGitAction(
-            path,
-            "pull-request",
-            createPullRequest(path).pipe(
-              Effect.ensuring(Effect.sync(() => forgetPullRequest(path))),
-            ),
-          ),
-        "git.mergePullRequest": ({ path, method }) =>
-          runGitAction(
-            path,
-            "merge",
-            Effect.promise(() => mergeOpenPullRequest(path, method)).pipe(
-              Effect.ensuring(Effect.sync(() => forgetPullRequest(path))),
-            ),
-          ),
-        "git.mergeIntoBase": ({ path }) =>
-          runGitAction(
-            path,
-            "merge-into-base",
-            Effect.promise(() => mergeIntoBase(path)),
-          ),
-        "sourceControl.refresh": () =>
-          Effect.promise(async () => {
-            hosts.clear();
-            publish(
-              RuntimeEvent.cases["sourceControl.updated"].make({
-                statuses: await probeSourceControl(),
-              }),
-            );
-          }),
+          repoPanel.changeBranch(path, () => createBranch(path, branch)),
+        "git.status": (command) => repoPanel.refreshStatus(command.path),
+        "git.commit": ({ path, message, push }) => repoPanel.commit(path, message, push),
+        "git.push": ({ path }) => repoPanel.push(path),
+        "git.createPullRequest": ({ path }) => repoPanel.createPullRequest(path),
+        "git.mergePullRequest": ({ path, method }) => repoPanel.mergePullRequest(path, method),
+        "git.mergeIntoBase": ({ path }) => repoPanel.mergeIntoBase(path),
+        "sourceControl.refresh": () => repoPanel.refreshSourceControl,
         "thread.setModel": ({ threadId, provider, model }) =>
           Effect.gen(function* () {
             const entry = yield* getEntry(threadId);
