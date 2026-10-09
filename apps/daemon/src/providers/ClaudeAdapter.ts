@@ -28,12 +28,12 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
-import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import {
   IMAGE_TYPES,
   ProviderError,
+  createApprovalBook,
   prefixErrorMessage,
   summarizeToolInput,
   tryProviderPromise,
@@ -227,11 +227,10 @@ function start({
     try: () => {
       const launch = resolveHarnessLaunch("claude", harness);
       const inbox = createInbox<SDKUserMessage>();
-      const pending = new Map<string, PendingApproval>();
+      const approvals = createApprovalBook<PendingApproval>("claude", threadId, emit);
 
       const canUseTool: CanUseTool = (toolName, input, { signal, suggestions, agentID }) =>
         new Promise<PermissionResult>((resolve) => {
-          const requestId = `claude-perm-${randomUUID()}`;
           const questions: ReadonlyArray<UserQuestion> | undefined =
             toolName === "AskUserQuestion"
               ? Option.getOrUndefined(decodeAskUserQuestion(input))?.questions.map(
@@ -248,25 +247,9 @@ function start({
                   }),
                 )
               : undefined;
-          pending.set(requestId, { toolName, input, suggestions, questions, resolve });
-
-          signal.addEventListener("abort", () => {
-            if (pending.delete(requestId)) {
-              emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
-              resolve({ behavior: "deny", message: "Aborted" });
-            }
-          });
-
-          emit(
-            RuntimeEvent.cases["thread.status"].make({
-              threadId,
-              status: questions ? "awaiting-answer" : "awaiting-approval",
-            }),
-          );
-          emit(
-            RuntimeEvent.cases["approval.requested"].make({
-              threadId,
-              requestId,
+          const requestId = approvals.request(
+            { toolName, input, suggestions, questions, resolve },
+            {
               title: toolName,
               detail: questions
                 ? questions.map((question) => question.question).join("\n")
@@ -275,8 +258,12 @@ function start({
                   : summarizeToolInput(Option.getOrNull(decodeToolInput(input))),
               agent: agentID === undefined ? undefined : agentNames.get(agentID),
               questions,
-            }),
+            },
           );
+
+          signal.addEventListener("abort", () => {
+            if (approvals.withdraw(requestId)) resolve({ behavior: "deny", message: "Aborted" });
+          });
         });
 
       const options: Options = {
@@ -696,11 +683,8 @@ function start({
           decision,
           { permission: buildPermission = "auto-edit", answers } = {},
         ) =>
-          Effect.suspend(() => {
-            const entry = pending.get(requestId);
-            if (!entry) return Effect.fail(createError(`Unknown approval request ${requestId}`));
-
-            pending.delete(requestId);
+          Effect.gen(function* () {
+            const entry = yield* approvals.take(requestId);
             const answered = entry.questions && decision !== "deny" ? answers : undefined;
 
             // Approving a plan leaves plan mode for the level picked with it; the composer follows.
@@ -757,13 +741,7 @@ function start({
               entry.resolve({ behavior: "allow", updatedInput: entry.input });
             }
 
-            emit(
-              RuntimeEvent.cases["approval.resolved"].make(
-                answered ? { threadId, requestId, answers: answered } : { threadId, requestId },
-              ),
-            );
-            emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
-            return Effect.void;
+            approvals.resolve(requestId, answered);
           }),
         setModel: (next) =>
           Effect.tryPromise({

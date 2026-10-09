@@ -2,13 +2,7 @@
  * Cursor via `cursor-agent acp`, the Agent Client Protocol server in Cursor's CLI. It runs on the
  * user's Cursor login.
  */
-import {
-  Effort,
-  RuntimeEvent,
-  type ModelOption,
-  type SlashCommand,
-  type UserQuestion,
-} from "@masscode/contracts";
+import { Effort, RuntimeEvent, type ModelOption, type SlashCommand } from "@masscode/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
@@ -32,6 +26,7 @@ import { resolveHarnessLaunch, type HarnessLaunch } from "./launch.ts";
 import {
   IMAGE_TYPES,
   ProviderError,
+  createApprovalBook,
   formatTextWithFiles,
   tryProviderPromise,
   type ProviderAdapter,
@@ -224,7 +219,7 @@ function start({
     /** Edits started without saying which file, by tool id, with their transcript name. */
     const unnamedEdits = new Map<string, string>();
     const commandOf = new Map<string, string>();
-    const pending = new Map<string, Pending>();
+    const approvals = createApprovalBook<Pending>("cursor", threadId, emit);
     const allowedForSession = new Set<string>();
     let isPrompting = false;
     /** Messages sent while a turn runs: ACP can't add to a turn, so each starts the next one. */
@@ -366,34 +361,6 @@ function start({
       });
     }
 
-    function requestApproval(
-      rpcId: RpcId,
-      entry: Pending,
-      title: string,
-      detail: string,
-      questions?: ReadonlyArray<UserQuestion>,
-    ) {
-      // Each process numbers its requests from 0, and the transcript keeps approvals across relaunches.
-      const requestId = `cursor-${randomUUID()}`;
-      pending.set(requestId, entry);
-
-      emit(
-        RuntimeEvent.cases["thread.status"].make({
-          threadId,
-          status: questions ? "awaiting-answer" : "awaiting-approval",
-        }),
-      );
-      emit(
-        RuntimeEvent.cases["approval.requested"].make({
-          threadId,
-          requestId,
-          title,
-          detail,
-          questions,
-        }),
-      );
-    }
-
     function onRequest(rpcId: RpcId, method: string, params: Schema.Json | undefined) {
       if (method === "session/request_permission") {
         const request = Option.getOrUndefined(
@@ -409,11 +376,12 @@ function start({
           return true;
         }
 
-        requestApproval(
-          rpcId,
+        approvals.request(
           { kind: "permission", rpcId, request, key },
-          toolCall.kind === "execute" ? "Run command" : (toolCall.title ?? "Allow this?"),
-          command ?? getContentText(toolCall.content),
+          {
+            title: toolCall.kind === "execute" ? "Run command" : (toolCall.title ?? "Allow this?"),
+            detail: command ?? getContentText(toolCall.content),
+          },
         );
         return true;
       }
@@ -424,7 +392,8 @@ function start({
 
         // Outside plan mode a plan is the agent's own outline: nothing to approve.
         if (permission !== "plan") rpc?.respond(rpcId, { outcome: { outcome: "accepted" } });
-        else requestApproval(rpcId, { kind: "plan", rpcId }, "ExitPlanMode", plan.plan);
+        else
+          approvals.request({ kind: "plan", rpcId }, { title: "ExitPlanMode", detail: plan.plan });
         return true;
       }
 
@@ -432,18 +401,19 @@ function start({
         const asked = Option.getOrUndefined(Schema.decodeUnknownOption(AskQuestion)(params));
         if (!asked) return false;
 
-        requestApproval(
-          rpcId,
+        approvals.request(
           { kind: "question", rpcId, questions: asked.questions },
-          "AskUserQuestion",
-          asked.questions.map((question) => question.prompt).join("\n"),
-          asked.questions.map((question) => ({
-            id: question.id,
-            header: asked.title ?? "Question",
-            question: question.prompt,
-            options: question.options.map((option) => ({ label: option.label, description: "" })),
-            multiSelect: question.allowMultiple ?? false,
-          })),
+          {
+            title: "AskUserQuestion",
+            detail: asked.questions.map((question) => question.prompt).join("\n"),
+            questions: asked.questions.map((question) => ({
+              id: question.id,
+              header: asked.title ?? "Question",
+              question: question.prompt,
+              options: question.options.map((option) => ({ label: option.label, description: "" })),
+              multiSelect: question.allowMultiple ?? false,
+            })),
+          },
         );
         return true;
       }
@@ -649,19 +619,13 @@ function start({
       interrupt: Effect.sync(() => {
         steered.length = 0;
         afterTurn = null;
-        for (const [requestId, entry] of pending) {
+        for (const entry of approvals.withdrawAll())
           rpc?.respond(entry.rpcId, { outcome: { outcome: "cancelled" } });
-          emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
-        }
-        pending.clear();
         rpc?.notify("session/cancel", { sessionId });
       }),
       respondApproval: (requestId, decision, { permission: buildPermission, answers } = {}) =>
-        Effect.suspend(() => {
-          const entry = pending.get(requestId);
-          if (!entry) return Effect.fail(createError(`Unknown approval request ${requestId}`));
-
-          pending.delete(requestId);
+        Effect.gen(function* () {
+          const entry = yield* approvals.take(requestId);
           switch (entry.kind) {
             case "permission":
               if (decision === "allow-session") allowedForSession.add(entry.key);
@@ -709,16 +673,10 @@ function start({
               );
           }
 
-          emit(
-            RuntimeEvent.cases["approval.resolved"].make({
-              threadId,
-              requestId,
-              answers: entry.kind === "question" && decision !== "deny" ? answers : undefined,
-            }),
+          approvals.resolve(
+            requestId,
+            entry.kind === "question" && decision !== "deny" ? answers : undefined,
           );
-          emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
-
-          return Effect.void;
         }),
       // Cursor only takes a model at launch, so the next turn relaunches it.
       setModel: (next) => Effect.sync(() => void (model = next)),

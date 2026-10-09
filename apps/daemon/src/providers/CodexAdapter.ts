@@ -10,7 +10,6 @@ import {
   type ThreadUsage,
 } from "@masscode/contracts";
 import * as Effect from "effect/Effect";
-import { randomUUID } from "node:crypto";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -30,7 +29,7 @@ import {
 } from "./codexRpc.ts";
 import { resolveHarnessLaunch } from "./launch.ts";
 import {
-  ProviderError,
+  createApprovalBook,
   prefixErrorMessage,
   summarizeToolInput,
   tryProviderPromise,
@@ -40,10 +39,6 @@ import {
   type StartSessionInput,
   type TurnInput,
 } from "./ProviderAdapter.ts";
-
-function createError(message: string) {
-  return new ProviderError({ provider: "codex", message });
-}
 
 /** Codex's own presets: untrusted asks before most commands, on-request is "Auto", never + full access is "Full access". */
 const PERMISSION = {
@@ -189,10 +184,10 @@ function start({
   mcpServer,
 }: StartSessionInput) {
   return Effect.gen(function* () {
-    const pendingApprovals = new Map<
-      string,
-      { readonly rpcId: RpcId; readonly elicitation: CodexElicitation | null }
-    >();
+    const approvals = createApprovalBook<{
+      readonly rpcId: RpcId;
+      readonly elicitation: CodexElicitation | null;
+    }>("codex", threadId, emit);
     let codexThreadId = "";
     let startedModel = "";
     let activeTurnId: string | null = null;
@@ -487,21 +482,10 @@ function start({
       detail: string,
       fromThreadId?: string,
     ) {
-      // Each process numbers its requests from 0, and the transcript keeps approvals across relaunches.
-      const requestId = `codex-${randomUUID()}`;
-      pendingApprovals.set(requestId, { rpcId, elicitation });
-
-      emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "awaiting-approval" }));
-      emit(
-        RuntimeEvent.cases["approval.requested"].make({
-          threadId,
-          requestId,
-          title,
-          detail,
-          agent: subagents.get(fromThreadId ?? "")?.name,
-        }),
+      approvals.request(
+        { rpcId, elicitation },
+        { title, detail, agent: subagents.get(fromThreadId ?? "")?.name },
       );
-
       return true;
     }
 
@@ -710,22 +694,15 @@ function start({
         ),
       ),
       respondApproval: (requestId, decision) =>
-        Effect.suspend(() => {
-          const pending = pendingApprovals.get(requestId);
-          if (pending === undefined)
-            return Effect.fail(createError(`Unknown approval request ${requestId}`));
-
-          pendingApprovals.delete(requestId);
+        Effect.gen(function* () {
+          const pending = yield* approvals.take(requestId);
           rpc.respond(
             pending.rpcId,
             pending.elicitation
               ? buildElicitationResponse(pending.elicitation, decision)
               : { decision: CODEX_DECISION[decision] },
           );
-          emit(RuntimeEvent.cases["approval.resolved"].make({ threadId, requestId }));
-          emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
-
-          return Effect.void;
+          approvals.resolve(requestId);
         }),
       // A turn's model override sticks for later turns, so "null" keeps the last one.
       setModel: (next) => Effect.sync(() => void (currentModel = next ?? currentModel)),
