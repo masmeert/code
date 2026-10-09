@@ -10,7 +10,7 @@ function setStatus(next: UpdateStatus) {
     window.webContents.send("update-status-changed", status);
 }
 
-export function updateStatus() {
+export function getUpdateStatus() {
   return status;
 }
 

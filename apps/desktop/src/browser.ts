@@ -13,11 +13,11 @@ function isWebUrl(url: string) {
   return url.startsWith("https://") || url.startsWith("http://");
 }
 
-function sendToHost(window: BrowserWindow, event: DesktopBrowserEvent) {
+function sendBrowserEvent(window: BrowserWindow, event: DesktopBrowserEvent) {
   if (!window.isDestroyed()) window.webContents.send("browser-event", event);
 }
 
-function tabShortcut(
+function findTabShortcut(
   input: Electron.Input,
 ): "new-tab" | "close-tab" | "focus-address" | "reload" | "back" | "forward" | null {
   if (
@@ -61,7 +61,7 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
       };
     }
 
-    sendToHost(
+    sendBrowserEvent(
       window,
       DesktopBrowserEvent.cases["open-tab"].make({ webContentsId: guest.id, url }),
     );
@@ -73,14 +73,18 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
   );
 
   guest.on("before-input-event", (event, input) => {
-    const shortcut = tabShortcut(input);
+    const shortcut = findTabShortcut(input);
     if (!shortcut) return;
 
     event.preventDefault();
     if (shortcut === "reload") guest.reload();
     else if (shortcut === "back") guest.navigationHistory.goBack();
     else if (shortcut === "forward") guest.navigationHistory.goForward();
-    else sendToHost(window, DesktopBrowserEvent.cases[shortcut].make({ webContentsId: guest.id }));
+    else
+      sendBrowserEvent(
+        window,
+        DesktopBrowserEvent.cases[shortcut].make({ webContentsId: guest.id }),
+      );
   });
 
   guest.on("context-menu", (_event, menu) => {
@@ -91,7 +95,7 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
             {
               label: "Open Link in New Tab",
               click: () =>
-                sendToHost(
+                sendBrowserEvent(
                   window,
                   DesktopBrowserEvent.cases["open-tab"].make({
                     webContentsId: guest.id,
@@ -130,15 +134,17 @@ function attachGuest(window: BrowserWindow, guest: WebContents) {
 }
 
 export function configureBrowserSession(browserSession: Session) {
-  const allowed = new Set(["clipboard-sanitized-write", "fullscreen"]);
+  const allowedPermissions = new Set(["clipboard-sanitized-write", "fullscreen"]);
 
   browserSession.setPermissionRequestHandler((_contents, permission, callback) =>
-    callback(allowed.has(permission)),
+    callback(allowedPermissions.has(permission)),
   );
-  browserSession.setPermissionCheckHandler((_contents, permission) => allowed.has(permission));
+  browserSession.setPermissionCheckHandler((_contents, permission) =>
+    allowedPermissions.has(permission),
+  );
 }
 
-export function hostBrowser(window: BrowserWindow) {
+export function enableBrowserTabs(window: BrowserWindow) {
   window.webContents.on("will-attach-webview", (event, webPreferences, attributes) => {
     // Remote hosts' tabs have partitions of their own, named after this one.
     if (!attributes.partition?.startsWith(BROWSER_PARTITION) || !isWebUrl(attributes.src ?? "")) {

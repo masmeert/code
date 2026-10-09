@@ -9,7 +9,7 @@ import { pipeline as pipeStreams, Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { app, BrowserWindow, net, session } from "electron";
 import { configureBrowserSession } from "./browser.ts";
-import { freePort } from "./freePort.ts";
+import { findFreePort } from "./freePort.ts";
 
 /**
  * Remote hosts: each runs its own daemon, started over SSH and reached through a tunnel,
@@ -35,7 +35,7 @@ interface Host {
 
 const hosts = new Map<string, Host>();
 
-function listFile() {
+function getHostListPath() {
   return join(app.getPath("userData"), "hosts.json");
 }
 
@@ -120,7 +120,7 @@ echo "port=$(cat "$dir/port")"
 echo "token=$(cat "$dir/token")"
 `;
 
-function broadcast() {
+function broadcastHosts() {
   const list = listHosts();
   for (const window of BrowserWindow.getAllWindows())
     if (!window.isDestroyed()) window.webContents.send("hosts-changed", list);
@@ -128,11 +128,11 @@ function broadcast() {
 
 function setStatus(host: Host, status: HostStatus) {
   host.status = status;
-  broadcast();
+  broadcastHosts();
 }
 
 /** What went wrong in words that say how to fix it, from ssh's stderr. */
-function sshError(alias: string, stderr: string) {
+function describeSshError(alias: string, stderr: string) {
   if (/permission denied/i.test(stderr))
     return `Couldn't sign in to ${alias}. MassCode signs in with your SSH keys or agent, not a password: run ssh-copy-id ${alias} in a terminal, then retry.`;
   if (/host key verification failed/i.test(stderr))
@@ -145,7 +145,7 @@ function sshError(alias: string, stderr: string) {
 }
 
 /** One ssh command; `input` goes to its stdin. Rejects with a readable error when ssh itself fails. */
-function ssh(alias: string, command: string, input: string | Readable) {
+function runSsh(alias: string, command: string, input: string | Readable) {
   return new Promise<string>((resolve, reject) => {
     const child = spawn("ssh", [...SSH_OPTIONS, "-T", alias, command]);
     let stdout = "";
@@ -155,7 +155,7 @@ function ssh(alias: string, command: string, input: string | Readable) {
     child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
     child.on("error", (error) => reject(error));
     child.on("close", (code) =>
-      code === 0 ? resolve(stdout) : reject(new Error(sshError(alias, stderr))),
+      code === 0 ? resolve(stdout) : reject(new Error(describeSshError(alias, stderr))),
     );
 
     if (typeof input === "string") child.stdin.end(input);
@@ -170,8 +170,8 @@ function ssh(alias: string, command: string, input: string | Readable) {
   });
 }
 
-async function runScript(alias: string, version: string, mode: "start" | "restart" | "stop") {
-  const lines = (await ssh(alias, `sh -s -- ${version} ${mode}`, REMOTE_SCRIPT))
+async function runRemoteScript(alias: string, version: string, mode: "start" | "restart" | "stop") {
+  const lines = (await runSsh(alias, `sh -s -- ${version} ${mode}`, REMOTE_SCRIPT))
     .split("\n")
     .filter((line) => line.includes("="));
   const values = new Map(
@@ -181,14 +181,14 @@ async function runScript(alias: string, version: string, mode: "start" | "restar
   return { values, log };
 }
 
-function linuxArch(machine: string) {
+function toLinuxArch(machine: string) {
   if (machine === "x86_64" || machine === "amd64") return "x64";
   if (machine === "aarch64" || machine === "arm64") return "arm64";
   return null;
 }
 
 /** Counts bytes going by, for upload and download progress. */
-function progress(total: number, report: (percent: number) => void) {
+function createProgressStream(total: number, report: (percent: number) => void) {
   let done = 0;
   return new Transform({
     transform(chunk: Buffer, _encoding, callback) {
@@ -203,20 +203,20 @@ function progress(total: number, report: (percent: number) => void) {
  * The version hosts should run. In dev it's the Linux build next to this checkout,
  * versioned by when it was built (`pnpm --filter @masscode/daemon build:linux`).
  */
-async function wantedVersion() {
+async function readWantedVersion() {
   if (app.isPackaged) return app.getVersion();
 
-  const built = await stat(devArchive("x64")).catch(() => stat(devArchive("arm64")));
+  const built = await stat(getDevArchivePath("x64")).catch(() => stat(getDevArchivePath("arm64")));
   return `dev-${Math.round(built.mtimeMs)}`;
 }
 
-function devArchive(arch: string) {
+function getDevArchivePath(arch: string) {
   return join(app.getAppPath(), "..", "daemon", "dist", `masscode-daemon-linux-${arch}.gz`);
 }
 
 /** The gzipped daemon for `arch`, downloaded from this version's release the first time. */
-async function daemonArchive(host: Host, arch: string, version: string) {
-  if (!app.isPackaged) return devArchive(arch);
+async function fetchDaemonArchive(host: Host, arch: string, version: string) {
+  if (!app.isPackaged) return getDevArchivePath(arch);
 
   const path = join(
     app.getPath("userData"),
@@ -237,7 +237,7 @@ async function daemonArchive(host: Host, arch: string, version: string) {
   await pipeline(
     // SAFETY: Electron's fetch body is a web ReadableStream, which Readable.fromWeb takes.
     Readable.fromWeb(response.body as import("node:stream/web").ReadableStream),
-    progress(Number(response.headers.get("content-length")), (percent) =>
+    createProgressStream(Number(response.headers.get("content-length")), (percent) =>
       setStatus(
         host,
         HostStatus.cases.connecting.make({ step: `Downloading MassCode (${percent}%)` }),
@@ -249,16 +249,16 @@ async function daemonArchive(host: Host, arch: string, version: string) {
   return path;
 }
 
-async function upload(host: Host, arch: string, version: string) {
-  const archive = await daemonArchive(host, arch, version);
+async function uploadDaemon(host: Host, arch: string, version: string) {
+  const archive = await fetchDaemonArchive(host, arch, version);
   const { size } = await stat(archive);
-  await ssh(
+  await runSsh(
     host.alias,
     `sh -c 'd="$HOME/.masscode/remote/bin"; mkdir -p "$d" && gzip -dc > "$d/.upload" && chmod +x "$d/.upload" && mv "$d/.upload" "$d/masscode-daemon-${version}"'`,
     // Forwards a read error to the progress stream, so ssh sees it and rejects.
     pipeStreams(
       createReadStream(archive),
-      progress(size, (percent) =>
+      createProgressStream(size, (percent) =>
         setStatus(
           host,
           HostStatus.cases.connecting.make({ step: `Installing MassCode (${percent}%)` }),
@@ -273,7 +273,7 @@ function waitForPort(port: number, tunnel: ChildProcess) {
   return new Promise<void>((resolve, reject) => {
     const deadline = Date.now() + 15000;
 
-    function attempt() {
+    function tryConnect() {
       if (tunnel.exitCode !== null) return reject(new Error("The SSH tunnel closed while opening"));
 
       const socket = connect(port, "127.0.0.1");
@@ -284,11 +284,11 @@ function waitForPort(port: number, tunnel: ChildProcess) {
       socket.once("error", () => {
         socket.destroy();
         if (Date.now() > deadline) reject(new Error("The SSH tunnel didn't open in time"));
-        else setTimeout(attempt, 100);
+        else setTimeout(tryConnect, 100);
       });
     }
 
-    attempt();
+    tryConnect();
   });
 }
 
@@ -308,7 +308,7 @@ async function routeBrowser(alias: string, socksPort: number | null) {
 
 /** Forwards a local port to the daemon, and a SOCKS proxy for the host's browser tabs. */
 async function openTunnel(host: Host, remotePort: number, token: string) {
-  const [localPort, socksPort] = [await freePort(), await freePort()];
+  const [localPort, socksPort] = [await findFreePort(), await findFreePort()];
   let stderr = "";
   const tunnel = spawn("ssh", [
     "-T",
@@ -345,7 +345,7 @@ async function openTunnel(host: Host, remotePort: number, token: string) {
     tunnel.kill();
     throw new Error(
       stderr
-        ? sshError(host.alias, stderr)
+        ? describeSshError(host.alias, stderr)
         : error instanceof Error
           ? error.message
           : String(error),
@@ -363,21 +363,21 @@ async function connectHost(host: Host, mode: "start" | "restart"): Promise<Daemo
     setStatus(host, HostStatus.cases.connecting.make({ step: "Connecting" }));
 
   try {
-    const version = await wantedVersion();
+    const version = await readWantedVersion();
     if (!VERSION_PATTERN.test(version)) throw new Error(`Unexpected app version ${version}`);
 
-    let { values, log } = await runScript(host.alias, version, mode);
+    let { values, log } = await runRemoteScript(host.alias, version, mode);
     if (values.get("state") === "missing") {
-      const arch = linuxArch(values.get("arch") ?? "");
+      const arch = toLinuxArch(values.get("arch") ?? "");
       if (!arch)
         throw new Error(
           values.get("arch")
             ? `MassCode runs on x64 and arm64 Linux hosts; ${host.alias} is ${values.get("arch")}.`
             : `Couldn't detect ${host.alias}'s CPU architecture. MassCode runs on x64 and arm64 Linux hosts.`,
         );
-      await upload(host, arch, version);
+      await uploadDaemon(host, arch, version);
       setStatus(host, HostStatus.cases.connecting.make({ step: "Starting MassCode" }));
-      ({ values, log } = await runScript(host.alias, version, mode));
+      ({ values, log } = await runRemoteScript(host.alias, version, mode));
     }
 
     const state = values.get("state");
@@ -422,13 +422,13 @@ function ensureConnected(host: Host, mode: "start" | "restart" = "start") {
   return (host.connecting ??= connectHost(host, mode).finally(() => (host.connecting = null)));
 }
 
-async function saveList() {
+async function saveHostList() {
   await mkdir(app.getPath("userData"), { recursive: true });
-  await writeFile(listFile(), JSON.stringify([...hosts.keys()]));
+  await writeFile(getHostListPath(), JSON.stringify([...hosts.keys()]));
 }
 
 export async function loadHosts() {
-  const saved: unknown = JSON.parse(await readFile(listFile(), "utf8").catch(() => "[]"));
+  const saved: unknown = JSON.parse(await readFile(getHostListPath(), "utf8").catch(() => "[]"));
   if (!Array.isArray(saved)) return;
 
   for (const alias of saved) {
@@ -451,7 +451,7 @@ export function listHosts(): ReadonlyArray<RemoteHost> {
  * The daemon's tunnel end, connecting first if needed. Checked on every reconnect: the
  * host's daemon may have restarted on another port, or updated.
  */
-export function hostDaemon(alias: string) {
+export function ensureHostDaemon(alias: string) {
   const host = hosts.get(alias);
   return host ? ensureConnected(host) : Promise.resolve(null);
 }
@@ -468,8 +468,8 @@ export async function addHost(alias: string) {
     tunnel: null,
   });
   await routeBrowser(trimmed, null);
-  broadcast();
-  await saveList();
+  broadcastHosts();
+  await saveHostList();
 }
 
 export async function removeHost(alias: string) {
@@ -478,9 +478,9 @@ export async function removeHost(alias: string) {
 
   hosts.delete(alias);
   host.tunnel?.process.kill();
-  broadcast();
-  await saveList();
-  await ssh(alias, "sh -s -- - stop", REMOTE_SCRIPT).catch(() => {});
+  broadcastHosts();
+  await saveHostList();
+  await runSsh(alias, "sh -s -- - stop", REMOTE_SCRIPT).catch(() => {});
 }
 
 export async function restartHost(alias: string) {
@@ -498,7 +498,7 @@ export function closeTunnels() {
 const GIT_FORGES = new Set(["github.com", "gitlab.com", "bitbucket.org", "ssh.dev.azure.com"]);
 
 /** Concrete `Host` names in ~/.ssh/config and the files it includes; patterns like `*.internal` can't be connected to as-is. */
-export async function sshAliases() {
+export async function readSshAliases() {
   const sshDirectory = join(homedir(), ".ssh");
   const main = await readFile(join(sshDirectory, "config"), "utf8").catch(() => "");
   // ponytail: one level of Include without globs, which covers OrbStack's and most tools'

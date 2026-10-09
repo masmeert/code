@@ -118,7 +118,7 @@ function snapshotPage() {
   ].join("\n");
 }
 
-function targetElement(purpose: "point" | "focus", target: string) {
+function scrollToTarget(purpose: "point" | "focus", target: string) {
   let element: Element | null;
   try {
     element = /^e\d+$/.test(target)
@@ -155,7 +155,7 @@ function isExpression(source: string) {
   }
 }
 
-function withTimeout<Value>(promise: Promise<Value>, milliseconds: number, message: string) {
+function raceWithTimeout<Value>(promise: Promise<Value>, milliseconds: number, message: string) {
   return Promise.race([
     promise,
     new Promise<never>((_resolve, reject) =>
@@ -164,12 +164,12 @@ function withTimeout<Value>(promise: Promise<Value>, milliseconds: number, messa
   ]);
 }
 
-async function settle(guest: WebContents, milliseconds: number) {
+async function waitForPageLoad(guest: WebContents, milliseconds: number) {
   await new Promise((resolve) => setTimeout(resolve, 300));
   if (!guest.isLoading()) return;
 
   let handleStopLoading = () => {};
-  await withTimeout(
+  await raceWithTimeout(
     new Promise<void>((resolve) => {
       handleStopLoading = resolve;
       guest.once("did-stop-loading", handleStopLoading);
@@ -179,9 +179,9 @@ async function settle(guest: WebContents, milliseconds: number) {
   ).catch(() => guest.off("did-stop-loading", handleStopLoading));
 }
 
-async function capture(guest: WebContents) {
+async function captureScreenshot(guest: WebContents) {
   try {
-    const image = await withTimeout(guest.capturePage(), 5000, "Screenshot timed out");
+    const image = await raceWithTimeout(guest.capturePage(), 5000, "Screenshot timed out");
     if (image.isEmpty()) return null;
     return (image.getSize().width > 1280 ? image.resize({ width: 1280 }) : image)
       .toPNG()
@@ -199,10 +199,10 @@ function pressKey(guest: WebContents, key: string) {
   guest.sendInputEvent({ type: "keyUp", keyCode });
 }
 
-function run(guest: WebContents, action: BrowserAction): Promise<string> {
+function runBrowserAction(guest: WebContents, action: BrowserAction): Promise<string> {
   return BrowserAction.match(action, {
     navigate: async ({ url }) => {
-      await withTimeout(guest.loadURL(url), 30_000, `Timed out loading ${url}`).catch(
+      await raceWithTimeout(guest.loadURL(url), 30_000, `Timed out loading ${url}`).catch(
         (cause: unknown) => {
           if (!String(cause).includes("ERR_ABORTED")) throw cause;
         },
@@ -210,13 +210,13 @@ function run(guest: WebContents, action: BrowserAction): Promise<string> {
       return `Loaded ${guest.getURL()}`;
     },
     status: async () => {
-      await settle(guest, 30_000);
+      await waitForPageLoad(guest, 30_000);
       return guest.isLoading() ? "Still loading" : `Loaded ${guest.getURL()}`;
     },
     snapshot: () => guest.executeJavaScript(`(${snapshotPage.toString()})()`, true),
     click: async ({ target }) => {
       const point = await guest.executeJavaScript(
-        `(${targetElement.toString()})("point", ${JSON.stringify(target)})`,
+        `(${scrollToTarget.toString()})("point", ${JSON.stringify(target)})`,
         true,
       );
       if ("error" in point) throw new Error(point.error);
@@ -236,24 +236,24 @@ function run(guest: WebContents, action: BrowserAction): Promise<string> {
         button: "left",
         clickCount: 1,
       });
-      await settle(guest, 10_000);
+      await waitForPageLoad(guest, 10_000);
       return `Clicked ${target}`;
     },
     type: async ({ target, text, submit }) => {
       const focused = await guest.executeJavaScript(
-        `(${targetElement.toString()})("focus", ${JSON.stringify(target)})`,
+        `(${scrollToTarget.toString()})("focus", ${JSON.stringify(target)})`,
         true,
       );
       if ("error" in focused) throw new Error(focused.error);
 
       await guest.insertText(text);
       if (submit) pressKey(guest, "Enter");
-      await settle(guest, 10_000);
+      await waitForPageLoad(guest, 10_000);
       return `Typed into ${target}${submit ? " and pressed Enter" : ""}`;
     },
     press: async ({ key }) => {
       pressKey(guest, key);
-      await settle(guest, 10_000);
+      await waitForPageLoad(guest, 10_000);
       return `Pressed ${key}`;
     },
     evaluate: async ({ expression }) => {
@@ -285,11 +285,11 @@ export async function automateBrowser(
     throw new Error("That browser tab isn't open in this window");
   }
 
-  const text = await run(guest, action);
+  const text = await runBrowserAction(guest, action);
   return {
     url: guest.getURL(),
     title: guest.getTitle(),
     text,
-    screenshot: BrowserAction.guards.snapshot(action) ? await capture(guest) : null,
+    screenshot: BrowserAction.guards.snapshot(action) ? await captureScreenshot(guest) : null,
   };
 }

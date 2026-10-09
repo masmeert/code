@@ -1,12 +1,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { app, BrowserWindow, Menu, nativeTheme, type Rectangle, screen, shell } from "electron";
-import { hostBrowser } from "./browser.ts";
+import { enableBrowserTabs } from "./browser.ts";
 import { APP_URL } from "./renderer.ts";
 
 const BOUNDS_PATH = join(app.getPath("userData"), "window-bounds.json");
 
-function backgroundColor() {
+function getBackgroundColor() {
   return nativeTheme.shouldUseDarkColors ? "#101010" : "#fcfcfc";
 }
 
@@ -22,7 +22,7 @@ function isOnScreen(bounds: Rectangle) {
     );
 }
 
-function restoredBounds(): Partial<Rectangle> {
+function readSavedBounds(): Partial<Rectangle> {
   try {
     const bounds: Rectangle = JSON.parse(readFileSync(BOUNDS_PATH, "utf8"));
     return isOnScreen(bounds) ? bounds : { width: 1200, height: 800 };
@@ -38,10 +38,11 @@ function openLink(url: string) {
 }
 
 nativeTheme.on("updated", () => {
-  for (const window of BrowserWindow.getAllWindows()) window.setBackgroundColor(backgroundColor());
+  for (const window of BrowserWindow.getAllWindows())
+    window.setBackgroundColor(getBackgroundColor());
 });
 
-export function createWindow(url: string, bounds = restoredBounds()) {
+export function createWindow(url: string, bounds = readSavedBounds()) {
   const window = new BrowserWindow({
     ...bounds,
     minWidth: 720,
@@ -49,7 +50,7 @@ export function createWindow(url: string, bounds = restoredBounds()) {
     title: "MassCode",
     titleBarStyle: "hidden",
     trafficLightPosition: { x: 16, y: 11 },
-    backgroundColor: backgroundColor(),
+    backgroundColor: getBackgroundColor(),
     show: false,
     webPreferences: {
       preload: join(app.getAppPath(), "dist", "preload.cjs"),
@@ -60,7 +61,7 @@ export function createWindow(url: string, bounds = restoredBounds()) {
     },
   });
 
-  hostBrowser(window);
+  enableBrowserTabs(window);
   window.once("ready-to-show", () => window.show());
 
   window.on("close", () => {

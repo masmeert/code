@@ -6,17 +6,17 @@ const build = spawn("pnpm", ["build", "--watch"], { stdio: "inherit" });
 let app = null;
 let restartTimer = null;
 
-function launch() {
+function launchApp() {
   app = spawn(electron, ["."], { stdio: "inherit" });
   app.on("exit", (code) => process.exit(code ?? 0));
 }
 
-function restart() {
+function restartApp() {
   clearTimeout(restartTimer);
   restartTimer = setTimeout(() => {
     app?.removeAllListeners("exit");
     app?.kill();
-    launch();
+    launchApp();
   }, 150);
 }
 
@@ -26,5 +26,5 @@ process.on("exit", () => {
 });
 mkdirSync("dist", { recursive: true });
 watch("dist", (_event, file) => {
-  if (file?.endsWith(".cjs")) restart();
+  if (file?.endsWith(".cjs")) restartApp();
 });

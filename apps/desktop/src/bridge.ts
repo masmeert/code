@@ -5,21 +5,28 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, extname } from "node:path";
 import { automateBrowser } from "./browserAutomation.ts";
-import { addHost, hostDaemon, listHosts, removeHost, restartHost, sshAliases } from "./hosts.ts";
+import {
+  addHost,
+  ensureHostDaemon,
+  listHosts,
+  removeHost,
+  restartHost,
+  readSshAliases,
+} from "./hosts.ts";
 import { APP_URL } from "./renderer.ts";
-import { checkForUpdates, downloadUpdate, installUpdate, updateStatus } from "./updates.ts";
+import { checkForUpdates, downloadUpdate, installUpdate, getUpdateStatus } from "./updates.ts";
 
-function handle<Argument extends Schema.ConstraintDecoder<unknown>, Result>(
+function registerIpcHandler<Argument extends Schema.ConstraintDecoder<unknown>, Result>(
   channel: string,
   schema: Argument,
-  listener: (window: BrowserWindow, argument: Argument["Type"]) => Result,
+  handleRequest: (window: BrowserWindow, argument: Argument["Type"]) => Result,
 ) {
   ipcMain.handle(channel, (event, argument) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (!window || !event.senderFrame?.url.startsWith(APP_URL))
       throw new Error(`${channel} is only available to MassCode windows`);
 
-    return listener(window, Schema.decodeUnknownSync(schema)(argument));
+    return handleRequest(window, Schema.decodeUnknownSync(schema)(argument));
   });
 }
 
@@ -38,15 +45,15 @@ const announced = new Map<string, number>();
 /** Shown notifications, kept referenced so their click handler outlives garbage collection. */
 const shown = new Set<Notification>();
 
-export function registerBridge(daemon: () => Promise<{ port: number; token: string }> | null) {
-  handle("daemon", Schema.Undefined, () => daemon());
-  handle("hosts", Schema.Undefined, listHosts);
-  handle("add-host", Schema.String, (_window, alias) => addHost(alias));
-  handle("remove-host", Schema.String, (_window, alias) => removeHost(alias));
-  handle("host-daemon", Schema.String, (_window, alias) => hostDaemon(alias));
-  handle("restart-host", Schema.String, (_window, alias) => restartHost(alias));
-  handle("ssh-aliases", Schema.Undefined, sshAliases);
-  handle("read-files", Schema.Array(Schema.String), (_window, paths) =>
+export function registerBridge(findDaemon: () => Promise<{ port: number; token: string }> | null) {
+  registerIpcHandler("daemon", Schema.Undefined, () => findDaemon());
+  registerIpcHandler("hosts", Schema.Undefined, listHosts);
+  registerIpcHandler("add-host", Schema.String, (_window, alias) => addHost(alias));
+  registerIpcHandler("remove-host", Schema.String, (_window, alias) => removeHost(alias));
+  registerIpcHandler("host-daemon", Schema.String, (_window, alias) => ensureHostDaemon(alias));
+  registerIpcHandler("restart-host", Schema.String, (_window, alias) => restartHost(alias));
+  registerIpcHandler("ssh-aliases", Schema.Undefined, readSshAliases);
+  registerIpcHandler("read-files", Schema.Array(Schema.String), (_window, paths) =>
     Promise.all(
       paths.map(async (path) =>
         AttachmentInput.cases.data.make({
@@ -57,7 +64,7 @@ export function registerBridge(daemon: () => Promise<{ port: number; token: stri
       ),
     ),
   );
-  handle(
+  registerIpcHandler(
     "pick-folder",
     Schema.Struct({ title: Schema.String, defaultPath: Schema.optional(Schema.String) }),
     async (window, { title, defaultPath }) =>
@@ -70,7 +77,7 @@ export function registerBridge(daemon: () => Promise<{ port: number; token: stri
         })
       ).filePaths[0] ?? null,
   );
-  handle(
+  registerIpcHandler(
     "pick-files",
     Schema.String,
     async (window, title) =>
@@ -82,20 +89,20 @@ export function registerBridge(daemon: () => Promise<{ port: number; token: stri
         })
       ).filePaths,
   );
-  handle("set-theme", Theme, (_window, theme) => {
+  registerIpcHandler("set-theme", Theme, (_window, theme) => {
     nativeTheme.themeSource = theme;
   });
-  handle(
+  registerIpcHandler(
     "automate-browser",
     Schema.Struct({ webContentsId: Schema.Number, action: BrowserAction }),
     (window, { webContentsId, action }) => automateBrowser(window, webContentsId, action),
   );
-  handle("app-version", Schema.Undefined, () => app.getVersion());
-  handle("update-status", Schema.Undefined, updateStatus);
-  handle("check-for-updates", Schema.Undefined, checkForUpdates);
-  handle("download-update", Schema.Undefined, downloadUpdate);
-  handle("install-update", Schema.Undefined, installUpdate);
-  handle(
+  registerIpcHandler("app-version", Schema.Undefined, () => app.getVersion());
+  registerIpcHandler("update-status", Schema.Undefined, getUpdateStatus);
+  registerIpcHandler("check-for-updates", Schema.Undefined, checkForUpdates);
+  registerIpcHandler("download-update", Schema.Undefined, downloadUpdate);
+  registerIpcHandler("install-update", Schema.Undefined, installUpdate);
+  registerIpcHandler(
     "notify",
     Schema.Struct({ threadId: Schema.String, title: Schema.String, body: Schema.String }),
     (window, { threadId, title, body }) => {
