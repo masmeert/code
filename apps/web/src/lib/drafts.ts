@@ -1,6 +1,7 @@
 import { AttachmentInput } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
+import { readStored, writeStored } from "./storage.ts";
 import type { PromptAttachment } from "@masscode/ui/agents/prompt-input";
 
 export interface DraftAttachment extends PromptAttachment {
@@ -69,48 +70,35 @@ export function focusComposer() {
 // ⌘S tucks the current prompt away for later (t3code's prompt stash). Pasted files
 // travel as data and would bloat storage, so only text and file paths are kept.
 
-export interface Stash {
-  readonly id: string;
-  readonly text: string;
-  readonly attachments: ReadonlyArray<DraftAttachment>;
-  readonly at: number;
-}
+const Stash = Schema.Struct({
+  id: Schema.String,
+  text: Schema.String,
+  attachments: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+      preview: Schema.optionalKey(Schema.String),
+      image: Schema.optionalKey(Schema.Boolean),
+      input: AttachmentInput,
+    }),
+  ),
+  at: Schema.Number,
+});
+export type Stash = typeof Stash.Type;
+const Stashes = Schema.Array(Stash);
 
 const STASH_KEY = "masscode.stash";
-const decodeStashes = Schema.decodeUnknownSync(
-  Schema.fromJsonString(
-    Schema.Array(
-      Schema.Struct({
-        id: Schema.String,
-        text: Schema.String,
-        attachments: Schema.Array(
-          Schema.Struct({
-            id: Schema.String,
-            name: Schema.String,
-            preview: Schema.optionalKey(Schema.String),
-            image: Schema.optionalKey(Schema.Boolean),
-            input: AttachmentInput,
-          }),
-        ),
-        at: Schema.Number,
-      }),
-    ),
-  ),
-);
 const stashListeners = new Set<() => void>();
-let stashes: ReadonlyArray<Stash> = (() => {
-  try {
-    return decodeStashes(localStorage.getItem(STASH_KEY) ?? "[]");
-  } catch {
-    return [];
-  }
-})();
+
+function readStashes() {
+  return readStored(STASH_KEY, Stashes, []);
+}
+
+let stashes = readStashes();
 
 function writeStashes(next: ReadonlyArray<Stash>) {
   stashes = next;
-  try {
-    localStorage.setItem(STASH_KEY, JSON.stringify(next));
-  } catch {}
+  writeStored(STASH_KEY, Stashes, next);
   for (const listener of stashListeners) listener();
 }
 
@@ -155,10 +143,6 @@ export function restoreStash(key: string, id: string) {
 
 window.addEventListener("storage", (event) => {
   if (event.key !== STASH_KEY) return;
-  try {
-    stashes = decodeStashes(event.newValue ?? "[]");
-  } catch {
-    stashes = [];
-  }
+  stashes = readStashes();
   for (const listener of stashListeners) listener();
 });

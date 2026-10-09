@@ -1,30 +1,25 @@
+import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
+import { readStored, writeStored } from "./storage.ts";
 
-interface ThreadSimulator {
-  readonly open: boolean;
+const ThreadSimulator = Schema.Struct({
+  open: Schema.Boolean,
   /** The simulator the panel shows; null until one is picked. */
-  readonly deviceId: string | null;
-}
+  deviceId: Schema.NullOr(Schema.String),
+});
+type ThreadSimulator = typeof ThreadSimulator.Type;
 
 const STORAGE_KEY = "masscode.simulator";
 const CLOSED: ThreadSimulator = { open: false, deviceId: null };
 
-function readThreads(): Record<string, ThreadSimulator> {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
-  } catch {
-    return {};
-  }
-}
+const ThreadSimulators = Schema.Record(Schema.String, ThreadSimulator);
 
-let threads = readThreads();
+let threads = readStored(STORAGE_KEY, ThreadSimulators, {});
 const listeners = new Set<() => void>();
 
 function updateThread(threadId: string, update: (simulator: ThreadSimulator) => ThreadSimulator) {
   threads = { ...threads, [threadId]: update(threads[threadId] ?? CLOSED) };
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(threads));
-  } catch {}
+  writeStored(STORAGE_KEY, ThreadSimulators, threads);
   for (const listener of listeners) listener();
 }
 

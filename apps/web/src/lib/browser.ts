@@ -1,5 +1,7 @@
 import { BrowserAction, type BrowserResult } from "@masscode/contracts";
+import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
+import { readStored, writeStored } from "./storage.ts";
 
 export interface Webview extends HTMLElement {
   loadURL(url: string): Promise<void>;
@@ -12,17 +14,21 @@ export interface Webview extends HTMLElement {
   stop(): void;
 }
 
-export interface BrowserTab {
-  readonly id: string;
-  readonly url: string;
-  readonly title: string;
-}
+const BrowserTab = Schema.Struct({
+  id: Schema.String,
+  url: Schema.String,
+  title: Schema.String,
+});
+export type BrowserTab = typeof BrowserTab.Type;
 
-export interface ThreadBrowser {
-  readonly open: boolean;
-  readonly tabs: ReadonlyArray<BrowserTab>;
-  readonly activeTabId: string | null;
-}
+const ThreadBrowser = Schema.Struct({
+  open: Schema.Boolean,
+  tabs: Schema.Array(BrowserTab),
+  activeTabId: Schema.NullOr(Schema.String),
+});
+export type ThreadBrowser = typeof ThreadBrowser.Type;
+
+const ThreadBrowsers = Schema.Record(Schema.String, ThreadBrowser);
 
 export interface TabActivity {
   readonly canGoBack: boolean;
@@ -49,25 +55,18 @@ interface BrowserState {
 
 const STORAGE_KEY = "masscode.browser";
 
-function readThreads(): Record<string, ThreadBrowser> {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
-  } catch {
-    return {};
-  }
-}
-
-let state: BrowserState = { threads: readThreads(), activity: {}, alive: [], surface: null };
+let state: BrowserState = {
+  threads: readStored(STORAGE_KEY, ThreadBrowsers, {}),
+  activity: {},
+  alive: [],
+  surface: null,
+};
 const listeners = new Set<() => void>();
 const webviews = new Map<string, Webview>();
 const addressInputs = new Map<string, HTMLInputElement>();
 
 function setState(next: BrowserState) {
-  if (next.threads !== state.threads) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next.threads));
-    } catch {}
-  }
+  if (next.threads !== state.threads) writeStored(STORAGE_KEY, ThreadBrowsers, next.threads);
   state = next;
   for (const listener of listeners) listener();
 }
