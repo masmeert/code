@@ -9,6 +9,7 @@ import {
   ClientCommand,
   isTranscriptEvent,
   type Project,
+  type ProviderStatus,
   PROTOCOL_MISMATCH,
   PROTOCOL_VERSION,
   RuntimeEvent,
@@ -19,33 +20,36 @@ import {
 import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
 import { AppState } from "react-native";
-import { loadMacs, type PairedMac, saveMacs } from "./macs.ts";
+import { loadHosts, type PairedHost, saveHosts } from "./hosts.ts";
 
-/** How this phone's link to a Mac stands. */
-export type MacConnection =
+/** How this phone's link to a host stands. */
+export type HostConnection =
   | "connecting"
   | "connected"
   /** Unreachable for now: asleep, MassCode closed, or Tailscale off; it keeps retrying. */
   | "offline"
-  /** The Mac unpaired this phone; only pairing again helps. */
+  /** The host unpaired this phone; only pairing again helps. */
   | "unpaired"
-  /** The phone and the Mac run versions that don't understand each other. */
+  /** The phone and the host run versions that don't understand each other. */
   | "outdated";
 
-export interface MacState {
-  readonly mac: PairedMac;
-  readonly connection: MacConnection;
-  /** The Mac's database the threads below come from. */
+export interface HostState {
+  /** How to reach it, from pairing. */
+  readonly paired: PairedHost;
+  readonly connection: HostConnection;
+  /** The host's database the threads below come from. */
   readonly dataId: string | null;
   readonly settings: Settings | null;
   readonly projects: ReadonlyArray<Project>;
+  /** The host's harnesses and their models, for the composer's model label. */
+  readonly providers: ReadonlyArray<ProviderStatus>;
   readonly threads: Readonly<Record<string, ThreadInfo>>;
 }
 
 interface State {
-  /** The paired Macs have been read from the keychain. */
+  /** The paired hosts have been read from the keychain. */
   readonly isLoaded: boolean;
-  readonly macs: Readonly<Record<string, MacState>>;
+  readonly hosts: Readonly<Record<string, HostState>>;
   /** By `transcriptKey`. */
   readonly transcripts: Readonly<Record<string, Transcript>>;
 }
@@ -55,14 +59,14 @@ const TURN_LIMIT = 10;
 
 const RETRY_DELAYS_MS = [500, 1000, 2000, 5000, 10_000, 30_000];
 
-/** The Mac closes an unpaired phone's sockets with this. */
+/** The host closes an unpaired phone's sockets with this. */
 const UNPAIRED = 4001;
 
 const NO_ITEMS: ReadonlyArray<TranscriptItem> = [];
 
 const decodeFrame = Schema.decodeUnknownSync(Schema.fromJsonString(ServerFrame));
 
-let state: State = { isLoaded: false, macs: {}, transcripts: {} };
+let state: State = { isLoaded: false, hosts: {}, transcripts: {} };
 
 const listeners = new Set<() => void>();
 
@@ -82,18 +86,18 @@ export function useStore<Selected>(select: (current: State) => Selected) {
   return useSyncExternalStore(subscribe, () => select(state));
 }
 
-export function transcriptKey(macId: string, threadId: string) {
-  return `${macId}/${threadId}`;
+export function transcriptKey(hostId: string, threadId: string) {
+  return `${hostId}/${threadId}`;
 }
 
-function updateMac(macId: string, update: (mac: MacState) => MacState) {
-  const current = state.macs[macId];
+function updateHost(hostId: string, update: (host: HostState) => HostState) {
+  const current = state.hosts[hostId];
 
-  if (current) setState({ ...state, macs: { ...state.macs, [macId]: update(current) } });
+  if (current) setState({ ...state, hosts: { ...state.hosts, [hostId]: update(current) } });
 }
 
 function updateThread(
-  threads: MacState["threads"],
+  threads: HostState["threads"],
   threadId: string,
   update: (info: ThreadInfo) => ThreadInfo,
 ) {
@@ -103,79 +107,80 @@ function updateThread(
 }
 
 /** The thread list, settings and projects: everything but transcripts. */
-function reduceMac(mac: MacState, event: RuntimeEvent): MacState {
-  return RuntimeEvent.matchOrElse<MacState>(
+function reduceHost(host: HostState, event: RuntimeEvent): HostState {
+  return RuntimeEvent.matchOrElse<HostState>(
     event,
     {
-      "settings.updated": ({ settings }) => ({ ...mac, settings }),
+      "settings.updated": ({ settings }) => ({ ...host, settings }),
+      "providers.updated": ({ providers }) => ({ ...host, providers }),
       "project.added": ({ project }) => ({
-        ...mac,
-        projects: [...mac.projects.filter((existing) => existing.id !== project.id), project],
+        ...host,
+        projects: [...host.projects.filter((existing) => existing.id !== project.id), project],
       }),
       "project.removed": ({ projectId }) => ({
-        ...mac,
-        projects: mac.projects.filter((project) => project.id !== projectId),
+        ...host,
+        projects: host.projects.filter((project) => project.id !== projectId),
       }),
       "thread.created": ({ thread }) => ({
-        ...mac,
-        threads: { ...mac.threads, [thread.id]: thread },
+        ...host,
+        threads: { ...host.threads, [thread.id]: thread },
       }),
       "thread.removed": ({ threadId }) => {
-        const { [threadId]: _removed, ...threads } = mac.threads;
+        const { [threadId]: _removed, ...threads } = host.threads;
 
-        return { ...mac, threads };
+        return { ...host, threads };
       },
       "thread.status": ({ threadId, status }) => ({
-        ...mac,
-        threads: updateThread(mac.threads, threadId, (info) => ({ ...info, status })),
+        ...host,
+        threads: updateThread(host.threads, threadId, (info) => ({ ...info, status })),
       }),
       "thread.model": ({ threadId, provider, model }) => ({
-        ...mac,
-        threads: updateThread(mac.threads, threadId, (info) => ({ ...info, provider, model })),
+        ...host,
+        threads: updateThread(host.threads, threadId, (info) => ({ ...info, provider, model })),
       }),
       "thread.archived": ({ threadId, archivedAt }) => ({
-        ...mac,
-        threads: updateThread(mac.threads, threadId, (info) => ({ ...info, archivedAt })),
+        ...host,
+        threads: updateThread(host.threads, threadId, (info) => ({ ...info, archivedAt })),
       }),
       "thread.shelved": ({ threadId, shelved }) => ({
-        ...mac,
-        threads: updateThread(mac.threads, threadId, (info) => ({ ...info, shelved })),
+        ...host,
+        threads: updateThread(host.threads, threadId, (info) => ({ ...info, shelved })),
       }),
       "thread.seen": ({ threadId, seenRev }) => ({
-        ...mac,
-        threads: updateThread(mac.threads, threadId, (info) => ({ ...info, seenRev })),
+        ...host,
+        threads: updateThread(host.threads, threadId, (info) => ({ ...info, seenRev })),
       }),
       "thread.activity": ({ threadId, activity }) => ({
-        ...mac,
-        threads: updateThread(mac.threads, threadId, (info) => ({
+        ...host,
+        threads: updateThread(host.threads, threadId, (info) => ({
           ...info,
           activity: activity ?? undefined,
         })),
       }),
       "thread.request": ({ threadId, request }) => ({
-        ...mac,
-        threads: updateThread(mac.threads, threadId, (info) => ({
+        ...host,
+        threads: updateThread(host.threads, threadId, (info) => ({
           ...info,
           request: request ?? undefined,
         })),
       }),
       "thread.queue": ({ threadId, queue }) => ({
-        ...mac,
-        threads: updateThread(mac.threads, threadId, (info) => ({
+        ...host,
+        threads: updateThread(host.threads, threadId, (info) => ({
           ...info,
           queue: queue.length > 0 ? queue : undefined,
         })),
       }),
       "thread.limitStop": ({ threadId, limitStop }) => ({
-        ...mac,
-        threads: updateThread(mac.threads, threadId, (info) => ({
+        ...host,
+        threads: updateThread(host.threads, threadId, (info) => ({
           ...info,
           limitStop: limitStop ?? undefined,
         })),
       }),
       "thread.meta": ({ threadId, title, updatedAt, branch, cwd, worktree }) => ({
-        ...mac,
-        threads: updateThread(mac.threads, threadId, (info) => ({
+        ...host,
+        threads: updateThread(host.threads, threadId, (info) => ({
           ...info,
           title,
           updatedAt,
@@ -185,14 +190,14 @@ function reduceMac(mac: MacState, event: RuntimeEvent): MacState {
         })),
       }),
     },
-    () => mac,
+    () => host,
   );
 }
 
-function setTranscript(macId: string, threadId: string, transcript: Transcript) {
+function setTranscript(hostId: string, threadId: string, transcript: Transcript) {
   setState({
     ...state,
-    transcripts: { ...state.transcripts, [transcriptKey(macId, threadId)]: transcript },
+    transcripts: { ...state.transcripts, [transcriptKey(hostId, threadId)]: transcript },
   });
 }
 
@@ -213,25 +218,25 @@ function sendOn(connection: Connection | undefined, command: ClientCommand) {
     connection.socket.send(JSON.stringify(command));
 }
 
-function subscribeToTranscript(macId: string, threadId: string) {
+function subscribeToTranscript(hostId: string, threadId: string) {
   sendOn(
-    connections.get(macId),
+    connections.get(hostId),
     ClientCommand.cases["thread.subscribe"].make({
       threadId,
-      after: state.transcripts[transcriptKey(macId, threadId)]?.cursor ?? null,
+      after: state.transcripts[transcriptKey(hostId, threadId)]?.cursor ?? null,
       turnLimit: TURN_LIMIT,
     }),
   );
 }
 
-function onShell(macId: string, shell: Extract<ServerFrame, { _tag: "shell" }>) {
-  const current = state.macs[macId];
+function onShell(hostId: string, shell: Extract<ServerFrame, { _tag: "shell" }>) {
+  const current = state.hosts[hostId];
 
   if (!current) return;
 
   if (shell.protocol !== PROTOCOL_VERSION) {
-    updateMac(macId, (mac) => ({ ...mac, connection: "outdated" }));
-    connections.get(macId)?.socket?.close();
+    updateHost(hostId, (host) => ({ ...host, connection: "outdated" }));
+    connections.get(hostId)?.socket?.close();
 
     return;
   }
@@ -241,38 +246,39 @@ function onShell(macId: string, shell: Extract<ServerFrame, { _tag: "shell" }>) 
     current.dataId === null || current.dataId === shell.dataId
       ? state.transcripts
       : Object.fromEntries(
-          Object.entries(state.transcripts).filter(([key]) => !key.startsWith(`${macId}/`)),
+          Object.entries(state.transcripts).filter(([key]) => !key.startsWith(`${hostId}/`)),
         );
 
   setState({
     ...state,
     transcripts,
-    macs: {
-      ...state.macs,
-      [macId]: {
+    hosts: {
+      ...state.hosts,
+      [hostId]: {
         ...current,
         connection: "connected",
         dataId: shell.dataId,
         settings: shell.settings,
         projects: shell.projects,
+        providers: shell.providers,
         threads: Object.fromEntries(shell.threads.map((thread) => [thread.id, thread])),
       },
     },
   });
 
-  const connection = connections.get(macId);
+  const connection = connections.get(hostId);
 
   if (connection) connection.attempt = 0;
 
   for (const key of wanted.keys())
-    if (key.startsWith(`${macId}/`)) subscribeToTranscript(macId, key.slice(macId.length + 1));
+    if (key.startsWith(`${hostId}/`)) subscribeToTranscript(hostId, key.slice(hostId.length + 1));
 }
 
-function onFrame(macId: string, frame: ServerFrame) {
+function onFrame(hostId: string, frame: ServerFrame) {
   ServerFrame.match(frame, {
-    shell: (shell) => onShell(macId, shell),
+    shell: (shell) => onShell(hostId, shell),
     "thread.snapshot": ({ threadId, events, streaming, cursor, page }) =>
-      setTranscript(macId, threadId, {
+      setTranscript(hostId, threadId, {
         items: applyStreaming(applyStoredEvents([], events, 0), streaming),
         cursor,
         page,
@@ -280,9 +286,9 @@ function onFrame(macId: string, frame: ServerFrame) {
         loadingOlder: false,
       }),
     "thread.replay": ({ threadId, events, streaming, cursor }) => {
-      const previous = state.transcripts[transcriptKey(macId, threadId)];
+      const previous = state.transcripts[transcriptKey(hostId, threadId)];
 
-      setTranscript(macId, threadId, {
+      setTranscript(hostId, threadId, {
         items: applyStreaming(
           applyStoredEvents(previous?.items ?? NO_ITEMS, events, previous?.cursor ?? 0),
           streaming,
@@ -294,13 +300,13 @@ function onFrame(macId: string, frame: ServerFrame) {
       });
     },
     "thread.page": ({ threadId, events, page }) => {
-      const previous = state.transcripts[transcriptKey(macId, threadId)];
+      const previous = state.transcripts[transcriptKey(hostId, threadId)];
 
       if (!previous) return;
 
       const known = new Set(previous.items.map((item) => item.id));
 
-      setTranscript(macId, threadId, {
+      setTranscript(hostId, threadId, {
         ...previous,
         items: [
           ...applyStoredEvents([], events, 0).filter((item) => !known.has(item.id)),
@@ -311,13 +317,13 @@ function onFrame(macId: string, frame: ServerFrame) {
       });
     },
     event: ({ id, event }) => {
-      if (!isTranscriptEvent(event)) return updateMac(macId, (mac) => reduceMac(mac, event));
+      if (!isTranscriptEvent(event)) return updateHost(hostId, (host) => reduceHost(host, event));
 
-      const transcript = state.transcripts[transcriptKey(macId, event.threadId)];
+      const transcript = state.transcripts[transcriptKey(hostId, event.threadId)];
 
       if (!transcript || (id !== null && id <= transcript.cursor)) return;
 
-      setTranscript(macId, event.threadId, {
+      setTranscript(hostId, event.threadId, {
         ...transcript,
         items: reduceItems(transcript.items, event, id),
         cursor: id ?? transcript.cursor,
@@ -339,37 +345,39 @@ function onFrame(macId: string, frame: ServerFrame) {
   });
 }
 
-function scheduleReconnect(macId: string, connection: Connection) {
+function scheduleReconnect(hostId: string, connection: Connection) {
   connection.retry = setTimeout(
     () => {
       connection.retry = null;
-      connect(macId, connection);
+      connect(hostId, connection);
     },
     RETRY_DELAYS_MS[Math.min(connection.attempt++, RETRY_DELAYS_MS.length - 1)],
   );
 }
 
-function connect(macId: string, connection: Connection) {
-  const mac = state.macs[macId];
+function connect(hostId: string, connection: Connection) {
+  const host = state.hosts[hostId];
 
-  if (!mac || connection.removed) return;
+  if (!host || connection.removed) return;
 
-  if (mac.connection !== "connected")
-    updateMac(macId, (current) => ({ ...current, connection: "connecting" }));
+  if (host.connection !== "connected")
+    updateHost(hostId, (current) => ({ ...current, connection: "connecting" }));
 
-  // The MagicDNS name survives the Mac's address changing; the address works without MagicDNS on
+  // The MagicDNS name survives the host's address changing; the address works without MagicDNS on
   // this phone. Retries take turns between them.
-  const address = mac.mac.dnsName && connection.attempt % 2 === 0 ? mac.mac.dnsName : mac.mac.host;
+  const address =
+    host.paired.dnsName && connection.attempt % 2 === 0 ? host.paired.dnsName : host.paired.address;
 
-  const socket = new WebSocket(`ws://${address}:${mac.mac.port}/?protocol=${PROTOCOL_VERSION}`, [
-    `masscode.${mac.mac.token}`,
-  ]);
+  const socket = new WebSocket(
+    `ws://${address}:${host.paired.port}/?protocol=${PROTOCOL_VERSION}`,
+    [`masscode.${host.paired.token}`],
+  );
 
   connection.socket = socket;
 
   socket.onmessage = (message) => {
     try {
-      onFrame(macId, decodeFrame(String(message.data)));
+      onFrame(hostId, decodeFrame(String(message.data)));
     } catch {
       // A frame this version can't read; the next shell says whether the versions match.
     }
@@ -386,78 +394,81 @@ function connect(macId: string, connection: Connection) {
       transcripts: Object.fromEntries(
         Object.entries(state.transcripts).map(([key, transcript]) => [
           key,
-          key.startsWith(`${macId}/`) ? { ...transcript, status: "cached" as const } : transcript,
+          key.startsWith(`${hostId}/`) ? { ...transcript, status: "cached" as const } : transcript,
         ]),
       ),
     });
 
-    const connectionState: MacConnection =
+    const connectionState: HostConnection =
       event.code === UNPAIRED
         ? "unpaired"
         : event.code === PROTOCOL_MISMATCH
           ? "outdated"
           : "offline";
 
-    updateMac(macId, (current) => ({
+    updateHost(hostId, (current) => ({
       ...current,
       connection: current.connection === "outdated" ? "outdated" : connectionState,
     }));
 
-    if (connectionState === "offline" && state.macs[macId]?.connection === "offline")
-      scheduleReconnect(macId, connection);
+    if (connectionState === "offline" && state.hosts[hostId]?.connection === "offline")
+      scheduleReconnect(hostId, connection);
   };
 }
 
-function startConnection(macId: string) {
+function startConnection(hostId: string) {
   const connection: Connection = { socket: null, attempt: 0, retry: null, removed: false };
-  connections.set(macId, connection);
-  connect(macId, connection);
+  connections.set(hostId, connection);
+  connect(hostId, connection);
 }
 
-/** Tries every Mac it isn't connected to now, without waiting out the backoff. */
+/** Tries every host it isn't connected to now, without waiting out the backoff. */
 export function reconnectAll() {
-  for (const [macId, connection] of connections) {
-    if (connection.socket || state.macs[macId]?.connection === "outdated") continue;
+  for (const [hostId, connection] of connections) {
+    if (connection.socket || state.hosts[hostId]?.connection === "outdated") continue;
 
     if (connection.retry) clearTimeout(connection.retry);
 
     connection.retry = null;
     connection.attempt = 0;
-    connect(macId, connection);
+    connect(hostId, connection);
   }
 }
 
-export async function addMac(mac: PairedMac) {
-  const others = Object.values(state.macs)
-    .map((existing) => existing.mac)
-    .filter((existing) => existing.host !== mac.host);
+export async function addHost(host: PairedHost) {
+  const others = Object.values(state.hosts)
+    .map((existing) => existing.paired)
+    .filter((existing) => existing.address !== host.address);
 
-  await saveMacs([...others, mac]);
+  await saveHosts([...others, host]);
 
-  for (const existing of Object.values(state.macs))
-    if (existing.mac.host === mac.host) forgetConnection(existing.mac.id);
+  for (const existing of Object.values(state.hosts))
+    if (existing.paired.address === host.address) forgetConnection(existing.paired.id);
 
   setState({
     ...state,
-    macs: {
+    hosts: {
       ...Object.fromEntries(
-        Object.entries(state.macs).filter(([, existing]) => existing.mac.host !== mac.host),
+        Object.entries(state.hosts).filter(
+          ([, existing]) => existing.paired.address !== host.address,
+        ),
       ),
-      [mac.id]: {
-        mac,
+      [host.id]: {
+        paired: host,
         connection: "connecting",
         dataId: null,
         settings: null,
         projects: [],
+        providers: [],
         threads: {},
       },
     },
   });
-  startConnection(mac.id);
+  startConnection(host.id);
 }
 
-function forgetConnection(macId: string) {
-  const connection = connections.get(macId);
+function forgetConnection(hostId: string) {
+  const connection = connections.get(hostId);
 
   if (!connection) return;
 
@@ -466,36 +477,36 @@ function forgetConnection(macId: string) {
   if (connection.retry) clearTimeout(connection.retry);
 
   connection.socket?.close();
-  connections.delete(macId);
+  connections.delete(hostId);
 }
 
-/** Forgets the Mac on this phone; the Mac still lists the phone until it's unpaired there. */
-export async function removeMac(macId: string) {
-  forgetConnection(macId);
+/** Forgets the host on this phone; the host still lists the phone until it's unpaired there. */
+export async function removeHost(hostId: string) {
+  forgetConnection(hostId);
 
-  const { [macId]: _removed, ...macs } = state.macs;
-  await saveMacs(Object.values(macs).map((mac) => mac.mac));
+  const { [hostId]: _removed, ...hosts } = state.hosts;
+  await saveHosts(Object.values(hosts).map((host) => host.paired));
 
   setState({
     ...state,
-    macs,
+    hosts,
     transcripts: Object.fromEntries(
-      Object.entries(state.transcripts).filter(([key]) => !key.startsWith(`${macId}/`)),
+      Object.entries(state.transcripts).filter(([key]) => !key.startsWith(`${hostId}/`)),
     ),
   });
 }
 
-export function send(macId: string, command: ClientCommand) {
-  sendOn(connections.get(macId), command);
+export function send(hostId: string, command: ClientCommand) {
+  sendOn(connections.get(hostId), command);
 }
 
 /** Follows the thread's transcript while a screen shows it; call what it returns to stop. */
-export function openThread(macId: string, threadId: string) {
-  const key = transcriptKey(macId, threadId);
+export function openThread(hostId: string, threadId: string) {
+  const key = transcriptKey(hostId, threadId);
   wanted.set(key, (wanted.get(key) ?? 0) + 1);
 
   if (!state.transcripts[key])
-    setTranscript(macId, threadId, {
+    setTranscript(hostId, threadId, {
       items: NO_ITEMS,
       cursor: 0,
       page: null,
@@ -503,7 +514,7 @@ export function openThread(macId: string, threadId: string) {
       loadingOlder: false,
     });
 
-  subscribeToTranscript(macId, threadId);
+  subscribeToTranscript(hostId, threadId);
 
   return () => {
     const count = (wanted.get(key) ?? 1) - 1;
@@ -511,18 +522,18 @@ export function openThread(macId: string, threadId: string) {
     if (count > 0) return void wanted.set(key, count);
 
     wanted.delete(key);
-    send(macId, ClientCommand.cases["thread.unsubscribe"].make({ threadId }));
+    send(hostId, ClientCommand.cases["thread.unsubscribe"].make({ threadId }));
   };
 }
 
-export function loadOlder(macId: string, threadId: string) {
-  const transcript = state.transcripts[transcriptKey(macId, threadId)];
+export function loadOlder(hostId: string, threadId: string) {
+  const transcript = state.transcripts[transcriptKey(hostId, threadId)];
 
   if (!transcript?.page?.hasMore || transcript.loadingOlder) return;
 
-  setTranscript(macId, threadId, { ...transcript, loadingOlder: true });
+  setTranscript(hostId, threadId, { ...transcript, loadingOlder: true });
   send(
-    macId,
+    hostId,
     ClientCommand.cases["thread.loadOlder"].make({
       threadId,
       before: transcript.page.before,
@@ -531,19 +542,27 @@ export function loadOlder(macId: string, threadId: string) {
   );
 }
 
-void loadMacs().then((macs) => {
+void loadHosts().then((hosts) => {
   setState({
     ...state,
     isLoaded: true,
-    macs: Object.fromEntries(
-      macs.map((mac) => [
-        mac.id,
-        { mac, connection: "connecting", dataId: null, settings: null, projects: [], threads: {} },
+    hosts: Object.fromEntries(
+      hosts.map((host) => [
+        host.id,
+        {
+          paired: host,
+          connection: "connecting",
+          dataId: null,
+          settings: null,
+          projects: [],
+          providers: [],
+          threads: {},
+        },
       ]),
     ),
   });
 
-  for (const mac of macs) startConnection(mac.id);
+  for (const host of hosts) startConnection(host.id);
 });
 
 // iOS suspends the app in the background and its sockets die; coming back reconnects at once.

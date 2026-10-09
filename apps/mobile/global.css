@@ -1,79 +1,100 @@
 @import "tailwindcss";
 @import "uniwind";
-@import "heroui-native/styles";
 
-@source "./node_modules/heroui-native/lib";
+/* Shared classes live in the client package too, like the project tints. */
+@source "../../packages/client/src";
 
-/* React Native takes one font name, not Tailwind's fallback list. */
+/*
+ * The desktop's palette and scale (packages/ui/src/styles/globals.css), under the same names, so a
+ * class reads the same on both. Vesper in dark; light is MassCode's own.
+ */
+@theme {
+  --font-sans: Figtree;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-sunken: var(--sunken);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--muted);
+  --color-secondary-foreground: var(--foreground);
+  --color-accent: var(--muted);
+  --color-accent-foreground: var(--foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--border-strong);
+  --color-rule: var(--rule);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  /* 14 / 20 / 28: keys and rows, fields and icon buttons, cards. */
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.75rem;
+}
+
 @layer theme {
   :root {
+    @variant light {
+      --background: oklch(99% 0 0);
+      --foreground: oklch(15% 0 0);
+      --card: oklch(97% 0 0);
+      --popover: oklch(97% 0 0);
+      --muted: oklch(93% 0 0);
+      --sunken: oklch(89% 0 0);
+      --muted-foreground: oklch(50% 0 0);
+      --primary: #ffc799;
+      --primary-foreground: #101010;
+      --border: oklch(15% 0 0 / 0.06);
+      --border-strong: oklch(15% 0 0 / 0.1);
+      --rule: oklch(15% 0 0 / 0.1);
+      --brand: oklch(58% 0.13 50);
+      --ring: oklch(58% 0.13 50 / 0.5);
+      --destructive: oklch(58% 0.19 25);
+      --destructive-foreground: oklch(99% 0 0);
+      --warning: oklch(60% 0.2 48);
+      --success: oklch(55% 0.1 175);
+      --success-foreground: oklch(99% 0 0);
+    }
+
+    @variant dark {
+      --background: #101010;
+      --foreground: #ffffff;
+      --card: #161616;
+      --popover: #161616;
+      --muted: #232323;
+      --sunken: #282828;
+      --muted-foreground: #a0a0a0;
+      --primary: #ffc799;
+      --primary-foreground: #101010;
+      --border: rgb(255 255 255 / 0.05);
+      --border-strong: rgb(255 255 255 / 0.09);
+      --rule: rgb(255 255 255 / 0.09);
+      --brand: #ffc799;
+      --ring: rgb(255 199 153 / 0.5);
+      --destructive: #ff8080;
+      --destructive-foreground: #101010;
+      --warning: #ff7300;
+      --success: #99ffe4;
+      --success-foreground: #101010;
+    }
+
+    /* React Native takes one font name, not a fallback list. */
     @variant ios {
       --font-mono: Menlo;
     }
 
     @variant android {
       --font-mono: monospace;
-    }
-  }
-}
-
-/* The desktop's Vesper palette (packages/ui/src/styles/globals.css) on HeroUI's token names. */
-@layer theme {
-  :root {
-    @variant light {
-      --background: oklch(99% 0 0);
-      --foreground: oklch(15% 0 0);
-      --surface: oklch(97% 0 0);
-      --surface-secondary: oklch(93% 0 0);
-      --surface-tertiary: oklch(89% 0 0);
-      --overlay: oklch(97% 0 0);
-      --muted: oklch(50% 0 0);
-      --default: oklch(93% 0 0);
-      --default-foreground: var(--foreground);
-      --accent: #ffc799;
-      --accent-foreground: #101010;
-      --field-background: oklch(97% 0 0);
-      --field-foreground: var(--foreground);
-      --success: oklch(55% 0.1 175);
-      --success-foreground: oklch(99% 0 0);
-      --warning: oklch(60% 0.2 48);
-      --warning-foreground: oklch(99% 0 0);
-      --danger: oklch(58% 0.19 25);
-      --danger-foreground: oklch(99% 0 0);
-      --segment: oklch(99% 0 0);
-      --segment-foreground: var(--foreground);
-      --border: oklch(15% 0 0 / 0.06);
-      --separator: oklch(15% 0 0 / 0.1);
-      --focus: oklch(58% 0.13 50);
-      --link: oklch(58% 0.13 50);
-    }
-
-    @variant dark {
-      --background: #101010;
-      --foreground: #ffffff;
-      --surface: #161616;
-      --surface-secondary: #232323;
-      --surface-tertiary: #282828;
-      --overlay: #161616;
-      --muted: #a0a0a0;
-      --default: #232323;
-      --default-foreground: var(--foreground);
-      --accent: #ffc799;
-      --accent-foreground: #101010;
-      --field-background: #161616;
-      --field-foreground: var(--foreground);
-      --success: #99ffe4;
-      --success-foreground: #101010;
-      --warning: #ff7300;
-      --warning-foreground: #101010;
-      --danger: #ff8080;
-      --danger-foreground: #101010;
-      --segment: #232323;
-      --segment-foreground: var(--foreground);
-      --border: rgb(255 255 255 / 0.05);
-      --separator: rgb(255 255 255 / 0.09);
-      --focus: #ffc799;
-      --link: #ffc799;
     }
   }
 }

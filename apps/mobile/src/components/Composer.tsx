@@ -1,19 +1,49 @@
-import { EFFORT_LABEL, EFFORTS, PERMISSION_LABEL, PERMISSIONS } from "@masscode/client";
+import {
+  EFFORT_LABEL,
+  EFFORTS,
+  findDefaultModel,
+  PERMISSION_DESCRIPTION,
+  PERMISSION_LABEL,
+  PERMISSIONS,
+} from "@masscode/client";
 import {
   ClientCommand,
   type Effort,
+  isTurnActive,
   type PermissionLevel,
+  PROVIDER_NAME,
+  type ProviderStatus,
   type Settings,
   type ThreadInfo,
 } from "@masscode/contracts";
 import * as Haptics from "expo-haptics";
-import { Menu } from "heroui-native";
-import { ArrowUp, ChevronDown, Square, X } from "lucide-react-native";
+import {
+  ArrowUp,
+  ChevronDown,
+  FilePen,
+  ListChecks,
+  LockOpen,
+  type LucideIcon,
+  ShieldCheck,
+  Sparkles,
+  X,
+} from "lucide-react-native";
 import { useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, TextInput, View } from "react-native";
 import { useKeyboardState } from "react-native-keyboard-controller";
-import { useCSSVariable, useResolveClassNames } from "uniwind";
-import { send } from "../lib/store.ts";
+import { cn } from "@/lib/cn.ts";
+import { send } from "@/lib/store.ts";
+import { ProviderLogo } from "./ProviderLogo.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu.tsx";
+import { Icon } from "./ui/icon.tsx";
+import { Text } from "./ui/text.tsx";
 
 interface TurnPrefs {
   readonly permission: PermissionLevel;
@@ -21,10 +51,18 @@ interface TurnPrefs {
   readonly effort: Effort | null;
 }
 
+const PERMISSION_ICON: Record<PermissionLevel, LucideIcon> = {
+  plan: ListChecks,
+  ask: ShieldCheck,
+  "auto-edit": FilePen,
+  auto: Sparkles,
+  "full-access": LockOpen,
+};
+
 /** What each thread was last sent with from this phone, while the app runs. */
 const prefsByThread = new Map<string, TurnPrefs>();
 
-/** The thread's last picks, else the Mac's defaults for new threads, fitted to the thread's harness. */
+/** The thread's last picks, else the host's defaults for new threads, fitted to the thread's harness. */
 function findTurnPrefs(settings: Settings | null, thread: ThreadInfo): TurnPrefs {
   const remembered = prefsByThread.get(thread.id);
   const permission = remembered?.permission ?? settings?.newThreadPermission ?? "ask";
@@ -39,24 +77,32 @@ function findTurnPrefs(settings: Settings | null, thread: ThreadInfo): TurnPrefs
   };
 }
 
+/** The desktop's composer card: the message, then the turn's effort and permission, then send. */
 export function Composer({
-  macId,
+  hostId,
   thread,
   settings,
+  providers,
 }: {
-  macId: string;
+  hostId: string;
   thread: ThreadInfo;
   settings: Settings | null;
+  providers: ReadonlyArray<ProviderStatus>;
 }) {
   const [text, setText] = useState("");
   const [prefs, setPrefs] = useState(() => findTurnPrefs(settings, thread));
-  const placeholder = useResolveClassNames("text-muted");
-  const accentForeground = useCSSVariable("--color-accent-foreground");
-  const background = useCSSVariable("--color-background");
-  const foreground = useCSSVariable("--color-foreground");
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
-  const isWorking = thread.status === "running";
+  const isWorking = isTurnActive(thread.status);
   const willQueue = isWorking && settings?.followUp !== "steer";
+
+  const modelId =
+    thread.model ?? (settings && findDefaultModel(providers, settings, thread.provider));
+
+  const model = providers
+    .find((status) => status.kind === thread.provider)
+    ?.models.find((option) => option.id === modelId);
+
+  const effort = prefs.effort ?? model?.defaultEffort ?? null;
 
   function changePrefs(patch: Partial<TurnPrefs>) {
     const next = { ...prefs, ...patch };
@@ -71,7 +117,7 @@ export function Composer({
 
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     send(
-      macId,
+      hostId,
       ClientCommand.cases["thread.send"].make({
         threadId: thread.id,
         text: message,
@@ -85,20 +131,20 @@ export function Composer({
 
   return (
     <View
-      className={
+      className={cn(
+        "gap-2 bg-background px-3 pt-1",
         // The keyboard covers the home indicator, so its padding would only leave a gap.
-        isKeyboardVisible
-          ? "border-separator gap-2 border-t bg-background px-3 pt-2 pb-2"
-          : "border-separator pb-safe-or-2 gap-2 border-t bg-background px-3 pt-2"
-      }
+        isKeyboardVisible ? "pb-2" : "pb-safe-or-2",
+      )}
     >
       {thread.queue?.map((queued) => (
         <View
           key={queued.id}
-          className="bg-surface-secondary flex-row items-center gap-2 rounded-xl px-3 py-2"
+          className="flex-row items-center gap-2 rounded-xl border border-border bg-card py-2 pr-2 pl-3"
         >
-          <Text numberOfLines={1} className="flex-1 text-[14px] text-muted">
-            Queued: {queued.text}
+          <Text className="text-xs text-muted-foreground">Queued</Text>
+          <Text numberOfLines={1} className="flex-1 text-sm">
+            {queued.text}
           </Text>
           <Pressable
             accessibilityLabel="Take back this message"
@@ -106,122 +152,167 @@ export function Composer({
             onPress={() => {
               setText(queued.text);
               send(
-                macId,
+                hostId,
                 ClientCommand.cases["thread.unqueue"].make({
                   threadId: thread.id,
                   messageIds: [queued.id],
                 }),
               );
             }}
+            className="size-6 items-center justify-center rounded-full active:bg-muted"
           >
-            <X size={16} color={String(foreground)} />
+            <Icon as={X} className="size-3.5 text-muted-foreground" />
           </Pressable>
         </View>
       ))}
-      <View className="flex-row items-end gap-2">
+      <View className="rounded-2xl border border-border bg-card p-1.5">
         <TextInput
           value={text}
           onChangeText={setText}
           multiline
-          placeholder={willQueue ? "Queue a message for when it's done" : "Message the agent"}
-          placeholderTextColor={String(placeholder.color)}
-          className="bg-surface-secondary max-h-40 min-h-11 flex-1 rounded-3xl px-4 py-2.5 text-[16px] text-foreground"
+          placeholder={willQueue ? "Queue a follow-up" : `Ask ${PROVIDER_NAME[thread.provider]}…`}
+          placeholderTextColorClassName="accent-muted-foreground/55"
+          selectionColorClassName="accent-brand"
+          cursorColorClassName="accent-brand"
+          className="max-h-40 min-h-14 rounded-xl border border-border bg-background px-3.5 pt-2.5 pb-2.5 font-sans text-[15px] leading-6 text-foreground"
         />
-        {isWorking && !text.trim() ? (
-          <Pressable
-            accessibilityLabel="Stop the agent"
-            onPress={() => {
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              send(macId, ClientCommand.cases["thread.interrupt"].make({ threadId: thread.id }));
-            }}
-            className="size-11 items-center justify-center rounded-full bg-foreground"
+        <View className="flex-row items-center gap-1.5 pt-1.5">
+          <PrefMenu
+            title="Effort"
+            value={prefs.effort ?? "default"}
+            options={[
+              {
+                value: "default",
+                label: model?.defaultEffort
+                  ? `${EFFORT_LABEL[model.defaultEffort]} (model default)`
+                  : "Model default",
+              },
+              ...(model?.efforts ?? EFFORTS[thread.provider]).map((option) => ({
+                value: option,
+                label: EFFORT_LABEL[option],
+              })),
+            ]}
+            onChange={(picked) => changePrefs({ effort: picked === "default" ? null : picked })}
           >
-            <Square size={14} fill={String(background)} color={String(background)} />
-          </Pressable>
-        ) : (
-          <Pressable
-            accessibilityLabel={willQueue ? "Queue message" : "Send message"}
-            disabled={!text.trim()}
-            onPress={submit}
-            className={
-              text.trim()
-                ? "size-11 items-center justify-center rounded-full bg-accent"
-                : "size-11 items-center justify-center rounded-full bg-accent opacity-40"
-            }
+            <ProviderLogo provider={thread.provider} className="size-3.5 text-foreground" />
+            <Text numberOfLines={1} className="shrink text-xs">
+              {model?.label ?? PROVIDER_NAME[thread.provider]}
+            </Text>
+            {effort ? (
+              <Text className="text-xs text-muted-foreground">{EFFORT_LABEL[effort]}</Text>
+            ) : null}
+          </PrefMenu>
+          <PrefMenu
+            title="Permissions"
+            value={prefs.permission}
+            options={PERMISSIONS[thread.provider].map((level) => ({
+              value: level,
+              label: PERMISSION_LABEL[level],
+              description: PERMISSION_DESCRIPTION[level],
+            }))}
+            onChange={(permission) => changePrefs({ permission })}
           >
-            <ArrowUp size={20} color={String(accentForeground)} />
-          </Pressable>
-        )}
-      </View>
-      <View className="flex-row gap-2">
-        <PrefMenu
-          label={PERMISSION_LABEL[prefs.permission]}
-          value={prefs.permission}
-          options={PERMISSIONS[thread.provider].map((level) => ({
-            value: level,
-            label: PERMISSION_LABEL[level],
-          }))}
-          onChange={(permission) => changePrefs({ permission })}
-        />
-        <PrefMenu
-          label={prefs.effort ? `${EFFORT_LABEL[prefs.effort]} effort` : "Default effort"}
-          value={prefs.effort ?? "default"}
-          options={[
-            { value: "default", label: "Default effort" },
-            ...EFFORTS[thread.provider].map((effort) => ({
-              value: effort,
-              label: EFFORT_LABEL[effort],
-            })),
-          ]}
-          onChange={(effort) => changePrefs({ effort: effort === "default" ? null : effort })}
-        />
+            <Icon
+              as={PERMISSION_ICON[prefs.permission]}
+              className={cn(
+                "size-3.5",
+                prefs.permission === "full-access" ? "text-warning" : "text-muted-foreground",
+              )}
+            />
+            <Text
+              className={cn(
+                "text-xs",
+                prefs.permission === "full-access" ? "text-warning" : "text-muted-foreground",
+              )}
+            >
+              {PERMISSION_LABEL[prefs.permission]}
+            </Text>
+          </PrefMenu>
+          {isWorking && !text.trim() ? (
+            <Pressable
+              accessibilityLabel="Stop the agent"
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                send(hostId, ClientCommand.cases["thread.interrupt"].make({ threadId: thread.id }));
+              }}
+              className="ml-auto size-9 items-center justify-center rounded-full bg-primary active:opacity-85"
+            >
+              <View className="size-3 rounded-[3px] bg-primary-foreground" />
+            </Pressable>
+          ) : (
+            <Pressable
+              accessibilityLabel={willQueue ? "Queue message" : "Send message"}
+              disabled={!text.trim()}
+              onPress={submit}
+              className={cn(
+                "ml-auto size-9 items-center justify-center rounded-full bg-primary active:opacity-85",
+                !text.trim() && "opacity-40",
+              )}
+            >
+              <Icon as={ArrowUp} className="size-4 text-primary-foreground" />
+            </Pressable>
+          )}
+        </View>
       </View>
     </View>
   );
 }
 
-/** A small pill that opens a single-choice menu above the composer. */
+/** A composer pill that opens a single-choice menu above it. */
 function PrefMenu<Value extends string>(props: {
-  label: string;
+  title: string;
   value: Value;
-  options: ReadonlyArray<{ value: Value; label: string }>;
+  options: ReadonlyArray<{ value: Value; label: string; description?: string }>;
   onChange: (value: Value) => void;
+  children: React.ReactNode;
 }) {
-  const muted = useCSSVariable("--color-muted");
-
   return (
-    <Menu>
-      <Menu.Trigger asChild>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <Pressable
           accessibilityRole="button"
-          className="bg-surface-secondary flex-row items-center gap-1 rounded-full px-3 py-1.5"
+          accessibilityLabel={props.title}
+          className="h-9 shrink flex-row items-center gap-1.5 rounded-full border border-border bg-background px-3 active:bg-muted"
         >
-          <Text className="text-[13px] text-foreground">{props.label}</Text>
-          <ChevronDown size={14} color={String(muted)} />
+          {props.children}
+          <Icon as={ChevronDown} className="size-3 text-muted-foreground opacity-60" />
         </Pressable>
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Overlay />
-        <Menu.Content presentation="popover" placement="top" width={220}>
-          <Menu.Group
-            selectionMode="single"
-            selectedKeys={[props.value]}
-            onSelectionChange={(keys) => {
-              const [chosen] = [...keys];
-              const option = props.options.find((candidate) => candidate.value === chosen);
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        side="top"
+        align="start"
+        sideOffset={6}
+        insets={{ left: 12, right: 12 }}
+        className="w-72"
+      >
+        <DropdownMenuLabel>{props.title}</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={props.value}
+          onValueChange={(chosen) => {
+            const option = props.options.find((candidate) => candidate.value === chosen);
 
-              if (option) props.onChange(option.value);
-            }}
-          >
-            {props.options.map((option) => (
-              <Menu.Item key={option.value} id={option.value}>
-                <Menu.ItemIndicator />
-                <Menu.ItemTitle>{option.label}</Menu.ItemTitle>
-              </Menu.Item>
-            ))}
-          </Menu.Group>
-        </Menu.Content>
-      </Menu.Portal>
-    </Menu>
+            if (option) props.onChange(option.value);
+          }}
+        >
+          {props.options.map((option) => (
+            <DropdownMenuRadioItem
+              key={option.value}
+              value={option.value}
+              closeOnPress
+              className="items-start"
+            >
+              <View className="flex-1 gap-0.5">
+                <Text className="text-sm">{option.label}</Text>
+                {option.description ? (
+                  <Text className="text-xs leading-4 text-muted-foreground">
+                    {option.description}
+                  </Text>
+                ) : null}
+              </View>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

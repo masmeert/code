@@ -6,7 +6,8 @@ import {
   MessageContent,
 } from "@masscode/ui/agents/message";
 import { Markdown } from "@masscode/ui/agents/markdown";
-import { Reasoning, thoughtTitle } from "@masscode/ui/agents/reasoning";
+import { Reasoning } from "@masscode/ui/agents/reasoning";
+import { thoughtTitle } from "@masscode/client";
 import { OrbFace } from "@masscode/ui/agents/orb-face";
 import { PromptSelect } from "@masscode/ui/agents/prompt-input";
 import { StreamingResponse } from "@masscode/ui/agents/streaming-response";

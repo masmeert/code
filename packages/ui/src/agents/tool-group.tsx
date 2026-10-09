@@ -5,27 +5,7 @@ import { ThinkingShimmer } from "@masscode/ui/agents/loading-states/thinking-shi
 import { ToolResultOutput } from "@masscode/ui/agents/tool-result";
 import type { AgentCodeLanguage } from "@masscode/ui/agents/agent-code";
 import { cn } from "@masscode/ui/lib/utils";
-import {
-  categoryOf,
-  livePhrase,
-  summarize,
-  type ToolCall,
-  type ToolCategory,
-} from "@masscode/client";
-
-const VERB: Record<ToolCategory, string> = {
-  run: "Ran",
-  read: "Read",
-  edit: "Edited",
-  search: "Searched",
-  web: "Fetched",
-  agent: "Agent",
-  todo: "Todos",
-  browser: "Browser",
-  other: "Used",
-};
-
-const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+import { categoryOf, livePhrase, summarize, type ToolCall, toolVerb } from "@masscode/client";
 
 const outputLanguage = (call: ToolCall): AgentCodeLanguage =>
   call.name === "edit" ? "diff" : categoryOf(call.name) === "run" ? "bash" : "text";
@@ -77,7 +57,6 @@ export function ToolCallRow({
   const running = live && call.output === null;
   const children = call.children ?? [];
   const expandable = Boolean(call.output) || children.length > 0;
-  const category = categoryOf(call.name);
 
   return (
     <div ref={row}>
@@ -92,11 +71,7 @@ export function ToolCallRow({
         <span
           className={cn("shrink-0", call.isError ? "text-destructive" : "text-muted-foreground")}
         >
-          {category === "other"
-            ? call.name
-            : category === "browser"
-              ? capitalize(call.name.slice("mcp__browser__".length))
-              : VERB[category]}
+          {toolVerb(call.name)}
         </span>
         <span
           className={cn(

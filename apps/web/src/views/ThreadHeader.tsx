@@ -1,4 +1,5 @@
-import { ProjectBadge, formatProjectLabel } from "@/components/project-badge";
+import { formatProjectLabel } from "@masscode/client";
+import { ProjectBadge } from "@/components/project-badge";
 import { type Project } from "@masscode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@masscode/ui/motion/animated-sidebar";
 import {

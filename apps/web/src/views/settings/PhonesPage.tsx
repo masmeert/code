@@ -1,8 +1,11 @@
 import { Button } from "@masscode/ui/motion/button/base";
 import { Switch } from "@masscode/ui/motion/switch";
 import { cn } from "@masscode/ui/lib/utils";
+import { EASE_OUT } from "@masscode/ui/lib/ease";
 import { ClientCommand, type PairedPhone, type PairingOffer } from "@masscode/contracts";
-import { LoaderCircle } from "lucide-react";
+import { Fold } from "@masscode/ui/motion/fold";
+import { LoaderCircle, X } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
 import { encode } from "uqr";
 import { send, startPhonePairing, updateSettings, useStore } from "../../lib/store.ts";
@@ -16,23 +19,22 @@ export function PhonesPage() {
   const [offer, setOffer] = useState<PairingOffer | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pairedName, setPairedName] = useState<string | null>(null);
   const [pairedCount, setPairedCount] = useState(phones.length);
+  // The last code stays drawn while its panel folds shut.
+  const [shownOffer, setShownOffer] = useState(offer);
+
+  if (offer && offer !== shownOffer) setShownOffer(offer);
 
   // A phone that just paired closes the code it used.
   if (phones.length !== pairedCount) {
     setPairedCount(phones.length);
 
-    if (phones.length > pairedCount && offer) {
-      setOffer(null);
-      setPairedName(phones.at(-1)?.name ?? null);
-    }
+    if (phones.length > pairedCount) setOffer(null);
   }
 
   async function pair() {
     setIsStarting(true);
     setError(null);
-    setPairedName(null);
 
     const started = await startPhonePairing();
     setIsStarting(false);
@@ -79,21 +81,37 @@ export function PhonesPage() {
                 disabled={isStarting}
                 onClick={() => void pair()}
               >
-                {isStarting ? (
-                  <LoaderCircle className="size-3.5 animate-spin" />
-                ) : offer ? (
-                  "New code"
-                ) : (
-                  "Pair a phone"
-                )}
+                {/* Every label stacked in one cell, so the button keeps its width whichever shows. */}
+                <span className="grid place-items-center">
+                  <span
+                    className={cn(
+                      "col-start-1 row-start-1",
+                      (isStarting || offer !== null) && "invisible",
+                    )}
+                  >
+                    Pair a phone
+                  </span>
+                  <span
+                    className={cn(
+                      "col-start-1 row-start-1",
+                      (isStarting || offer === null) && "invisible",
+                    )}
+                  >
+                    New code
+                  </span>
+                  {isStarting ? (
+                    <LoaderCircle className="col-start-1 row-start-1 size-3.5 animate-spin" />
+                  ) : null}
+                </span>
               </Button>
             </SettingsRow>
           ) : null}
-          {error ? <p className="px-3 py-2.5 text-xs text-destructive">{error}</p> : null}
-          {pairedName ? (
-            <p className="px-3 py-2.5 text-xs text-muted-foreground">Paired {pairedName}.</p>
-          ) : null}
-          {offer ? <PairingCode offer={offer} onClose={() => setOffer(null)} /> : null}
+          <Fold open={error !== null}>
+            <p className="px-3 py-2.5 text-xs text-destructive">{error}</p>
+          </Fold>
+          <Fold open={offer !== null}>
+            {shownOffer ? <PairingCode offer={shownOffer} onClose={() => setOffer(null)} /> : null}
+          </Fold>
         </SettingsGroup>
       </SettingsSection>
       {phones.length > 0 ? (
@@ -114,6 +132,7 @@ function PairingCode({ offer, onClose }: { offer: PairingOffer; onClose: () => v
   const now = useNow(1000);
   const secondsLeft = Math.max(0, Math.round((offer.expiresAt - now) / 1000));
   const { data, size } = encode(offer.url, { border: 1 });
+  const reduce = useReducedMotion();
 
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
@@ -130,39 +149,67 @@ function PairingCode({ offer, onClose }: { offer: PairingOffer; onClose: () => v
   }, [onClose]);
 
   return (
-    <div className="flex items-center gap-5 px-3 py-4">
-      <svg
-        viewBox={`0 0 ${size} ${size}`}
-        role="img"
-        aria-label="Pairing code to scan with MassCode on your phone"
-        className={cn("size-40 rounded-lg bg-white", secondsLeft === 0 && "opacity-20")}
+    <div className="relative flex items-center gap-6 px-4 py-4">
+      <motion.div
+        // A new code fades in over the old one rather than jumping.
+        key={offer.code}
+        initial={reduce ? false : { opacity: 0, scale: 0.97 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.2, ease: EASE_OUT }}
+        className="flex items-center gap-6"
       >
-        <path
-          fill="#101010"
-          d={data
-            .flatMap((row, y) => row.flatMap((isDark, x) => (isDark ? [`M${x} ${y}h1v1h-1z`] : [])))
-            .join("")}
-        />
-      </svg>
-      <div className="min-w-0 text-[13px]">
-        {secondsLeft === 0 ? (
-          <p className="text-destructive">This code expired. Get a new one.</p>
-        ) : (
-          <>
-            <p className="font-mono text-2xl tracking-[0.2em]">{offer.code}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Expires in {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}
-            </p>
-          </>
-        )}
-        <p className="mt-3 text-xs text-muted-foreground">
-          Can't scan? Enter <span className="font-mono text-foreground">{offer.host}</span> and the
-          code on the phone.
-        </p>
-        <Button size="sm" variant="ghost" className="mt-2 -ml-2 h-7 rounded-lg" onClick={onClose}>
-          Close
-        </Button>
-      </div>
+        <div
+          className={cn(
+            "shrink-0 rounded-xl bg-white p-2 transition-opacity",
+            secondsLeft === 0 && "opacity-20",
+          )}
+        >
+          <svg
+            viewBox={`0 0 ${size} ${size}`}
+            role="img"
+            aria-label="Pairing code to scan with MassCode on your phone"
+            className="size-32"
+          >
+            <path
+              fill="#101010"
+              d={data
+                .flatMap((row, y) =>
+                  row.flatMap((isDark, x) => (isDark ? [`M${x} ${y}h1v1h-1z`] : [])),
+                )
+                .join("")}
+            />
+          </svg>
+        </div>
+        <div className="min-w-0">
+          {secondsLeft === 0 ? (
+            <p className="text-sm text-destructive">This code expired. Get a new one.</p>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">Pairing code</p>
+              <p className="mt-0.5 font-mono text-3xl tracking-[0.12em] tabular-nums select-text">
+                {offer.code.slice(0, 3)} {offer.code.slice(3)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                Expires in {Math.floor(secondsLeft / 60)}:
+                {String(secondsLeft % 60).padStart(2, "0")}
+              </p>
+            </>
+          )}
+          <p className="mt-4 max-w-72 text-xs leading-5 text-muted-foreground">
+            Can't scan? On the phone, enter{" "}
+            <span className="font-mono text-foreground select-text">{offer.host}</span> and this
+            code.
+          </p>
+        </div>
+      </motion.div>
+      <button
+        type="button"
+        aria-label="Close pairing code"
+        onClick={onClose}
+        className="absolute top-2.5 right-2.5 grid size-7 place-items-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+      >
+        <X className="size-4" />
+      </button>
     </div>
   );
 }

@@ -22,8 +22,8 @@ const PAIRING_ATTEMPTS = 5;
 
 const StoredPhone = Schema.Struct({ ...PairedPhone.fields, tokenHash: Schema.String });
 
-/** What phones call this Mac: its name without macOS's `.local`. */
-function findMacName() {
+/** What phones call this host: its name without macOS's `.local`. */
+function findHostName() {
   return hostname().replace(/\.local$/, "");
 }
 
@@ -124,13 +124,13 @@ export function createPhones(options: {
           return yield* Effect.fail(
             new CommandError({
               message:
-                "Tailscale isn't running on this Mac. Open Tailscale, sign in, and try again.",
+                "Tailscale isn't running on this computer. Open Tailscale, sign in, and try again.",
             }),
           );
 
         const dnsName = yield* findTailnetName();
         const code = String(randomInt(1_000_000)).padStart(6, "0");
-        const name = findMacName();
+        const name = findHostName();
         const expiresAt = Date.now() + PAIRING_TTL_MS;
         pairing = { code, expiresAt, attemptsLeft: PAIRING_ATTEMPTS };
 
@@ -164,7 +164,7 @@ export function createPhones(options: {
 
           return Effect.fail(
             new CommandError({
-              message: "That code is wrong or has expired. Start pairing again on your Mac.",
+              message: "That code is wrong or has expired. Start pairing again on your computer.",
             }),
           );
         }
@@ -181,7 +181,7 @@ export function createPhones(options: {
               { ...phone, pairedAt: Date.now(), lastSeenAt: null, tokenHash: hashToken(token) },
             ]),
           ),
-          Effect.as({ phoneId: phone.id, token, name: findMacName() }),
+          Effect.as({ phoneId: phone.id, token, name: findHostName() }),
         );
       });
     }

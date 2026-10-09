@@ -4,7 +4,8 @@
     "strict": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "types": ["expo/types"]
+    "types": ["expo/types"],
+    "paths": { "@/*": ["./src/*"] }
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "uniwind-types.d.ts", "expo-env.d.ts"]
 }

@@ -1,17 +1,19 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { router, Stack, useLocalSearchParams } from "expo-router";
-import { Button, Input, Label, Spinner, TextField } from "heroui-native";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
-import { pairWithMac, parsePairingLink } from "../src/lib/macs.ts";
-import { addMac } from "../src/lib/store.ts";
+import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { Button } from "@/components/ui/button.tsx";
+import { Input } from "@/components/ui/input.tsx";
+import { Text } from "@/components/ui/text.tsx";
+import { pairWithHost, parsePairingLink } from "@/lib/hosts.ts";
+import { addHost } from "@/lib/store.ts";
 
 export default function PairScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [pairingWith, setPairingWith] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [host, setHost] = useState("");
+  const [address, setAddress] = useState("");
   const [code, setCode] = useState("");
   // The camera reports a code many times a second; only the first starts pairing.
   const isPairing = useRef(false);
@@ -30,7 +32,7 @@ export default function PairScreen() {
     setError(null);
 
     try {
-      await addMac(await pairWithMac(offer));
+      await addHost(await pairWithHost(offer));
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // Back to the thread list, however this screen was opened.
       router.dismissTo("/");
@@ -68,27 +70,23 @@ export default function PairScreen() {
   return (
     <ScrollView
       className="flex-1 bg-background"
-      contentContainerClassName="gap-6 p-5"
+      contentContainerClassName="gap-5 p-5"
       keyboardShouldPersistTaps="handled"
     >
       <Stack.Screen
         options={{
           headerLeft: () => (
-            <Pressable
-              accessibilityRole="button"
-              hitSlop={12}
-              onPress={() => router.dismissTo("/")}
-            >
-              <Text className="text-[17px] text-foreground">Cancel</Text>
+            <Pressable hitSlop={12} onPress={() => router.dismissTo("/")} className="px-2">
+              <Text className="text-base">Cancel</Text>
             </Pressable>
           ),
         }}
       />
-      <Text className="text-[15px] text-muted">
-        On your Mac, open MassCode → Settings → Phone, turn on access and choose Pair a phone. Then
-        scan the code it shows.
+      <Text className="text-sm leading-6 text-muted-foreground">
+        On your computer, open MassCode → Settings → Phone, turn on access and choose Pair a phone.
+        Then scan the code it shows.
       </Text>
-      <View className="bg-surface-secondary aspect-square overflow-hidden rounded-3xl">
+      <View className="aspect-square overflow-hidden rounded-2xl border border-border bg-card">
         {permission?.granted ? (
           <CameraView
             className="flex-1"
@@ -99,63 +97,63 @@ export default function PairScreen() {
               if (offer) void pair(offer);
               else if (!error)
                 setError(
-                  "That isn't a MassCode pairing code. Scan the one in Settings → Phone on your Mac.",
+                  "That isn't a MassCode pairing code. Scan the one in Settings → Phone on your computer.",
                 );
             }}
           />
         ) : (
           <View className="flex-1 items-center justify-center gap-4 p-6">
-            <Text className="text-center text-[15px] text-muted">
+            <Text className="text-center text-sm leading-6 text-muted-foreground">
               {permission?.canAskAgain === false
                 ? "Camera access is off for MassCode. Turn it on in the Settings app, or enter the code below."
                 : "MassCode needs the camera to scan the pairing code."}
             </Text>
             {permission?.canAskAgain === false ? null : (
               <Button variant="secondary" onPress={() => void requestPermission()}>
-                Allow camera
+                <Text>Allow camera</Text>
               </Button>
             )}
           </View>
         )}
         {pairingWith ? (
           <View className="absolute inset-0 items-center justify-center gap-3 bg-background/80">
-            <Spinner />
-            <Text className="text-foreground">Pairing with {pairingWith}…</Text>
+            <ActivityIndicator />
+            <Text className="text-sm">Pairing with {pairingWith}…</Text>
           </View>
         ) : null}
       </View>
-      {error ? <Text className="text-danger text-[15px]">{error}</Text> : null}
+      {error ? <Text className="text-sm text-destructive">{error}</Text> : null}
       <View className="gap-3">
-        <Text className="text-[13px] font-medium tracking-wide text-muted uppercase">
-          Or enter it
-        </Text>
-        <TextField>
-          <Label>Mac's Tailscale address</Label>
+        <Text className="text-xs font-medium text-muted-foreground">Or enter it</Text>
+        <View className="gap-1.5">
+          <Text className="text-sm font-medium">Computer's Tailscale address</Text>
           <Input
-            value={host}
-            onChangeText={setHost}
+            value={address}
+            onChangeText={setAddress}
             placeholder="100.64.0.1"
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="numbers-and-punctuation"
           />
-        </TextField>
-        <TextField>
-          <Label>Code</Label>
+        </View>
+        <View className="gap-1.5">
+          <Text className="text-sm font-medium">Code</Text>
           <Input
             value={code}
             onChangeText={(text) => setCode(text.replace(/\D/g, "").slice(0, 6))}
             placeholder="6 digits"
             keyboardType="number-pad"
           />
-        </TextField>
+        </View>
         <Button
-          isDisabled={!host.trim() || code.length !== 6 || pairingWith !== null}
-          // The Mac's phone listener port, as in its pairing code.
-          // 47822 is the Mac's phone port, as its pairing code carries it.
-          onPress={() => void pair({ host: host.trim(), port: 47822, code, name: host.trim() })}
+          className="mt-1"
+          disabled={!address.trim() || code.length !== 6 || pairingWith !== null}
+          // 47822 is the host's phone port, as its pairing code carries it.
+          onPress={() =>
+            void pair({ host: address.trim(), port: 47822, code, name: address.trim() })
+          }
         >
-          Pair
+          <Text>Pair</Text>
         </Button>
       </View>
     </ScrollView>

@@ -2,41 +2,52 @@ import { useColorScheme, View } from "react-native";
 import { useMarkdown } from "react-native-marked";
 import { useCSSVariable, useResolveClassNames } from "uniwind";
 
-/** The agent's markdown in the app's type and colors; the renderer only takes style objects, so they're resolved from classes. */
+/** The agent's markdown, styled as on the desktop; the renderer only takes style objects, so they're resolved from classes. */
 export function Markdown({ text, isMuted = false }: { text: string; isMuted?: boolean }) {
   const colorScheme = useColorScheme();
 
   const textStyle = useResolveClassNames(
-    isMuted ? "text-[15px] leading-6 text-muted" : "text-[16px] leading-6 text-foreground",
+    isMuted
+      ? "font-sans text-sm leading-6 text-muted-foreground"
+      : "font-sans text-[15px] leading-6 text-foreground",
   );
 
-  const paragraph = useResolveClassNames("my-1");
-  const heading = useResolveClassNames("mt-3 mb-1 text-[17px] font-semibold text-foreground");
-  const codeBlock = useResolveClassNames("my-2 rounded-xl bg-surface-secondary p-3");
-  const codeText = useResolveClassNames("font-mono text-[13px] leading-5 text-foreground");
-  const codespan = useResolveClassNames("font-mono text-[14px] not-italic text-foreground");
-  const link = useResolveClassNames("text-link underline");
-  const blockquote = useResolveClassNames("my-1 border-l-2 border-separator pl-3");
-  const listItem = useResolveClassNames("text-[16px] leading-6 text-foreground");
-  const strong = useResolveClassNames("font-semibold text-foreground");
-  const accent = useCSSVariable("--color-accent");
-  const separator = useCSSVariable("--color-separator");
-  const surface = useCSSVariable("--color-surface-secondary");
+  const paragraph = useResolveClassNames("py-2");
+  const h1 = useResolveClassNames("mt-4 mb-1 font-sans text-lg font-semibold text-foreground");
+
+  const heading = useResolveClassNames(
+    "mt-3 mb-1 font-sans text-base font-semibold text-foreground",
+  );
+
+  const codeBlock = useResolveClassNames("my-2 rounded-2xl bg-muted/80 p-3.5");
+  const codeText = useResolveClassNames("font-mono text-xs leading-5 text-foreground/85");
+
+  const codespan = useResolveClassNames(
+    "bg-transparent font-mono text-[13px] not-italic text-brand",
+  );
+
+  const link = useResolveClassNames("text-brand not-italic underline");
+  const blockquote = useResolveClassNames("my-1 border-l-2 border-border-strong pl-3");
+  const listItem = useResolveClassNames("font-sans text-[15px] leading-6 text-foreground");
+  const strong = useResolveClassNames("font-sans font-semibold text-foreground");
+  const brand = useCSSVariable("--color-brand");
+  const border = useCSSVariable("--color-border-strong");
+  const muted = useCSSVariable("--color-muted");
 
   const elements = useMarkdown(text, {
     colorScheme: colorScheme ?? undefined,
     theme: {
       colors: {
-        link: String(accent),
-        border: String(separator),
-        code: String(surface),
+        link: String(brand),
+        border: String(border),
+        code: String(muted),
         text: String(textStyle.color),
       },
     },
     styles: {
       text: textStyle,
       paragraph,
-      h1: heading,
+      h1,
       h2: heading,
       h3: heading,
       h4: heading,

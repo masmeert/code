@@ -27,7 +27,7 @@ export const PairingOffer = Schema.Struct({
   dnsName: Schema.NullOr(Schema.String),
   port: Schema.Number,
   code: Schema.String,
-  /** This machine's name, so the phone can tell its Macs apart. */
+  /** This machine's name, so the phone can tell its hosts apart. */
   name: Schema.String,
   expiresAt: Schema.Number,
 });
@@ -47,7 +47,7 @@ export type PairingRequest = typeof PairingRequest.Type;
 export const PairingGrant = Schema.Struct({
   phoneId: Schema.String,
   token: Schema.String,
-  /** The Mac's name, for a phone that typed its address rather than scanning the offer. */
+  /** The host's name, for a phone that typed its address rather than scanning the offer. */
   name: Schema.String,
 });
 

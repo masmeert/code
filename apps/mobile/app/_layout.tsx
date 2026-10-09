@@ -1,15 +1,24 @@
-import "../src/polyfills.ts";
+import "@/polyfills.ts";
 import "../global.css";
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { HeroUINativeProvider } from "heroui-native";
+import { PortalHost } from "@rn-primitives/portal";
 import { useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 
+// The desktop's font, for the native headers too.
+const FONTS = {
+  regular: { fontFamily: "Figtree", fontWeight: "400" },
+  medium: { fontFamily: "Figtree", fontWeight: "500" },
+  bold: { fontFamily: "Figtree", fontWeight: "600" },
+  heavy: { fontFamily: "Figtree", fontWeight: "700" },
+} as const;
+
 // The desktop's Vesper palette (global.css) for the native headers, which Tailwind can't reach.
 const LIGHT = {
   ...DefaultTheme,
+  fonts: FONTS,
   colors: {
     ...DefaultTheme.colors,
     primary: "#a8642f",
@@ -22,6 +31,7 @@ const LIGHT = {
 
 const DARK = {
   ...DarkTheme,
+  fonts: FONTS,
   colors: {
     ...DarkTheme.colors,
     primary: "#ffc799",
@@ -38,19 +48,21 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView>
       <KeyboardProvider>
-        <HeroUINativeProvider>
-          <ThemeProvider value={isDark ? DARK : LIGHT}>
-            <StatusBar style="auto" />
-            <Stack
-              screenOptions={{ headerShadowVisible: false, headerBackButtonDisplayMode: "minimal" }}
-            >
-              <Stack.Screen name="index" options={{ title: "Threads" }} />
-              <Stack.Screen name="macs" options={{ title: "Macs" }} />
-              <Stack.Screen name="pair" options={{ title: "Pair a Mac", presentation: "modal" }} />
-              <Stack.Screen name="thread/[macId]/[threadId]" options={{ title: "" }} />
-            </Stack>
-          </ThemeProvider>
-        </HeroUINativeProvider>
+        <ThemeProvider value={isDark ? DARK : LIGHT}>
+          <StatusBar style="auto" />
+          <Stack
+            screenOptions={{ headerShadowVisible: false, headerBackButtonDisplayMode: "minimal" }}
+          >
+            <Stack.Screen name="index" options={{ title: "Threads", headerLargeTitle: true }} />
+            <Stack.Screen name="hosts" options={{ title: "Computers" }} />
+            <Stack.Screen
+              name="pair"
+              options={{ title: "Pair a computer", presentation: "modal" }}
+            />
+            <Stack.Screen name="thread/[hostId]/[threadId]" options={{ title: "" }} />
+          </Stack>
+          <PortalHost />
+        </ThemeProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>
   );

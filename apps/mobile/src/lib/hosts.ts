@@ -4,39 +4,39 @@ import * as SecureStore from "expo-secure-store";
 import * as Schema from "effect/Schema";
 import { Platform } from "react-native";
 
-/** A Mac this phone paired with: where its daemon listens, and the token it gave this phone. */
-export const PairedMac = Schema.Struct({
-  /** This phone's id on that Mac. */
+/** A host this phone paired with: where its daemon listens, and the token it gave this phone. */
+export const PairedHost = Schema.Struct({
+  /** This phone's id on that host. */
   id: Schema.String,
   name: Schema.String,
   /** Its Tailscale address when it paired. */
-  host: Schema.String,
+  address: Schema.String,
   /** Its MagicDNS name, which keeps working when the address changes; absent without MagicDNS. */
   dnsName: Schema.optional(Schema.NullOr(Schema.String)),
   port: Schema.Number,
   token: Schema.String,
 });
 
-export type PairedMac = typeof PairedMac.Type;
+export type PairedHost = typeof PairedHost.Type;
 
-/** The keychain holds the tokens; anyone with one can steer that Mac's agents. */
-const STORAGE_KEY = "paired-macs";
+/** The keychain holds the tokens; anyone with one can steer that host's agents. */
+const STORAGE_KEY = "paired-hosts";
 
-const decodeMacs = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(PairedMac)));
+const decodeHosts = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(PairedHost)));
 
-export async function loadMacs(): Promise<ReadonlyArray<PairedMac>> {
+export async function loadHosts(): Promise<ReadonlyArray<PairedHost>> {
   try {
-    return decodeMacs((await SecureStore.getItemAsync(STORAGE_KEY)) ?? "[]");
+    return decodeHosts((await SecureStore.getItemAsync(STORAGE_KEY)) ?? "[]");
   } catch {
     return [];
   }
 }
 
-export function saveMacs(macs: ReadonlyArray<PairedMac>) {
-  return SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(macs));
+export function saveHosts(hosts: ReadonlyArray<PairedHost>) {
+  return SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(hosts));
 }
 
-/** What the Mac's pairing QR code carries; null for any other code. */
+/** What the host's pairing QR code carries; null for any other code. */
 export function parsePairingLink(link: string) {
   try {
     const url = new URL(link);
@@ -63,14 +63,14 @@ export function parsePairingLink(link: string) {
 
 const decodeGrant = Schema.decodeUnknownSync(PairingGrant);
 
-/** Trades the Mac's one-time code for a token of this phone's own; throws an Error saying what went wrong. */
-export async function pairWithMac(offer: {
+/** Trades the host's one-time code for a token of this phone's own; throws an Error saying what went wrong. */
+export async function pairWithHost(offer: {
   readonly host: string;
   readonly port: number;
   readonly code: string;
   readonly name: string;
   readonly dnsName?: string | null;
-}): Promise<PairedMac> {
+}): Promise<PairedHost> {
   const request: PairingRequest = {
     code: offer.code,
     name: Constants.deviceName ?? (Platform.OS === "ios" ? "iPhone" : "Android phone"),
@@ -87,7 +87,7 @@ export async function pairWithMac(offer: {
   })
     .catch(() => {
       throw new Error(
-        `Couldn't reach ${offer.name} at ${offer.host}. Check Tailscale is on, on this phone and the Mac, and that MassCode is open there.`,
+        `Couldn't reach ${offer.name} at ${offer.host}. Check Tailscale is on, on this phone and the computer, and that MassCode is open there.`,
       );
     })
     .finally(() => clearTimeout(timeout));
@@ -114,7 +114,7 @@ export async function pairWithMac(offer: {
   return {
     id: grant.phoneId,
     name: grant.name,
-    host: offer.host,
+    address: offer.host,
     dnsName: offer.dnsName ?? null,
     port: offer.port,
     token: grant.token,

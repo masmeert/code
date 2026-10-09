@@ -362,7 +362,7 @@ export function serve(port: number) {
                       if (phoneSocket.data.phoneId === command.phoneId)
                         phoneSocket.close(
                           4001,
-                          "This phone was unpaired. Pair it again on your Mac.",
+                          "This phone was unpaired. Pair it again on your computer.",
                         );
                   }),
                 ),
@@ -447,7 +447,7 @@ export function serve(port: number) {
               () =>
                 new CommandError({
                   message:
-                    "MassCode on this Mac doesn't understand this phone. Update the older one.",
+                    "MassCode on this computer doesn't understand this phone. Update the older one.",
                 }),
             ),
             Effect.flatMap(manager.phones.redeem),
@@ -567,7 +567,7 @@ export function serve(port: number) {
     yield* Effect.logInfo(`MassCode daemon listening on ws://127.0.0.1:${server.port}`);
     yield* Effect.addFinalizer(() => Effect.promise(async () => phoneListener?.stop(true)));
     yield* syncPhoneListener.pipe(Effect.catch((error) => Effect.logWarning(error.message)));
-    // Tailscale can hand the Mac a new address while the daemon runs; the listener follows it.
+    // Tailscale can hand the host a new address while the daemon runs; the listener follows it.
     yield* Effect.forkScoped(
       Effect.schedule(Effect.ignore(syncPhoneListener), Schedule.spaced("30 seconds")),
     );

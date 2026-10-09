@@ -33,6 +33,33 @@ const CATEGORY = new Map<string, ToolCategory>([
 export const categoryOf = (name: string): ToolCategory =>
   name.startsWith("mcp__browser__") ? "browser" : (CATEGORY.get(name) ?? "other");
 
+const VERB: Record<ToolCategory, string> = {
+  run: "Ran",
+  read: "Read",
+  edit: "Edited",
+  search: "Searched",
+  web: "Fetched",
+  agent: "Agent",
+  todo: "Todos",
+  browser: "Browser",
+  other: "Used",
+};
+
+/** The word a call's row leads with: "Ran", "Read", or the tool's own name when it has no verb. */
+export function toolVerb(name: string) {
+  const category = categoryOf(name);
+
+  if (category === "other") return name;
+
+  if (category === "browser") {
+    const action = name.slice("mcp__browser__".length);
+
+    return action.charAt(0).toUpperCase() + action.slice(1);
+  }
+
+  return VERB[category];
+}
+
 const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
 /** Past-tense phrase for one category, e.g. "read index.ts" or "ran 3 commands". */

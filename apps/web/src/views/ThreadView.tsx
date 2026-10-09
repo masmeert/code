@@ -25,10 +25,10 @@ import {
   useReviewComments,
   buildReviewMessage,
 } from "../lib/reviewComments.ts";
+import { findDefaultModel } from "@masscode/client";
 import {
   findCatalogModel,
   decodeChoice,
-  findDefaultModel,
   encodeChoice,
   formatHarnessLabel,
   buildModelChoices,
