@@ -45,12 +45,20 @@ export function BrowserHost() {
   return createPortal(
     alive.flatMap(({ threadId, tabId }) => {
       const tab = browsers[threadId]?.tabs.find((candidate) => candidate.id === tabId);
-      if (!tab?.url || !threads[threadId]) return [];
+      const info = threads[threadId];
+      if (!tab?.url || !info) return [];
+      // Shelved and archived threads' tabs unload unless on screen; showing them again reloads their URL.
+      if (
+        (info.shelved || info.archivedAt !== null) &&
+        surface?.threadId !== threadId &&
+        !activity[tabId]?.automating
+      )
+        return [];
       return [
         <HostedTab
           key={tabId}
           threadId={threadId}
-          partition={browserPartition(projectHosts[threads[threadId].projectId] ?? null)}
+          partition={browserPartition(projectHosts[info.projectId] ?? null)}
           tab={tab}
           rect={shown === tabId && !activity[tabId]?.error ? (surface?.rect ?? null) : null}
           automating={(activity[tabId]?.automating ?? 0) > 0}
