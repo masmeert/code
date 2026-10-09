@@ -11,7 +11,6 @@ import {
   type SourceControlStatus,
   WritingStyle,
 } from "@masscode/contracts";
-import * as Schema from "effect/Schema";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { send, updateSettings, useStore } from "../../lib/store.ts";
@@ -23,7 +22,7 @@ import {
   SettingsModelSelect,
 } from "./SettingsControls.tsx";
 
-const MERGE_METHODS = [
+const MERGE_METHODS: Array<{ value: MergeMethod | "last"; label: string }> = [
   { value: "last", label: "Last selected" },
   { value: "merge", label: "Merge" },
   { value: "squash", label: "Squash and merge" },
@@ -62,10 +61,7 @@ export function GitPage() {
             <SettingsSelect
               value={settings.mergeMethod ?? "last"}
               onChange={(value) =>
-                updateSettings({
-                  ...settings,
-                  mergeMethod: Schema.is(MergeMethod)(value) ? value : null,
-                })
+                updateSettings({ ...settings, mergeMethod: value === "last" ? null : value })
               }
               options={MERGE_METHODS}
               className="w-52"
@@ -149,10 +145,7 @@ export function GitPage() {
           <SettingsRow label="Writing style">
             <SettingsSelect
               value={settings.writingStyle ?? "repo_conventions"}
-              onChange={(value) =>
-                Schema.is(WritingStyle)(value) &&
-                updateSettings({ ...settings, writingStyle: value })
-              }
+              onChange={(writingStyle) => updateSettings({ ...settings, writingStyle })}
               options={WRITING_STYLES}
               className="w-52"
             />

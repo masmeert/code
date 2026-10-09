@@ -1,14 +1,7 @@
 import { Button } from "@masscode/ui/motion/button/base";
 import { Switch } from "@masscode/ui/motion/switch";
 import { Tabs, TabsList, TabsTrigger } from "@masscode/ui/motion/tabs";
-import {
-  DEFAULT_AUTO_SHELVE_DAYS,
-  Effort,
-  PermissionLevel,
-  UpdateStatus,
-} from "@masscode/contracts";
-import * as Match from "effect/Match";
-import * as Schema from "effect/Schema";
+import { DEFAULT_AUTO_SHELVE_DAYS, PermissionLevel, UpdateStatus } from "@masscode/contracts";
 import { Columns2, Rows2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { EFFORT_LABEL, EFFORTS, PERMISSION_LABEL } from "../../lib/composer.ts";
@@ -61,7 +54,7 @@ export function GeneralPage() {
                   onChange={(value) =>
                     updateSettings({
                       ...settings,
-                      newThreadEffort: Schema.is(Effort)(value) ? value : null,
+                      newThreadEffort: value === "default" ? null : value,
                     })
                   }
                   options={[
@@ -88,9 +81,8 @@ export function GeneralPage() {
           >
             <SettingsSelect
               value={settings.newThreadPermission ?? "ask"}
-              onChange={(value) =>
-                Schema.is(PermissionLevel)(value) &&
-                updateSettings({ ...settings, newThreadPermission: value })
+              onChange={(newThreadPermission) =>
+                updateSettings({ ...settings, newThreadPermission })
               }
               options={PermissionLevel.literals.map((level) => ({
                 value: level,
@@ -103,12 +95,7 @@ export function GeneralPage() {
           >
             <SettingsSelect
               value={settings.workspace ?? "local"}
-              onChange={(value) =>
-                updateSettings({
-                  ...settings,
-                  workspace: value === "worktree" ? "worktree" : "local",
-                })
-              }
+              onChange={(workspace) => updateSettings({ ...settings, workspace })}
               options={[
                 { value: "local", label: "Project folder" },
                 { value: "worktree", label: "New worktree" },
@@ -196,9 +183,7 @@ export function GeneralPage() {
           >
             <SettingsSelect
               value={settings.followUp ?? "queue"}
-              onChange={(value) =>
-                updateSettings({ ...settings, followUp: value === "steer" ? "steer" : "queue" })
-              }
+              onChange={(followUp) => updateSettings({ ...settings, followUp })}
               options={[
                 { value: "queue", label: "Queue until done" },
                 { value: "steer", label: "Send immediately" },
@@ -327,16 +312,15 @@ function UpdatesSection() {
                   : window.desktop?.checkForUpdates()
             }
           >
-            {Match.value(status).pipe(
-              Match.tag("idle", () => "Check for updates"),
-              Match.tag("checking", () => "Checking…"),
-              Match.tag("up-to-date", () => "Up to date"),
-              Match.tag("available", () => "Download update"),
-              Match.tag("downloading", ({ percent }) => `Downloading ${Math.round(percent)}%`),
-              Match.tag("ready", () => "Restart to update"),
-              Match.tag("failed", () => "Try again"),
-              Match.exhaustive,
-            )}
+            {UpdateStatus.match(status, {
+              idle: () => "Check for updates",
+              checking: () => "Checking…",
+              "up-to-date": () => "Up to date",
+              available: () => "Download update",
+              downloading: ({ percent }) => `Downloading ${Math.round(percent)}%`,
+              ready: () => "Restart to update",
+              failed: () => "Try again",
+            })}
           </Button>
         </SettingsRow>
       </SettingsGroup>

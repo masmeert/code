@@ -33,7 +33,6 @@ import {
   type ThreadInfo,
   UpdateStatus,
 } from "@masscode/contracts";
-import * as Match from "effect/Match";
 import { categoryOf, livePhrase } from "@masscode/ui/agents/tool-group";
 import { TextShimmer } from "@masscode/ui/motion/text-shimmer";
 import {
@@ -529,12 +528,11 @@ export function Sidebar(props: {
             className="h-8 w-full justify-start gap-2 rounded-lg bg-brand/10 px-2 text-sm font-normal text-brand hover:bg-brand/15 hover:text-brand disabled:opacity-100"
           >
             <ArrowDownToLine className="size-4" />
-            {Match.value(updateStatus).pipe(
-              Match.tag("available", () => "Download update"),
-              Match.tag("downloading", ({ percent }) => `Downloading ${Math.round(percent)}%`),
-              Match.tag("ready", () => "Restart to update"),
-              Match.exhaustive,
-            )}
+            {UpdateStatus.guards.ready(updateStatus)
+              ? "Restart to update"
+              : UpdateStatus.guards.downloading(updateStatus)
+                ? `Downloading ${Math.round(updateStatus.percent)}%`
+                : "Download update"}
             <span className="ml-auto text-xs tabular-nums opacity-70">v{updateStatus.version}</span>
           </Button>
         ) : null}

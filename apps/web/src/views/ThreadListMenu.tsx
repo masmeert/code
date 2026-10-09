@@ -15,7 +15,6 @@ import { Button } from "@masscode/ui/motion/button";
 import { cn } from "@masscode/ui/lib/utils";
 import { ProjectBadge, formatProjectLabel } from "@/components/project-badge";
 import type { Project } from "@masscode/contracts";
-import * as Match from "effect/Match";
 import { SlidersHorizontal } from "lucide-react";
 import type { ReactNode } from "react";
 import { formatHarnessLabel } from "../lib/models.ts";
@@ -100,14 +99,13 @@ export function ThreadListMenu(props: {
         />
         <OptionMenu
           label="Project"
-          value={Match.value(view.projects.length).pipe(
-            Match.when(0, () => "All"),
-            Match.when(
-              1,
-              () => props.projects.find((project) => project.id === view.projects[0])?.name,
-            ),
-            Match.orElse((count) => `${count} projects`),
-          )}
+          value={
+            view.projects.length > 1
+              ? `${view.projects.length} projects`
+              : view.projects.length
+                ? props.projects.find((project) => project.id === view.projects[0])?.name
+                : "All"
+          }
         >
           <DropdownMenuCheckboxItem
             checked={view.projects.length === 0}

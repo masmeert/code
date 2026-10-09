@@ -2,7 +2,6 @@ import { Button } from "@masscode/ui/motion/button/base";
 import { Input } from "@masscode/ui/motion/input";
 import { cn } from "@masscode/ui/lib/utils";
 import { HostStatus } from "@masscode/contracts";
-import * as Match from "effect/Match";
 import { Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { forgetFullAccessAsRoot } from "../../lib/composer.ts";
@@ -130,26 +129,23 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
               <span
                 className={cn(
                   "mt-1.5 size-1.5 shrink-0 rounded-full",
-                  Match.value(status).pipe(
-                    Match.tag("connected", () => "bg-success"),
-                    Match.tag("failed", () => "bg-destructive"),
-                    Match.orElse(() => "bg-warning"),
-                  ),
+                  HostStatus.match(status, {
+                    connecting: () => "bg-warning",
+                    connected: () => "bg-success",
+                    updating: () => "bg-warning",
+                    failed: () => "bg-destructive",
+                  }),
                 )}
               />
               <span
                 className={cn("min-w-0", HostStatus.guards.failed(status) && "text-destructive")}
               >
-                {Match.value(status).pipe(
-                  Match.tag("connecting", ({ step }) => `${step}…`),
-                  Match.tag("connected", () => "Connected"),
-                  Match.tag(
-                    "updating",
-                    () => "Updating: the new version starts once its running turns end",
-                  ),
-                  Match.tag("failed", ({ message }) => message),
-                  Match.exhaustive,
-                )}
+                {HostStatus.match(status, {
+                  connecting: ({ step }) => `${step}…`,
+                  connected: () => "Connected",
+                  updating: () => "Updating: the new version starts once its running turns end",
+                  failed: ({ message }) => message,
+                })}
               </span>
             </div>
           </div>

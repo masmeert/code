@@ -52,17 +52,18 @@ export function SettingsRow({
 }
 
 /** A settings dropdown; `label` is what the closed trigger shows when an option's content isn't plain text. */
-export function SettingsSelect(props: {
-  value: string;
-  onChange: (value: string) => void;
-  options: ReadonlyArray<{ value: string; label: string; icon?: React.ReactNode }>;
+export function SettingsSelect<Value extends string>(props: {
+  value: Value;
+  onChange: (value: Value) => void;
+  options: ReadonlyArray<{ value: Value; label: string; icon?: React.ReactNode }>;
   disabled?: boolean;
   className?: string;
 }) {
   return (
     <Select
       value={props.value}
-      onValueChange={props.onChange}
+      // SAFETY: the items below are rendered from `options`, whose values are all `Value`s.
+      onValueChange={(value) => props.onChange(value as Value)}
       disabled={props.disabled}
       className={props.className ?? "w-44"}
     >

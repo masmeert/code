@@ -3,7 +3,6 @@ import { Skeleton } from "@masscode/ui/components/skeleton";
 import { getHarnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import { cn } from "@masscode/ui/lib/utils";
 import { ClientCommand, ProviderKind, type ProviderStatus } from "@masscode/contracts";
-import * as Match from "effect/Match";
 import { useState } from "react";
 import { formatHarnessLabel } from "../../lib/models.ts";
 import { send, useStore } from "../../lib/store.ts";
@@ -179,49 +178,51 @@ export function ProviderCard({
 
       {isSigningIn ? (
         <div className="px-3 py-2.5 text-xs text-muted-foreground">
-          {Match.value(flow.stage).pipe(
-            Match.when("starting", () => "Starting sign-in…"),
-            Match.when("browser", () => "Finish signing in in your browser."),
-            Match.orElse(() => (
-              <>
-                <p className="mb-2">Sign in in your browser, then paste the code it shows.</p>
-                <div className="flex gap-2">
-                  <input
-                    autoFocus
-                    value={code}
-                    onChange={(event) => setCode(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && code.trim())
-                        send(
-                          ClientCommand.cases["provider.linkCode"].make({
-                            provider: kind,
-                            code: code.trim(),
-                          }),
-                          host,
-                        );
-                    }}
-                    placeholder="Paste code"
-                    className="selectable h-7 min-w-0 flex-1 rounded-lg border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-ring"
-                  />
-                  <Button
-                    size="sm"
-                    className="h-7 rounded-lg"
-                    disabled={!code.trim()}
-                    onClick={() =>
+          {flow.stage === "awaiting-code" ? (
+            <>
+              <p className="mb-2">Sign in in your browser, then paste the code it shows.</p>
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={code}
+                  onChange={(event) => setCode(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && code.trim())
                       send(
                         ClientCommand.cases["provider.linkCode"].make({
                           provider: kind,
                           code: code.trim(),
                         }),
                         host,
-                      )
-                    }
-                  >
-                    Submit
-                  </Button>
-                </div>
-              </>
-            )),
+                      );
+                  }}
+                  placeholder="Paste code"
+                  className="selectable h-7 min-w-0 flex-1 rounded-lg border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-ring"
+                />
+                <Button
+                  size="sm"
+                  className="h-7 rounded-lg"
+                  disabled={!code.trim()}
+                  onClick={() =>
+                    send(
+                      ClientCommand.cases["provider.linkCode"].make({
+                        provider: kind,
+                        code: code.trim(),
+                      }),
+                      host,
+                    )
+                  }
+                >
+                  Submit
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p>
+              {flow.stage === "starting"
+                ? "Starting sign-in…"
+                : "Finish signing in in your browser."}
+            </p>
           )}
           {flow.url ? (
             <a

@@ -7,7 +7,6 @@ import {
 } from "@masscode/ui/agents/message";
 import { Markdown } from "@masscode/ui/agents/markdown";
 import { Reasoning, thoughtTitle } from "@masscode/ui/agents/reasoning";
-import * as Match from "effect/Match";
 import { OrbFace } from "@masscode/ui/agents/orb-face";
 import { PromptSelect } from "@masscode/ui/agents/prompt-input";
 import { StreamingResponse } from "@masscode/ui/agents/streaming-response";
@@ -359,12 +358,8 @@ const MARKERS: Record<MarkerItem["kind"], { readonly icon: LucideIcon; readonly 
 
 /** Where a thread's own conversation starts, with the way to the thread it came from. */
 function ThreadMarker({ item }: { item: MarkerItem }) {
-  const [threadId, title] = Match.value(item).pipe(
-    Match.discriminatorsExhaustive("kind")({
-      forked: (forked) => [forked.fromThreadId, forked.fromTitle] as const,
-      startedBy: (started) => [started.byThreadId, started.byTitle] as const,
-    }),
-  );
+  const [threadId, title] =
+    item.kind === "forked" ? [item.fromThreadId, item.fromTitle] : [item.byThreadId, item.byTitle];
   const source = useStore((state) => state.threads[threadId]);
   const { icon: Icon, label } = MARKERS[item.kind];
 

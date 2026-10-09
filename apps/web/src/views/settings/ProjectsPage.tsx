@@ -137,12 +137,7 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
           >
             <SettingsSelect
               value={draft.startIn}
-              onChange={(value) =>
-                void saveWorktreeSettings({
-                  ...draft,
-                  startIn: value === "worktree" || value === "local" ? value : "settings",
-                })
-              }
+              onChange={(startIn) => void saveWorktreeSettings({ ...draft, startIn })}
               options={[
                 { value: "settings", label: "Same as General" },
                 { value: "worktree", label: "New worktree" },
