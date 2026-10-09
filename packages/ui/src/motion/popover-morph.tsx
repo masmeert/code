@@ -358,6 +358,8 @@ export function MorphPopoverContent({
             role="dialog"
             aria-labelledby={ctx.triggerId}
             variants={clip}
+            // A no-op onUpdate keeps Motion off WAAPI: a compositor clip-path animation doesn't repaint the parent's drop-shadow until it ends.
+            onUpdate={() => {}}
             style={{
               borderRadius: radius,
               width: layout ? width : undefined,

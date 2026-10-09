@@ -64,6 +64,8 @@ function MenuSurface({
       className="z-50 origin-(--radix-dropdown-menu-content-transform-origin) outline-hidden [filter:drop-shadow(0_1px_1px_rgb(0_0_0/0.06))_drop-shadow(0_8px_20px_rgb(0_0_0/0.12))] data-[state=closed]:pointer-events-none"
     >
       <motion.div
+        // A no-op onUpdate keeps Motion off WAAPI: a compositor clip-path animation doesn't repaint the parent's drop-shadow until it ends.
+        onUpdate={() => {}}
         variants={
           reduce
             ? undefined

@@ -295,6 +295,8 @@ export function CenterMorphModalContent({
                           }
                     }
                     {...gate}
+                    // A no-op onUpdate keeps Motion off WAAPI: a compositor clip-path animation doesn't repaint the parent's drop-shadow until it ends.
+                    onUpdate={() => {}}
                     transition={
                       reduce ? { duration: 0.14, ease: EASE_OUT } : CENTER_UNFOLD_TRANSITION
                     }
