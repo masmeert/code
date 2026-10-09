@@ -1861,7 +1861,10 @@ function ProviderCard({
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && code.trim())
                         send(
-                          ClientCommand.cases["provider.linkCode"].make({ provider: kind, code }),
+                          ClientCommand.cases["provider.linkCode"].make({
+                            provider: kind,
+                            code: code.trim(),
+                          }),
                           host,
                         );
                     }}
@@ -1874,7 +1877,10 @@ function ProviderCard({
                     disabled={!code.trim()}
                     onClick={() =>
                       send(
-                        ClientCommand.cases["provider.linkCode"].make({ provider: kind, code }),
+                        ClientCommand.cases["provider.linkCode"].make({
+                          provider: kind,
+                          code: code.trim(),
+                        }),
                         host,
                       )
                     }
