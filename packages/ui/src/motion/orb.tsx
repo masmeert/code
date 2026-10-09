@@ -55,7 +55,11 @@ const MAX_STOPS = 4;
 const LOOP_SECONDS = 7;
 /** Ambient motion gains nothing from 120 Hz. */
 const FRAME_CAP_MS = 1000 / 60;
+/** A resting orb drifts too slowly for 60 Hz to show; it just keeps the GPU awake. */
+const RESTING_FRAME_CAP_MS = 1000 / 20;
 const TAU = Math.PI * 2;
+/** Probing a colour forces a style recalc of the whole document, so each colour is probed once. */
+const oklabCache = new Map<string, [number, number, number]>();
 
 /* The covering triangle is built from gl_VertexID, so there is no vertex
    buffer and no attribute state to manage. */
@@ -271,6 +275,8 @@ void main() {
  * into actual pixels.
  */
 function toOklab(color: string): [number, number, number] {
+  const cached = oklabCache.get(color);
+  if (cached) return cached;
   const probe = document.createElement("span");
   probe.style.color = color;
   document.body.append(probe);
@@ -295,11 +301,13 @@ function toOklab(color: string): [number, number, number] {
   const long = Math.cbrt(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue);
   const medium = Math.cbrt(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue);
   const short = Math.cbrt(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue);
-  return [
+  const oklab: [number, number, number] = [
     0.2104542553 * long + 0.793617785 * medium - 0.0040720468 * short,
     1.9779984951 * long - 2.428592205 * medium + 0.4505937099 * short,
     0.0259040371 * long + 0.7827717662 * medium - 0.808675766 * short,
   ];
+  oklabCache.set(color, oklab);
+  return oklab;
 }
 
 function compileShader(gl: WebGL2RenderingContext, type: number, source: string) {
@@ -317,6 +325,7 @@ function startOrb(
   canvas: HTMLCanvasElement,
   gl: WebGL2RenderingContext,
   colors: readonly string[],
+  frameCapMs: { readonly current: number },
 ) {
   const vertexShader = compileShader(gl, gl.VERTEX_SHADER, VERTEX);
   const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, FRAGMENT);
@@ -378,12 +387,12 @@ function startOrb(
 
   function tick(nowMs: number) {
     frame = requestAnimationFrame(tick);
-    const elapsedMs = lastFrameMs ? Math.min(nowMs - lastFrameMs, 100) : FRAME_CAP_MS;
+    const elapsedMs = lastFrameMs ? Math.min(nowMs - lastFrameMs, 100) : frameCapMs.current;
     lastFrameMs = nowMs;
     pendingMs += elapsedMs;
     // Half a frame of slack: without it, a display whose vsync divides the cap almost exactly
     // drops an extra frame and the cadence stutters.
-    if (pendingMs < FRAME_CAP_MS - elapsedMs * 0.5) return;
+    if (pendingMs < frameCapMs.current - elapsedMs * 0.5) return;
     phase = (phase + pendingMs / 1000 / LOOP_SECONDS) % 1;
     pendingMs = 0;
     gl.uniform1f(phaseUniform, phase * TAU);
@@ -446,14 +455,22 @@ function startOrb(
 
 export function Orb({
   colors,
+  resting = false,
   className,
 }: {
   /** Two to four stops. The GL context is rebuilt when this changes, so pass a stable array. */
   colors: readonly string[];
+  /** Keeps moving at a low frame rate, for an orb that's on screen but has nothing to show. */
+  resting?: boolean;
   className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [supported, setSupported] = useState(true);
+  const frameCapMs = useRef(resting ? RESTING_FRAME_CAP_MS : FRAME_CAP_MS);
+
+  useEffect(() => {
+    frameCapMs.current = resting ? RESTING_FRAME_CAP_MS : FRAME_CAP_MS;
+  }, [resting]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -465,7 +482,7 @@ export function Orb({
       premultipliedAlpha: true,
       stencil: false,
     });
-    const stopOrb = canvas && gl ? startOrb(canvas, gl, colors) : null;
+    const stopOrb = canvas && gl ? startOrb(canvas, gl, colors, frameCapMs) : null;
     // Set both ways: a failed first attempt must not disable the orb for good.
     setSupported(Boolean(stopOrb));
     return stopOrb ?? undefined;

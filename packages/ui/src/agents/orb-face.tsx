@@ -258,7 +258,11 @@ export function OrbFace({
         {/* Painted understudy: with many WebGL surfaces on a page the browser reclaims the oldest
             contexts, and a reclaimed orb would leave a pair of floating eyes. */}
         <div className="absolute inset-[7%] rounded-full bg-[radial-gradient(circle_at_34%_30%,#fff4ea,#ffc799_45%,oklch(75%_0.13_55))]" />
-        <Orb colors={BODY_COLORS} className="relative size-full" />
+        <Orb
+          colors={BODY_COLORS}
+          resting={state !== "thinking" && state !== "streaming"}
+          className="relative size-full"
+        />
       </motion.div>
       <motion.svg
         ref={svgRef}
