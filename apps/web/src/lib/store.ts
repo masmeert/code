@@ -791,6 +791,8 @@ const setState = (next: State) => {
 const wanted = new Map<string, number>();
 /** Threads whose cached transcript is still being read; subscribing waits for it, to know the cursor. */
 const readingCache = new Set<string>();
+/** Closed threads' pending drops from memory, cancelled if a view opens them again. */
+const evictions = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** Puts a thread's cached transcript in memory, if it isn't there yet. */
 const loadCachedTranscript = async (threadId: string) => {
@@ -1345,6 +1347,8 @@ const openThread = (threadId: string) => {
   const count = wanted.get(threadId) ?? 0;
   wanted.set(threadId, count + 1);
   if (count > 0) return;
+  clearTimeout(evictions.get(threadId));
+  evictions.delete(threadId);
   if (state.transcripts[threadId]) subscribe(threadId);
   else void loadCachedTranscript(threadId).then(() => wanted.has(threadId) && subscribe(threadId));
 };
@@ -1353,9 +1357,18 @@ const closeThread = (threadId: string) => {
   const count = (wanted.get(threadId) ?? 1) - 1;
   if (count > 0) return void wanted.set(threadId, count);
   wanted.delete(threadId);
-  // The transcript stays in memory; reopening replays only what it missed.
   openSocket(threadHost(state, threadId))?.send(
     JSON.stringify(ClientCommand.cases["thread.unsubscribe"].make({ threadId })),
+  );
+  // Kept a few minutes for quick back-and-forth (t3code keeps 5); after that, reopening reads
+  // the IndexedDB cache and replays only what it missed.
+  evictions.set(
+    threadId,
+    setTimeout(() => {
+      evictions.delete(threadId);
+      const { [threadId]: _evicted, ...transcripts } = state.transcripts;
+      setState({ ...state, transcripts });
+    }, 5 * 60_000),
   );
 };
 

@@ -9,7 +9,7 @@ import {
   SquareTerminal,
 } from "lucide-react";
 import { MotionConfig } from "motion/react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toggleBrowser } from "./lib/browser.ts";
 import { describe, useKeybinding } from "./lib/keybindings.ts";
 import "./lib/notifications.ts";
@@ -64,7 +64,9 @@ export const App = () => {
   const [palette, setPalette] = useState(false);
   useKeybinding("palette.open", () => setPalette((open) => !open));
   useTheme(theme);
-  useEffect(() => window.desktop?.onOpenThread((id) => setView({ kind: "thread", id })), []);
+  // Stable, so sidebar rows (memoized) don't all redraw on every render.
+  const selectThread = useCallback((id: string) => setView({ kind: "thread", id }), []);
+  useEffect(() => window.desktop?.onOpenThread(selectThread), [selectThread]);
 
   // Main window with nothing chosen yet: show the latest thread, else a new one.
   const view: View =
@@ -113,7 +115,7 @@ export const App = () => {
           <Sidebar
             activeId={view.kind === "thread" ? view.id : null}
             currentPath={currentPath}
-            onSelect={(id) => setView({ kind: "thread", id })}
+            onSelect={selectThread}
             onModal={setModal}
             onDraft={draft}
           />

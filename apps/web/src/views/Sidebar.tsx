@@ -60,7 +60,7 @@ import {
   useReducedMotion,
   useTransform,
 } from "motion/react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   canShelve,
   isSeen,
@@ -262,8 +262,7 @@ export const Sidebar = (props: {
             shelved={info.archivedAt !== null || info.shelved}
             now={now}
             digit={showDigits && jumpIds.includes(info.id) ? jumpIds.indexOf(info.id) + 1 : null}
-            onSelect={() => props.onSelect(info.id)}
-            onShelve={(next) => setShelved(info.id, next)}
+            onSelect={props.onSelect}
           />
         </motion.div>
       ))}
@@ -600,12 +599,7 @@ interface CardAction {
 }
 
 /** One action list, shared by the ⋯ menu and the right-click menu. */
-const useThreadActions = (
-  info: ThreadInfo,
-  shelved: boolean,
-  onShelve: (shelved: boolean) => void,
-  onRename: () => void,
-) => {
+const useThreadActions = (info: ThreadInfo, shelved: boolean, onRename: () => void) => {
   const [confirming, setConfirming] = useState<"archive" | "delete" | null>(null);
   const confirmArchive = useStore((s) => s.settings.confirmArchive === true);
   const confirmDelete = useStore((s) => s.settings.confirmDelete !== false);
@@ -632,7 +626,7 @@ const useThreadActions = (
             key: "shelve",
             label: shelved ? "Unshelve" : "Shelve",
             icon: shelved ? X : Check,
-            onSelect: () => onShelve(!shelved),
+            onSelect: () => setShelved(info.id, !shelved),
             disabled: !canShelve(info),
           },
           confirmArchive && confirming !== "archive"
@@ -698,7 +692,8 @@ const MenuRow = ({ action, onDone }: { action: CardAction; onDone: () => void })
   </button>
 );
 
-const ThreadCard = (props: {
+// Memoized: any thread's status or activity replaces `threads`, and only that thread's row should redraw.
+const ThreadCard = memo(function ThreadCard(props: {
   info: ThreadInfo;
   project: Project;
   active: boolean;
@@ -707,18 +702,16 @@ const ThreadCard = (props: {
   now: number;
   /** The ⌘-number that opens it, shown while ⌘ is held; null otherwise. */
   digit: number | null;
-  onSelect: () => void;
-  onShelve: (shelved: boolean) => void;
-}) => {
+  /** Must be stable, or every row redraws on each sidebar render. */
+  onSelect: (id: string) => void;
+}) {
   const { info, project } = props;
   const host = useProjectHost(project.id);
   const reduce = useReducedMotion();
   const [menuOpen, setMenuOpenState] = useState(false);
   const [responding, setResponding] = useState(false);
   const [renaming, setRenaming] = useState(false);
-  const { actions, resetConfirm } = useThreadActions(info, props.shelved, props.onShelve, () =>
-    setRenaming(true),
-  );
+  const { actions, resetConfirm } = useThreadActions(info, props.shelved, () => setRenaming(true));
   const setMenuOpen = (open: boolean) => {
     setMenuOpenState(open);
     if (!open) resetConfirm();
@@ -779,7 +772,7 @@ const ThreadCard = (props: {
               aria-label={props.shelved ? "Unshelve" : "Shelve"}
               onClick={(e) => {
                 e.stopPropagation();
-                props.onShelve(!props.shelved);
+                setShelved(info.id, !props.shelved);
               }}
               className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
             >
@@ -833,12 +826,12 @@ const ThreadCard = (props: {
             tabIndex={0}
             aria-current={props.active ? "page" : undefined}
             style={{ x: swipeX }}
-            onClick={props.onSelect}
+            onClick={() => props.onSelect(info.id)}
             onKeyDown={(e) => {
               if (e.target === e.currentTarget && e.key === "F2") setRenaming(true);
               if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
               e.preventDefault();
-              props.onSelect();
+              props.onSelect(info.id);
             }}
             onWheel={(e) => {
               if (info.archivedAt !== null || !canShelve(info)) return;
@@ -846,7 +839,7 @@ const ThreadCard = (props: {
               swipeX.set(Math.max(-96, Math.min(0, swipeX.get() - e.deltaX)));
               clearTimeout(swipeEnd.current);
               swipeEnd.current = setTimeout(() => {
-                if (swipeX.get() <= -64) props.onShelve(!props.shelved);
+                if (swipeX.get() <= -64) setShelved(info.id, !props.shelved);
                 animate(swipeX, 0, reduce ? { duration: 0 } : SPRING_SWAP);
               }, 120);
             }}
@@ -948,7 +941,7 @@ const ThreadCard = (props: {
                     variant="secondary"
                     onClick={(e) => {
                       e.stopPropagation();
-                      props.onSelect();
+                      props.onSelect(info.id);
                     }}
                     className="mt-2 h-7 rounded-lg px-2.5"
                   >
@@ -986,4 +979,4 @@ const ThreadCard = (props: {
       </ContextMenuContent>
     </ContextMenu>
   );
-};
+});
