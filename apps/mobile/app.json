@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "MassCode",
+    "slug": "masscode",
+    "scheme": "masscode",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.apkiosk.masscode.mobile",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSAppTransportSecurity": { "NSAllowsArbitraryLoads": true }
+      }
+    },
+    "android": {
+      "package": "com.apkiosk.masscode.mobile"
+    },
+    "plugins": [
+      "expo-router",
+      ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }]
+    ],
+    "experiments": { "typedRoutes": true }
+  }
+}
