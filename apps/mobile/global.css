@@ -4,6 +4,19 @@
 
 @source "./node_modules/heroui-native/lib";
 
+/* React Native takes one font name, not Tailwind's fallback list. */
+@layer theme {
+  :root {
+    @variant ios {
+      --font-mono: Menlo;
+    }
+
+    @variant android {
+      --font-mono: monospace;
+    }
+  }
+}
+
 /* The desktop's Vesper palette (packages/ui/src/styles/globals.css) on HeroUI's token names. */
 @layer theme {
   :root {

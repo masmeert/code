@@ -21,6 +21,11 @@ const PAIRING_ATTEMPTS = 5;
 
 const StoredPhone = Schema.Struct({ ...PairedPhone.fields, tokenHash: Schema.String });
 
+/** What phones call this Mac: its name without macOS's `.local`. */
+function findMacName() {
+  return hostname().replace(/\.local$/, "");
+}
+
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -93,7 +98,7 @@ export function createPhones(options: {
             );
 
           const code = String(randomInt(1_000_000)).padStart(6, "0");
-          const name = hostname().replace(/\.local$/, "");
+          const name = findMacName();
           pairing = {
             code,
             expiresAt: Date.now() + PAIRING_TTL_MS,
@@ -141,7 +146,7 @@ export function createPhones(options: {
               { ...phone, pairedAt: Date.now(), lastSeenAt: null, tokenHash: hashToken(token) },
             ]),
           ),
-          Effect.as({ phoneId: phone.id, token }),
+          Effect.as({ phoneId: phone.id, token, name: findMacName() }),
         );
       });
     }

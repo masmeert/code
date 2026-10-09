@@ -45,6 +45,8 @@ export type PairingRequest = typeof PairingRequest.Type;
 export const PairingGrant = Schema.Struct({
   phoneId: Schema.String,
   token: Schema.String,
+  /** The Mac's name, for a phone that typed its address rather than scanning the offer. */
+  name: Schema.String,
 });
 
 export type PairingGrant = typeof PairingGrant.Type;

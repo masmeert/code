@@ -18,7 +18,16 @@
     },
     "plugins": [
       "expo-router",
-      ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }]
+      ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "MassCode scans the pairing code your Mac shows in Settings → Phone.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-secure-store"
     ],
     "experiments": { "typedRoutes": true }
   }
