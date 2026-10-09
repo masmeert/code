@@ -40,7 +40,6 @@ import {
   isTurnActive,
 } from "@masscode/contracts";
 import type { ToolCall } from "@masscode/ui/agents/tool-group";
-import * as Match from "effect/Match";
 import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
 import { normalizeUrl, openPreview, performBrowserAction } from "./browser.ts";
@@ -357,165 +356,158 @@ function reduceItems(
   event: RuntimeEvent,
   id: number | null,
 ): ReadonlyArray<TranscriptItem> {
-  return Match.value(event).pipe(
-    Match.withReturnType<ReadonlyArray<TranscriptItem>>(),
-    Match.tag("user.message", (message) =>
-      upsert(items, message.messageId, () => ({
-        kind: "user",
-        id: message.messageId,
-        text: message.text,
-        attachments: message.attachments ?? [],
-        steer: message.steer === true,
-        run: message.run ?? null,
-        provider: message.provider ?? null,
-        handoff: message.handoff ?? null,
-      })),
-    ),
-    Match.tag("turn.checkpoint", ({ messageId, files, additions, deletions }) => {
-      const checkpoint: TranscriptItem = {
-        kind: "checkpoint",
-        id: `checkpoint:${messageId}`,
-        messageId,
-        files,
-        additions,
-        deletions,
-      };
-      // Worked out after the turn ends, by which time a queued message may have started the next
-      // turn: it goes at the end of its own turn, before the next prompt.
-      const start = items.findIndex((item) => item.id === messageId);
-      const next =
-        start === -1
-          ? -1
-          : items.findIndex((item, index) => index > start && item.kind === "user" && !item.steer);
-      if (next === -1) return upsert(items, checkpoint.id, () => checkpoint);
-
-      return [
-        ...items.slice(0, next).filter((item) => item.id !== checkpoint.id),
-        checkpoint,
-        ...items.slice(next).filter((item) => item.id !== checkpoint.id),
-      ];
-    }),
-    Match.tag("thread.forked", ({ fromThreadId, fromTitle }) =>
-      upsert(items, `forked:${fromThreadId}`, () => ({
-        kind: "forked",
-        id: `forked:${fromThreadId}`,
-        fromThreadId,
-        fromTitle,
-      })),
-    ),
-    Match.tag("thread.startedBy", ({ byThreadId, byTitle }) =>
-      upsert(items, `startedBy:${byThreadId}`, () => ({
-        kind: "startedBy",
-        id: `startedBy:${byThreadId}`,
-        byThreadId,
-        byTitle,
-      })),
-    ),
-    Match.tag("worktree.setup", ({ run, stopped }) =>
-      upsert(items, "setup", () => ({ kind: "setup", id: "setup", run, stopped })),
-    ),
-    Match.tag("thread.rewound", (rewound) => {
-      const index = items.findIndex((item) => item.id === rewound.messageId);
-      return index === -1 ? items : items.slice(0, index);
-    }),
-    Match.tag("assistant.delta", (delta) =>
-      upsert(items, delta.messageId, (prev) => ({
-        kind: "assistant",
-        id: delta.messageId,
-        text: (prev?.kind === "assistant" ? prev.text : "") + delta.delta,
-      })),
-    ),
-    Match.tag("assistant.completed", (completed) =>
-      upsert(items, completed.messageId, () => ({
-        kind: "assistant",
-        id: completed.messageId,
-        text: completed.text,
-      })),
-    ),
-    Match.tag("reasoning.delta", (delta) =>
-      upsert(items, delta.messageId, (prev) => ({
-        kind: "reasoning",
-        id: delta.messageId,
-        text: (prev?.kind === "reasoning" ? prev.text : "") + delta.delta,
-      })),
-    ),
-    Match.tag("reasoning.completed", (completed) =>
-      upsert(items, completed.messageId, () => ({
-        kind: "reasoning",
-        id: completed.messageId,
-        text: completed.text,
-      })),
-    ),
-    Match.tag("tool.started", (tool) => {
-      const call = {
-        id: tool.toolId,
-        name: tool.name,
-        summary: tool.summary,
-        output: null,
-        isError: false,
-      };
-      const parent = items.findLast((item) => item.id === tool.parentToolId);
-      if (parent?.kind !== "tool")
-        return upsert(items, tool.toolId, () => ({ kind: "tool", ...call }));
-      return upsert(items, parent.id, () => ({
-        ...parent,
-        children: [...(parent.children ?? []).filter((child) => child.id !== call.id), call],
-      }));
-    }),
-    Match.tag("tool.progress", (progress) =>
-      items.map((item) =>
-        item.kind === "tool" && item.id === progress.toolId
-          ? {
-              ...item,
-              progress: progress.summary ?? item.progress,
-              tokens: progress.tokens ?? item.tokens,
-              startedAt:
-                progress.durationMs === undefined
-                  ? item.startedAt
-                  : Date.now() - progress.durationMs,
-            }
-          : item,
-      ),
-    ),
-    Match.tag("tool.completed", (tool) =>
-      items.map((item) => {
-        if (item.kind !== "tool") return item;
-        if (item.id === tool.toolId) return { ...item, output: tool.output, isError: tool.isError };
-        if (!item.children?.some((child) => child.id === tool.toolId)) return item;
-        return {
-          ...item,
-          children: item.children.map((child) =>
-            child.id === tool.toolId
-              ? { ...child, output: tool.output, isError: tool.isError }
-              : child,
-          ),
+  return RuntimeEvent.matchOrElse<ReadonlyArray<TranscriptItem>>(
+    event,
+    {
+      "user.message": (message) =>
+        upsert(items, message.messageId, () => ({
+          kind: "user",
+          id: message.messageId,
+          text: message.text,
+          attachments: message.attachments ?? [],
+          steer: message.steer === true,
+          run: message.run ?? null,
+          provider: message.provider ?? null,
+          handoff: message.handoff ?? null,
+        })),
+      "turn.checkpoint": ({ messageId, files, additions, deletions }) => {
+        const checkpoint: TranscriptItem = {
+          kind: "checkpoint",
+          id: `checkpoint:${messageId}`,
+          messageId,
+          files,
+          additions,
+          deletions,
         };
-      }),
-    ),
-    Match.tag("approval.requested", (approval) =>
-      upsert(items, approval.requestId, () => ({
-        kind: "approval",
-        id: approval.requestId,
-        title: approval.title,
-        detail: approval.detail,
-        agent: approval.agent,
-        resolved: false,
-        decision: null,
-        questions: approval.questions,
-      })),
-    ),
-    Match.tag("approval.resolved", (approval) =>
-      items.map((item) =>
-        item.id === approval.requestId && item.kind === "approval"
-          ? { ...item, resolved: true, answers: approval.answers }
-          : item,
-      ),
-    ),
-    Match.tag("error", (error) => {
-      const key = id === null ? crypto.randomUUID() : `error:${id}`;
-      return upsert(items, key, () => ({ kind: "error", id: key, text: error.message }));
-    }),
-    Match.orElse(() => items),
+        // Worked out after the turn ends, by which time a queued message may have started the next
+        // turn: it goes at the end of its own turn, before the next prompt.
+        const start = items.findIndex((item) => item.id === messageId);
+        const next =
+          start === -1
+            ? -1
+            : items.findIndex(
+                (item, index) => index > start && item.kind === "user" && !item.steer,
+              );
+        if (next === -1) return upsert(items, checkpoint.id, () => checkpoint);
+
+        return [
+          ...items.slice(0, next).filter((item) => item.id !== checkpoint.id),
+          checkpoint,
+          ...items.slice(next).filter((item) => item.id !== checkpoint.id),
+        ];
+      },
+      "thread.forked": ({ fromThreadId, fromTitle }) =>
+        upsert(items, `forked:${fromThreadId}`, () => ({
+          kind: "forked",
+          id: `forked:${fromThreadId}`,
+          fromThreadId,
+          fromTitle,
+        })),
+      "thread.startedBy": ({ byThreadId, byTitle }) =>
+        upsert(items, `startedBy:${byThreadId}`, () => ({
+          kind: "startedBy",
+          id: `startedBy:${byThreadId}`,
+          byThreadId,
+          byTitle,
+        })),
+      "worktree.setup": ({ run, stopped }) =>
+        upsert(items, "setup", () => ({ kind: "setup", id: "setup", run, stopped })),
+      "thread.rewound": (rewound) => {
+        const index = items.findIndex((item) => item.id === rewound.messageId);
+        return index === -1 ? items : items.slice(0, index);
+      },
+      "assistant.delta": (delta) =>
+        upsert(items, delta.messageId, (prev) => ({
+          kind: "assistant",
+          id: delta.messageId,
+          text: (prev?.kind === "assistant" ? prev.text : "") + delta.delta,
+        })),
+      "assistant.completed": (completed) =>
+        upsert(items, completed.messageId, () => ({
+          kind: "assistant",
+          id: completed.messageId,
+          text: completed.text,
+        })),
+      "reasoning.delta": (delta) =>
+        upsert(items, delta.messageId, (prev) => ({
+          kind: "reasoning",
+          id: delta.messageId,
+          text: (prev?.kind === "reasoning" ? prev.text : "") + delta.delta,
+        })),
+      "reasoning.completed": (completed) =>
+        upsert(items, completed.messageId, () => ({
+          kind: "reasoning",
+          id: completed.messageId,
+          text: completed.text,
+        })),
+      "tool.started": (tool) => {
+        const call = {
+          id: tool.toolId,
+          name: tool.name,
+          summary: tool.summary,
+          output: null,
+          isError: false,
+        };
+        const parent = items.findLast((item) => item.id === tool.parentToolId);
+        if (parent?.kind !== "tool")
+          return upsert(items, tool.toolId, () => ({ kind: "tool", ...call }));
+        return upsert(items, parent.id, () => ({
+          ...parent,
+          children: [...(parent.children ?? []).filter((child) => child.id !== call.id), call],
+        }));
+      },
+      "tool.progress": (progress) =>
+        items.map((item) =>
+          item.kind === "tool" && item.id === progress.toolId
+            ? {
+                ...item,
+                progress: progress.summary ?? item.progress,
+                tokens: progress.tokens ?? item.tokens,
+                startedAt:
+                  progress.durationMs === undefined
+                    ? item.startedAt
+                    : Date.now() - progress.durationMs,
+              }
+            : item,
+        ),
+      "tool.completed": (tool) =>
+        items.map((item) => {
+          if (item.kind !== "tool") return item;
+          if (item.id === tool.toolId)
+            return { ...item, output: tool.output, isError: tool.isError };
+          if (!item.children?.some((child) => child.id === tool.toolId)) return item;
+          return {
+            ...item,
+            children: item.children.map((child) =>
+              child.id === tool.toolId
+                ? { ...child, output: tool.output, isError: tool.isError }
+                : child,
+            ),
+          };
+        }),
+      "approval.requested": (approval) =>
+        upsert(items, approval.requestId, () => ({
+          kind: "approval",
+          id: approval.requestId,
+          title: approval.title,
+          detail: approval.detail,
+          agent: approval.agent,
+          resolved: false,
+          decision: null,
+          questions: approval.questions,
+        })),
+      "approval.resolved": (approval) =>
+        items.map((item) =>
+          item.id === approval.requestId && item.kind === "approval"
+            ? { ...item, resolved: true, answers: approval.answers }
+            : item,
+        ),
+      error: (error) => {
+        const key = id === null ? crypto.randomUUID() : `error:${id}`;
+        return upsert(items, key, () => ({ kind: "error", id: key, text: error.message }));
+      },
+    },
+    () => items,
   );
 }
 
@@ -548,40 +540,37 @@ function applyStreaming(items: ReadonlyArray<TranscriptItem>, deltas: ReadonlyAr
 
 /** Everything but transcripts: the thread list, settings, projects, git state… */
 function reduceShell(state: State, event: RuntimeEvent): State {
-  return Match.value(event).pipe(
-    Match.withReturnType<State>(),
-    // Usually the echo of our own updateSettings: keeping the old object spares every settings reader a re-render.
-    Match.tag("settings.updated", ({ settings }) =>
-      JSON.stringify(settings) === JSON.stringify(state.settings) ? state : { ...state, settings },
-    ),
-    Match.tag("project.added", ({ project }) => ({
-      ...state,
-      projects: [...state.projects.filter((existing) => existing.id !== project.id), project],
-    })),
-    Match.tag("project.removed", ({ projectId }) => {
-      const { [projectId]: _host, ...projectHosts } = state.projectHosts;
-      return {
+  return RuntimeEvent.matchOrElse<State>(
+    event,
+    {
+      // Usually the echo of our own updateSettings: keeping the old object spares every settings reader a re-render.
+      "settings.updated": ({ settings }) =>
+        JSON.stringify(settings) === JSON.stringify(state.settings)
+          ? state
+          : { ...state, settings },
+      "project.added": ({ project }) => ({
         ...state,
-        projects: state.projects.filter((project) => project.id !== projectId),
-        projectHosts,
-      };
-    }),
-    Match.tags({
+        projects: [...state.projects.filter((existing) => existing.id !== project.id), project],
+      }),
+      "project.removed": ({ projectId }) => {
+        const { [projectId]: _host, ...projectHosts } = state.projectHosts;
+        return {
+          ...state,
+          projects: state.projects.filter((project) => project.id !== projectId),
+          projectHosts,
+        };
+      },
       "providers.updated": ({ providers }) => ({ ...state, providers }),
       "sourceControl.updated": ({ statuses }) => ({ ...state, sourceControl: statuses }),
-    }),
-    Match.tags({
       "git.branches": ({ path, current, branches, error }) => ({
         ...state,
         branches: { ...state.branches, [path]: { current, branches, error } },
       }),
       "git.files": ({ path, files }) => ({ ...state, files: { ...state.files, [path]: files } }),
-    }),
-    Match.tag("git.diff", ({ path, patch, truncated, error }) => ({
-      ...state,
-      diffs: { ...state.diffs, [path]: { patch, truncated, error } },
-    })),
-    Match.tags({
+      "git.diff": ({ path, patch, truncated, error }) => ({
+        ...state,
+        diffs: { ...state.diffs, [path]: { patch, truncated, error } },
+      }),
       "thread.commands": ({ threadId, commands }) => ({
         ...state,
         commands: { ...state.commands, [threadId]: commands },
@@ -590,88 +579,87 @@ function reduceShell(state: State, event: RuntimeEvent): State {
         ...state,
         skills: { ...state.skills, [getSkillsKey(provider, path)]: { skills, error } },
       }),
-    }),
-    Match.tag("checkpoint.diff", ({ threadId, messageId, patch, truncated, error }) => ({
-      ...state,
-      turnDiffs: { ...state.turnDiffs, [`${threadId}:${messageId}`]: { patch, truncated, error } },
-    })),
-    Match.tag("git.status", ({ path, status, action, error }) => ({
-      ...state,
-      repos: { ...state.repos, [path]: { status, action, error } },
-    })),
-    Match.tag("auth.flow", ({ flow }) => ({
-      ...state,
-      authFlows: { ...state.authFlows, [flow.provider]: flow },
-    })),
-    Match.tag("thread.created", ({ thread, requestId, hasTranscript }) => {
-      const request = requestId === null ? undefined : ownRequests.get(requestId);
-      if (requestId !== null) ownRequests.delete(requestId);
-      if (request?.options) firstOptions.set(thread.id, request.options);
-
-      const next = {
+      "checkpoint.diff": ({ threadId, messageId, patch, truncated, error }) => ({
         ...state,
-        forking: request ? null : state.forking,
-        switchTo: request?.shouldOpen ? { threadId: thread.id } : state.switchTo,
-        order: [thread.id, ...state.order.filter((id) => id !== thread.id)],
-        threads: { ...state.threads, [thread.id]: thread },
-      };
-      // A fork's transcript loads like any other's once it's opened.
-      if (hasTranscript) return next;
-      return {
-        ...next,
-        // Brand new: nothing to fetch, it's live from its first event.
-        transcripts: {
-          ...state.transcripts,
-          [thread.id]: {
-            items: [],
-            cursor: 0,
-            page: null,
-            status: "live",
-            loadingOlder: false,
-          },
+        turnDiffs: {
+          ...state.turnDiffs,
+          [`${threadId}:${messageId}`]: { patch, truncated, error },
         },
-      };
-    }),
-    Match.tag("thread.removed", ({ threadId }) => {
-      const { [threadId]: _thread, ...threads } = state.threads;
-      const { [threadId]: _transcript, ...transcripts } = state.transcripts;
-      const { [threadId]: _terminals, ...terminals } = state.terminals;
-      const { [threadId]: _activeTerminal, ...activeTerminals } = state.activeTerminals;
-      const { [threadId]: _runs, ...runs } = state.runs;
-      const dataId = getDataId(state, threadId);
-      if (dataId) removeTranscript(dataId, threadId);
-
-      return {
+      }),
+      "git.status": ({ path, status, action, error }) => ({
         ...state,
-        order: state.order.filter((id) => id !== threadId),
-        threads,
-        transcripts,
-        terminals,
-        activeTerminals,
-        runs,
-      };
-    }),
-    Match.tag("terminal.opened", ({ threadId, terminalId, command }) => {
-      if (command !== undefined) {
-        const running = state.runs[threadId] ?? [];
-        if (running.some((run) => run.terminalId === terminalId)) return state;
+        repos: { ...state.repos, [path]: { status, action, error } },
+      }),
+      "auth.flow": ({ flow }) => ({
+        ...state,
+        authFlows: { ...state.authFlows, [flow.provider]: flow },
+      }),
+      "thread.created": ({ thread, requestId, hasTranscript }) => {
+        const request = requestId === null ? undefined : ownRequests.get(requestId);
+        if (requestId !== null) ownRequests.delete(requestId);
+        if (request?.options) firstOptions.set(thread.id, request.options);
+
+        const next = {
+          ...state,
+          forking: request ? null : state.forking,
+          switchTo: request?.shouldOpen ? { threadId: thread.id } : state.switchTo,
+          order: [thread.id, ...state.order.filter((id) => id !== thread.id)],
+          threads: { ...state.threads, [thread.id]: thread },
+        };
+        // A fork's transcript loads like any other's once it's opened.
+        if (hasTranscript) return next;
+        return {
+          ...next,
+          // Brand new: nothing to fetch, it's live from its first event.
+          transcripts: {
+            ...state.transcripts,
+            [thread.id]: {
+              items: [],
+              cursor: 0,
+              page: null,
+              status: "live",
+              loadingOlder: false,
+            },
+          },
+        };
+      },
+      "thread.removed": ({ threadId }) => {
+        const { [threadId]: _thread, ...threads } = state.threads;
+        const { [threadId]: _transcript, ...transcripts } = state.transcripts;
+        const { [threadId]: _terminals, ...terminals } = state.terminals;
+        const { [threadId]: _activeTerminal, ...activeTerminals } = state.activeTerminals;
+        const { [threadId]: _runs, ...runs } = state.runs;
+        const dataId = getDataId(state, threadId);
+        if (dataId) removeTranscript(dataId, threadId);
+
         return {
           ...state,
-          runs: { ...state.runs, [threadId]: [...running, { terminalId, command }] },
+          order: state.order.filter((id) => id !== threadId),
+          threads,
+          transcripts,
+          terminals,
+          activeTerminals,
+          runs,
         };
-      }
+      },
+      "terminal.opened": ({ threadId, terminalId, command }) => {
+        if (command !== undefined) {
+          const running = state.runs[threadId] ?? [];
+          if (running.some((run) => run.terminalId === terminalId)) return state;
+          return {
+            ...state,
+            runs: { ...state.runs, [threadId]: [...running, { terminalId, command }] },
+          };
+        }
 
-      const terminalIds = state.terminals[threadId] ?? [];
-      if (terminalIds.includes(terminalId)) return state;
-      return {
-        ...state,
-        terminals: { ...state.terminals, [threadId]: [...terminalIds, terminalId] },
-      };
-    }),
-    Match.tag("terminal.closed", ({ threadId, terminalId }) =>
-      removeTerminal(state, threadId, terminalId),
-    ),
-    Match.tags({
+        const terminalIds = state.terminals[threadId] ?? [];
+        if (terminalIds.includes(terminalId)) return state;
+        return {
+          ...state,
+          terminals: { ...state.terminals, [threadId]: [...terminalIds, terminalId] },
+        };
+      },
+      "terminal.closed": ({ threadId, terminalId }) => removeTerminal(state, threadId, terminalId),
       "thread.status": ({ threadId, status }) =>
         updateThreadInfo(state, threadId, (info) => ({ ...info, status })),
       "thread.model": ({ threadId, provider, model }) =>
@@ -696,27 +684,26 @@ function reduceShell(state: State, event: RuntimeEvent): State {
           ...info,
           queue: queue.length > 0 ? queue : undefined,
         })),
-    }),
-    Match.tag("thread.usage", ({ threadId, usage }) => {
-      const { [threadId]: _reading, ...readingUsage } = state.readingUsage;
-      const next = { ...state, readingUsage };
-      return usage ? updateThreadInfo(next, threadId, (info) => ({ ...info, usage })) : next;
-    }),
-    Match.tag("provider.limits", ({ provider, limits, error }) => ({
-      ...state,
-      limits: { ...state.limits, [provider]: { limits, error, loading: false } },
-    })),
-    Match.tag("thread.meta", ({ threadId, title, updatedAt, branch, cwd, worktree }) =>
-      updateThreadInfo(state, threadId, (info) => ({
-        ...info,
-        title,
-        updatedAt,
-        branch,
-        cwd,
-        worktree,
-      })),
-    ),
-    Match.orElse(() => state),
+      "thread.usage": ({ threadId, usage }) => {
+        const { [threadId]: _reading, ...readingUsage } = state.readingUsage;
+        const next = { ...state, readingUsage };
+        return usage ? updateThreadInfo(next, threadId, (info) => ({ ...info, usage })) : next;
+      },
+      "provider.limits": ({ provider, limits, error }) => ({
+        ...state,
+        limits: { ...state.limits, [provider]: { limits, error, loading: false } },
+      }),
+      "thread.meta": ({ threadId, title, updatedAt, branch, cwd, worktree }) =>
+        updateThreadInfo(state, threadId, (info) => ({
+          ...info,
+          title,
+          updatedAt,
+          branch,
+          cwd,
+          worktree,
+        })),
+    },
+    () => state,
   );
 }
 
@@ -1228,34 +1215,31 @@ function onFrame(connection: Connection, frame: ServerFrame) {
 
 /** A remote daemon's own events land in its `HostState`; the rest are shared, keyed by thread or path. */
 function reduceRemoteShell(state: State, host: string, event: RuntimeEvent): State {
-  return Match.value(event).pipe(
-    Match.withReturnType<State>(),
-    Match.tag("settings.updated", ({ settings }) =>
-      updateHost(state, host, (current) => ({ ...current, settings })),
-    ),
-    Match.tag("providers.updated", ({ providers }) =>
-      updateHost(state, host, (current) => ({ ...current, providers })),
-    ),
-    Match.tag("sourceControl.updated", ({ statuses }) =>
-      updateHost(state, host, (current) => ({ ...current, sourceControl: statuses })),
-    ),
-    Match.tag("auth.flow", ({ flow }) =>
-      updateHost(state, host, (current) => ({
-        ...current,
-        authFlows: { ...current.authFlows, [flow.provider]: flow },
-      })),
-    ),
-    Match.tag("provider.limits", ({ provider, limits, error }) =>
-      updateHost(state, host, (current) => ({
-        ...current,
-        limits: { ...current.limits, [provider]: { limits, error, loading: false } },
-      })),
-    ),
-    Match.tag("project.added", (added) => {
-      const next = reduceShell(state, added);
-      return { ...next, projectHosts: { ...next.projectHosts, [added.project.id]: host } };
-    }),
-    Match.orElse(() => reduceShell(state, event)),
+  return RuntimeEvent.matchOrElse<State>(
+    event,
+    {
+      "settings.updated": ({ settings }) =>
+        updateHost(state, host, (current) => ({ ...current, settings })),
+      "providers.updated": ({ providers }) =>
+        updateHost(state, host, (current) => ({ ...current, providers })),
+      "sourceControl.updated": ({ statuses }) =>
+        updateHost(state, host, (current) => ({ ...current, sourceControl: statuses })),
+      "auth.flow": ({ flow }) =>
+        updateHost(state, host, (current) => ({
+          ...current,
+          authFlows: { ...current.authFlows, [flow.provider]: flow },
+        })),
+      "provider.limits": ({ provider, limits, error }) =>
+        updateHost(state, host, (current) => ({
+          ...current,
+          limits: { ...current.limits, [provider]: { limits, error, loading: false } },
+        })),
+      "project.added": (added) => {
+        const next = reduceShell(state, added);
+        return { ...next, projectHosts: { ...next.projectHosts, [added.project.id]: host } };
+      },
+    },
+    () => reduceShell(state, event),
   );
 }
 
