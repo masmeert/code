@@ -34,7 +34,9 @@ import { extname } from "node:path";
 import {
   IMAGE_TYPES,
   ProviderError,
+  prefixErrorMessage,
   summarizeToolInput,
+  tryProviderPromise,
   formatTextWithFiles,
   type ForkInput,
   type ProviderAdapter,
@@ -616,48 +618,42 @@ function start({
 
       const session: ProviderSession = {
         send: (turn) =>
-          Effect.tryPromise({
-            try: async () => {
-              emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
-              if (turn.permission !== permission) {
-                await conversation.setPermissionMode(PERMISSION_MODE[turn.permission]);
-                permission = turn.permission;
-              }
+          tryProviderPromise("claude", async () => {
+            emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
+            if (turn.permission !== permission) {
+              await conversation.setPermissionMode(PERMISSION_MODE[turn.permission]);
+              permission = turn.permission;
+            }
 
-              if (turn.effort && turn.effort !== effort) {
-                await conversation.applyFlagSettings(toEffortSettings(turn.effort));
-                effort = turn.effort;
-              }
+            if (turn.effort && turn.effort !== effort) {
+              await conversation.applyFlagSettings(toEffortSettings(turn.effort));
+              effort = turn.effort;
+            }
 
-              if (turn.fast !== undefined && turn.fast !== isFastMode) {
-                await conversation.applyFlagSettings({ fastMode: turn.fast });
-                isFastMode = turn.fast;
-              }
+            if (turn.fast !== undefined && turn.fast !== isFastMode) {
+              await conversation.applyFlagSettings({ fastMode: turn.fast });
+              isFastMode = turn.fast;
+            }
 
-              const content = await toContent(appendUltrathink(turn));
-              inbox.push({
-                type: "user",
-                message: { role: "user", content },
-                parent_tool_use_id: null,
-                uuid: turn.messageId,
-              });
-            },
-            catch: (error) => createError(getErrorMessage(error)),
+            const content = await toContent(appendUltrathink(turn));
+            inbox.push({
+              type: "user",
+              message: { role: "user", content },
+              parent_tool_use_id: null,
+              uuid: turn.messageId,
+            });
           }),
         // Claude Code takes a message sent mid-turn in at its next step.
         steer: (turn) =>
-          Effect.tryPromise({
-            try: async () => {
-              const content = await toContent(appendUltrathink(turn));
-              inbox.push({
-                type: "user",
-                message: { role: "user", content },
-                parent_tool_use_id: null,
-                uuid: turn.messageId,
-                priority: "now",
-              });
-            },
-            catch: (error) => createError(getErrorMessage(error)),
+          tryProviderPromise("claude", async () => {
+            const content = await toContent(appendUltrathink(turn));
+            inbox.push({
+              type: "user",
+              message: { role: "user", content },
+              parent_tool_use_id: null,
+              uuid: turn.messageId,
+              priority: "now",
+            });
           }),
         compact: Effect.sync(() => {
           emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
@@ -843,60 +839,48 @@ async function forkBefore({ cwd, harness, resumeToken, messageId, keep }: ForkIn
 }
 
 const rewind: ProviderAdapter["rewind"] = (input) =>
-  Effect.tryPromise({
-    try: () => forkBefore(input),
-    catch: (error) => createError(`Couldn't rewind: ${getErrorMessage(error)}`),
-  });
+  tryProviderPromise("claude", () => forkBefore(input)).pipe(prefixErrorMessage("Couldn't rewind"));
 
 const fork: ProviderAdapter["fork"] = (input) =>
-  Effect.tryPromise({
-    try: () => forkBefore(input),
-    catch: (error) => createError(`Couldn't fork: ${getErrorMessage(error)}`),
-  });
+  tryProviderPromise("claude", () => forkBefore(input)).pipe(prefixErrorMessage("Couldn't fork"));
 
 /** A prompt-less session resumed from the log answers as the live one would; the cost call is experimental, so it may come back empty. */
 const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, model }) =>
-  Effect.tryPromise({
-    try: async () => {
-      const options: Options = { cwd, resume: resumeToken };
-      if (model) options.model = model;
-      const conversation = startPromptlessQuery(resolveHarnessLaunch("claude", harness), options);
-      try {
-        const context = toContextUsage(await conversation.getContextUsage({ detail: "summary" }));
-        const costUsd = await conversation
-          .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
-          .then(
-            (usage) => usage.session.total_cost_usd,
-            () => null,
-          );
-        return { context, costUsd };
-      } finally {
-        conversation.close();
-      }
-    },
-    catch: (error) => createError(`Couldn't read usage: ${getErrorMessage(error)}`),
-  });
+  tryProviderPromise("claude", async () => {
+    const options: Options = { cwd, resume: resumeToken };
+    if (model) options.model = model;
+    const conversation = startPromptlessQuery(resolveHarnessLaunch("claude", harness), options);
+    try {
+      const context = toContextUsage(await conversation.getContextUsage({ detail: "summary" }));
+      const costUsd = await conversation
+        .usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
+        .then(
+          (usage) => usage.session.total_cost_usd,
+          () => null,
+        );
+      return { context, costUsd };
+    } finally {
+      conversation.close();
+    }
+  }).pipe(prefixErrorMessage("Couldn't read usage"));
 
 /** Bundled, plugin, user and project skills alike, as the session in `cwd` would load them. */
 const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
-  Effect.tryPromise({
-    try: async () => {
-      const conversation = startPromptlessQuery(resolveHarnessLaunch("claude", harness), {
-        cwd,
-        settingSources: ["user", "project", "local"],
-      });
-      try {
-        const { skills } = await conversation.reloadSkills();
-        return skills.map((skill) => ({
-          name: skill.name,
-          description: skill.description,
-          path: null,
-        }));
-      } finally {
-        conversation.close();
-      }
-    },
-    catch: (error) => createError(getErrorMessage(error)),
+  tryProviderPromise("claude", async () => {
+    const conversation = startPromptlessQuery(resolveHarnessLaunch("claude", harness), {
+      cwd,
+      settingSources: ["user", "project", "local"],
+    });
+    try {
+      const { skills } = await conversation.reloadSkills();
+      return skills.map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+        path: null,
+      }));
+    } finally {
+      conversation.close();
+    }
   });
 
 export const ClaudeAdapter: ProviderAdapter = {

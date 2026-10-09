@@ -11,16 +11,38 @@ import type {
   ThreadUsage,
   UserAnswers,
 } from "@masscode/contracts";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import type { UUID } from "node:crypto";
 import type { McpServerAccess } from "../mcp.ts";
+import { getErrorMessage } from "../errors.ts";
 
 export class ProviderError extends Schema.TaggedError<ProviderError>()("ProviderError", {
   provider: Schema.String,
   message: Schema.String,
 }) {}
+
+/** Runs a promise as an Effect that fails with a ProviderError carrying the rejection's message. */
+export function tryProviderPromise<A>(
+  provider: ProviderKind,
+  run: (signal: AbortSignal) => PromiseLike<A>,
+) {
+  return Effect.tryPromise({
+    try: run,
+    catch: (error) => new ProviderError({ provider, message: getErrorMessage(error) }),
+  });
+}
+
+/** Says what was being done before the message of any ProviderError, as "context: message". */
+export function prefixErrorMessage(context: string) {
+  return <A, R>(self: Effect.Effect<A, ProviderError, R>) =>
+    Effect.mapError(
+      self,
+      (error) =>
+        new ProviderError({ provider: error.provider, message: `${context}: ${error.message}` }),
+    );
+}
 
 export interface StartSessionInput {
   /** The thread the session belongs to; every event the adapter emits carries it. */

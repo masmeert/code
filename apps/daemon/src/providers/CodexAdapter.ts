@@ -31,14 +31,15 @@ import {
 import { resolveHarnessLaunch } from "./launch.ts";
 import {
   ProviderError,
+  prefixErrorMessage,
   summarizeToolInput,
+  tryProviderPromise,
   formatTextWithFiles,
   type ProviderAdapter,
   type ProviderSession,
   type StartSessionInput,
   type TurnInput,
 } from "./ProviderAdapter.ts";
-import { getErrorMessage } from "../errors.ts";
 
 function createError(message: string) {
   return new ProviderError({ provider: "codex", message });
@@ -531,80 +532,76 @@ function start({
       });
     }
 
-    const rpc = yield* Effect.tryPromise({
-      try: () => {
-        const launch = resolveHarnessLaunch("codex", harness);
-        return connectCodex(
-          cwd,
-          {
-            onNotification,
-            onServerRequest,
-            onExit: (code, stderrTail) => {
-              const hasCrashed = code !== 0 && code !== null;
-              if (hasCrashed) {
-                emit(
-                  RuntimeEvent.cases.error.make({
-                    threadId,
-                    message: `Codex exited unexpectedly (code ${code})${
-                      stderrTail.trim() ? `: ${stderrTail.trim().split("\n").at(-1)}` : ""
-                    }. Send a message to pick the thread back up.`,
-                  }),
-                );
-              }
+    const rpc = yield* tryProviderPromise("codex", () => {
+      const launch = resolveHarnessLaunch("codex", harness);
+      return connectCodex(
+        cwd,
+        {
+          onNotification,
+          onServerRequest,
+          onExit: (code, stderrTail) => {
+            const hasCrashed = code !== 0 && code !== null;
+            if (hasCrashed) {
               emit(
-                RuntimeEvent.cases["thread.status"].make({
+                RuntimeEvent.cases.error.make({
                   threadId,
-                  status: hasCrashed ? "error" : "closed",
+                  message: `Codex exited unexpectedly (code ${code})${
+                    stderrTail.trim() ? `: ${stderrTail.trim().split("\n").at(-1)}` : ""
+                  }. Send a message to pick the thread back up.`,
                 }),
               );
-            },
+            }
+            emit(
+              RuntimeEvent.cases["thread.status"].make({
+                threadId,
+                status: hasCrashed ? "error" : "closed",
+              }),
+            );
           },
-          {
-            ...launch,
-            args: [
-              ...launch.args,
-              ...(mcpServer
-                ? [
-                    "-c",
-                    `mcp_servers.browser.url="${mcpServer.url}"`,
-                    "-c",
-                    'mcp_servers.browser.bearer_token_env_var="MASSCODE_MCP_TOKEN"',
-                    "-c",
-                    `mcp_servers.masscode.url="${mcpServer.url}/masscode"`,
-                    "-c",
-                    'mcp_servers.masscode.bearer_token_env_var="MASSCODE_MCP_TOKEN"',
-                    // Waiting on another thread's agent takes minutes; Codex gives up on a tool after 60 s by default.
-                    "-c",
-                    "mcp_servers.masscode.tool_timeout_sec=1800",
-                    ...(DEVICES_SUPPORTED
-                      ? [
-                          "-c",
-                          `mcp_servers.device.url="${mcpServer.url}/device"`,
-                          "-c",
-                          'mcp_servers.device.bearer_token_env_var="MASSCODE_MCP_TOKEN"',
-                          // The first device_open installs the tools and boots a simulator.
-                          "-c",
-                          "mcp_servers.device.tool_timeout_sec=900",
-                        ]
-                      : []),
-                  ]
-                : []),
-              // Codex leaves its thinking out of the transcript unless asked for summaries.
-              "-c",
-              'model_reasoning_summary="auto"',
-            ],
-            env: { ...launch.env, ...(mcpServer && { MASSCODE_MCP_TOKEN: mcpServer.token }) },
-          },
-        );
-      },
-      catch: (error) => createError(getErrorMessage(error)),
+        },
+        {
+          ...launch,
+          args: [
+            ...launch.args,
+            ...(mcpServer
+              ? [
+                  "-c",
+                  `mcp_servers.browser.url="${mcpServer.url}"`,
+                  "-c",
+                  'mcp_servers.browser.bearer_token_env_var="MASSCODE_MCP_TOKEN"',
+                  "-c",
+                  `mcp_servers.masscode.url="${mcpServer.url}/masscode"`,
+                  "-c",
+                  'mcp_servers.masscode.bearer_token_env_var="MASSCODE_MCP_TOKEN"',
+                  // Waiting on another thread's agent takes minutes; Codex gives up on a tool after 60 s by default.
+                  "-c",
+                  "mcp_servers.masscode.tool_timeout_sec=1800",
+                  ...(DEVICES_SUPPORTED
+                    ? [
+                        "-c",
+                        `mcp_servers.device.url="${mcpServer.url}/device"`,
+                        "-c",
+                        'mcp_servers.device.bearer_token_env_var="MASSCODE_MCP_TOKEN"',
+                        // The first device_open installs the tools and boots a simulator.
+                        "-c",
+                        "mcp_servers.device.tool_timeout_sec=900",
+                      ]
+                    : []),
+                ]
+              : []),
+            // Codex leaves its thinking out of the transcript unless asked for summaries.
+            "-c",
+            'model_reasoning_summary="auto"',
+          ],
+          env: { ...launch.env, ...(mcpServer && { MASSCODE_MCP_TOKEN: mcpServer.token }) },
+        },
+      );
     });
 
     function sendRequest<A>(method: string, params: Schema.Json, response: Schema.Decoder<A>) {
-      return Effect.tryPromise({
-        try: () => rpc.request(method, params, response),
-        catch: (error) => createError(`${method}: ${getErrorMessage(error)}`),
-      });
+      return tryProviderPromise("codex", () => rpc.request(method, params, response)).pipe(
+        prefixErrorMessage(method),
+      );
     }
 
     // Null leaves a setting to the config (and, for turns, to the last override).
@@ -757,118 +754,106 @@ async function dropLastTurns(rpc: CodexRpc, threadId: string, dropTurns: number)
 
 /** Loads the thread in a short-lived app-server and drops its last turns. The thread id stays. */
 const rewind: ProviderAdapter["rewind"] = ({ cwd, harness, resumeToken, dropTurns }) =>
-  Effect.tryPromise({
-    try: async () => {
-      const rpc = await connectCodex(cwd, {}, resolveHarnessLaunch("codex", harness));
-      try {
-        await rpc.request(
-          "thread/resume",
-          { threadId: resumeToken, excludeTurns: true, cwd },
-          Schema.Unknown,
-        );
-        await dropLastTurns(rpc, resumeToken, dropTurns);
-        return resumeToken;
-      } finally {
-        rpc.close();
-      }
-    },
-    catch: (error) => createError(`Couldn't rewind: ${getErrorMessage(error)}`),
-  });
+  tryProviderPromise("codex", async () => {
+    const rpc = await connectCodex(cwd, {}, resolveHarnessLaunch("codex", harness));
+    try {
+      await rpc.request(
+        "thread/resume",
+        { threadId: resumeToken, excludeTurns: true, cwd },
+        Schema.Unknown,
+      );
+      await dropLastTurns(rpc, resumeToken, dropTurns);
+      return resumeToken;
+    } finally {
+      rpc.close();
+    }
+  }).pipe(prefixErrorMessage("Couldn't rewind"));
 
 /** Forks the thread in a short-lived app-server and drops the fork's last turns. */
 const fork: ProviderAdapter["fork"] = ({ cwd, harness, resumeToken, dropTurns }) =>
-  Effect.tryPromise({
-    try: async () => {
-      const rpc = await connectCodex(cwd, {}, resolveHarnessLaunch("codex", harness));
-      try {
-        const { thread } = await rpc.request(
-          "thread/fork",
-          { threadId: resumeToken, excludeTurns: true, cwd },
-          ThreadResponse,
-        );
-        await dropLastTurns(rpc, thread.id, dropTurns);
-        return thread.id;
-      } finally {
-        rpc.close();
-      }
-    },
-    catch: (error) => createError(`Couldn't fork: ${getErrorMessage(error)}`),
-  });
+  tryProviderPromise("codex", async () => {
+    const rpc = await connectCodex(cwd, {}, resolveHarnessLaunch("codex", harness));
+    try {
+      const { thread } = await rpc.request(
+        "thread/fork",
+        { threadId: resumeToken, excludeTurns: true, cwd },
+        ThreadResponse,
+      );
+      await dropLastTurns(rpc, thread.id, dropTurns);
+      return thread.id;
+    } finally {
+      rpc.close();
+    }
+  }).pipe(prefixErrorMessage("Couldn't fork"));
 
 /** Codex reports a thread's token usage as it loads it, so a short-lived app-server resumes it and waits for that. */
 const readUsage: ProviderAdapter["readUsage"] = ({ cwd, harness, resumeToken, model }) =>
-  Effect.tryPromise({
-    try: async () => {
-      let report: (usage: TokenUsage) => void = () => {};
-      const reported = new Promise<TokenUsage>((resolve) => (report = resolve));
-      const rpc = await connectCodex(
-        cwd,
-        {
-          onNotification: (notification) => {
-            if (
-              CodexNotification.guards["thread/tokenUsage/updated"](notification) &&
-              notification.params.threadId === resumeToken
-            ) {
-              report(notification.params.tokenUsage);
-            }
-          },
+  tryProviderPromise("codex", async () => {
+    let report: (usage: TokenUsage) => void = () => {};
+    const reported = new Promise<TokenUsage>((resolve) => (report = resolve));
+    const rpc = await connectCodex(
+      cwd,
+      {
+        onNotification: (notification) => {
+          if (
+            CodexNotification.guards["thread/tokenUsage/updated"](notification) &&
+            notification.params.threadId === resumeToken
+          ) {
+            report(notification.params.tokenUsage);
+          }
         },
-        resolveHarnessLaunch("codex", harness),
+      },
+      resolveHarnessLaunch("codex", harness),
+    );
+    try {
+      const resumed = await rpc.request(
+        "thread/resume",
+        { threadId: resumeToken, excludeTurns: true, cwd },
+        ThreadResponse,
       );
-      try {
-        const resumed = await rpc.request(
-          "thread/resume",
-          { threadId: resumeToken, excludeTurns: true, cwd },
-          ThreadResponse,
-        );
-        const usage = await Promise.race([
-          reported,
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-        ]);
+      const usage = await Promise.race([
+        reported,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+      ]);
 
-        return usage
-          ? await buildThreadUsage(usage, model ?? resumed.model)
-          : { context: null, costUsd: null };
-      } finally {
-        rpc.close();
-      }
-    },
-    catch: (error) => createError(`Couldn't read usage: ${getErrorMessage(error)}`),
-  });
+      return usage
+        ? await buildThreadUsage(usage, model ?? resumed.model)
+        : { context: null, costUsd: null };
+    } finally {
+      rpc.close();
+    }
+  }).pipe(prefixErrorMessage("Couldn't read usage"));
 
 const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
-  Effect.tryPromise({
-    try: async () => {
-      const rpc = await connectCodex(cwd, {}, resolveHarnessLaunch("codex", harness));
-      try {
-        const { data } = await rpc.request(
-          "skills/list",
-          { cwds: [cwd] },
-          Schema.Struct({
-            data: Schema.Array(
-              Schema.Struct({
-                skills: Schema.Array(
-                  Schema.Struct({
-                    name: Schema.String,
-                    description: Schema.String,
-                    path: Schema.String,
-                    enabled: Schema.Boolean,
-                  }),
-                ),
-              }),
-            ),
-          }),
-        );
-        return data.flatMap((entry) =>
-          entry.skills.flatMap(({ name, description, path, enabled }) =>
-            enabled ? [{ name, description, path }] : [],
+  tryProviderPromise("codex", async () => {
+    const rpc = await connectCodex(cwd, {}, resolveHarnessLaunch("codex", harness));
+    try {
+      const { data } = await rpc.request(
+        "skills/list",
+        { cwds: [cwd] },
+        Schema.Struct({
+          data: Schema.Array(
+            Schema.Struct({
+              skills: Schema.Array(
+                Schema.Struct({
+                  name: Schema.String,
+                  description: Schema.String,
+                  path: Schema.String,
+                  enabled: Schema.Boolean,
+                }),
+              ),
+            }),
           ),
-        );
-      } finally {
-        rpc.close();
-      }
-    },
-    catch: (error) => createError(getErrorMessage(error)),
+        }),
+      );
+      return data.flatMap((entry) =>
+        entry.skills.flatMap(({ name, description, path, enabled }) =>
+          enabled ? [{ name, description, path }] : [],
+        ),
+      );
+    } finally {
+      rpc.close();
+    }
   });
 
 export const CodexAdapter: ProviderAdapter = {

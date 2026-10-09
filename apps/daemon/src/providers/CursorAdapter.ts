@@ -33,6 +33,7 @@ import {
   IMAGE_TYPES,
   ProviderError,
   formatTextWithFiles,
+  tryProviderPromise,
   type ProviderAdapter,
   type ProviderSession,
   type StartSessionInput,
@@ -630,17 +631,10 @@ function start({
       });
     }
 
-    yield* Effect.tryPromise({
-      try: launchAgent,
-      catch: (error) => createError(getErrorMessage(error)),
-    });
+    yield* tryProviderPromise("cursor", launchAgent);
 
     const session: ProviderSession = {
-      send: (turn) =>
-        Effect.tryPromise({
-          try: () => beginTurn(turn),
-          catch: (error) => createError(getErrorMessage(error)),
-        }),
+      send: (turn) => tryProviderPromise("cursor", () => beginTurn(turn)),
       steer: (turn) =>
         Effect.suspend(() => {
           if (!isPrompting) return session.send(turn);
@@ -740,40 +734,35 @@ const SKILL_NOTE = /\s*\((?:(?:builtin|user|project) )?skill\)$/;
 
 /** The skills Cursor reports in `cwd`, read from the commands a new session announces. */
 const listSkills: ProviderAdapter["listSkills"] = ({ cwd, harness }) =>
-  Effect.tryPromise({
-    try: async () => {
-      let report: (
-        commands: ReadonlyArray<{ name: string; description: string }>,
-      ) => void = () => {};
-      const reported = new Promise<ReadonlyArray<{ name: string; description: string }>>(
-        (resolve) => (report = resolve),
-      );
-      const launch = resolveHarnessLaunch("cursor", harness);
-      const rpc = await connectAcp("Cursor", launch, buildAcpArgs(launch, null), cwd, {
-        onUpdate: (update) => {
-          if (SessionUpdate.guards.available_commands_update(update)) {
-            report(update.availableCommands);
-          }
-        },
-      });
-      try {
-        await rpc.request("session/new", { cwd, mcpServers: [] }, SessionSetup);
-        const commands = await Promise.race([
-          reported,
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
-        ]);
-        if (commands === null) throw new Error("Cursor didn't list its skills within 15 s");
+  tryProviderPromise("cursor", async () => {
+    let report: (commands: ReadonlyArray<{ name: string; description: string }>) => void = () => {};
+    const reported = new Promise<ReadonlyArray<{ name: string; description: string }>>(
+      (resolve) => (report = resolve),
+    );
+    const launch = resolveHarnessLaunch("cursor", harness);
+    const rpc = await connectAcp("Cursor", launch, buildAcpArgs(launch, null), cwd, {
+      onUpdate: (update) => {
+        if (SessionUpdate.guards.available_commands_update(update)) {
+          report(update.availableCommands);
+        }
+      },
+    });
+    try {
+      await rpc.request("session/new", { cwd, mcpServers: [] }, SessionSetup);
+      const commands = await Promise.race([
+        reported,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
+      ]);
+      if (commands === null) throw new Error("Cursor didn't list its skills within 15 s");
 
-        return commands.flatMap(({ name, description }) =>
-          SKILL_NOTE.test(description)
-            ? [{ name, description: description.replace(SKILL_NOTE, ""), path: null }]
-            : [],
-        );
-      } finally {
-        rpc.close();
-      }
-    },
-    catch: (error) => createError(getErrorMessage(error)),
+      return commands.flatMap(({ name, description }) =>
+        SKILL_NOTE.test(description)
+          ? [{ name, description: description.replace(SKILL_NOTE, ""), path: null }]
+          : [],
+      );
+    } finally {
+      rpc.close();
+    }
   });
 
 function failUnsupported(action: string) {
