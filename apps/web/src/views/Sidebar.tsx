@@ -76,7 +76,6 @@ import { useThreadListView } from "../lib/threadListView.ts";
 import { formatAge, useNow } from "../lib/time.ts";
 import { useUpdateStatus } from "../lib/updates.ts";
 import { usePersistedFlag } from "../lib/usePersistedFlag.ts";
-import type { ModalView } from "./AppModal.tsx";
 import { ThreadListMenu } from "./ThreadListMenu.tsx";
 
 /** Waiting on you: an approval, an answer, or a look at what went wrong. */
@@ -110,7 +109,7 @@ export function Sidebar(props: {
   /** Folder of the thread or draft on screen; new threads start there. */
   currentPath: string | null;
   onSelect: (id: string) => void;
-  onModal: (view: ModalView) => void;
+  onOpenSettings: () => void;
   /** Opens a new-thread draft; null leaves the project to pick. */
   onDraft: (path: string | null) => void;
 }) {
@@ -541,7 +540,7 @@ export function Sidebar(props: {
         ) : null}
         <Button
           variant="ghost"
-          onClick={() => props.onModal("settings")}
+          onClick={props.onOpenSettings}
           className="h-8 w-full justify-start gap-2 rounded-lg px-2 text-sm font-normal text-muted-foreground hover:text-foreground"
         >
           <Settings className="size-4" />

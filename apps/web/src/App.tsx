@@ -20,7 +20,7 @@ import { useShortcut } from "./lib/useShortcut.ts";
 import { useTheme } from "./lib/useTheme.ts";
 import { openWindow } from "./lib/windows.ts";
 import { AddProjectDialog } from "./views/AddProjectDialog.tsx";
-import { AppModal, type ModalView } from "./views/AppModal.tsx";
+import { SettingsModal } from "./views/settings/SettingsModal.tsx";
 import { BrowserHost } from "./views/BrowserHost.tsx";
 import { CommandPalette } from "./views/CommandPalette.tsx";
 import { DiffWorkers } from "./views/DiffWorkers.tsx";
@@ -67,7 +67,7 @@ export function App() {
   const theme = useStore((state) => state.settings.theme);
   const switchTo = useStore((state) => state.switchTo);
   const [chosen, setView] = useState<View | null>(readInitialView);
-  const [modal, setModal] = useState<ModalView | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   useKeybinding("palette.open", () => setIsPaletteOpen((isOpen) => !isOpen));
   useTheme(theme);
@@ -124,7 +124,7 @@ export function App() {
 
   // Like Claude Code: a new thread starts in the project on screen, if any.
   useShortcut("n", () => openDraft(currentPath));
-  useShortcut(",", () => setModal("settings"));
+  useShortcut(",", () => setIsSettingsOpen(true));
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.ctrlKey && !event.metaKey && event.key === "n") {
@@ -145,7 +145,7 @@ export function App() {
             activeId={view.kind === "thread" ? view.id : null}
             currentPath={currentPath}
             onSelect={selectThread}
-            onModal={setModal}
+            onOpenSettings={() => setIsSettingsOpen(true)}
             onDraft={openDraft}
           />
           <AnimatedSidebarInset className="relative min-h-0 bg-background">
@@ -172,7 +172,7 @@ export function App() {
               <DraftView key="draft" path={view.path} onPickProject={openDraft} />
             ) : null}
           </AnimatedSidebarInset>
-          <AppModal view={modal} onView={setModal} />
+          <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
           <AddProjectDialog />
           <BrowserHost />
           <CommandPalette
@@ -232,7 +232,7 @@ export function App() {
                 label: "Settings",
                 hint: formatKeybinding("settings.open"),
                 icon: <SettingsIcon />,
-                run: () => setModal("settings"),
+                run: () => setIsSettingsOpen(true),
               },
             ]}
           />
