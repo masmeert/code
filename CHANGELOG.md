@@ -2,6 +2,25 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.5](https://github.com/masmeert/code/compare/v0.1.4...v0.1.5) (2026-10-09)
+
+
+### Added
+
+* shelving a thread stops its agent and closes its idle terminals ([2af5782](https://github.com/masmeert/code/commit/2af5782586368593d8fd19bd02cdefd392b8b81b))
+
+
+### Changed
+
+* keep the app responsive with many threads ([5f11105](https://github.com/masmeert/code/commit/5f11105b08d4f2b7db624fffb364360655816f45))
+* unload browser tabs of shelved and archived threads ([02b8445](https://github.com/masmeert/code/commit/02b8445fa2b8c4c4693480de1732ae14ea2729f1))
+
+
+### Fixed
+
+* keep menu shadows in step with the open animation ([20c218d](https://github.com/masmeert/code/commit/20c218d0d2294fec3050644a491434d798b8ed57))
+* keep the agent's notes between tool calls folded until the turn ends ([dbc0fb3](https://github.com/masmeert/code/commit/dbc0fb373a56962c834f55853ffe8f879a22e9ac))
+
 ## [0.1.4](https://github.com/masmeert/code/compare/v0.1.3...v0.1.4) (2026-10-08)
 
 
