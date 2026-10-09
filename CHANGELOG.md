@@ -2,6 +2,25 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.6](https://github.com/masmeert/code/compare/v0.1.5...v0.1.6) (2026-10-09)
+
+
+### Added
+
+* project scripts, worktree setup and per-project settings in masscode.toml ([39556d9](https://github.com/masmeert/code/commit/39556d95166c7a3f9d28537bb3d2b5b434080692))
+
+
+### Changed
+
+* make switching threads near-instant ([6b6e9fa](https://github.com/masmeert/code/commit/6b6e9fabe3bf7f69a2e31dfcc240e6da05eb348d))
+* rest the orb at 20fps and probe its colours once ([17758f1](https://github.com/masmeert/code/commit/17758f1ead9ed315b99b706fcab56e84a732d853))
+
+
+### Fixed
+
+* match the pending thinking row to the streaming work row ([e044f68](https://github.com/masmeert/code/commit/e044f683d7aea07dc7d3982015aed06cbbe26dba))
+* read git paths literally, never as patterns ([5905f0a](https://github.com/masmeert/code/commit/5905f0ae2f6184f6f493622f31c8a1f50e9806eb))
+
 ## [0.1.5](https://github.com/masmeert/code/compare/v0.1.4...v0.1.5) (2026-10-09)
 
 
