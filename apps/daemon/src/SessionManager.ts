@@ -1734,6 +1734,17 @@ const make = Effect.gen(function* () {
     return mergePullRequest(path, sourceControl, pullRequest.number, method);
   }
 
+  /** Applies `settings` and announces them; when they couldn't be saved, fails after. */
+  function saveSettings(settings: Settings) {
+    return settingsStore
+      .update(settings)
+      .pipe(
+        Effect.ensuring(
+          Effect.sync(() => publish(RuntimeEvent.cases["settings.updated"].make({ settings }))),
+        ),
+      );
+  }
+
   /** Commits and pushes on one repo run one at a time. */
   const gitLocks = new Map<string, Semaphore.Semaphore>();
 
@@ -1907,8 +1918,10 @@ const make = Effect.gen(function* () {
     // New chats preselect whichever harness was used last.
     const settings = yield* settingsStore.get;
     if (settings.lastProvider !== command.provider) {
-      const next = yield* settingsStore.update({ ...settings, lastProvider: command.provider });
-      publish(RuntimeEvent.cases["settings.updated"].make({ settings: next }));
+      yield* saveSettings({ ...settings, lastProvider: command.provider }).pipe(
+        reportErrorsIn(null),
+        Effect.ignore,
+      );
     }
 
     yield* send(entry, command.text, command.options).pipe(
@@ -2441,10 +2454,6 @@ const make = Effect.gen(function* () {
       "device.attach": () => Effect.void,
       "settings.update": (command) =>
         Effect.gen(function* () {
-          const before = yield* settingsStore.get;
-          const settings = yield* settingsStore.update(command.settings);
-          publish(RuntimeEvent.cases["settings.updated"].make({ settings }));
-
           // A different binary, config dir or env can mean another version or account.
           function serializeLaunchSettings(value: Settings) {
             return JSON.stringify(
@@ -2455,8 +2464,15 @@ const make = Effect.gen(function* () {
             );
           }
 
-          if (serializeLaunchSettings(before) !== serializeLaunchSettings(settings))
-            yield* registry.refresh;
+          const before = yield* settingsStore.get;
+          // The settings apply even when they can't be saved, so the harnesses follow them either way.
+          yield* saveSettings(command.settings).pipe(
+            Effect.ensuring(
+              serializeLaunchSettings(before) === serializeLaunchSettings(command.settings)
+                ? Effect.void
+                : registry.refresh,
+            ),
+          );
         }),
     });
   }

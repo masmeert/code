@@ -5,6 +5,7 @@ import { existsSync, renameSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { getErrorMessage } from "../errors.ts";
 
 export const DATA_DIR = process.env.MASSCODE_DATA_DIR ?? join(homedir(), ".masscode");
 
@@ -18,6 +19,12 @@ if (!process.env.MASSCODE_DATA_DIR && !existsSync(DATA_DIR) && existsSync(LEGACY
       renameSync(legacyDatabase, join(DATA_DIR, `masscode.db${suffix}`));
   }
 }
+
+/** A JSON file couldn't be written; what's in memory has changes it doesn't. */
+export class FileWriteError extends Schema.TaggedError<FileWriteError>()("FileWriteError", {
+  path: Schema.String,
+  message: Schema.String,
+}) {}
 
 /**
  * A schema-validated JSON file held in memory and written through on every change.
@@ -33,15 +40,18 @@ export function openJsonFile<A, I>(fileName: string, schema: Schema.Codec<A, I>,
     const current = yield* Ref.make(initial);
     const encode = Schema.encodeSync(schema);
 
+    /** Changes the value in memory, then writes it; fails when the write does. */
     function set(value: A) {
       return Ref.set(current, value).pipe(
         Effect.andThen(
-          Effect.tryPromise(async () => {
-            await mkdir(dirname(path), { recursive: true });
-            await writeFile(path, `${JSON.stringify(encode(value), null, 2)}\n`);
+          Effect.tryPromise({
+            try: async () => {
+              await mkdir(dirname(path), { recursive: true });
+              await writeFile(path, `${JSON.stringify(encode(value), null, 2)}\n`);
+            },
+            catch: (error) => new FileWriteError({ path, message: getErrorMessage(error) }),
           }),
         ),
-        Effect.catch((error) => Effect.logWarning(`failed to write ${path}`, error)),
       );
     }
 

@@ -32,10 +32,15 @@ const make = Effect.gen(function* () {
   // Serializes read-modify-write so concurrent commands can't register the same folder twice.
   const lock = yield* Semaphore.make(1);
 
+  // Projects work from memory until restart either way, so a failed write is only logged.
+  function save(projects: ReadonlyArray<Project>) {
+    return file.set(projects).pipe(Effect.catch((error) => Effect.logWarning(error)));
+  }
+
   // Projects added before their repo was read get it once, so they group with their copies elsewhere.
   const saved = yield* file.get;
   if (saved.some((project) => project.remote === undefined || project.folder === undefined))
-    yield* file.set(
+    yield* save(
       yield* Effect.forEach(saved, (project) =>
         Effect.promise(async () => ({
           ...project,
@@ -68,7 +73,7 @@ const make = Effect.gen(function* () {
         remote: yield* Effect.promise(() => readRemoteUrl(path)),
         folder: yield* Effect.promise(() => readRepoFolder(path)),
       };
-      yield* file.set([...projects, project]);
+      yield* save([...projects, project]);
       return { project, isNew: true };
     });
   }
@@ -79,7 +84,7 @@ const make = Effect.gen(function* () {
       const next = projects.filter((project) => project.id !== projectId);
       if (next.length === projects.length) return false;
 
-      yield* file.set(next);
+      yield* save(next);
       return true;
     });
   }
