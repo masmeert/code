@@ -2030,6 +2030,7 @@ export async function updateProjectConfig(
 /** Also stops a running command, without telling its agent. */
 export function closeTerminal(threadId: string, terminalId: string) {
   terminalInputs.delete(terminalId);
+  terminalScripts.delete(terminalId);
   send(ClientCommand.cases["terminal.close"].make({ threadId, terminalId }));
   setState(withoutTerminal(state, threadId, terminalId));
 }
