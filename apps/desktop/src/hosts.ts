@@ -371,7 +371,9 @@ async function connectHost(host: Host, mode: "start" | "restart"): Promise<Daemo
       const arch = linuxArch(values.get("arch") ?? "");
       if (!arch)
         throw new Error(
-          `MassCode runs on x64 and arm64 Linux hosts; ${host.alias} is ${values.get("arch")}.`,
+          values.get("arch")
+            ? `MassCode runs on x64 and arm64 Linux hosts; ${host.alias} is ${values.get("arch")}.`
+            : `Couldn't detect ${host.alias}'s CPU architecture. MassCode runs on x64 and arm64 Linux hosts.`,
         );
       await upload(host, arch, version);
       setStatus(host, HostStatus.cases.connecting.make({ step: "Starting MassCode" }));
