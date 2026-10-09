@@ -6,7 +6,8 @@ import {
   ServerFrame,
 } from "@masscode/contracts";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
+import * as FiberMap from "effect/FiberMap";
+import * as FiberSet from "effect/FiberSet";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import type { ServerWebSocket } from "bun";
@@ -15,6 +16,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ASSET_ROUTE_PREFIX, serveAsset, signImage } from "./assets.ts";
 import { listFolders } from "./folders.ts";
+import { getErrorMessage } from "./errors.ts";
 import { cloneRepository } from "./git.ts";
 import { setPort } from "./port.ts";
 import { parseProjectConfig, readProjectConfigText, writeProjectConfig } from "./projectConfig.ts";
@@ -65,7 +67,6 @@ const decodeCommand = Schema.decodeUnknownEffect(Schema.fromJsonString(ClientCom
 interface ConnectionData {
   /** The protocol the client says it speaks; null from clients older than the check. */
   protocol: string | null;
-  fiber?: Fiber.Fiber<unknown, unknown>;
   /**
    * Threads whose transcript this client follows, each with the publish position its
    * read was taken at: live events up to there are already in what it got.
@@ -80,6 +81,10 @@ interface ConnectionData {
 export function serve(port: number) {
   return Effect.gen(function* () {
     const manager = yield* SessionManager;
+    // What sockets start runs until the server's scope closes; each one's event stream ends with it.
+    const runFork = yield* FiberSet.makeRuntime();
+    const streams = yield* FiberMap.make<ServerWebSocket<ConnectionData>>();
+    const runStream = yield* FiberMap.runtime(streams)();
 
     function send(socket: ServerWebSocket<ConnectionData>, frame: ServerFrame) {
       if (socket.readyState !== WebSocket.OPEN) return;
@@ -265,26 +270,28 @@ export function serve(port: number) {
               return Effect.void;
             },
             "device.list": ({ requestId, install }) =>
-              Effect.promise(async () => {
-                const listed = await manager.devices.list(install).then(
-                  (listing) => ({ ...listing, error: null }),
-                  (error: Error) => ({
-                    installed: false,
-                    hub: null,
-                    devices: [],
-                    error: error.message,
-                  }),
-                );
-                send(socket, ServerFrame.cases["device.listed"].make({ requestId, ...listed }));
-              }),
+              Effect.tryPromise({
+                try: () => manager.devices.list(install),
+                catch: getErrorMessage,
+              }).pipe(
+                Effect.match({
+                  onSuccess: (listing) => ({ ...listing, error: null }),
+                  onFailure: (error) => ({ installed: false, hub: null, devices: [], error }),
+                }),
+                Effect.map((listed) =>
+                  send(socket, ServerFrame.cases["device.listed"].make({ requestId, ...listed })),
+                ),
+              ),
             "device.attach": ({ requestId, threadId, deviceId }) =>
-              Effect.promise(async () => {
-                const error = await manager.devices.attach(threadId, deviceId).then(
-                  () => null,
-                  (error: Error) => error.message,
-                );
-                send(socket, ServerFrame.cases["device.attached"].make({ requestId, error }));
-              }),
+              Effect.tryPromise({
+                try: () => manager.devices.attach(threadId, deviceId),
+                catch: getErrorMessage,
+              }).pipe(
+                Effect.match({ onSuccess: () => null, onFailure: (error) => error }),
+                Effect.map((error) =>
+                  send(socket, ServerFrame.cases["device.attached"].make({ requestId, error })),
+                ),
+              ),
             "browser.respond": (command) => {
               if (socket.data.browserHost)
                 manager.browsers.respond(
@@ -342,12 +349,12 @@ export function serve(port: number) {
                 );
 
               socket.data.viewer = { send: (frame) => send(socket, frame) };
-              socket.data.fiber = Effect.runFork(streamToClient(socket));
+              runStream(socket, streamToClient(socket));
             },
             message(socket, raw) {
               if (socket.data.protocol !== String(PROTOCOL_VERSION)) return;
 
-              Effect.runFork(
+              runFork(
                 decodeCommand(raw.toString()).pipe(
                   Effect.flatMap((command) => handleCommand(socket, command)),
                   Effect.catch((error) => Effect.logWarning("command failed", error)),
@@ -357,11 +364,14 @@ export function serve(port: number) {
             close(socket) {
               if (socket.data.viewer) manager.terminals.detachViewer(socket.data.viewer);
               if (socket.data.browserHost) manager.browsers.detach(socket.data.browserHost);
-              if (socket.data.fiber) Effect.runFork(Fiber.interrupt(socket.data.fiber));
+              runFork(FiberMap.remove(streams, socket));
+              // Uninterruptible, so a server shutting down waits for the agents to close.
               for (const [sideChatId, threadId] of socket.data.sideChats)
-                Effect.runFork(
-                  manager.dispatch(
-                    ClientCommand.cases["sideChat.close"].make({ threadId, sideChatId }),
+                runFork(
+                  Effect.uninterruptible(
+                    manager.dispatch(
+                      ClientCommand.cases["sideChat.close"].make({ threadId, sideChatId }),
+                    ),
                   ),
                 );
             },
