@@ -2199,289 +2199,297 @@ const make = Effect.gen(function* () {
     for (const entry of threads.values()) if (entry.info.cwd === path) refreshMeta(entry);
   });
 
-  function dispatch(
-    command: ClientCommand,
-  ): Effect.Effect<void, CommandError | ProviderError | ProjectNotFound> {
-    return ClientCommand.match(command, {
-      "thread.create": createThread,
-      "thread.send": (command) =>
-        Effect.flatMap(getEntry(command.threadId), (entry) =>
-          send(entry, command.text, command.options, command),
-        ),
-      "thread.sendQueued": ({ threadId, messageId }) =>
-        Effect.map(getEntry(threadId), (entry) => {
-          const message = (entry.info.queue ?? []).find((queued) => queued.id === messageId);
-          if (message) sendQueued(entry, message);
-        }),
-      "thread.unqueue": ({ threadId, messageIds }) =>
-        Effect.map(getEntry(threadId), (entry) =>
-          setQueue(
-            entry,
-            (entry.info.queue ?? []).filter((queued) => !messageIds.includes(queued.id)),
+  function dispatch(command: ClientCommand) {
+    return ClientCommand.match<Effect.Effect<void, CommandError | ProviderError | ProjectNotFound>>(
+      command,
+      {
+        "thread.create": createThread,
+        "thread.send": (command) =>
+          Effect.flatMap(getEntry(command.threadId), (entry) =>
+            send(entry, command.text, command.options, command),
           ),
-        ),
-      "thread.resumeAfterLimit": ({ threadId, options, provider }) =>
-        Effect.flatMap(getEntry(threadId), (entry) => resumeAfterLimit(entry, options, provider)),
-      "thread.resumeAtReset": ({ threadId, options }) =>
-        Effect.map(getEntry(threadId), (entry) => {
-          const stop = entry.info.limitStop;
-          if (stop) setLimitStop(entry, { ...stop, resumeAtReset: options });
-        }),
-      "thread.dismissLimitStop": ({ threadId }) =>
-        Effect.map(getEntry(threadId), (entry) => {
-          if (entry.info.limitStop) setLimitStop(entry, null);
-        }),
-      "thread.rewind": rewind,
-      "thread.fork": fork,
-      "sideChat.ask": askSideChat,
-      "sideChat.close": ({ sideChatId }) => closeSideChat(sideChatId),
-      "thread.compact": (command) => compact(command.threadId),
-      "thread.listCommands": (command) => listCommands(command.threadId),
-      "skills.list": (command) =>
-        Effect.sync(() => skills.requestListing(command.provider, command.path)),
-      "thread.readUsage": (command) => readUsage(command.threadId),
-      "checkpoint.diff": (command) =>
-        Effect.gen(function* () {
-          const entry = yield* getEntry(command.threadId);
-          const diff = yield* Effect.promise(() =>
-            readCheckpointDiff(entry.info.cwd, command.threadId, command.messageId),
-          );
-          publish(
-            RuntimeEvent.cases["checkpoint.diff"].make({
-              threadId: command.threadId,
-              messageId: command.messageId,
-              ...diff,
-            }),
-          );
-        }),
-      "git.listBranches": (command) => publishBranches(command.path),
-      "git.listFiles": ({ path }) =>
-        Effect.promise(() => listFiles(path)).pipe(
-          Effect.map((files) => publish(RuntimeEvent.cases["git.files"].make({ path, files }))),
-        ),
-      "git.diff": (command) => refreshDiff(command.path),
-      "git.checkout": ({ path, branch }) => changeBranch(path, () => checkoutBranch(path, branch)),
-      "git.createBranch": ({ path, branch }) =>
-        changeBranch(path, () => createBranch(path, branch)),
-      "git.status": (command) => refreshStatus(command.path),
-      "git.commit": (command) => {
-        const { path } = command;
-        const action: GitAction = command.push ? "commit-push" : "commit";
-        return withRepoLock(
-          path,
-          Effect.gen(function* () {
-            const written = command.message.trim()
-              ? { message: command.message }
-              : yield* writeCommitMessage(path);
-            let error =
-              "error" in written
-                ? written.error
-                : yield* Effect.promise(() => commitAll(path, written.message));
-            if (!error && command.push) error = yield* Effect.promise(() => pushBranch(path));
-
-            yield* publishStatus(path, action, error);
-            yield* publishDiff(path);
+        "thread.sendQueued": ({ threadId, messageId }) =>
+          Effect.map(getEntry(threadId), (entry) => {
+            const message = (entry.info.queue ?? []).find((queued) => queued.id === messageId);
+            if (message) sendQueued(entry, message);
           }),
-        );
-      },
-      "git.push": ({ path }) =>
-        runGitAction(
-          path,
-          "push",
-          Effect.promise(() => pushBranch(path)),
-        ),
-      "git.createPullRequest": ({ path }) =>
-        runGitAction(
-          path,
-          "pull-request",
-          createPullRequest(path).pipe(Effect.ensuring(Effect.sync(() => forgetPullRequest(path)))),
-        ),
-      "git.mergePullRequest": ({ path, method }) =>
-        runGitAction(
-          path,
-          "merge",
-          Effect.promise(() => mergeOpenPullRequest(path, method)).pipe(
-            Effect.ensuring(Effect.sync(() => forgetPullRequest(path))),
-          ),
-        ),
-      "git.mergeIntoBase": ({ path }) =>
-        runGitAction(
-          path,
-          "merge-into-base",
-          Effect.promise(() => mergeIntoBase(path)),
-        ),
-      "sourceControl.refresh": () =>
-        Effect.promise(async () => {
-          hosts.clear();
-          publish(
-            RuntimeEvent.cases["sourceControl.updated"].make({
-              statuses: await probeSourceControl(),
-            }),
-          );
-        }),
-      "thread.setModel": ({ threadId, provider, model }) =>
-        Effect.gen(function* () {
-          const entry = yield* getEntry(threadId);
-          if (provider && provider !== entry.info.provider)
-            return yield* switchHarness(entry, provider, model);
-
-          entry.info = { ...entry.info, model };
-          store.setModel(threadId, model);
-          publish(
-            RuntimeEvent.cases["thread.model"].make({
-              threadId,
-              provider: entry.info.provider,
-              model,
-            }),
-          );
-          if (entry.session) yield* entry.session.setModel(model);
-        }),
-      "project.add": (command) =>
-        projectsStore
-          .ensure(command.path)
-          .pipe(
-            Effect.map(({ project, isNew }) =>
-              isNew ? publish(RuntimeEvent.cases["project.added"].make({ project })) : undefined,
+        "thread.unqueue": ({ threadId, messageIds }) =>
+          Effect.map(getEntry(threadId), (entry) =>
+            setQueue(
+              entry,
+              (entry.info.queue ?? []).filter((queued) => !messageIds.includes(queued.id)),
             ),
           ),
-      "project.scan": (command) =>
-        Effect.gen(function* () {
-          async function findRepos(folder: string, levels: number): Promise<Array<string>> {
-            if (existsSync(join(folder, ".git"))) return [folder];
-            if (levels === 0) return [];
-            const { path, folders } = await listFolders(folder);
-            return (
-              await Promise.all(folders.map((name) => findRepos(join(path, name), levels - 1)))
-            ).flat();
-          }
+        "thread.resumeAfterLimit": ({ threadId, options, provider }) =>
+          Effect.flatMap(getEntry(threadId), (entry) => resumeAfterLimit(entry, options, provider)),
+        "thread.resumeAtReset": ({ threadId, options }) =>
+          Effect.map(getEntry(threadId), (entry) => {
+            const stop = entry.info.limitStop;
+            if (stop) setLimitStop(entry, { ...stop, resumeAtReset: options });
+          }),
+        "thread.dismissLimitStop": ({ threadId }) =>
+          Effect.map(getEntry(threadId), (entry) => {
+            if (entry.info.limitStop) setLimitStop(entry, null);
+          }),
+        "thread.rewind": rewind,
+        "thread.fork": fork,
+        "sideChat.ask": askSideChat,
+        "sideChat.close": ({ sideChatId }) => closeSideChat(sideChatId),
+        "thread.compact": (command) => compact(command.threadId),
+        "thread.listCommands": (command) => listCommands(command.threadId),
+        "skills.list": (command) =>
+          Effect.sync(() => skills.requestListing(command.provider, command.path)),
+        "thread.readUsage": (command) => readUsage(command.threadId),
+        "checkpoint.diff": (command) =>
+          Effect.gen(function* () {
+            const entry = yield* getEntry(command.threadId);
+            const diff = yield* Effect.promise(() =>
+              readCheckpointDiff(entry.info.cwd, command.threadId, command.messageId),
+            );
+            publish(
+              RuntimeEvent.cases["checkpoint.diff"].make({
+                threadId: command.threadId,
+                messageId: command.messageId,
+                ...diff,
+              }),
+            );
+          }),
+        "git.listBranches": (command) => publishBranches(command.path),
+        "git.listFiles": ({ path }) =>
+          Effect.promise(() => listFiles(path)).pipe(
+            Effect.map((files) => publish(RuntimeEvent.cases["git.files"].make({ path, files }))),
+          ),
+        "git.diff": (command) => refreshDiff(command.path),
+        "git.checkout": ({ path, branch }) =>
+          changeBranch(path, () => checkoutBranch(path, branch)),
+        "git.createBranch": ({ path, branch }) =>
+          changeBranch(path, () => createBranch(path, branch)),
+        "git.status": (command) => refreshStatus(command.path),
+        "git.commit": (command) => {
+          const { path } = command;
+          const action: GitAction = command.push ? "commit-push" : "commit";
+          return withRepoLock(
+            path,
+            Effect.gen(function* () {
+              const written = command.message.trim()
+                ? { message: command.message }
+                : yield* writeCommitMessage(path);
+              let error =
+                "error" in written
+                  ? written.error
+                  : yield* Effect.promise(() => commitAll(path, written.message));
+              if (!error && command.push) error = yield* Effect.promise(() => pushBranch(path));
 
-          // Three levels, never inside a repo: the home folder's default still finds ~/code/group/repo,
-          // without walking dependency and cache trees.
-          const repos = yield* Effect.promise(() =>
-            findRepos(resolve(expandHome(command.path)), 3),
+              yield* publishStatus(path, action, error);
+              yield* publishDiff(path);
+            }),
           );
-          yield* Effect.forEach(repos, (folder) =>
-            projectsStore.ensure(folder).pipe(
+        },
+        "git.push": ({ path }) =>
+          runGitAction(
+            path,
+            "push",
+            Effect.promise(() => pushBranch(path)),
+          ),
+        "git.createPullRequest": ({ path }) =>
+          runGitAction(
+            path,
+            "pull-request",
+            createPullRequest(path).pipe(
+              Effect.ensuring(Effect.sync(() => forgetPullRequest(path))),
+            ),
+          ),
+        "git.mergePullRequest": ({ path, method }) =>
+          runGitAction(
+            path,
+            "merge",
+            Effect.promise(() => mergeOpenPullRequest(path, method)).pipe(
+              Effect.ensuring(Effect.sync(() => forgetPullRequest(path))),
+            ),
+          ),
+        "git.mergeIntoBase": ({ path }) =>
+          runGitAction(
+            path,
+            "merge-into-base",
+            Effect.promise(() => mergeIntoBase(path)),
+          ),
+        "sourceControl.refresh": () =>
+          Effect.promise(async () => {
+            hosts.clear();
+            publish(
+              RuntimeEvent.cases["sourceControl.updated"].make({
+                statuses: await probeSourceControl(),
+              }),
+            );
+          }),
+        "thread.setModel": ({ threadId, provider, model }) =>
+          Effect.gen(function* () {
+            const entry = yield* getEntry(threadId);
+            if (provider && provider !== entry.info.provider)
+              return yield* switchHarness(entry, provider, model);
+
+            entry.info = { ...entry.info, model };
+            store.setModel(threadId, model);
+            publish(
+              RuntimeEvent.cases["thread.model"].make({
+                threadId,
+                provider: entry.info.provider,
+                model,
+              }),
+            );
+            if (entry.session) yield* entry.session.setModel(model);
+          }),
+        "project.add": (command) =>
+          projectsStore
+            .ensure(command.path)
+            .pipe(
               Effect.map(({ project, isNew }) =>
                 isNew ? publish(RuntimeEvent.cases["project.added"].make({ project })) : undefined,
               ),
-              Effect.ignore,
             ),
-          );
-        }),
-      "providers.refresh": () => registry.refresh,
-      "provider.link": (command) => registry.link(command.provider),
-      "provider.linkCode": (command) => registry.submitCode(command.provider, command.code),
-      "provider.linkCancel": (command) => registry.cancelLink(command.provider),
-      "provider.unlink": (command) => registry.unlink(command.provider),
-      "provider.readLimits": (command) => readLimits(command.provider),
-      "thread.interrupt": (command) => Effect.flatMap(getEntry(command.threadId), interrupt),
-      "thread.stopAgent": (command) =>
-        runOnLiveSession(
-          command.threadId,
-          (session) => session.stopAgent?.(command.toolId) ?? Effect.void,
-        ),
-      "approval.respond": (command) =>
-        runOnLiveSession(command.threadId, (session) =>
-          session.respondApproval(command.requestId, command.decision, command),
-        ),
-      "thread.close": (command) => removeThread(command.threadId),
-      "thread.archive": (command) =>
-        Effect.flatMap(getEntry(command.threadId), (entry) => setArchived(entry, command.archived)),
-      // A window showing an older update than another already marked can't take the mark back.
-      "thread.seen": ({ threadId, rev }) =>
-        Effect.map(getEntry(threadId), (entry) => {
-          if (rev <= entry.info.seenRev) return;
+        "project.scan": (command) =>
+          Effect.gen(function* () {
+            async function findRepos(folder: string, levels: number): Promise<Array<string>> {
+              if (existsSync(join(folder, ".git"))) return [folder];
+              if (levels === 0) return [];
+              const { path, folders } = await listFolders(folder);
+              return (
+                await Promise.all(folders.map((name) => findRepos(join(path, name), levels - 1)))
+              ).flat();
+            }
 
-          entry.info = { ...entry.info, seenRev: rev };
-          store.setSeenRev(threadId, rev);
-          publish(RuntimeEvent.cases["thread.seen"].make({ threadId, seenRev: rev }));
-        }),
-      "thread.rename": ({ threadId, title }) =>
-        Effect.map(getEntry(threadId), (entry) =>
-          setTitle(entry, deriveTitle(title, entry.info.title)),
-        ),
-      "thread.shelve": ({ threadId, shelved }) =>
-        Effect.map(getEntry(threadId), (entry) => {
-          setShelveOverride(entry, shelved ? "shelved" : "active");
-          refreshShelved(entry);
-        }),
-      "project.remove": (command) =>
-        Effect.gen(function* () {
-          if (!(yield* projectsStore.remove(command.projectId))) return;
-
-          const owned = [...threads.values()].filter(
-            (entry) => entry.info.projectId === command.projectId,
-          );
-          yield* Effect.forEach(owned, (entry) => removeThread(entry.info.id), { discard: true });
-          publish(RuntimeEvent.cases["project.removed"].make({ projectId: command.projectId }));
-        }),
-      "terminal.write": (command) =>
-        Effect.sync(() => terminals.write(command.threadId, command.terminalId, command.data)),
-      "terminal.resize": (command) =>
-        Effect.sync(() =>
-          terminals.resize(command.threadId, command.terminalId, command.columns, command.rows),
-        ),
-      "terminal.close": (command) =>
-        Effect.sync(() => terminals.close(command.threadId, command.terminalId)),
-      "terminal.run": ({ threadId, terminalId, command, columns, rows, options }) =>
-        Effect.flatMap(getEntry(threadId), (entry) => {
-          const runError = terminals.run(threadId, terminalId, command, columns, rows, (exit) => {
-            if (exit.wasStopped) return;
-            const run = { command, exitCode: exit.exitCode, output: exit.output };
-            runFork(
-              send(entry, formatCommandRun(run), options, { run }).pipe(
-                reportErrorsIn(threadId),
+            // Three levels, never inside a repo: the home folder's default still finds ~/code/group/repo,
+            // without walking dependency and cache trees.
+            const repos = yield* Effect.promise(() =>
+              findRepos(resolve(expandHome(command.path)), 3),
+            );
+            yield* Effect.forEach(repos, (folder) =>
+              projectsStore.ensure(folder).pipe(
+                Effect.map(({ project, isNew }) =>
+                  isNew
+                    ? publish(RuntimeEvent.cases["project.added"].make({ project }))
+                    : undefined,
+                ),
                 Effect.ignore,
               ),
             );
-          });
-          return runError
-            ? Effect.fail(
-                new CommandError({ message: `Couldn't run the command: ${runError.message}` }),
-              )
-            : Effect.void;
-        }),
-      // Per connection; the server answers these.
-      "thread.subscribe": () => Effect.void,
-      "thread.unsubscribe": () => Effect.void,
-      "thread.loadOlder": () => Effect.void,
-      search: () => Effect.void,
-      "folder.list": () => Effect.void,
-      "project.config": () => Effect.void,
-      "project.saveConfig": () => Effect.void,
-      "image.sign": () => Effect.void,
-      "project.clone": () => Effect.void,
-      "terminal.open": () => Effect.void,
-      "terminal.detach": () => Effect.void,
-      "terminal.acknowledge": () => Effect.void,
-      "browser.host": () => Effect.void,
-      "browser.respond": () => Effect.void,
-      "device.list": () => Effect.void,
-      "device.attach": () => Effect.void,
-      "settings.update": (command) =>
-        Effect.gen(function* () {
-          // A different binary, config dir or env can mean another version or account.
-          function serializeLaunchSettings(value: Settings) {
-            return JSON.stringify(
-              ProviderKind.literals.map((kind) => {
-                const { binaryPath, configDir, env, launchArgs } = value.providers[kind];
-                return [binaryPath, configDir, env, launchArgs];
-              }),
-            );
-          }
+          }),
+        "providers.refresh": () => registry.refresh,
+        "provider.link": (command) => registry.link(command.provider),
+        "provider.linkCode": (command) => registry.submitCode(command.provider, command.code),
+        "provider.linkCancel": (command) => registry.cancelLink(command.provider),
+        "provider.unlink": (command) => registry.unlink(command.provider),
+        "provider.readLimits": (command) => readLimits(command.provider),
+        "thread.interrupt": (command) => Effect.flatMap(getEntry(command.threadId), interrupt),
+        "thread.stopAgent": (command) =>
+          runOnLiveSession(
+            command.threadId,
+            (session) => session.stopAgent?.(command.toolId) ?? Effect.void,
+          ),
+        "approval.respond": (command) =>
+          runOnLiveSession(command.threadId, (session) =>
+            session.respondApproval(command.requestId, command.decision, command),
+          ),
+        "thread.close": (command) => removeThread(command.threadId),
+        "thread.archive": (command) =>
+          Effect.flatMap(getEntry(command.threadId), (entry) =>
+            setArchived(entry, command.archived),
+          ),
+        // A window showing an older update than another already marked can't take the mark back.
+        "thread.seen": ({ threadId, rev }) =>
+          Effect.map(getEntry(threadId), (entry) => {
+            if (rev <= entry.info.seenRev) return;
 
-          const before = yield* settingsStore.get;
-          // The settings apply even when they can't be saved, so the harnesses follow them either way.
-          yield* saveSettings(command.settings).pipe(
-            Effect.ensuring(
-              serializeLaunchSettings(before) === serializeLaunchSettings(command.settings)
-                ? Effect.void
-                : registry.refresh,
-            ),
-          );
-        }),
-    });
+            entry.info = { ...entry.info, seenRev: rev };
+            store.setSeenRev(threadId, rev);
+            publish(RuntimeEvent.cases["thread.seen"].make({ threadId, seenRev: rev }));
+          }),
+        "thread.rename": ({ threadId, title }) =>
+          Effect.map(getEntry(threadId), (entry) =>
+            setTitle(entry, deriveTitle(title, entry.info.title)),
+          ),
+        "thread.shelve": ({ threadId, shelved }) =>
+          Effect.map(getEntry(threadId), (entry) => {
+            setShelveOverride(entry, shelved ? "shelved" : "active");
+            refreshShelved(entry);
+          }),
+        "project.remove": (command) =>
+          Effect.gen(function* () {
+            if (!(yield* projectsStore.remove(command.projectId))) return;
+
+            const owned = [...threads.values()].filter(
+              (entry) => entry.info.projectId === command.projectId,
+            );
+            yield* Effect.forEach(owned, (entry) => removeThread(entry.info.id), { discard: true });
+            publish(RuntimeEvent.cases["project.removed"].make({ projectId: command.projectId }));
+          }),
+        "terminal.write": (command) =>
+          Effect.sync(() => terminals.write(command.threadId, command.terminalId, command.data)),
+        "terminal.resize": (command) =>
+          Effect.sync(() =>
+            terminals.resize(command.threadId, command.terminalId, command.columns, command.rows),
+          ),
+        "terminal.close": (command) =>
+          Effect.sync(() => terminals.close(command.threadId, command.terminalId)),
+        "terminal.run": ({ threadId, terminalId, command, columns, rows, options }) =>
+          Effect.flatMap(getEntry(threadId), (entry) => {
+            const runError = terminals.run(threadId, terminalId, command, columns, rows, (exit) => {
+              if (exit.wasStopped) return;
+              const run = { command, exitCode: exit.exitCode, output: exit.output };
+              runFork(
+                send(entry, formatCommandRun(run), options, { run }).pipe(
+                  reportErrorsIn(threadId),
+                  Effect.ignore,
+                ),
+              );
+            });
+            return runError
+              ? Effect.fail(
+                  new CommandError({ message: `Couldn't run the command: ${runError.message}` }),
+                )
+              : Effect.void;
+          }),
+        // Per connection; the server answers these.
+        "thread.subscribe": () => Effect.void,
+        "thread.unsubscribe": () => Effect.void,
+        "thread.loadOlder": () => Effect.void,
+        search: () => Effect.void,
+        "folder.list": () => Effect.void,
+        "project.config": () => Effect.void,
+        "project.saveConfig": () => Effect.void,
+        "image.sign": () => Effect.void,
+        "project.clone": () => Effect.void,
+        "terminal.open": () => Effect.void,
+        "terminal.detach": () => Effect.void,
+        "terminal.acknowledge": () => Effect.void,
+        "browser.host": () => Effect.void,
+        "browser.respond": () => Effect.void,
+        "device.list": () => Effect.void,
+        "device.attach": () => Effect.void,
+        "settings.update": (command) =>
+          Effect.gen(function* () {
+            // A different binary, config dir or env can mean another version or account.
+            function serializeLaunchSettings(value: Settings) {
+              return JSON.stringify(
+                ProviderKind.literals.map((kind) => {
+                  const { binaryPath, configDir, env, launchArgs } = value.providers[kind];
+                  return [binaryPath, configDir, env, launchArgs];
+                }),
+              );
+            }
+
+            const before = yield* settingsStore.get;
+            // The settings apply even when they can't be saved, so the harnesses follow them either way.
+            yield* saveSettings(command.settings).pipe(
+              Effect.ensuring(
+                serializeLaunchSettings(before) === serializeLaunchSettings(command.settings)
+                  ? Effect.void
+                  : registry.refresh,
+              ),
+            );
+          }),
+      },
+    );
   }
 
   return SessionManager.of({
