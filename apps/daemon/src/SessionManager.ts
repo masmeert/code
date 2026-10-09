@@ -26,10 +26,12 @@ import {
   WORKTREE_SETUP_TERMINAL_ID,
 } from "@masscode/contracts";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
+import * as Result from "effect/Result";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
@@ -290,39 +292,44 @@ const AGENT_GONE =
   "The agent stopped before finishing its turn. Send a message to pick up where it left off.";
 
 /**
- * Runs `load` for a key one at a time. Calls made while it runs share a single
- * follow-up run, so a burst of refreshes costs at most two, and no caller gets a
- * result that started before it asked.
+ * Runs `load` for a key one at a time. Calls made while it runs share a single follow-up run,
+ * so a burst of refreshes costs at most two, and no caller gets a result that started before
+ * it asked. Loads still going when the scope closes are interrupted.
  */
-function coalesceLoads<A>(load: (key: string) => Promise<A>) {
-  const inFlight = new Map<string, Promise<A>>();
-  const queued = new Map<string, Promise<A>>();
+const coalesceLoads = Effect.fn("coalesceLoads")(function* (
+  load: (key: string) => Effect.Effect<void>,
+) {
+  const runFork = yield* FiberSet.makeRuntime();
+  // ponytail: a lock per key ever loaded stays around; prune idle ones if keys ever churn by the thousands.
+  const locks = new Map<string, Semaphore.Semaphore>();
+  const queued = new Map<string, Deferred.Deferred<void>>();
 
-  function startLoad(key: string): Promise<A> {
-    const promise: Promise<A> = load(key).finally(() => {
-      if (inFlight.get(key) === promise) inFlight.delete(key);
+  return (key: string) =>
+    Effect.suspend(() => {
+      const waiting = queued.get(key);
+      if (waiting) return Deferred.await(waiting);
+
+      let lock = locks.get(key);
+      if (!lock) {
+        lock = Semaphore.makeUnsafe(1);
+        locks.set(key, lock);
+      }
+
+      const run = Deferred.makeUnsafe<void>();
+      queued.set(key, run);
+      runFork(
+        lock
+          .withPermit(
+            Effect.suspend(() => {
+              queued.delete(key);
+              return load(key);
+            }),
+          )
+          .pipe(Deferred.into(run)),
+      );
+      return Deferred.await(run);
     });
-    inFlight.set(key, promise);
-    return promise;
-  }
-
-  return (key: string): Promise<A> => {
-    const current = inFlight.get(key);
-    if (!current) return startLoad(key);
-
-    const next = queued.get(key);
-    if (next) return next;
-
-    const follow = current
-      .catch(() => undefined)
-      .then(() => {
-        queued.delete(key);
-        return startLoad(key);
-      });
-    queued.set(key, follow);
-    return follow;
-  };
-}
+});
 
 export class SessionManager extends Context.Service<
   SessionManager,
@@ -424,9 +431,7 @@ function resolveAttachments(inputs: ReadonlyArray<AttachmentInput>) {
 
 const make = Effect.gen(function* () {
   // Every effect started from a callback runs here, so closing the daemon's scope interrupts it.
-  const fibers = yield* FiberSet.make();
-  const runFork = yield* FiberSet.runtime(fibers)();
-  const runPromise = yield* FiberSet.runtimePromise(fibers)();
+  const runFork = yield* FiberSet.makeRuntime();
 
   const settingsStore = yield* SettingsStore;
   const projectsStore = yield* ProjectsStore;
@@ -711,7 +716,7 @@ const make = Effect.gen(function* () {
   const devices = createDevices((threadId, deviceId) =>
     publish(RuntimeEvent.cases["thread.device"].make({ threadId, deviceId })),
   );
-  const skills = createSkillCatalog({
+  const skills = yield* createSkillCatalog({
     readSkills: (provider, cwd) =>
       Effect.flatMap(settingsStore.get, (settings) =>
         ADAPTERS[provider].listSkills({ cwd, harness: settings.providers[provider] }),
@@ -1026,9 +1031,7 @@ const make = Effect.gen(function* () {
         effort,
         fast,
         permission,
-        skills: yield* Effect.promise(() =>
-          skills.findMentionedSkills(entry.info.provider, entry.info.cwd, text),
-        ),
+        skills: yield* skills.findMentionedSkills(entry.info.provider, entry.info.cwd, text),
         handoff: null,
       };
 
@@ -1478,9 +1481,7 @@ const make = Effect.gen(function* () {
       : [];
 
     // Claude reports its skills as commands too; they're offered under `$` instead.
-    const skillNames = yield* Effect.promise(() =>
-      skills.loadSkillNames(entry.info.provider, entry.info.cwd),
-    );
+    const skillNames = yield* skills.loadSkillNames(entry.info.provider, entry.info.cwd);
     publish(
       RuntimeEvent.cases["thread.commands"].make({
         threadId,
@@ -1566,51 +1567,60 @@ const make = Effect.gen(function* () {
   const pulledAt = new Map<string, number>();
 
   // Plain refreshes (every window, every finished tool call) coalesce per repo.
-  const refreshStatus = coalesceLoads(async (path) => {
-    const { autoPull: enabled } = await runPromise(settingsStore.get);
-    if (enabled && Date.now() - (pulledAt.get(path) ?? 0) > AUTO_PULL_INTERVAL_MS) {
-      pulledAt.set(path, Date.now());
-      await fastForwardDefaultBranch(path);
-    }
+  const refreshStatus = yield* coalesceLoads(
+    Effect.fn("refreshStatus")(function* (path: string) {
+      const { autoPull } = yield* settingsStore.get;
+      if (autoPull && Date.now() - (pulledAt.get(path) ?? 0) > AUTO_PULL_INTERVAL_MS) {
+        pulledAt.set(path, Date.now());
+        yield* Effect.promise(() => fastForwardDefaultBranch(path));
+      }
 
-    const status = await readRepo(path);
-    publish(RuntimeEvent.cases["git.status"].make({ path, status, action: null, error: null }));
-  });
-
-  const readLimits = coalesceLoads(async (provider) => {
-    if (!Schema.is(ProviderKind)(provider)) return;
-
-    const { limits, error } = await runPromise(registry.readLimits(provider));
-    publish(RuntimeEvent.cases["provider.limits"].make({ provider, limits: [...limits], error }));
-  });
-
-  const readUsage = coalesceLoads(async (threadId) => {
-    const entry = threads.get(threadId);
-    if (!entry) return;
-
-    const { provider, model } = entry.info;
-    const resumeToken = entry.resumeTokens[provider];
-    // A live session reports its usage when its turn ends.
-    const usage =
-      entry.info.usage ??
-      (resumeToken && !entry.session
-        ? await runPromise(
-            Effect.flatMap(settingsStore.get, (settings) =>
-              ADAPTERS[provider].readUsage({
-                cwd: entry.home.path,
-                harness: settings.providers[provider],
-                resumeToken,
-                model: model ?? settings.providers[provider].defaultModel ?? undefined,
-              }),
-            ).pipe(Effect.orElseSucceed(() => null)),
-          )
-        : null);
-    publish(RuntimeEvent.cases["thread.usage"].make({ threadId, usage }));
-  });
-
-  const refreshDiff = coalesceLoads((path) =>
-    readDiff(path).then((diff) => publish(RuntimeEvent.cases["git.diff"].make({ path, ...diff }))),
+      yield* publishStatus(path);
+    }),
   );
+
+  const readLimits = yield* coalesceLoads(
+    Effect.fn("readLimits")(function* (provider: string) {
+      if (!Schema.is(ProviderKind)(provider)) return;
+
+      const { limits, error } = yield* registry.readLimits(provider);
+      publish(RuntimeEvent.cases["provider.limits"].make({ provider, limits: [...limits], error }));
+    }),
+  );
+
+  const readUsage = yield* coalesceLoads(
+    Effect.fn("readUsage")(function* (threadId: string) {
+      const entry = threads.get(threadId);
+      if (!entry) return;
+
+      const { provider, model } = entry.info;
+      const resumeToken = entry.resumeTokens[provider];
+      let usage = entry.info.usage ?? null;
+      // A live session reports its usage when its turn ends.
+      if (!usage && resumeToken && !entry.session) {
+        const harness = (yield* settingsStore.get).providers[provider];
+        usage = yield* ADAPTERS[provider]
+          .readUsage({
+            cwd: entry.home.path,
+            harness,
+            resumeToken,
+            model: model ?? harness.defaultModel ?? undefined,
+          })
+          .pipe(Effect.orElseSucceed(() => null));
+      }
+
+      publish(RuntimeEvent.cases["thread.usage"].make({ threadId, usage }));
+    }),
+  );
+
+  function publishDiff(path: string) {
+    return Effect.map(
+      Effect.promise(() => readDiff(path)),
+      (diff) => publish(RuntimeEvent.cases["git.diff"].make({ path, ...diff })),
+    );
+  }
+
+  const refreshDiff = yield* coalesceLoads(publishDiff);
 
   /**
    * Who writes thread titles and source control text at `path`: the commit model in settings,
@@ -1658,8 +1668,8 @@ const make = Effect.gen(function* () {
    * Pushes the branch if the host doesn't have all of it, writes the title and body with the
    * commit model, and opens the pull request. Resolves to an error message on failure.
    */
-  async function createPullRequest(path: string) {
-    const status = await readRepo(path);
+  const createPullRequest = Effect.fn("createPullRequest")(function* (path: string) {
+    const status = yield* Effect.promise(() => readRepo(path));
     if (!status?.sourceControl) return "This repo's remote isn't on GitHub or GitLab";
     if (!status.branch) return "Check out a branch first";
     if (status.branch === status.defaultBranch)
@@ -1669,43 +1679,45 @@ const make = Effect.gen(function* () {
     const isOpen = status.pullRequest?.state === "open" || status.pullRequest?.state === "draft";
     if (isOpen) return `#${status.pullRequest.number} is already open for this branch`;
 
+    const { sourceControl, branch } = status;
     if (!status.upstream || status.ahead) {
-      const pushed = await pushBranch(path);
+      const pushed = yield* Effect.promise(() => pushBranch(path));
       if (pushed) return pushed;
     }
 
-    const [settings, range, recent, root] = await Promise.all([
-      runPromise(settingsStore.get),
-      readPullRequestRange(path, status.branch),
-      readRecentSubjects(path, 20),
-      readRepoRoot(path),
-    ]);
+    const settings = yield* settingsStore.get;
+    const [range, recent, root] = yield* Effect.promise(() =>
+      Promise.all([
+        readPullRequestRange(path, branch),
+        readRecentSubjects(path, 20),
+        readRepoRoot(path),
+      ]),
+    );
     if (!range) return "Couldn't find the branch to open the pull request against";
     if (!range.commits) return `This branch has no commits that ${range.base} doesn't have`;
 
     // t3code only follows templates on GitHub; GitLab keeps its own in .gitlab/.
     const template =
-      settings.followTemplates !== false && status.sourceControl === "github" && root
-        ? await readPullRequestTemplate(root)
+      settings.followTemplates !== false && sourceControl === "github" && root
+        ? yield* Effect.promise(() => readPullRequestTemplate(root))
         : null;
 
-    let text: { title: string; body: string };
-    try {
-      text = await generatePullRequest({
-        ...buildWriterInput(path, settings, recent),
-        ...range,
-        head: status.branch,
-        template,
-      });
-    } catch (error) {
-      return `Couldn't write the pull request: ${getErrorMessage(error)}`;
-    }
-    return openPullRequest(path, status.sourceControl, {
-      base: range.base,
-      head: status.branch,
-      ...text,
-    });
-  }
+    const text = yield* Effect.tryPromise({
+      try: () =>
+        generatePullRequest({
+          ...buildWriterInput(path, settings, recent),
+          ...range,
+          head: branch,
+          template,
+        }),
+      catch: (error) => `Couldn't write the pull request: ${getErrorMessage(error)}`,
+    }).pipe(Effect.result);
+    if (Result.isFailure(text)) return text.failure;
+
+    return yield* Effect.promise(() =>
+      openPullRequest(path, sourceControl, { base: range.base, head: branch, ...text.success }),
+    );
+  });
 
   /** Merges the branch's open pull request on its host. Resolves to an error message on failure. */
   async function mergeOpenPullRequest(path: string, method: MergeMethod) {
@@ -1737,8 +1749,8 @@ const make = Effect.gen(function* () {
 
   /** Runs a git action on the repo at `path`, one at a time, and announces the repo state after it. */
   const runGitAction = Effect.fn("runGitAction")(
-    function* (path: string, action: GitAction, run: () => Promise<string | null>) {
-      const error = yield* Effect.promise(run);
+    function* (path: string, action: GitAction, run: Effect.Effect<string | null>) {
+      const error = yield* run;
       yield* publishStatus(path, action, error);
     },
     (effect, path) => withRepoLock(path, effect),
@@ -2207,7 +2219,7 @@ const make = Effect.gen(function* () {
       "thread.listCommands": (command) => listCommands(command.threadId),
       "skills.list": (command) =>
         Effect.sync(() => skills.requestListing(command.provider, command.path)),
-      "thread.readUsage": (command) => Effect.promise(() => readUsage(command.threadId)),
+      "thread.readUsage": (command) => readUsage(command.threadId),
       "checkpoint.diff": (command) =>
         Effect.gen(function* () {
           const entry = yield* getEntry(command.threadId);
@@ -2227,11 +2239,11 @@ const make = Effect.gen(function* () {
         Effect.promise(() => listFiles(path)).pipe(
           Effect.map((files) => publish(RuntimeEvent.cases["git.files"].make({ path, files }))),
         ),
-      "git.diff": (command) => Effect.promise(() => refreshDiff(command.path)),
+      "git.diff": (command) => refreshDiff(command.path),
       "git.checkout": ({ path, branch }) => changeBranch(path, () => checkoutBranch(path, branch)),
       "git.createBranch": ({ path, branch }) =>
         changeBranch(path, () => createBranch(path, branch)),
-      "git.status": (command) => Effect.promise(() => refreshStatus(command.path)),
+      "git.status": (command) => refreshStatus(command.path),
       "git.commit": (command) => {
         const { path } = command;
         const action: GitAction = command.push ? "commit-push" : "commit";
@@ -2248,23 +2260,36 @@ const make = Effect.gen(function* () {
             if (!error && command.push) error = yield* Effect.promise(() => pushBranch(path));
 
             yield* publishStatus(path, action, error);
-
-            const diff = yield* Effect.promise(() => readDiff(path));
-            publish(RuntimeEvent.cases["git.diff"].make({ path, ...diff }));
+            yield* publishDiff(path);
           }),
         );
       },
-      "git.push": ({ path }) => runGitAction(path, "push", () => pushBranch(path)),
+      "git.push": ({ path }) =>
+        runGitAction(
+          path,
+          "push",
+          Effect.promise(() => pushBranch(path)),
+        ),
       "git.createPullRequest": ({ path }) =>
-        runGitAction(path, "pull-request", () =>
-          createPullRequest(path).finally(() => forgetPullRequest(path)),
+        runGitAction(
+          path,
+          "pull-request",
+          createPullRequest(path).pipe(Effect.ensuring(Effect.sync(() => forgetPullRequest(path)))),
         ),
       "git.mergePullRequest": ({ path, method }) =>
-        runGitAction(path, "merge", () =>
-          mergeOpenPullRequest(path, method).finally(() => forgetPullRequest(path)),
+        runGitAction(
+          path,
+          "merge",
+          Effect.promise(() => mergeOpenPullRequest(path, method)).pipe(
+            Effect.ensuring(Effect.sync(() => forgetPullRequest(path))),
+          ),
         ),
       "git.mergeIntoBase": ({ path }) =>
-        runGitAction(path, "merge-into-base", () => mergeIntoBase(path)),
+        runGitAction(
+          path,
+          "merge-into-base",
+          Effect.promise(() => mergeIntoBase(path)),
+        ),
       "sourceControl.refresh": () =>
         Effect.promise(async () => {
           hosts.clear();
@@ -2329,7 +2354,7 @@ const make = Effect.gen(function* () {
       "provider.linkCode": (command) => registry.submitCode(command.provider, command.code),
       "provider.linkCancel": (command) => registry.cancelLink(command.provider),
       "provider.unlink": (command) => registry.unlink(command.provider),
-      "provider.readLimits": (command) => Effect.promise(() => readLimits(command.provider)),
+      "provider.readLimits": (command) => readLimits(command.provider),
       "thread.interrupt": (command) => Effect.flatMap(getEntry(command.threadId), interrupt),
       "thread.stopAgent": (command) =>
         runOnLiveSession(
