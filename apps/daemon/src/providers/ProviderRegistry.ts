@@ -11,7 +11,7 @@ import {
   ProviderStatus,
   type UsageLimit,
 } from "@masscode/contracts";
-import { openJsonFile } from "../storage/jsonFile.ts";
+import { openTomlFile } from "../storage/tomlFile.ts";
 import { SettingsStore } from "../storage/SettingsStore.ts";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
@@ -417,7 +417,7 @@ const make = Effect.gen(function* () {
 
   // Checking the CLIs takes seconds; until it's done, clients get what the last check found rather
   // than "not installed", which hid every model picker and disabled sending on each launch.
-  const lastChecked = yield* openJsonFile("providers.json", Schema.Array(ProviderStatus), []);
+  const lastChecked = yield* openTomlFile("providers", Schema.Array(ProviderStatus), []);
   const checked = yield* lastChecked.get;
 
   let providers = ProviderKind.literals.map(

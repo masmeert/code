@@ -8,7 +8,7 @@ import { stat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { expandHome } from "../folders.ts";
 import { readRemoteUrl, readRepoFolder } from "../git.ts";
-import { openJsonFile } from "./jsonFile.ts";
+import { openTomlFile } from "./tomlFile.ts";
 
 export class ProjectNotFound extends Schema.TaggedError<ProjectNotFound>()("ProjectNotFound", {
   message: Schema.String,
@@ -27,7 +27,7 @@ export class ProjectsStore extends Context.Service<
 >()("masscode/ProjectsStore") {}
 
 const make = Effect.gen(function* () {
-  const file = yield* openJsonFile("projects.json", Schema.Array(Project), []);
+  const file = yield* openTomlFile("projects", Schema.Array(Project), []);
 
   // Serializes read-modify-write so concurrent commands can't register the same folder twice.
   const lock = yield* Semaphore.make(1);

@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getErrorMessage } from "./errors.ts";
+import { formatToml } from "./storage/tomlFile.ts";
 
 /** The text of the project's `masscode.toml`; null when there's none. */
 export function readProjectConfigText(projectPath: string) {
@@ -30,8 +31,16 @@ export async function readProjectConfig(projectPath: string): Promise<ProjectCon
 /** Writes `config` as the project's `masscode.toml`, or removes the file when there's nothing in it; resolves to what went wrong, or null. */
 export async function writeProjectConfig(projectPath: string, config: ProjectConfig) {
   const path = join(projectPath, "masscode.toml");
-  const text = toToml(config);
-  // ponytail: hand-rolled for this schema (Bun parses TOML but can't write it); parsed back so a mistake never lands.
+
+  // An empty table or list is left out, so a config with nothing set has no file.
+  const table = Object.fromEntries(
+    Object.entries(Schema.encodeSync(ProjectConfig)(config)).filter(
+      ([, value]) => Object.keys(value).length > 0,
+    ),
+  );
+
+  const text = Object.keys(table).length > 0 ? formatToml(table) : "";
+  // Parsed back, so a file that wouldn't load never lands.
   const parsed = text ? parseProjectConfig(projectPath, text) : null;
 
   if (parsed instanceof Error) return parsed.message;
@@ -43,33 +52,4 @@ export async function writeProjectConfig(projectPath: string, config: ProjectCon
   } catch (error) {
     return `Couldn't save ${path}: ${getErrorMessage(error)}`;
   }
-}
-
-function toToml({ worktree, scripts = [] }: ProjectConfig) {
-  const worktreeLines = [
-    worktree?.default === undefined ? [] : [`default = ${worktree.default}`],
-    worktree?.setup === undefined ? [] : [`setup = ${formatTomlString(worktree.setup)}`],
-    worktree?.wait_for_setup === undefined ? [] : [`wait_for_setup = ${worktree.wait_for_setup}`],
-  ].flat();
-
-  const tables = [
-    ...(worktreeLines.length ? [["[worktree]", ...worktreeLines]] : []),
-    ...scripts.map((script) => [
-      "[[scripts]]",
-      `name = ${formatTomlString(script.name)}`,
-      `command = ${formatTomlString(script.command)}`,
-      ...(script.preview_url === undefined
-        ? []
-        : [`preview_url = ${formatTomlString(script.preview_url)}`]),
-    ]),
-  ];
-
-  return tables.length ? `${tables.map((lines) => lines.join("\n")).join("\n\n")}\n` : "";
-}
-
-/** Multi-line text as a literal block, so a script reads as written; JSON's escapes are valid TOML ones. */
-function formatTomlString(value: string) {
-  return value.includes("\n") && !value.includes("'''")
-    ? `'''\n${value.endsWith("\n") ? value : `${value}\n`}'''`
-    : JSON.stringify(value);
 }

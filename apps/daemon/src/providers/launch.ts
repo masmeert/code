@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getErrorMessage } from "../errors.ts";
 import { expandHome } from "../folders.ts";
-import { DATA_DIR } from "../storage/jsonFile.ts";
+import { DATA_DIR } from "../storage/tomlFile.ts";
 import { ProviderError } from "./ProviderAdapter.ts";
 import { resolveExecutable } from "./resolveExecutable.ts";
 

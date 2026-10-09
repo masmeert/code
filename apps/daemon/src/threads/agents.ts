@@ -34,7 +34,7 @@ import type { Mcp } from "../mcp.ts";
 import type { ProviderError, ProviderSession } from "../providers/ProviderAdapter.ts";
 import type { ProviderRegistry } from "../providers/ProviderRegistry.ts";
 import type { createSkillCatalog } from "../skills.ts";
-import { DATA_DIR } from "../storage/jsonFile.ts";
+import { DATA_DIR } from "../storage/tomlFile.ts";
 import type { SettingsStore } from "../storage/SettingsStore.ts";
 import type { ThreadStore } from "../storage/ThreadStore.ts";
 import type { Terminals } from "../terminals.ts";

@@ -11,6 +11,9 @@
     "release": "pnpm build && electron-builder --publish always",
     "typecheck": "tsc -p ."
   },
+  "dependencies": {
+    "smol-toml": "^1.9.0"
+  },
   "devDependencies": {
     "@masscode/contracts": "workspace:*",
     "@types/node": "^24.0.0",
