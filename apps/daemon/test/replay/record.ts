@@ -142,12 +142,8 @@ for (const scenario of SCENARIOS.filter((candidate) => !only || candidate.name =
         }),
       );
 
-    const turns = daemon.events.filter((event) =>
-      RuntimeEvent.guards["turn.completed"](event),
-    ).length;
-    while (
-      daemon.events.filter((event) => RuntimeEvent.guards["turn.completed"](event)).length === turns
-    ) {
+    const turns = daemon.countTurnsCompleted();
+    while (daemon.countTurnsCompleted() === turns) {
       const request = daemon.events.find(
         (event): event is Extract<RuntimeEvent, { _tag: "approval.requested" }> =>
           RuntimeEvent.guards["approval.requested"](event) &&

@@ -28,9 +28,6 @@ import { serve } from "../../src/server.ts";
 import * as SessionManagerLive from "../../src/SessionManager.ts";
 import { SessionManager } from "../../src/SessionManager.ts";
 import { DATA_DIR } from "../../src/storage/jsonFile.ts";
-import * as ProjectsStoreLive from "../../src/storage/ProjectsStore.ts";
-import * as SettingsStoreLive from "../../src/storage/SettingsStore.ts";
-import * as ThreadStoreLive from "../../src/storage/ThreadStore.ts";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -86,10 +83,7 @@ const registry = Layer.succeed(
   }),
 );
 
-const layer = SessionManagerLive.layer.pipe(
-  Layer.provide(Layer.mergeAll(ProjectsStoreLive.layer, ThreadStoreLive.layer, registry)),
-  Layer.provideMerge(SettingsStoreLive.layer),
-);
+const layer = SessionManagerLive.composeLayer(registry);
 
 /** A project folder whose threads replay these fixtures. */
 export function createProject(fixtures: Partial<Record<ProviderKind, Fixture>>) {
@@ -197,18 +191,28 @@ export async function startDaemon(harness: Partial<Settings["providers"]> = {}) 
     });
   }
 
+  /** Runs a command as a client would; resolves to its error message, if it failed. */
+  function dispatch(command: ClientCommand) {
+    return Effect.runPromise(
+      manager.dispatch(command).pipe(
+        Effect.as(null),
+        Effect.catch((error) => Effect.succeed(error.message)),
+      ),
+    );
+  }
+
   return {
     manager,
     events,
     waitFor,
-    /** Runs a command as a client would; resolves to its error message, if it failed. */
-    dispatch: (command: ClientCommand) =>
-      Effect.runPromise(
-        manager.dispatch(command).pipe(
-          Effect.as(null),
-          Effect.catch((error) => Effect.succeed(error.message)),
-        ),
-      ),
+    dispatch,
+    /** How many turns have ended since this daemon started, on `threadId` or on any thread. */
+    countTurnsCompleted: (threadId?: string) =>
+      events.filter(
+        (event) =>
+          RuntimeEvent.guards["turn.completed"](event) &&
+          (threadId === undefined || event.threadId === threadId),
+      ).length,
     /** Starts a thread in `folder` and resolves to it once created. */
     async createThread(
       folder: string,
@@ -222,20 +226,16 @@ export async function startDaemon(harness: Partial<Settings["providers"]> = {}) 
       folders.add(folder);
 
       const requestId = crypto.randomUUID();
-      void Effect.runPromise(
-        Effect.ignore(
-          manager.dispatch(
-            ClientCommand.cases["thread.create"].make({
-              path: folder,
-              provider,
-              model: null,
-              text,
-              options: { effort, permission, attachments: [] },
-              requestId,
-              workspace: "local",
-            }),
-          ),
-        ),
+      void dispatch(
+        ClientCommand.cases["thread.create"].make({
+          path: folder,
+          provider,
+          model: null,
+          text,
+          options: { effort, permission, attachments: [] },
+          requestId,
+          workspace: "local",
+        }),
       );
       const created = await waitFor(
         (event): event is Extract<RuntimeEvent, { _tag: "thread.created" }> =>
@@ -251,20 +251,13 @@ export async function startDaemon(harness: Partial<Settings["providers"]> = {}) 
         Omit<Extract<ClientCommand, { _tag: "thread.send" }>, "_tag" | "threadId" | "text">
       > = {},
     ) =>
-      Effect.runPromise(
-        manager
-          .dispatch(
-            ClientCommand.cases["thread.send"].make({
-              threadId,
-              text,
-              options: { effort: null, permission: "ask", attachments: [] },
-              ...extra,
-            }),
-          )
-          .pipe(
-            Effect.as(null),
-            Effect.catch((error) => Effect.succeed(error.message)),
-          ),
+      dispatch(
+        ClientCommand.cases["thread.send"].make({
+          threadId,
+          text,
+          options: { effort: null, permission: "ask", attachments: [] },
+          ...extra,
+        }),
       ),
     /**
      * The orchestration tools as the agent holding `token` sees them. Results are JSON, or the

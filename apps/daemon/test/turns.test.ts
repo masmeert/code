@@ -15,12 +15,6 @@ afterEach(async () => {
   daemon = null;
 });
 
-function countTurnsCompleted(threadId: string) {
-  return daemon!.events.filter(
-    (event) => RuntimeEvent.guards["turn.completed"](event) && event.threadId === threadId,
-  ).length;
-}
-
 for (const provider of ["claude", "codex"] as const) {
   test(`${provider}: a thread runs two turns in one agent process`, async () => {
     daemon = await startDaemon();
@@ -34,7 +28,7 @@ for (const provider of ["claude", "codex"] as const) {
         options: { effort: null, permission: "ask", attachments: [] },
       }),
     );
-    await daemon.waitFor(() => countTurnsCompleted(thread.id) === 2);
+    await daemon.waitFor(() => daemon!.countTurnsCompleted(thread.id) === 2);
 
     const answers = daemon
       .readTranscript(thread.id)
@@ -63,7 +57,7 @@ for (const provider of ["claude", "codex"] as const) {
         decision: "allow",
       }),
     );
-    await daemon.waitFor(() => countTurnsCompleted(thread.id) === 1);
+    await daemon.waitFor(() => daemon!.countTurnsCompleted(thread.id) === 1);
 
     const transcript = daemon.readTranscript(thread.id);
     expect(transcript.some((event) => RuntimeEvent.guards["tool.completed"](event))).toBe(true);

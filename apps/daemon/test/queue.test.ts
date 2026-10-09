@@ -28,11 +28,7 @@ const slowFirstTurn = [
 ];
 
 function getUserMessages(daemon: Daemon, threadId: string) {
-  return daemon
-    .readTranscript(threadId)
-    .filter((event): event is Extract<RuntimeEvent, { _tag: "user.message" }> =>
-      RuntimeEvent.guards["user.message"](event),
-    );
+  return daemon.readTranscript(threadId).filter(RuntimeEvent.guards["user.message"]);
 }
 
 async function readQueue(daemon: Daemon, threadId: string) {
@@ -57,10 +53,7 @@ test("a message queued during a turn starts the next turn when it ends", async (
     "Reply with exactly: pong again",
   ]);
 
-  await daemon.waitFor(
-    () =>
-      daemon!.events.filter((event) => RuntimeEvent.guards["turn.completed"](event)).length === 2,
-  );
+  await daemon.waitFor(() => daemon!.countTurnsCompleted() === 2);
   expect(getUserMessages(daemon, thread.id).map((message) => message.steer ?? false)).toEqual([
     false,
     false,
@@ -142,10 +135,7 @@ test("a message sent twice with the same id runs once", async () => {
   const messageId = crypto.randomUUID();
   await daemon.send(thread.id, "Reply with exactly: pong again", { messageId });
   await daemon.send(thread.id, "Reply with exactly: pong again", { messageId });
-  await daemon.waitFor(
-    () =>
-      daemon!.events.filter((event) => RuntimeEvent.guards["turn.completed"](event)).length === 2,
-  );
+  await daemon.waitFor(() => daemon!.countTurnsCompleted() === 2);
 
   expect(getUserMessages(daemon, thread.id).map((message) => message.messageId)).toEqual([
     expect.any(String),

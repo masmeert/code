@@ -29,11 +29,9 @@ function switchTo(threadId: string, provider: "claude" | "codex") {
 }
 
 async function runTurn(threadId: string, text: string) {
-  const before = daemon!.events.filter(RuntimeEvent.guards["turn.completed"]).length;
+  const before = daemon!.countTurnsCompleted();
   expect(await daemon!.send(threadId, text)).toBeNull();
-  await daemon!.waitFor(
-    () => daemon!.events.filter(RuntimeEvent.guards["turn.completed"]).length > before,
-  );
+  await daemon!.waitFor(() => daemon!.countTurnsCompleted() > before);
   await daemon!.waitFor(matchStatus(threadId, "idle"));
 }
 

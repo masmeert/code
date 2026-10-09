@@ -90,6 +90,9 @@ import {
 } from "./providers/ProviderAdapter.ts";
 import { ProviderRegistry } from "./providers/ProviderRegistry.ts";
 import { DATA_DIR } from "./storage/jsonFile.ts";
+import * as ProjectsStoreLive from "./storage/ProjectsStore.ts";
+import * as SettingsStoreLive from "./storage/SettingsStore.ts";
+import * as ThreadStoreLive from "./storage/ThreadStore.ts";
 import { type ProjectNotFound, ProjectsStore } from "./storage/ProjectsStore.ts";
 import { SettingsStore } from "./storage/SettingsStore.ts";
 import {
@@ -2558,3 +2561,11 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(SessionManager, make);
+
+/** The manager on its stores, with `registry` for the harnesses: the daemon's, or the tests' stub. */
+export function composeLayer<E, R>(registry: Layer.Layer<ProviderRegistry, E, R>) {
+  return layer.pipe(
+    Layer.provide(Layer.mergeAll(ProjectsStoreLive.layer, ThreadStoreLive.layer, registry)),
+    Layer.provideMerge(SettingsStoreLive.layer),
+  );
+}
