@@ -1,12 +1,10 @@
 import {
   AttachmentInput,
   ClientCommand,
-  DEFAULT_AUTO_SHELVE_DAYS,
   fileRestoreBlocker,
   isAwaitingUser,
   isTurnActive,
   PermissionLevel,
-  PROVIDER_NAME,
   ProviderKind,
   RuntimeEvent,
   ServerFrame,
@@ -26,7 +24,6 @@ import {
   WORKTREE_SETUP_TERMINAL_ID,
 } from "@masscode/contracts";
 import * as Context from "effect/Context";
-import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
@@ -37,7 +34,6 @@ import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
@@ -71,7 +67,6 @@ import {
 } from "./git.ts";
 import { expandHome, listFolders } from "./folders.ts";
 import { buildHandoff } from "./handoff.ts";
-import { ClaudeAdapter } from "./providers/ClaudeAdapter.ts";
 import {
   detectSourceControl,
   mergePullRequest,
@@ -81,13 +76,7 @@ import {
   readPullRequestTemplate,
 } from "./sourceControl.ts";
 import { generateCommitMessage, generatePullRequest, generateThreadTitle } from "./writer.ts";
-import { CodexAdapter } from "./providers/CodexAdapter.ts";
-import { CursorAdapter } from "./providers/CursorAdapter.ts";
-import {
-  ProviderError,
-  type ProviderAdapter,
-  type ProviderSession,
-} from "./providers/ProviderAdapter.ts";
+import { ProviderError, type ProviderSession } from "./providers/ProviderAdapter.ts";
 import { ProviderRegistry } from "./providers/ProviderRegistry.ts";
 import { DATA_DIR } from "./storage/jsonFile.ts";
 import * as ProjectsStoreLive from "./storage/ProjectsStore.ts";
@@ -110,12 +99,20 @@ import { createTerminals, type Terminals } from "./terminals.ts";
 import { readProjectConfig } from "./projectConfig.ts";
 import { createSkillCatalog } from "./skills.ts";
 import { CommandError, getErrorMessage } from "./errors.ts";
-
-const ADAPTERS: Record<ProviderKind, ProviderAdapter> = {
-  claude: ClaudeAdapter,
-  codex: CodexAdapter,
-  cursor: CursorAdapter,
-};
+import { coalesceLoads } from "./coalesceLoads.ts";
+import { ADAPTERS, buildWriterInput, getHarnessName } from "./harnesses.ts";
+import {
+  buildThreadInfo,
+  createEntry,
+  deriveRequestUuid,
+  deriveTitle,
+  getForkPoint,
+  getPermissionRank,
+  hasSwitchedHarness,
+  isBusy,
+  isShelved,
+  type ThreadEntry,
+} from "./threads/entry.ts";
 
 interface SequencedEvent {
   /** Publish order, in memory only; lets a connection skip what a transcript read already covered. */
@@ -156,183 +153,16 @@ type TextDelta = Extract<RuntimeEvent, { _tag: "assistant.delta" | "reasoning.de
 
 const isTextDelta = RuntimeEvent.isAnyOf(["assistant.delta", "reasoning.delta"]);
 
-/**
- * Shelved threads aren't working or waiting on you, and were either shelved by hand or idle
- * for `autoShelveDays`, read or not (as in t3code). A turn starting clears the hand-set override.
- */
-function isShelved(
-  info: ThreadInfo,
-  shelveOverride: ShelveOverride,
-  now: number,
-  settings: Settings,
-) {
-  if (isTurnActive(info.status)) return false;
-  if (shelveOverride !== null) return shelveOverride === "shelved";
-
-  return (
-    settings.autoShelve !== false &&
-    now - info.updatedAt >= (settings.autoShelveDays ?? DEFAULT_AUTO_SHELVE_DAYS) * 86_400_000
-  );
-}
-
-interface ThreadEntry {
-  info: ThreadInfo;
-  readonly home: ThreadHome;
-  /** Null until the first message after creation or restart; agent processes start lazily. */
-  session: ProviderSession | null;
-  resumeTokens: ResumeTokens;
-  coverage: Coverage;
-  shelveOverride: ShelveOverride;
-  /** Last time the thread's agent did or was asked anything; the reaper stops long-idle sessions. */
-  activeAt: number;
-  /** The user message that started the turn in progress; its snapshots bracket the turn. */
-  currentTurn: string | null;
-  /**
-   * One message (or compaction) goes to the agent at a time: one sent while the agent is still
-   * starting waits for it, then joins the turn it started.
-   */
-  readonly lock: Semaphore.Semaphore;
-  /** Goes up whenever the session is dropped or replaced: what an older one sends after is ignored. */
-  generation: number;
-  /**
-   * Stop was pressed during the turn: the queue waits for the user instead of starting the next
-   * message, and a turn still starting is interrupted as soon as it has.
-   */
-  isStopRequested: boolean;
-  /** Tool calls made inside subagents: one ending isn't a point the main agent takes messages at. */
-  readonly subagentTools: Set<string>;
-  /** Access of the last message sent: the most the thread's agent can give threads it starts. */
-  permission: PermissionLevel | null;
-  /** Its new worktree's setup command is running, and messages queue until it ends. */
-  isSettingUp: boolean;
-}
-
 /** A read-only side conversation about one reply (BTW), never stored. */
 interface SideChat {
   /** Null while its agent starts. */
   session: ProviderSession | null;
 }
 
-function createEntry(
-  info: ThreadInfo,
-  home: ThreadHome,
-  resumeTokens: ResumeTokens = {},
-  coverage: Coverage = {},
-  shelveOverride: ShelveOverride = null,
-): ThreadEntry {
-  return {
-    info,
-    home,
-    session: null,
-    resumeTokens,
-    coverage,
-    shelveOverride,
-    activeAt: Date.now(),
-    currentTurn: null,
-    lock: Semaphore.makeUnsafe(1),
-    generation: 0,
-    isStopRequested: false,
-    subagentTools: new Set(),
-    permission: null,
-    isSettingUp: false,
-  };
-}
-
-/** Levels go from least to most access, so a higher rank gives more. */
-function getPermissionRank(level: PermissionLevel) {
-  return PermissionLevel.literals.indexOf(level);
-}
-
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** The same id for the same caller and request, so a retried tool call finds what the first one made. */
-function deriveRequestUuid(caller: string, requestId: string) {
-  const hex = createHash("sha256").update(`${caller}\0${requestId}`).digest("hex");
-
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
-}
-
-/** A thread just made: idle, with nothing to read yet. */
-function buildThreadInfo(
-  fields: Pick<
-    ThreadInfo,
-    | "id"
-    | "projectId"
-    | "provider"
-    | "model"
-    | "cwd"
-    | "title"
-    | "branch"
-    | "worktree"
-    | "startedBy"
-  >,
-): ThreadInfo {
-  const now = Date.now();
-  return {
-    ...fields,
-    status: "idle",
-    createdAt: now,
-    updatedAt: now,
-    archivedAt: null,
-    seenRev: 0,
-    shelved: false,
-  };
-}
-
-/** Where a harness's conversation is cut: at the first of `from`, the user messages to drop. */
-function getForkPoint(cut: {
-  readonly before: number;
-  readonly from: ReadonlyArray<Extract<RuntimeEvent, { _tag: "user.message" }>>;
-}) {
-  return {
-    messageId: cut.from[0]?.messageId ?? null,
-    keep: cut.before,
-    dropTurns: cut.from.filter((message) => !message.steer).length,
-  };
-}
 
 const AGENT_GONE =
   "The agent stopped before finishing its turn. Send a message to pick up where it left off.";
-
-/**
- * Runs `load` for a key one at a time. Calls made while it runs share a single follow-up run,
- * so a burst of refreshes costs at most two, and no caller gets a result that started before
- * it asked. Loads still going when the scope closes are interrupted.
- */
-const coalesceLoads = Effect.fn("coalesceLoads")(function* (
-  load: (key: string) => Effect.Effect<void>,
-) {
-  const runFork = yield* FiberSet.makeRuntime();
-  // ponytail: a lock per key ever loaded stays around; prune idle ones if keys ever churn by the thousands.
-  const locks = new Map<string, Semaphore.Semaphore>();
-  const queued = new Map<string, Deferred.Deferred<void>>();
-
-  return (key: string) =>
-    Effect.suspend(() => {
-      const waiting = queued.get(key);
-      if (waiting) return Deferred.await(waiting);
-
-      let lock = locks.get(key);
-      if (!lock) {
-        lock = Semaphore.makeUnsafe(1);
-        locks.set(key, lock);
-      }
-
-      const run = Deferred.makeUnsafe<void>();
-      queued.set(key, run);
-      runFork(
-        lock
-          .withPermit(
-            Effect.suspend(() => {
-              queued.delete(key);
-              return load(key);
-            }),
-          )
-          .pipe(Deferred.into(run)),
-      );
-      return Deferred.await(run);
-    });
-});
 
 export class SessionManager extends Context.Service<
   SessionManager,
@@ -385,19 +215,6 @@ function formatCommandRun({ command, exitCode, output }: CommandRun) {
   return output
     ? `${ran}\n\nIt exited with code ${exitCode} and printed:\n\n${buildFence(output)}\n${output}\n${buildFence(output)}`
     : `${ran}\n\nIt exited with code ${exitCode} and printed nothing.`;
-}
-
-/** The harness's name as the user set it in Settings, else its own; the same one the app shows. */
-function getHarnessName(settings: Settings, provider: ProviderKind) {
-  return settings.providers[provider].displayName?.trim() || PROVIDER_NAME[provider];
-}
-
-/** A thread is named after its first message, like a chat title. */
-function deriveTitle(text: string, fallback: string) {
-  const line = text.trim().split("\n")[0]!.trim();
-  if (!line) return fallback;
-
-  return line.length > 80 ? `${line.slice(0, 79).trimEnd()}…` : line;
 }
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
@@ -754,14 +571,6 @@ const make = Effect.gen(function* () {
   function setCoverage(entry: ThreadEntry, coverage: Coverage) {
     entry.coverage = coverage;
     store.setCoverage(entry.info.id, coverage);
-  }
-
-  /** The thread has run on more than one harness, so no single harness's conversation holds all of it. */
-  function hasSwitchedHarness(entry: ThreadEntry) {
-    return (
-      Object.keys(entry.coverage).length > 0 ||
-      Object.keys(entry.resumeTokens).some((provider) => provider !== entry.info.provider)
-    );
   }
 
   /** Takes in what a thread's agent reports, unless it's from a session since dropped. */
@@ -1146,10 +955,6 @@ const make = Effect.gen(function* () {
 
     yield* deliverMessage(entry, message, run);
   });
-
-  function isBusy(entry: ThreadEntry) {
-    return isTurnActive(entry.info.status);
-  }
 
   /**
    * Rewinds to before a user message: the provider's conversation first (the step that
@@ -1628,29 +1433,6 @@ const make = Effect.gen(function* () {
   }
 
   const refreshDiff = yield* coalesceLoads(publishDiff);
-
-  /**
-   * Who writes thread titles and source control text at `path`: the commit model in settings,
-   * else the last harness's default.
-   */
-  function buildWriterInput(path: string, settings: Settings, recent: ReadonlyArray<string>) {
-    const split = settings.commitModel?.indexOf(":") ?? -1;
-    const commitProvider = settings.commitModel?.slice(0, split);
-    const isPinned = split > 0 && Schema.is(ProviderKind)(commitProvider);
-    const provider = isPinned ? commitProvider : settings.lastProvider;
-    const model = isPinned
-      ? settings.commitModel!.slice(split + 1)
-      : settings.providers[provider].defaultModel;
-
-    return {
-      cwd: path,
-      provider,
-      harness: settings.providers[provider],
-      model: model || undefined,
-      settings,
-      recent,
-    };
-  }
 
   /** A message for everything uncommitted at `path`, from the commit model in settings. */
   const writeCommitMessage = Effect.fn("writeCommitMessage")(function* (path: string) {
