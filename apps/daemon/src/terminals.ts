@@ -24,12 +24,15 @@ interface Attachment {
 export interface RunExit {
   readonly exitCode: number;
   readonly output: string;
+  /** Closed by the user, the thread archiving or removal, rather than ending on its own. */
+  readonly stopped: boolean;
 }
 
 interface TerminalSession extends TerminalInfo {
   readonly shell: Bun.Subprocess;
-  /** Set on a run; left out, or once cancelled, its exit goes unreported. */
+  /** Set on a run; left out, or once the daemon shuts down, its exit goes unreported. */
   onExit: ((exit: RunExit) => void) | null;
+  stopped: boolean;
   readonly screen: HeadlessTerminal;
   readonly serializer: SerializeAddon;
   readonly viewers: Map<TerminalViewer, Attachment>;
@@ -59,7 +62,11 @@ export function createTerminals(options: {
     terminalId: string,
     columns: number,
     rows: number,
-    run?: { readonly command: string; readonly onExit: (exit: RunExit) => void },
+    run?: {
+      readonly command: string;
+      readonly onExit: (exit: RunExit) => void;
+      readonly env?: Record<string, string>;
+    },
   ): TerminalSession | Error {
     const folder = options.folderOf(threadId);
     if (folder === null) return new Error("This thread is gone.");
@@ -91,6 +98,7 @@ export function createTerminals(options: {
         terminalId,
         ...(run && { command: run.command }),
         onExit: run?.onExit ?? null,
+        stopped: false,
         shell: Bun.spawn(
           [
             shellPath,
@@ -119,6 +127,7 @@ export function createTerminals(options: {
               TERM: "xterm-256color",
               COLORTERM: "truecolor",
               TERM_PROGRAM: "MassCode",
+              ...run?.env,
             },
             terminal: {
               cols: columns,
@@ -228,7 +237,11 @@ export function createTerminals(options: {
     session.shell.terminal?.close();
     // The screen parses writes asynchronously; an empty write's callback runs once it has caught up.
     session.screen.write("", () => {
-      session.onExit?.({ exitCode, output: printedText(session.screen) });
+      session.onExit?.({
+        exitCode,
+        output: printedText(session.screen),
+        stopped: session.stopped,
+      });
       session.screen.dispose();
       const key = keyOf(session.threadId, session.terminalId);
       if (sessions.get(key) !== session) return;
@@ -240,7 +253,7 @@ export function createTerminals(options: {
   function close(threadId: string, terminalId: string) {
     const session = sessions.get(keyOf(threadId, terminalId));
     if (!session) return;
-    session.onExit = null;
+    session.stopped = true;
     session.shell.kill("SIGHUP");
     setTimeout(() => {
       if (sessions.get(keyOf(threadId, terminalId)) === session) session.shell.kill("SIGKILL");
@@ -255,7 +268,7 @@ export function createTerminals(options: {
         ...(command !== undefined && { command }),
       }));
     },
-    /** Runs `command` in the thread's folder; `onExit` gets how it ended, unless it's closed first. */
+    /** Runs `command` in the thread's folder, with `env` on top of the daemon's; `onExit` gets how it ended. */
     run(
       threadId: string,
       terminalId: string,
@@ -263,10 +276,15 @@ export function createTerminals(options: {
       columns: number,
       rows: number,
       onExit: (exit: RunExit) => void,
+      env?: Record<string, string>,
     ): Error | null {
       if (sessions.has(keyOf(threadId, terminalId)) || runs.has(keyOf(threadId, terminalId)))
         return new Error("That command is already running.");
-      const session = start(threadId, terminalId, columns, rows, { command, onExit });
+      const session = start(threadId, terminalId, columns, rows, {
+        command,
+        onExit,
+        ...(env && { env }),
+      });
       return session instanceof Error ? session : null;
     },
     attach(
@@ -275,6 +293,7 @@ export function createTerminals(options: {
       columns: number,
       rows: number,
       viewer: TerminalViewer,
+      input?: string,
     ) {
       const existing = sessions.get(keyOf(threadId, terminalId));
       if (existing) resize(existing, columns, rows);
@@ -283,6 +302,9 @@ export function createTerminals(options: {
         (runs.has(keyOf(threadId, terminalId))
           ? new Error("This command already finished.")
           : start(threadId, terminalId, columns, rows));
+      // The pty holds it until the shell reads its first line.
+      if (!existing && input && !(session instanceof Error))
+        session.shell.terminal?.write(`${input}\r`);
       if (session instanceof Error)
         return viewer.send(
           ServerFrame.cases["terminal.error"].make({

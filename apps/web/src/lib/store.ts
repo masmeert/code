@@ -6,6 +6,8 @@ import {
   type AuthFlow,
   HostStatus,
   type Project,
+  type ProjectConfig,
+  type ProjectScript,
   type ProviderKind,
   type ProviderSettings,
   type ProviderStatus,
@@ -40,7 +42,7 @@ import type { ToolCall } from "@masscode/ui/agents/tool-group";
 import * as Match from "effect/Match";
 import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
-import { performBrowserAction } from "./browser.ts";
+import { normalizeUrl, openPreview, performBrowserAction } from "./browser.ts";
 import { showDevice } from "./simulator.ts";
 import { loadShell, loadTranscript, removeTranscript, saveShell, saveTranscript } from "./cache.ts";
 import { decodeChoice } from "./models.ts";
@@ -117,6 +119,13 @@ export type TranscriptItem =
       readonly questions?: ReadonlyArray<UserQuestion>;
       /** What was answered; absent until then, and when the questions were skipped. */
       readonly answers?: UserAnswers;
+    }
+  /** How the new worktree's setup command from `masscode.toml` ended. */
+  | {
+      readonly kind: "setup";
+      readonly id: string;
+      readonly run: CommandRun;
+      readonly stopped: boolean;
     }
   | { readonly kind: "error"; readonly id: string; readonly text: string };
 
@@ -389,6 +398,9 @@ const reduceItems = (
         byThreadId,
         byTitle,
       })),
+    ),
+    Match.tag("worktree.setup", ({ run, stopped }) =>
+      upsert(items, "setup", () => ({ kind: "setup", id: "setup", run, stopped })),
     ),
     Match.tag("thread.rewound", (rewound) => {
       const index = items.findIndex((item) => item.id === rewound.messageId);
@@ -1096,6 +1108,8 @@ const onFrame = (connection: Connection, frame: ServerFrame) =>
     },
     "search.results": answer,
     "folder.entries": answer,
+    "project.config": answer,
+    "project.configSaved": answer,
     "image.signed": answer,
     "project.cloned": answer,
     "device.listed": answer,
@@ -1760,12 +1774,21 @@ function screenKey(threadId: string, terminalId: string) {
   return `${threadId}:${terminalId}`;
 }
 
+/** What to type into a terminal's shell when the daemon starts it, by terminal id. */
+const terminalInputs = new Map<string, string>();
+/** The script each script's terminal runs, by terminal id; its tab is named after it. */
+const terminalScripts = new Map<string, ProjectScript>();
+
+export const scriptOf = (terminalId: string) => terminalScripts.get(terminalId);
+
 function openScreen(screen: TerminalScreen) {
+  const input = terminalInputs.get(screen.terminalId);
   sendIfConnected(
     ClientCommand.cases["terminal.open"].make({
       threadId: screen.threadId,
       terminalId: screen.terminalId,
       ...screen.size(),
+      ...(input !== undefined && { input }),
     }),
   );
 }
@@ -1800,8 +1823,12 @@ export function toggleTerminalPanel(threadId: string) {
   else newTerminal(threadId);
 }
 
-export function newTerminal(threadId: string) {
+export function newTerminal(threadId: string, script?: ProjectScript) {
   const terminalId = crypto.randomUUID();
+  if (script) {
+    terminalInputs.set(terminalId, script.command);
+    terminalScripts.set(terminalId, script);
+  }
   setState({
     ...state,
     terminals: {
@@ -1833,8 +1860,54 @@ export function runCommand(threadId: string, command: string, options: TurnOptio
   );
 }
 
+/** Runs a project script in a terminal of its own, or shows the one it's already running in. */
+export function runScript(threadId: string, script: ProjectScript) {
+  const running = state.terminals[threadId]?.find(
+    (terminalId) => terminalScripts.get(terminalId)?.name === script.name,
+  );
+  if (running) showTerminal(threadId, running);
+  else newTerminal(threadId, script);
+  const preview = script.preview_url && normalizeUrl(script.preview_url);
+  if (preview && window.desktop) openPreview(threadId, preview);
+}
+
+/** The project's `masscode.toml` on `host`; null when the host doesn't answer. */
+export const readProjectConfig = (host: string | null, path: string) =>
+  request<Extract<ServerFrame, { _tag: "project.config" }>>(
+    host,
+    ClientCommand.cases["project.config"].make({ path, requestId: crypto.randomUUID() }),
+    10_000,
+  );
+
+/**
+ * Reads the project's `masscode.toml` on `host` afresh, so edits made elsewhere since aren't lost,
+ * and saves what `change` makes of it; resolves to what kept it from saving, or null.
+ */
+export async function updateProjectConfig(
+  host: string | null,
+  path: string,
+  change: (config: ProjectConfig) => ProjectConfig,
+) {
+  const current = await readProjectConfig(host, path);
+  const saved =
+    current &&
+    (await request<Extract<ServerFrame, { _tag: "project.configSaved" }>>(
+      host,
+      ClientCommand.cases["project.saveConfig"].make({
+        path,
+        config: change(current.config),
+        requestId: crypto.randomUUID(),
+      }),
+      10_000,
+    ));
+  return saved
+    ? saved.error
+    : "MassCode's daemon didn't answer, so nothing was saved. Check it's running and try again.";
+}
+
 /** Also stops a running command, without telling its agent. */
 export function closeTerminal(threadId: string, terminalId: string) {
+  terminalInputs.delete(terminalId);
   send(ClientCommand.cases["terminal.close"].make({ threadId, terminalId }));
   setState(withoutTerminal(state, threadId, terminalId));
 }

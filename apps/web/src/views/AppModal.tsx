@@ -35,6 +35,7 @@ import {
   SourceControlKind,
   WritingStyle,
   HostStatus,
+  type ProjectConfig,
   PROVIDER_NAME,
   type ProviderStatus,
   Theme,
@@ -49,6 +50,7 @@ import {
   Check,
   ChevronDown,
   Columns2,
+  FolderGit2,
   GitCommitHorizontal,
   Monitor,
   Moon,
@@ -61,7 +63,7 @@ import {
   Star,
   Sun,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   EFFORT_LABEL,
   EFFORTS,
@@ -77,8 +79,10 @@ import {
   orderedModels,
 } from "../lib/models.ts";
 import {
+  readProjectConfig,
   scanProjects,
   send,
+  updateProjectConfig,
   toggleFavoriteModel,
   updateHarness,
   updateSettings,
@@ -263,6 +267,7 @@ const THEMES: Array<{ value: Theme; label: string; icon: typeof Sun }> = [
 
 const PAGES = [
   { page: "general", title: "General", icon: Settings2 },
+  { page: "projects", title: "Projects", icon: FolderGit2 },
   { page: "appearance", title: "Appearance", icon: Palette },
   { page: "harnesses", title: "Harnesses", icon: Bot },
   { page: "git", title: "Git", icon: GitCommitHorizontal },
@@ -325,6 +330,7 @@ function SettingsView() {
         <div className="p-5">
           {Match.value(page).pipe(
             Match.when("general", () => <GeneralPage />),
+            Match.when("projects", () => <ProjectsPage />),
             Match.when("appearance", () => (
               <SettingsGroup>
                 <SettingsRow label="Theme">
@@ -685,6 +691,185 @@ const WRITING_STYLES: Array<{ value: WritingStyle; label: string }> = [
   { value: "conventional_commits", label: "Conventional Commits" },
   { value: "custom", label: "Custom instructions" },
 ];
+
+function ProjectsPage() {
+  const projects = useStore((s) => s.projects);
+  const projectHosts = useStore((s) => s.projectHosts);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const project = projects.find((candidate) => candidate.id === projectId) ?? projects[0];
+  if (!project)
+    return <p className="px-1 text-sm text-muted-foreground">Add a project to set it up here.</p>;
+  return (
+    <>
+      <Section title="Project">
+        <SettingsGroup>
+          <SettingsRow label={<RowLabel title="Settings for" description={project.path} />}>
+            <SettingsSelect
+              value={project.id}
+              onChange={setProjectId}
+              options={projects.map((candidate) => ({
+                value: candidate.id,
+                label: projectHosts[candidate.id]
+                  ? `${candidate.name} on ${projectHosts[candidate.id]}`
+                  : candidate.name,
+              }))}
+            />
+          </SettingsRow>
+        </SettingsGroup>
+      </Section>
+      <ProjectThreadSettings
+        key={project.id}
+        host={projectHosts[project.id] ?? null}
+        path={project.path}
+      />
+    </>
+  );
+}
+
+interface WorktreeDraft {
+  readonly startIn: "settings" | "worktree" | "local";
+  readonly setup: string;
+  readonly waitForSetup: boolean;
+}
+
+/** What a project's own `masscode.toml` says about its new threads; each change saves straight away, like the rest of Settings. */
+function ProjectThreadSettings({ host, path }: { host: string | null; path: string }) {
+  const [draft, setDraft] = useState<WorktreeDraft | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Leaving the setup box unchanged shouldn't rewrite the file.
+  const savedSetup = useRef("");
+  useEffect(() => {
+    let cancelled = false;
+    void readProjectConfig(host, path).then((frame) => {
+      if (cancelled) return;
+      if (!frame)
+        return setError(
+          "MassCode's daemon didn't answer, so the project's settings couldn't be read. Check it's running and open this page again.",
+        );
+      const worktree = frame.config.worktree;
+      savedSetup.current = worktree?.setup ?? "";
+      setDraft({
+        startIn:
+          worktree?.default === undefined ? "settings" : worktree.default ? "worktree" : "local",
+        setup: worktree?.setup ?? "",
+        waitForSetup: worktree?.wait_for_setup !== false,
+      });
+      setNotice(
+        frame.error
+          ? `${frame.error}. Changing anything here replaces it.`
+          : frame.text && /^\s*#/m.test(frame.text)
+            ? "masscode.toml has comments in it; changing anything here rewrites the file without them."
+            : null,
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [host, path]);
+
+  async function save(next: WorktreeDraft) {
+    setDraft(next);
+    savedSetup.current = next.setup;
+    setSaving(true);
+    const setup = next.setup.trim() ? next.setup.trimEnd() : "";
+    const worktree: NonNullable<ProjectConfig["worktree"]> = {
+      ...(next.startIn !== "settings" && { default: next.startIn === "worktree" }),
+      ...(setup && { setup }),
+      ...(setup && !next.waitForSetup && { wait_for_setup: false }),
+    };
+    setError(
+      await updateProjectConfig(host, path, ({ worktree: _replaced, ...rest }) =>
+        Object.keys(worktree).length ? { ...rest, worktree } : rest,
+      ),
+    );
+    setSaving(false);
+  }
+
+  return (
+    <Section title="New threads">
+      {notice ? (
+        <p className="mb-2 rounded-lg border border-warning/40 px-3 py-2 text-xs text-warning">
+          {notice}
+        </p>
+      ) : null}
+      {draft === null ? (
+        error ? null : (
+          <Skeleton className="h-40 rounded-xl" />
+        )
+      ) : (
+        <SettingsGroup>
+          <SettingsRow
+            label={
+              <RowLabel
+                title="Start in"
+                description="Where this project's new threads start; you can still switch per thread"
+              />
+            }
+          >
+            <SettingsSelect
+              value={draft.startIn}
+              onChange={(value) =>
+                void save({
+                  ...draft,
+                  startIn: value === "worktree" || value === "local" ? value : "settings",
+                })
+              }
+              options={[
+                { value: "settings", label: "Same as General" },
+                { value: "worktree", label: "New worktree" },
+                { value: "local", label: "Project folder" },
+              ]}
+            />
+          </SettingsRow>
+          <div className="flex flex-col gap-2 px-3 py-2.5">
+            <RowLabel
+              title="Worktree setup"
+              description="Runs in each new worktree, like installing dependencies. $MASSCODE_PROJECT_ROOT is the project's own checkout, for linking files git ignores, like .env."
+            />
+            <Textarea
+              aria-label="Worktree setup"
+              placeholder={'pnpm install\nln -s "$MASSCODE_PROJECT_ROOT/.env" .env'}
+              spellCheck={false}
+              value={draft.setup}
+              onChange={(event) => setDraft({ ...draft, setup: event.target.value })}
+              onBlur={() => draft.setup !== savedSetup.current && void save(draft)}
+              className="min-h-16 rounded-lg bg-background font-mono text-xs leading-5 md:text-xs dark:bg-background"
+            />
+          </div>
+          <SettingsRow
+            label={
+              <RowLabel
+                title="Wait for setup"
+                description="Hold the first message until setup finishes"
+              />
+            }
+          >
+            <Switch
+              size="sm"
+              checked={draft.waitForSetup}
+              disabled={!draft.setup.trim()}
+              onCheckedChange={(waitForSetup) => void save({ ...draft, waitForSetup })}
+              ariaLabel="Wait for setup"
+            />
+          </SettingsRow>
+        </SettingsGroup>
+      )}
+      <p
+        className={cn(
+          "mt-2 px-1 text-xs",
+          error ? "selectable text-destructive" : "text-muted-foreground",
+        )}
+      >
+        {error ??
+          (saving
+            ? "Saving…"
+            : "Saved to masscode.toml in the project; commit it to share with your team.")}
+      </p>
+    </Section>
+  );
+}
 
 function GitPage() {
   const settings = useStore((s) => s.settings);

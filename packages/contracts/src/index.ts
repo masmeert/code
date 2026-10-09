@@ -399,6 +399,33 @@ export const Project = Schema.Struct({
 });
 export type Project = typeof Project.Type;
 
+/** A project's `masscode.toml`, keyed as written in the file. */
+export const ProjectConfig = Schema.Struct({
+  worktree: Schema.optionalKey(
+    Schema.Struct({
+      /** New threads in the project start in a worktree of their own (true) or the project folder (false). */
+      default: Schema.optionalKey(Schema.Boolean),
+      /** Runs in each new worktree's folder, with MASSCODE_PROJECT_ROOT pointing at the project's own checkout. */
+      setup: Schema.optionalKey(Schema.String),
+      /** Holds the first message until setup ends; on by default. */
+      wait_for_setup: Schema.optionalKey(Schema.Boolean),
+    }),
+  ),
+  /** Commands anyone working in the project can run from a thread's Scripts menu. */
+  scripts: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        name: Schema.String.check(Schema.isNonEmpty()),
+        command: Schema.String.check(Schema.isNonEmpty()),
+        /** Opened in the Browser panel when the script runs, like a dev server's address. */
+        preview_url: Schema.optionalKey(Schema.String),
+      }),
+    ),
+  ),
+});
+export type ProjectConfig = typeof ProjectConfig.Type;
+export type ProjectScript = NonNullable<ProjectConfig["scripts"]>[number];
+
 /**
  * The repo a git remote URL points to, as `owner/repo`, however it's written:
  * `git@github.com:owner/repo.git`, `https://github.com/owner/repo`, `ssh://git@host:22/owner/repo`.
@@ -562,6 +589,9 @@ export const CommandRun = Schema.Struct({
   output: Schema.String,
 });
 export type CommandRun = typeof CommandRun.Type;
+
+/** The terminal a new worktree's setup command from `masscode.toml` runs in. */
+export const WORKTREE_SETUP_TERMINAL_ID = "worktree-setup";
 
 const TerminalColumns = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 }));
 const TerminalRows = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }));
@@ -803,6 +833,12 @@ export const RuntimeEvent = Schema.Union([
     /** That thread's title then, for when it's gone. */
     byTitle: Schema.String,
   }),
+  /** How a new worktree's setup command ended; `stopped` when the user skipped it. */
+  Schema.TaggedStruct("worktree.setup", {
+    threadId: Schema.String,
+    run: CommandRun,
+    stopped: Schema.Boolean,
+  }),
   /** Slash commands the thread's harness offers; answers `thread.listCommands`. */
   Schema.TaggedStruct("thread.commands", {
     threadId: Schema.String,
@@ -1009,6 +1045,14 @@ export const ClientCommand = Schema.Union([
   Schema.TaggedStruct("project.scan", { path: Schema.String }),
   /** Answered with a `folder.entries` frame. `~` is the daemon's home. */
   Schema.TaggedStruct("folder.list", { path: Schema.String, requestId: Schema.String }),
+  /** Reads the `masscode.toml` in the project folder `path`; answered with `project.config`. */
+  Schema.TaggedStruct("project.config", { path: Schema.String, requestId: Schema.String }),
+  /** Writes `config` as the `masscode.toml` in the project folder `path`; answered with `project.configSaved`. */
+  Schema.TaggedStruct("project.saveConfig", {
+    path: Schema.String,
+    config: ProjectConfig,
+    requestId: Schema.String,
+  }),
   /** Answered with an `image.signed` frame. `path` is relative to `cwd`; `~` is the daemon's home. */
   Schema.TaggedStruct("image.sign", {
     path: Schema.String,
@@ -1109,6 +1153,8 @@ export const ClientCommand = Schema.Union([
     terminalId: Schema.String,
     columns: TerminalColumns,
     rows: TerminalRows,
+    /** Typed into the shell when this starts one, like a script's command; ignored when the shell is already running. */
+    input: Schema.optionalKey(Schema.String),
   }),
   /**
    * Runs one command in the thread's folder, in a terminal of its own. When it exits, what it
@@ -1179,6 +1225,7 @@ export function isTranscriptEvent(
       "thread.rewound",
       "thread.forked",
       "thread.startedBy",
+      "worktree.setup",
     ])(event) ||
     (RuntimeEvent.guards.error(event) && event.threadId !== null)
   );
@@ -1248,6 +1295,19 @@ export const ServerFrame = Schema.Union([
     hits: Schema.Array(SearchHit),
   }),
   /** Answers `folder.list`: `path` made absolute, and the folders in it. */
+  /** Answers `project.config`: empty when there's no file, with `error` saying what's wrong when it's invalid. */
+  Schema.TaggedStruct("project.config", {
+    requestId: Schema.String,
+    config: ProjectConfig,
+    /** The file as written; null when there's none. */
+    text: Schema.NullOr(Schema.String),
+    error: Schema.NullOr(Schema.String),
+  }),
+  /** Answers `project.saveConfig`: what kept it from saving, or null once it's saved. */
+  Schema.TaggedStruct("project.configSaved", {
+    requestId: Schema.String,
+    error: Schema.NullOr(Schema.String),
+  }),
   Schema.TaggedStruct("folder.entries", {
     requestId: Schema.String,
     path: Schema.String,

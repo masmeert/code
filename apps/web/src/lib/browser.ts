@@ -130,6 +130,13 @@ export function openTab(threadId: string, url = "") {
   }));
 }
 
+/** Shows `url` in the thread's browser: in the tab already on it, or a new one. */
+export function openPreview(threadId: string, url: string) {
+  const tab = threadBrowser(threadId).tabs.find((candidate) => candidate.url === url);
+  if (!tab) return openTab(threadId, url);
+  updateThread(threadId, (current) => ({ ...current, open: true, activeTabId: tab.id }));
+}
+
 export function closeTab(threadId: string, tabId: string) {
   const browser = threadBrowser(threadId);
   const index = browser.tabs.findIndex((tab) => tab.id === tabId);

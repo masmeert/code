@@ -17,6 +17,7 @@ import {
   attachTerminal,
   closeTerminal,
   newTerminal,
+  scriptOf,
   sendIfConnected,
   showTerminal,
   toggleTerminalPanel,
@@ -145,7 +146,7 @@ export function TerminalPanel({
                 className="flex h-full items-center gap-1.5 rounded-lg pl-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <SquareTerminal className="size-3.5" />
-                Terminal {index + 1}
+                {scriptOf(terminalId)?.name ?? `Terminal ${index + 1}`}
               </button>
               <button
                 type="button"

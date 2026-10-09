@@ -49,6 +49,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@masscode/ui/components/dropdown-menu";
@@ -64,7 +65,9 @@ import {
   type QueuedMessage,
   repositoryOf,
   type Settings,
+  type ProjectConfig,
   type TurnOptions,
+  WORKTREE_SETUP_TERMINAL_ID,
 } from "@masscode/contracts";
 import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@masscode/ui/motion/animated-sidebar";
 import {
@@ -127,6 +130,7 @@ import {
 } from "../lib/composer.ts";
 import { appendToDraft, focusComposer, getDraft, setDraft } from "../lib/drafts.ts";
 import { describe, useKeybinding } from "../lib/keybindings.ts";
+import { ScriptsEditor } from "./ScriptsEditor.tsx";
 import { TranscriptFind } from "./TranscriptFind.tsx";
 import {
   describeRange,
@@ -173,6 +177,8 @@ import {
   useStore,
   useThreadHost,
   useTranscript,
+  readProjectConfig,
+  runScript,
   type TranscriptItem,
 } from "../lib/store.ts";
 import { readWidth } from "@masscode/ui/hooks/use-resizable";
@@ -207,7 +213,12 @@ type Turn =
       readonly id: string;
       readonly items: Array<TranscriptItem>;
     }
-  | { readonly from: "marker"; readonly id: string; readonly item: MarkerItem };
+  | { readonly from: "marker"; readonly id: string; readonly item: MarkerItem }
+  | {
+      readonly from: "setup";
+      readonly id: string;
+      readonly item: Extract<TranscriptItem, { kind: "setup" }>;
+    };
 
 const toTurns = (items: ReadonlyArray<TranscriptItem>): Array<Turn> => {
   const turns: Array<Turn> = [];
@@ -218,6 +229,10 @@ const toTurns = (items: ReadonlyArray<TranscriptItem>): Array<Turn> => {
     }
     if (item.kind === "forked" || item.kind === "startedBy") {
       turns.push({ from: "marker", id: item.id, item });
+      continue;
+    }
+    if (item.kind === "setup") {
+      turns.push({ from: "setup", id: item.id, item });
       continue;
     }
     const last = turns.at(-1);
@@ -302,6 +317,26 @@ function showsWorking(items: ReadonlyArray<TranscriptItem>) {
   const newest = toBlocks(items.slice(turnStart)).at(-1);
   if (newest?.kind === "tools") return newest.calls.at(-1)?.output === null;
   return newest?.kind === "work" || newest?.kind === "assistant" || newest?.kind === "reasoning";
+}
+
+/** The project's `masscode.toml`, read again whenever `refreshKey` changes; null until it arrives. */
+function useProjectConfig(host: string | null, path: string | null | undefined, refreshKey = 0) {
+  const [answer, setAnswer] = useState<{
+    path: string;
+    config: ProjectConfig;
+    error: string | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!path) return;
+    let cancelled = false;
+    void readProjectConfig(host, path).then((frame) => {
+      if (!cancelled && frame) setAnswer({ path, config: frame.config, error: frame.error });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [host, path, refreshKey]);
+  return answer?.path === path ? answer : null;
 }
 
 /** Top bar: project / title breadcrumb. Leaves room for the traffic lights when the sidebar is folded away. */
@@ -627,7 +662,17 @@ export const DraftView = ({
   // Shift-click adds models: the prompt then starts one thread per model, each in its own worktree.
   const [extras, setExtras] = useState<Array<string>>([]);
   const extraModels = extras.filter((c) => c !== selected && choices.some((o) => o.value === c));
-  const [workspace, setWorkspace] = useState(settings.workspace ?? "local");
+  // Null until picked in the composer: then the project's `masscode.toml` decides, else Settings.
+  const [pickedWorkspace, setWorkspace] = useState<"local" | "worktree" | null>(null);
+  const worktreeByDefault = useProjectConfig(host, missingOn ? null : path)?.config.worktree
+    ?.default;
+  const workspace =
+    pickedWorkspace ??
+    (worktreeByDefault === undefined
+      ? (settings.workspace ?? "local")
+      : worktreeByDefault
+        ? "worktree"
+        : "local");
   const [projectSignal, setProjectSignal] = useState(0);
 
   return (
@@ -1182,6 +1227,11 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
     [threadId, effort, fast, permission],
   );
   const runs = useStore((s) => s.runs[threadId]) ?? NO_RUNS;
+  // Read again each time the Scripts menu opens, so edits to the file show without a reload.
+  const [scriptsRead, setScriptsRead] = useState(0);
+  const projectConfig = useProjectConfig(host, project?.path, scriptsRead);
+  const scripts = projectConfig?.config.scripts ?? [];
+  const [editingScripts, setEditingScripts] = useState(false);
   // Leaves the draft alone, and waits while the agent needs an approval or an answer.
   useKeybinding(
     followUps[0] && status === "running" ? "composer.steerQueued" : undefined,
@@ -1227,6 +1277,18 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
     <>
       <div className="flex min-h-0 flex-1">
         <div ref={scrollArea} className="relative flex min-h-0 min-w-95 flex-1 flex-col">
+          {project ? (
+            <ScriptsEditor
+              open={editingScripts}
+              host={host}
+              path={project.path}
+              onClose={() => setEditingScripts(false)}
+              onSaved={() => {
+                setEditingScripts(false);
+                setScriptsRead((read) => read + 1);
+              }}
+            />
+          ) : null}
           <Header
             project={
               project ?? { id: info.projectId, name: info.cwd.split("/").at(-1) ?? info.cwd }
@@ -1252,6 +1314,49 @@ export const ThreadView = ({ threadId }: { threadId: string }) => {
                   worktree={info.worktree}
                 />
                 <span className="flex items-center gap-0.5">
+                  {project ? (
+                    <DropdownMenu onOpenChange={(open) => open && setScriptsRead((n) => n + 1)}>
+                      <DropdownMenuTrigger
+                        title="Scripts"
+                        aria-label="Scripts"
+                        className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-muted/60 data-[state=open]:text-foreground"
+                      >
+                        <Play className="size-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        sideOffset={4}
+                        collisionPadding={8}
+                        className="max-w-80"
+                      >
+                        {projectConfig?.error ? (
+                          <p className="selectable px-2 py-1.5 text-xs text-destructive">
+                            {projectConfig.error}
+                          </p>
+                        ) : null}
+                        {scripts.map((script) => (
+                          <DropdownMenuItem
+                            key={script.name}
+                            title={script.command}
+                            onSelect={() => runScript(threadId, script)}
+                          >
+                            <Play />
+                            <span className="min-w-0 flex-1 truncate">{script.name}</span>
+                            {script.preview_url && window.desktop ? (
+                              <Globe className="text-muted-foreground" />
+                            ) : null}
+                          </DropdownMenuItem>
+                        ))}
+                        {scripts.length > 0 || projectConfig?.error ? (
+                          <DropdownMenuSeparator />
+                        ) : null}
+                        <DropdownMenuItem onSelect={() => setEditingScripts(true)}>
+                          <Pencil />
+                          {scripts.length > 0 ? "Edit scripts…" : "Add a script…"}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
                   <button
                     type="button"
                     title={diffOpen ? "Hide changes" : "Show changes"}
@@ -1535,6 +1640,15 @@ export const TurnList = ({
     >
       {turns.map((turn, index) => {
         if (turn.from === "marker") return <ThreadMarker key={turn.id} item={turn.item} />;
+        if (turn.from === "setup")
+          return (
+            <CommandRunResult
+              key={turn.id}
+              run={turn.item.run}
+              label="Worktree setup"
+              stopped={turn.item.stopped}
+            />
+          );
         return turn.from === "user" ? (
           <UserTurn
             key={turn.id}
@@ -1557,16 +1671,25 @@ export const TurnList = ({
   );
 };
 
-/** A command from a reply while it runs: its terminal, live, and a way to stop it before it reaches the agent. */
+/**
+ * A command from a reply, or the new worktree's setup, while it runs: its terminal, live, and a
+ * way to stop it: before it reaches the agent, or to start the agent without waiting.
+ */
 function RunningCommandWindow({ threadId, run }: { threadId: string; run: RunningCommand }) {
+  const setup = run.terminalId === WORKTREE_SETUP_TERMINAL_ID;
   return (
     <div className="overflow-hidden rounded-xl border border-border">
       <div className="flex h-9 items-center gap-2 border-b border-border pr-1.5 pl-3 text-xs">
         <LoaderCircle className="size-3.5 shrink-0 text-muted-foreground motion-safe:animate-spin" />
+        {setup ? <span className="shrink-0 text-muted-foreground">Setting up worktree</span> : null}
         <code className="min-w-0 flex-1 truncate font-mono text-foreground/85">{run.command}</code>
         <button
           type="button"
-          title="Stop it; the agent won't hear about this run"
+          title={
+            setup
+              ? "Stop setup; queued messages go to the agent now"
+              : "Stop it; the agent won't hear about this run"
+          }
           onClick={() => closeTerminal(threadId, run.terminalId)}
           className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -1587,17 +1710,30 @@ function RunningCommandWindow({ threadId, run }: { threadId: string; run: Runnin
 }
 
 /** A finished run in the transcript, where its message to the agent would otherwise be. */
-function CommandRunResult({ run }: { run: CommandRun }) {
+function CommandRunResult({
+  run,
+  label,
+  stopped = false,
+}: {
+  run: CommandRun;
+  label?: string;
+  stopped?: boolean;
+}) {
   return (
     <div className="overflow-hidden rounded-xl border border-border">
       <div className="flex h-9 items-center gap-2 border-b border-border px-3 text-xs">
-        {run.exitCode === 0 ? (
+        {stopped ? (
+          <Square className="size-3 shrink-0 text-muted-foreground" />
+        ) : run.exitCode === 0 ? (
           <Check className="size-3.5 shrink-0 text-success" />
         ) : (
           <X className="size-3.5 shrink-0 text-destructive" />
         )}
+        {label ? <span className="shrink-0 text-muted-foreground">{label}</span> : null}
         <code className="min-w-0 flex-1 truncate font-mono text-foreground/85">{run.command}</code>
-        {run.exitCode === 0 ? null : (
+        {stopped ? (
+          <span className="shrink-0 text-muted-foreground">Stopped</span>
+        ) : run.exitCode === 0 ? null : (
           <span className="shrink-0 text-destructive">Exit code {run.exitCode}</span>
         )}
       </div>

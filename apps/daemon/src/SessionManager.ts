@@ -27,6 +27,7 @@ import {
   type TerminalInfo,
   type ThreadInfo,
   type TurnOptions,
+  WORKTREE_SETUP_TERMINAL_ID,
 } from "@masscode/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -103,6 +104,7 @@ import { type Browsers, createBrowsers } from "./browsers.ts";
 import { createDevices, type Devices } from "./devices.ts";
 import { createMcp, type Mcp, type SendMessageInput, type StartThreadInput } from "./mcp.ts";
 import { createTerminals, type Terminals } from "./terminals.ts";
+import { readProjectConfig } from "./projectConfig.ts";
 import { createSkillCatalog } from "./skills.ts";
 
 const ADAPTERS: Record<ProviderKind, ProviderAdapter> = {
@@ -194,6 +196,8 @@ interface ThreadEntry {
   readonly subagentTools: Set<string>;
   /** Access of the last message sent: the most the thread's agent can give threads it starts. */
   permission: PermissionLevel | null;
+  /** Its new worktree's setup command is running, and messages queue until it ends. */
+  settingUp: boolean;
 }
 
 /** A read-only side conversation about one reply (BTW), never stored. */
@@ -224,6 +228,7 @@ function newEntry(
     stopRequested: false,
     subagentTools: new Set(),
     permission: null,
+    settingUp: false,
   };
 }
 
@@ -1028,7 +1033,7 @@ const make = Effect.gen(function* () {
         fast: options.fast,
         permission: options.permission,
       };
-      if (queue && isTurnActive(entry.info.status))
+      if ((queue && isTurnActive(entry.info.status)) || entry.settingUp)
         return setQueue(entry, [...entry.queue, message]);
       yield* deliver(entry, message, run);
     });
@@ -1592,6 +1597,52 @@ const make = Effect.gen(function* () {
       return join(path, relative(root, projectPath));
     });
 
+  /** Runs `masscode.toml`'s worktree setup in the thread's new worktree; unless told not to wait, messages queue until it ends. */
+  const setUpWorktree = (entry: ThreadEntry, projectPath: string) =>
+    Effect.gen(function* () {
+      const threadId = entry.info.id;
+      const config = yield* Effect.promise(() => readProjectConfig(projectPath));
+      if (config instanceof Error)
+        return publish(
+          RuntimeEvent.cases.error.make({
+            threadId,
+            message: `${config.message}. The worktree's setup didn't run; fix the file and start a new thread.`,
+          }),
+        );
+      const command = config.worktree?.setup?.trim();
+      if (!command) return;
+      const failed = terminals.run(
+        threadId,
+        WORKTREE_SETUP_TERMINAL_ID,
+        command,
+        120,
+        30,
+        ({ exitCode, output, stopped }) => {
+          if (threads.get(threadId) !== entry) return;
+          publish(
+            RuntimeEvent.cases["worktree.setup"].make({
+              threadId,
+              run: { command, exitCode, output },
+              stopped,
+            }),
+          );
+          if (!entry.settingUp) return;
+          entry.settingUp = false;
+          const [next] = entry.queue;
+          if (next && entry.info.archivedAt === null) sendQueued(entry, next);
+        },
+        { MASSCODE_PROJECT_ROOT: projectPath },
+      );
+      if (failed)
+        return publish(
+          RuntimeEvent.cases.error.make({
+            threadId,
+            message: `Couldn't run the worktree setup: ${failed.message}`,
+          }),
+        );
+      entry.settingUp = config.worktree?.wait_for_setup !== false;
+    });
+
   /** Adds a thread and announces it; the first line of `text` names it until the writer model's summary lands. */
   const openThread = (info: ThreadInfo, home: ThreadHome, text: string, requestId: string | null) =>
     Effect.gen(function* () {
@@ -1645,6 +1696,7 @@ const make = Effect.gen(function* () {
         command.text,
         command.requestId,
       );
+      if (command.workspace === "worktree") yield* setUpWorktree(entry, project.path);
 
       // New chats preselect whichever harness was used last.
       const settings = yield* settingsStore.get;
@@ -1703,7 +1755,7 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const deadline = Date.now() + timeoutMs;
       // ponytail: polls the thread's status; a per-thread signal if many agents wait at once.
-      while (isTurnActive(entry.info.status)) {
+      while (entry.settingUp || isTurnActive(entry.info.status)) {
         if (Date.now() >= deadline) return { ...summary(entry), timedOut: true };
         yield* Effect.sleep("200 millis");
       }
@@ -1752,6 +1804,7 @@ const make = Effect.gen(function* () {
           input.prompt,
           null,
         );
+        if (input.worktree) yield* setUpWorktree(entry, project?.path ?? caller.info.cwd);
         publish(
           RuntimeEvent.cases["thread.startedBy"].make({
             threadId: id,
@@ -2116,19 +2169,19 @@ const make = Effect.gen(function* () {
         Effect.sync(() => terminals.close(command.threadId, command.terminalId)),
       "terminal.run": ({ threadId, terminalId, command, columns, rows, options }) =>
         Effect.flatMap(getEntry(threadId), (entry) => {
-          const failed = terminals.run(threadId, terminalId, command, columns, rows, (exit) =>
+          const failed = terminals.run(threadId, terminalId, command, columns, rows, (exit) => {
+            if (exit.stopped) return;
+            const run = { command, exitCode: exit.exitCode, output: exit.output };
             Effect.runFork(
-              send(entry, describeRun({ command, ...exit }), options, {
-                run: { command, ...exit },
-              }).pipe(
+              send(entry, describeRun(run), options, { run }).pipe(
                 Effect.catch((error) =>
                   Effect.sync(() =>
                     publish(RuntimeEvent.cases.error.make({ threadId, message: error.message })),
                   ),
                 ),
               ),
-            ),
-          );
+            );
+          });
           return failed
             ? Effect.fail(fail(`Couldn't run the command: ${failed.message}`))
             : Effect.void;
@@ -2139,6 +2192,8 @@ const make = Effect.gen(function* () {
       "thread.loadOlder": () => Effect.void,
       search: () => Effect.void,
       "folder.list": () => Effect.void,
+      "project.config": () => Effect.void,
+      "project.saveConfig": () => Effect.void,
       "image.sign": () => Effect.void,
       "project.clone": () => Effect.void,
       "terminal.open": () => Effect.void,

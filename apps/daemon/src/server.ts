@@ -17,6 +17,7 @@ import { ASSET_ROUTE_PREFIX, serveAsset, signImage } from "./assets.ts";
 import { listFolders } from "./folders.ts";
 import { cloneRepository } from "./git.ts";
 import { setPort } from "./port.ts";
+import { parseProjectConfig, readProjectConfigText, writeProjectConfig } from "./projectConfig.ts";
 import { SessionManager } from "./SessionManager.ts";
 import type { BrowserHost } from "./browsers.ts";
 import type { TerminalViewer } from "./terminals.ts";
@@ -145,6 +146,30 @@ export const serve = (port: number) =>
                   }),
                 ),
               ),
+            "project.config": ({ path, requestId }) =>
+              Effect.promise(async () => {
+                const text = await readProjectConfigText(path);
+                const config = text === null ? {} : parseProjectConfig(path, text);
+                send(
+                  ws,
+                  ServerFrame.cases["project.config"].make({
+                    requestId,
+                    config: config instanceof Error ? {} : config,
+                    text,
+                    error: config instanceof Error ? config.message : null,
+                  }),
+                );
+              }),
+            "project.saveConfig": ({ path, config, requestId }) =>
+              Effect.promise(async () =>
+                send(
+                  ws,
+                  ServerFrame.cases["project.configSaved"].make({
+                    requestId,
+                    error: await writeProjectConfig(path, config),
+                  }),
+                ),
+              ),
             "image.sign": ({ path, cwd, requestId }) =>
               Effect.promise(async () =>
                 send(
@@ -202,6 +227,7 @@ export const serve = (port: number) =>
                   command.columns,
                   command.rows,
                   ws.data.viewer,
+                  command.input,
                 );
               return Effect.void;
             },
