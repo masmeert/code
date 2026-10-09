@@ -4,7 +4,7 @@ import { Tabs, TabsList, TabsTrigger } from "@masscode/ui/motion/tabs";
 import { DEFAULT_AUTO_SHELVE_DAYS, PermissionLevel, UpdateStatus } from "@masscode/contracts";
 import { Columns2, Rows2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { EFFORT_LABEL, EFFORTS, PERMISSION_LABEL } from "../../lib/composer.ts";
+import { EFFORT_LABEL, EFFORTS, PERMISSION_LABEL } from "@masscode/client";
 import { decodeChoice, buildModelChoices } from "../../lib/models.ts";
 import { updateSettings, useStore } from "../../lib/store.ts";
 import { useUpdateStatus } from "../../lib/updates.ts";

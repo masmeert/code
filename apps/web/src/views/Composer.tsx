@@ -46,14 +46,16 @@ import {
 } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
-  allowFullAccessAsRoot,
   EFFORT_LABEL,
   EFFORTS,
-  createTextAttachment,
-  LARGE_PASTE_BYTES,
   PERMISSION_DESCRIPTION,
   PERMISSION_LABEL,
   PERMISSIONS,
+} from "@masscode/client";
+import {
+  allowFullAccessAsRoot,
+  createTextAttachment,
+  LARGE_PASTE_BYTES,
   fitToModel,
   toTurnOptions,
   useAttachments,
