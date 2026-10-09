@@ -1087,7 +1087,8 @@ function ConnectionsPage() {
   const [query, setQuery] = useState("");
   const [aliases, setAliases] = useState<ReadonlyArray<string>>([]);
 
-  useEffect(() => void window.desktop?.sshAliases().then(setAliases), []);
+  // Unreadable ~/.ssh/config just means no suggestions; a typed address still works.
+  useEffect(() => void window.desktop?.sshAliases().then(setAliases, () => {}), []);
 
   const typed = query.trim();
 
