@@ -39,18 +39,7 @@
     "anti-slop/no-unknown-returns": "error",
     "anti-slop/no-unknown-type-aliases": "error",
     "anti-slop/no-unsafe-dictionary-type": "error",
-    "anti-slop/no-widen-then-assert": "error",
-    "no-restricted-imports": [
-      "error",
-      {
-        "paths": [
-          {
-            "name": "zod",
-            "message": "Use effect/Schema. zod is only for the MCP SDK's tool schemas in apps/daemon/src/mcp.ts."
-          }
-        ]
-      }
-    ]
+    "anti-slop/no-widen-then-assert": "error"
   },
   "overrides": [
     {
@@ -70,12 +59,6 @@
       "files": ["apps/daemon/**"],
       "rules": {
         "anti-slop/no-runtime-typeof": "error"
-      }
-    },
-    {
-      "files": ["apps/daemon/src/mcp.ts"],
-      "rules": {
-        "no-restricted-imports": "off"
       }
     }
   ]
