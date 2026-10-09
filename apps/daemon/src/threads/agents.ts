@@ -4,7 +4,7 @@
  */
 import {
   AttachmentInput,
-  ClientCommand,
+  type ClientCommand,
   isTurnActive,
   RuntimeEvent,
   type Attachment,
