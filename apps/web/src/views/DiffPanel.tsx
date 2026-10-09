@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ResizeHandle } from "@masscode/ui/components/resize-handle";
 import { cn } from "@masscode/ui/lib/utils";
 import { useResizable } from "@masscode/ui/hooks/use-resizable";
+import { DIFF_PANEL_WIDTH_KEY, getDefaultDiffPanelWidth } from "../lib/diffPanel.ts";
 import { IconButton } from "../components/icon-button.tsx";
 import { ClientCommand } from "@masscode/contracts";
 import {
@@ -169,8 +170,8 @@ export function DiffPanel({
 
   const aside = useRef<HTMLElement>(null);
   const panel = useResizable({
-    key: "masscode.diffPanelWidth",
-    initial: Math.min(960, Math.round(window.innerWidth * 0.45)),
+    key: DIFF_PANEL_WIDTH_KEY,
+    initial: getDefaultDiffPanelWidth(),
     side: "start",
     clamp: (width) =>
       Math.max(

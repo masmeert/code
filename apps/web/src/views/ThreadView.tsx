@@ -183,14 +183,12 @@ import {
   type TranscriptItem,
 } from "../lib/store.ts";
 import { readWidth } from "@masscode/ui/hooks/use-resizable";
+import { DIFF_PANEL_WIDTH_KEY, getDefaultDiffPanelWidth } from "../lib/diffPanel.ts";
 import { BrowserPanel } from "./BrowserPanel.tsx";
 import { SimulatorPanel } from "./SimulatorPanel.tsx";
 import { Composer, RootFullAccessDialog } from "./Composer.tsx";
 import { GitMenu } from "./GitMenu.tsx";
 import { hasTrafficLights } from "./Sidebar.tsx";
-
-/** Same key the panel saves its dragged width under. */
-const PANEL_WIDTH_KEY = "masscode.diffPanelWidth";
 
 // Loaded on first open, keeping the diff renderer out of startup.
 const DiffPanel = lazy(() =>
@@ -1672,10 +1670,7 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
             fallback={
               <div
                 style={{
-                  width: readWidth(
-                    PANEL_WIDTH_KEY,
-                    Math.min(960, Math.round(window.innerWidth * 0.45)),
-                  ),
+                  width: readWidth(DIFF_PANEL_WIDTH_KEY, getDefaultDiffPanelWidth()),
                 }}
                 className="shrink-0 border-l border-border"
               />
