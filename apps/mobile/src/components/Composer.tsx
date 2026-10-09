@@ -31,6 +31,7 @@ import {
 import { useState } from "react";
 import { Pressable, TextInput, View } from "react-native";
 import { useKeyboardState } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "@/lib/cn.ts";
 import { send } from "@/lib/store.ts";
 import { ProviderLogo } from "./ProviderLogo.tsx";
@@ -92,6 +93,9 @@ export function Composer({
   const [text, setText] = useState("");
   const [prefs, setPrefs] = useState(() => findTurnPrefs(settings, thread));
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
+  const insets = useSafeAreaInsets();
+  // A bottom inset means a home indicator or gesture bar, on a screen with rounded corners.
+  const isAtScreenEdge = !isKeyboardVisible && insets.bottom > 0;
   const isWorking = isTurnActive(thread.status);
   const willQueue = isWorking && settings?.followUp !== "steer";
 
@@ -130,13 +134,7 @@ export function Composer({
   }
 
   return (
-    <View
-      className={cn(
-        "gap-2 bg-background px-3 pt-1",
-        // The keyboard covers the home indicator, so its padding would only leave a gap.
-        isKeyboardVisible ? "pb-2" : "pb-safe-or-2",
-      )}
-    >
+    <View className={cn("gap-2 bg-background pt-1", isAtScreenEdge ? "px-2 pb-2" : "px-3 pb-2")}>
       {thread.queue?.map((queued) => (
         <View
           key={queued.id}
@@ -165,7 +163,14 @@ export function Composer({
           </Pressable>
         </View>
       ))}
-      <View className="rounded-2xl border border-border bg-card p-1.5">
+      <View
+        className={cn(
+          "rounded-2xl border border-border bg-card p-1.5",
+          // Down at the screen's rounded corners, the card's own corners follow them, and its
+          // padding keeps the buttons above the home indicator.
+          isAtScreenEdge && "rounded-b-[46px] pb-5",
+        )}
+      >
         <TextInput
           value={text}
           onChangeText={setText}
