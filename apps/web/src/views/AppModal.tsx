@@ -1579,7 +1579,7 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
         <SettingsGroup>
           <SettingsRow label="Default model">
             <Select
-              value={defaultModel([status], settings, kind) ?? shown[0].id}
+              value={defaultModel([status], settings, kind) ?? shown[0]?.id}
               onValueChange={(model) => updateHarness(kind, { defaultModel: model })}
               className="w-52"
             >
