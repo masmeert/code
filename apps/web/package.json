@@ -8,6 +8,7 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@masscode/client": "workspace:*",
     "@masscode/contracts": "workspace:*",
     "@masscode/ui": "workspace:*",
     "@pierre/diffs": "^1.4.3",

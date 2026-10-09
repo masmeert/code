@@ -11,7 +11,8 @@ import {
   useNeedsRootConsent,
 } from "../lib/composer.ts";
 import { getDraft } from "../lib/drafts.ts";
-import { respondApproval, useStore, useThreadHost, type TranscriptItem } from "../lib/store.ts";
+import type { TranscriptItem } from "@masscode/client";
+import { respondApproval, useStore, useThreadHost } from "../lib/store.ts";
 import { RootFullAccessDialog } from "./Composer.tsx";
 
 type ApprovalItem = Extract<TranscriptItem, { kind: "approval" }>;

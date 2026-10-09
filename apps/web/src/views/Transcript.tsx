@@ -18,13 +18,7 @@ import {
   AlertDialogFooter,
   AlertDialogTitle,
 } from "@masscode/ui/components/alert-dialog";
-import {
-  livePhrase,
-  summarize,
-  ToolGroup,
-  type ToolCall,
-  type ToolReveal,
-} from "@masscode/ui/agents/tool-group";
+import { ToolGroup, type ToolReveal } from "@masscode/ui/agents/tool-group";
 import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
 import { cn } from "@masscode/ui/lib/utils";
 import {
@@ -75,7 +69,6 @@ import {
   switchToThread,
   useFileRestoreBlocker,
   useStore,
-  type TranscriptItem,
 } from "../lib/store.ts";
 import { PlanApproval, QuestionsApproval, ToolApprovalRequest } from "./ApprovalBlocks.tsx";
 import {
@@ -89,7 +82,11 @@ import {
   type MarkerItem,
   type Block,
   type ToolItem,
-} from "../lib/transcriptBlocks.ts";
+  livePhrase,
+  summarize,
+  type ToolCall,
+  type TranscriptItem,
+} from "@masscode/client";
 
 const TerminalView = lazy(() =>
   import("./TerminalPanel.tsx").then((module) => ({ default: module.TerminalView })),

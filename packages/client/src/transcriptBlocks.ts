@@ -1,4 +1,4 @@
-import type { TranscriptItem } from "./store.ts";
+import type { TranscriptItem } from "./transcript.ts";
 
 /** The approval Claude asks for to leave plan mode; its detail is the plan. */
 export const PLAN_APPROVAL_TITLE = "ExitPlanMode";

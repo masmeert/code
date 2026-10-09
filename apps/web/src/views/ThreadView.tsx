@@ -8,7 +8,8 @@ import {
 import { ReasoningText } from "@masscode/ui/agents/loading-states/reasoning-text";
 import { OrbFace } from "@masscode/ui/agents/orb-face";
 import { PromptInputTray } from "@masscode/ui/agents/prompt-input";
-import { categoryOf, type ToolReveal } from "@masscode/ui/agents/tool-group";
+import { categoryOf } from "@masscode/client";
+import { type ToolReveal } from "@masscode/ui/agents/tool-group";
 import { ClientCommand, isTurnActive, type QueuedMessage } from "@masscode/contracts";
 import { FileDiff, FolderTree } from "lucide-react";
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -55,7 +56,7 @@ import { BrowserPanel } from "./BrowserPanel.tsx";
 import { SimulatorPanel } from "./SimulatorPanel.tsx";
 import { Composer } from "./Composer.tsx";
 import { GitMenu } from "./GitMenu.tsx";
-import { NO_ITEMS, isShowingWork, type ToolItem } from "../lib/transcriptBlocks.ts";
+import { NO_ITEMS, isShowingWork, type ToolItem } from "@masscode/client";
 import { PanelsMenu, ScriptsMenu, ThreadHeader } from "./ThreadHeader.tsx";
 import {
   TurnDiffContext,

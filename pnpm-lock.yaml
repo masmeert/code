@@ -179,6 +179,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@masscode/client':
+        specifier: workspace:*
+        version: link:../../packages/client
       '@masscode/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -247,6 +250,19 @@ importers:
         specifier: ^8.3.0
         version: 8.3.0(@types/node@26.6.2)(jiti@2.7.0)(terser@5.51.2)(yaml@2.9.1)
 
+  packages/client:
+    dependencies:
+      '@masscode/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.117
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+
   packages/contracts:
     dependencies:
       effect:
@@ -262,6 +278,9 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.9.1
         version: 5.9.1(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.88.0(react@19.3.0))(zod@4.6.5)
+      '@masscode/client':
+        specifier: workspace:*
+        version: link:../client
       '@paper-design/shaders-react':
         specifier: ^0.0.81
         version: 0.0.81(@types/react@19.3.0)(react@19.3.0)

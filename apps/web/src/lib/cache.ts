@@ -8,7 +8,7 @@
  * resume from their cursor. Cached data is never used to decide that something is gone.
  */
 import type { PageInfo, Project, ProviderStatus, Settings, ThreadInfo } from "@masscode/contracts";
-import type { TranscriptItem } from "./store.ts";
+import type { TranscriptItem } from "@masscode/client";
 
 /** Bump when a record's shape changes; older records then read as a cold cache. */
 const VERSION = 4;

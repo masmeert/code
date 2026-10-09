@@ -33,7 +33,7 @@ import {
   type ThreadInfo,
   UpdateStatus,
 } from "@masscode/contracts";
-import { categoryOf, livePhrase } from "@masscode/ui/agents/tool-group";
+import { categoryOf, livePhrase } from "@masscode/client";
 import { TextShimmer } from "@masscode/ui/motion/text-shimmer";
 import {
   Archive,
@@ -76,7 +76,7 @@ import { formatAge, useNow } from "../lib/time.ts";
 import { useUpdateStatus } from "../lib/updates.ts";
 import { getUpdateAction } from "../lib/updateAction.ts";
 import { buildFallbackProject } from "../lib/fallbackProject.ts";
-import { PLAN_APPROVAL_TITLE } from "../lib/transcriptBlocks.ts";
+import { PLAN_APPROVAL_TITLE } from "@masscode/client";
 import { usePersistedFlag } from "../lib/usePersistedFlag.ts";
 import { ThreadListMenu } from "./ThreadListMenu.tsx";
 
