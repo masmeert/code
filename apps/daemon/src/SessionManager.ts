@@ -30,9 +30,8 @@ import {
   readRepoRoot,
 } from "./git.ts";
 import { expandHome, listFolders } from "./folders.ts";
-import { buildHandoff } from "./handoff.ts";
 import { generateThreadTitle } from "./writer.ts";
-import { ProviderError, type ProviderSession } from "./providers/ProviderAdapter.ts";
+import { ProviderError } from "./providers/ProviderAdapter.ts";
 import { ProviderRegistry } from "./providers/ProviderRegistry.ts";
 import { DATA_DIR } from "./storage/jsonFile.ts";
 import * as ProjectsStoreLive from "./storage/ProjectsStore.ts";
@@ -50,18 +49,17 @@ import { createSkillCatalog } from "./skills.ts";
 import { createRepoPanel } from "./repoPanel.ts";
 import { createAgents, formatCommandRun } from "./threads/agents.ts";
 import { createHistory } from "./threads/history.ts";
+import { createSideChats } from "./threads/sideChats.ts";
 import { createThreadRegistry, type SequencedEvent, type ThreadRead } from "./threads/registry.ts";
 import { CommandError } from "./errors.ts";
 import { coalesceLoads } from "./coalesceLoads.ts";
-import { ADAPTERS, buildWriterInput, getHarnessName } from "./harnesses.ts";
+import { ADAPTERS, buildWriterInput } from "./harnesses.ts";
 import {
   buildThreadInfo,
   createEntry,
   deriveRequestUuid,
   deriveTitle,
-  getForkPoint,
   getPermissionRank,
-  hasSwitchedHarness,
   isBusy,
   type ThreadEntry,
 } from "./threads/entry.ts";
@@ -70,12 +68,6 @@ import {
 const LIMIT_RESET_GRACE_MS = 30_000;
 
 const REAP_INTERVAL_MS = 5 * 60 * 1000;
-
-/** A read-only side conversation about one reply (BTW), never stored. */
-interface SideChat {
-  /** Null while its agent starts. */
-  session: ProviderSession | null;
-}
 
 export class SessionManager extends Context.Service<
   SessionManager,
@@ -243,157 +235,14 @@ const make = Effect.gen(function* () {
     dropSession,
   });
 
-  /** Side chats (BTW) by id; closing one forgets it. */
-  const sideChats = new Map<string, SideChat>();
-
-  /**
-   * Starts a side chat's agent in plan mode, with no MassCode tools, on a copy of the thread's
-   * conversation through the turn of `messageId`. Resolves to what to hand it with the first
-   * question when there's no copy, and to null when the chat was closed while it started.
-   */
-  const startSideChat = Effect.fn("startSideChat")(function* (
-    source: ThreadEntry,
-    messageId: string,
-    sideChatId: string,
-  ) {
-    const { id: threadId, provider } = source.info;
-    yield* ensureHarnessReady(provider);
-
-    const cut = store.findTurnsAfter(threadId, messageId);
-    if (!cut) return yield* new CommandError({ message: "That reply is gone" });
-
-    const settings = yield* settingsStore.get;
-    const harness = settings.providers[provider];
-    const sourceToken = source.resumeTokens[provider];
-    // A running turn is still writing the harness's log, and some harnesses can't copy theirs:
-    // the agent then starts afresh, handed the transcript instead.
-    const resumeToken =
-      sourceToken && !hasSwitchedHarness(source) && !isBusy(source)
-        ? yield* ADAPTERS[provider]
-            .fork({
-              cwd: source.home.path,
-              harness,
-              resumeToken: sourceToken,
-              ...getForkPoint(cut),
-            })
-            .pipe(Effect.orElseSucceed(() => null))
-        : null;
-    const handoff = resumeToken
-      ? null
-      : buildHandoff({
-          events: store
-            .readAfter(threadId, 0)
-            .filter((stored) => cut.seq === null || stored.id < cut.seq)
-            .map((stored) => stored.event),
-          isFresh: true,
-          getHarnessName: (kind) => getHarnessName(settings, kind),
-        });
-
-    const chat: SideChat = { session: null };
-    sideChats.set(sideChatId, chat);
-    const session = yield* ADAPTERS[provider].start({
-      threadId: sideChatId,
-      cwd: source.home.path,
-      harness,
-      model: source.info.model ?? harness.defaultModel ?? undefined,
-      resumeToken: resumeToken ?? undefined,
-      effort: null,
-      permission: "plan",
-      onResumeToken: () => {},
-      onCwd: () => {},
-      emit: (event) => {
-        if (sideChats.get(sideChatId) !== chat) return;
-
-        // Read-only: whatever the agent asks to do beyond reading is refused.
-        if (RuntimeEvent.guards["approval.requested"](event)) {
-          if (chat.session)
-            runFork(Effect.ignore(chat.session.respondApproval(event.requestId, "deny")));
-          return;
-        }
-
-        if (
-          RuntimeEvent.guards["thread.status"](event) &&
-          (event.status === "closed" || event.status === "error")
-        )
-          sideChats.delete(sideChatId);
-        publishSideChat(event);
-      },
-      mcpServer: null,
-    });
-    if (sideChats.get(sideChatId) !== chat) {
-      yield* session.close;
-      return null;
-    }
-
-    chat.session = session;
-    return { session, handoff: handoff?.text ?? null };
-  });
-
-  const askSideChat = Effect.fn("askSideChat")(
-    function* ({
-      threadId,
-      messageId,
-      sideChatId,
-      text,
-    }: Extract<ClientCommand, { _tag: "sideChat.ask" }>) {
-      const source = yield* getEntry(threadId);
-      const session = sideChats.get(sideChatId)?.session;
-      if (sideChats.has(sideChatId) && !session)
-        return yield* new CommandError({
-          message: "The side chat is still starting. Ask again in a moment.",
-        });
-
-      const questionId = crypto.randomUUID();
-      publishSideChat(
-        RuntimeEvent.cases["user.message"].make({
-          threadId: sideChatId,
-          messageId: questionId,
-          text,
-          provider: source.info.provider,
-        }),
-      );
-      publishSideChat(
-        RuntimeEvent.cases["thread.status"].make({ threadId: sideChatId, status: "running" }),
-      );
-
-      const started = session
-        ? { session, handoff: null }
-        : yield* startSideChat(source, messageId, sideChatId);
-      if (!started)
-        return publishSideChat(
-          RuntimeEvent.cases["thread.status"].make({ threadId: sideChatId, status: "idle" }),
-        );
-
-      yield* started.session.send({
-        // SAFETY: from crypto.randomUUID() above.
-        messageId: questionId as `${string}-${string}-${string}-${string}-${string}`,
-        text: session
-          ? text
-          : `This is a by-the-way question about our conversation, asked on the side: answer it without changing any files or making a plan.\n\n${text}`,
-        attachments: [],
-        effort: null,
-        permission: "plan",
-        skills: [],
-        handoff: started.handoff,
-      });
-    },
-    (effect, { sideChatId }) =>
-      effect.pipe(
-        reportErrorsIn(sideChatId, publishSideChat),
-        Effect.tapError(() =>
-          Effect.sync(() =>
-            publishSideChat(
-              RuntimeEvent.cases["thread.status"].make({ threadId: sideChatId, status: "idle" }),
-            ),
-          ),
-        ),
-      ),
-  );
-
-  const closeSideChat = Effect.fn("closeSideChat")(function* (sideChatId: string) {
-    const chat = sideChats.get(sideChatId);
-    sideChats.delete(sideChatId);
-    if (chat?.session) yield* chat.session.close;
+  const sideChats = createSideChats({
+    runFork,
+    store,
+    settingsStore,
+    getEntry,
+    publishSideChat,
+    reportErrorsIn,
+    ensureHarnessReady,
   });
 
   // Idle threads shelve with time alone; the threshold is in days, so a check a minute is plenty.
@@ -833,8 +682,8 @@ const make = Effect.gen(function* () {
           }),
         "thread.rewind": history.rewind,
         "thread.fork": history.fork,
-        "sideChat.ask": askSideChat,
-        "sideChat.close": ({ sideChatId }) => closeSideChat(sideChatId),
+        "sideChat.ask": sideChats.ask,
+        "sideChat.close": ({ sideChatId }) => sideChats.close(sideChatId),
         "thread.compact": (command) => compact(command.threadId),
         "thread.listCommands": (command) => listCommands(command.threadId),
         "skills.list": (command) =>
@@ -1055,7 +904,7 @@ const make = Effect.gen(function* () {
       terminals.closeAll();
 
       yield* Effect.promise(() => devices.close());
-      yield* Effect.forEach([...sideChats.keys()], closeSideChat, { discard: true });
+      yield* sideChats.closeAll;
       yield* Effect.forEach(
         [...threads.values()],
         (entry) =>
