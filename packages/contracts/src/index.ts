@@ -158,9 +158,15 @@ export interface RemoteHost {
   readonly status: HostStatus;
 }
 
+/** Where a daemon listens on this machine, and the token it wants. */
+export interface DaemonEndpoint {
+  readonly port: number;
+  readonly token: string;
+}
+
 export interface DesktopBridge {
   /** Null in dev, where the daemon runs on its own at DEFAULT_DAEMON_PORT without a token. */
-  readonly daemon: () => Promise<{ readonly port: number; readonly token: string } | null>;
+  readonly daemon: () => Promise<DaemonEndpoint | null>;
   /** Hosts added in Settings → Connections, each with its own daemon over SSH. */
   readonly hosts: () => Promise<ReadonlyArray<RemoteHost>>;
   readonly onHosts: (listener: (hosts: ReadonlyArray<RemoteHost>) => void) => () => void;
@@ -168,9 +174,7 @@ export interface DesktopBridge {
   /** Also stops MassCode on the host, and the agents it runs. */
   readonly removeHost: (alias: string) => Promise<void>;
   /** Connects if needed; null while the host can't be reached or is updating (see its status). */
-  readonly hostDaemon: (
-    alias: string,
-  ) => Promise<{ readonly port: number; readonly token: string } | null>;
+  readonly hostDaemon: (alias: string) => Promise<DaemonEndpoint | null>;
   /** Restarts an updating host on this version now, stopping its running turns. */
   readonly restartHost: (alias: string) => Promise<void>;
   /** Host aliases from ~/.ssh/config, to pick from. */
@@ -245,13 +249,18 @@ export const Attachment = Schema.Struct({
 });
 export type Attachment = typeof Attachment.Type;
 
-/** Per-message settings chosen in the composer. */
-export const TurnOptions = Schema.Struct({
+/** How the agent works on a message, as chosen in the composer. */
+const TurnSettings = Schema.Struct({
   /** Null uses the harness's default effort. */
   effort: Schema.NullOr(Effort),
   /** Faster output at a higher price, on models that offer it; absent leaves it as it was. */
   fast: Schema.optional(Schema.Boolean),
   permission: PermissionLevel,
+});
+
+/** Per-message settings chosen in the composer. */
+export const TurnOptions = Schema.Struct({
+  ...TurnSettings.fields,
   attachments: Schema.Array(AttachmentInput),
 });
 export type TurnOptions = typeof TurnOptions.Type;
@@ -274,6 +283,10 @@ export type MergeMethod = typeof MergeMethod.Type;
 /** How commit messages and pull requests get written: like the repo's history, as Conventional Commits, or by the user's own rules. */
 export const WritingStyle = Schema.Literals(["repo_conventions", "conventional_commits", "custom"]);
 export type WritingStyle = typeof WritingStyle.Type;
+
+/** Where a thread starts: the project folder, or a git worktree of its own on a new branch. */
+export const Workspace = Schema.Literals(["local", "worktree"]);
+export type Workspace = typeof Workspace.Type;
 
 export const ProviderSettings = Schema.Struct({
   /** Model for new threads; null uses the harness's own default. */
@@ -313,8 +326,8 @@ export const Settings = Schema.Struct({
   /** Effort new threads start with; null/absent uses the model's own. */
   newThreadEffort: Schema.optional(Schema.NullOr(Effort)),
   newThreadPermission: Schema.optional(PermissionLevel),
-  /** Where new threads start: the project folder, or a git worktree of their own. */
-  workspace: Schema.optional(Schema.Literals(["local", "worktree"])),
+  /** Where new threads start. */
+  workspace: Schema.optional(Workspace),
   /** Shelves threads with no activity for `autoShelveDays`, read or not. Absent counts as on. */
   autoShelve: Schema.optional(Schema.Boolean),
   autoShelveDays: Schema.optional(Schema.Number),
@@ -407,6 +420,15 @@ export const Project = Schema.Struct({
 });
 export type Project = typeof Project.Type;
 
+/** A command anyone working in the project can run from a thread's Scripts menu. */
+export const ProjectScript = Schema.Struct({
+  name: Schema.String.check(Schema.isNonEmpty()),
+  command: Schema.String.check(Schema.isNonEmpty()),
+  /** Opened in the Browser panel when the script runs, like a dev server's address. */
+  preview_url: Schema.optionalKey(Schema.String),
+});
+export type ProjectScript = typeof ProjectScript.Type;
+
 /** A project's `masscode.toml`, keyed as written in the file. */
 export const ProjectConfig = Schema.Struct({
   worktree: Schema.optionalKey(
@@ -420,19 +442,9 @@ export const ProjectConfig = Schema.Struct({
     }),
   ),
   /** Commands anyone working in the project can run from a thread's Scripts menu. */
-  scripts: Schema.optionalKey(
-    Schema.Array(
-      Schema.Struct({
-        name: Schema.String.check(Schema.isNonEmpty()),
-        command: Schema.String.check(Schema.isNonEmpty()),
-        /** Opened in the Browser panel when the script runs, like a dev server's address. */
-        preview_url: Schema.optionalKey(Schema.String),
-      }),
-    ),
-  ),
+  scripts: Schema.optionalKey(Schema.Array(ProjectScript)),
 });
 export type ProjectConfig = typeof ProjectConfig.Type;
-export type ProjectScript = NonNullable<ProjectConfig["scripts"]>[number];
 
 /**
  * The repo a git remote URL points to, as `owner/repo`, however it's written:
@@ -511,9 +523,7 @@ export const QueuedMessage = Schema.Struct({
   id: Schema.String,
   text: Schema.String,
   attachments: Schema.Array(Attachment),
-  effort: Schema.NullOr(Effort),
-  fast: Schema.optional(Schema.Boolean),
-  permission: PermissionLevel,
+  ...TurnSettings.fields,
 });
 export type QueuedMessage = typeof QueuedMessage.Type;
 
@@ -681,6 +691,13 @@ export const RepoStatus = Schema.Struct({
 });
 export type RepoStatus = typeof RepoStatus.Type;
 
+/** What a harness taking over a thread is told: the `messages` it missed while `from` had it. */
+const Handoff = Schema.Struct({
+  from: ProviderKind,
+  messages: Schema.Number,
+  text: Schema.String,
+});
+
 export const RuntimeEvent = Schema.TaggedUnion({
   /** `requestId` echoes the creating command, so only that window selects the new thread. */
   "thread.created": {
@@ -755,14 +772,8 @@ export const RuntimeEvent = Schema.TaggedUnion({
     run: Schema.optionalKey(CommandRun),
     /** The harness it went to; missing on messages from before threads could switch harness. */
     provider: Schema.optionalKey(ProviderKind),
-    /** What the harness was told ahead of it: the `messages` it missed while `from` had the thread. */
-    handoff: Schema.optionalKey(
-      Schema.Struct({
-        from: ProviderKind,
-        messages: Schema.Number,
-        text: Schema.String,
-      }),
-    ),
+    /** What the harness was told ahead of it. */
+    handoff: Schema.optionalKey(Handoff),
   },
   "assistant.delta": {
     threadId: Schema.String,
@@ -925,11 +936,7 @@ export const RuntimeEvent = Schema.TaggedUnion({
     error: Schema.NullOr(Schema.String),
   },
   "sourceControl.updated": { statuses: Schema.Array(SourceControlStatus) },
-  "terminal.opened": {
-    threadId: Schema.String,
-    terminalId: Schema.String,
-    command: Schema.optionalKey(Schema.String),
-  },
+  "terminal.opened": TerminalInfo.fields,
   "terminal.closed": {
     threadId: Schema.String,
     terminalId: Schema.String,
@@ -956,8 +963,7 @@ export const ClientCommand = Schema.TaggedUnion({
     text: Schema.String,
     options: TurnOptions,
     requestId: Schema.String,
-    /** "worktree" starts the thread in a new git worktree on its own branch. */
-    workspace: Schema.Literals(["local", "worktree"]),
+    workspace: Workspace,
   },
   /** A model of another harness switches the thread to it, when no turn is running. */
   "thread.setModel": {

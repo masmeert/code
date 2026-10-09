@@ -8,6 +8,7 @@ import {
   type Project,
   type ProjectConfig,
   type ProjectScript,
+  type Workspace,
   type ProviderKind,
   type ProviderSettings,
   type ProviderStatus,
@@ -1774,7 +1775,7 @@ export function createThread(input: {
   model: string | null;
   text: string;
   options: TurnOptions;
-  workspace: "local" | "worktree";
+  workspace: Workspace;
   shouldOpen?: boolean;
 }) {
   const { shouldOpen = true, ...command } = input;
