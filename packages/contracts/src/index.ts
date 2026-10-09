@@ -1275,32 +1275,36 @@ export const PageInfo = Schema.Struct({
 });
 export type PageInfo = typeof PageInfo.Type;
 
+const TRANSCRIPT_TAGS = [
+  "user.message",
+  "assistant.delta",
+  "assistant.completed",
+  "reasoning.delta",
+  "reasoning.completed",
+  "tool.started",
+  "tool.progress",
+  "tool.completed",
+  "approval.requested",
+  "approval.resolved",
+  "turn.completed",
+  "turn.checkpoint",
+  "thread.rewound",
+  "thread.forked",
+  "thread.startedBy",
+  "worktree.setup",
+] as const;
+
 /**
- * Transcript events: they only reach clients subscribed to that thread. Everything else
- * (thread list, status, settings, projects…) goes to every client.
+ * Transcript events, and errors of a thread: they only reach clients subscribed to that thread.
+ * Everything else (thread list, status, settings, projects…) goes to every client.
  */
 export function isTranscriptEvent(
   event: RuntimeEvent,
-): event is Extract<RuntimeEvent, { threadId: string }> {
+): event is
+  | Extract<RuntimeEvent, { _tag: (typeof TRANSCRIPT_TAGS)[number] }>
+  | (typeof RuntimeEvent.cases.error.Type & { readonly threadId: string }) {
   return (
-    RuntimeEvent.isAnyOf([
-      "user.message",
-      "assistant.delta",
-      "assistant.completed",
-      "reasoning.delta",
-      "reasoning.completed",
-      "tool.started",
-      "tool.progress",
-      "tool.completed",
-      "approval.requested",
-      "approval.resolved",
-      "turn.completed",
-      "turn.checkpoint",
-      "thread.rewound",
-      "thread.forked",
-      "thread.startedBy",
-      "worktree.setup",
-    ])(event) ||
+    RuntimeEvent.isAnyOf(TRANSCRIPT_TAGS)(event) ||
     (RuntimeEvent.guards.error(event) && event.threadId !== null)
   );
 }
