@@ -15,18 +15,16 @@ import { openJsonFile } from "../storage/jsonFile.ts";
 import { SettingsStore } from "../storage/SettingsStore.ts";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as FiberMap from "effect/FiberMap";
 import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import type * as Scope from "effect/Scope";
+import { execFile, spawn } from "node:child_process";
+import type { Writable } from "node:stream";
 import { promisify } from "node:util";
-import {
-  acquireCodexConnection,
-  CODEX_FAST_TIER,
-  CodexNotification,
-  connectCodex,
-} from "./codexRpc.ts";
-import type { JsonRpc } from "./jsonRpc.ts";
+import { acquireCodexConnection, CODEX_FAST_TIER, CodexNotification } from "./codexRpc.ts";
 import { readCursorModels } from "./CursorAdapter.ts";
 import {
   acquireClaudeQuery,
@@ -34,7 +32,7 @@ import {
   startPromptlessQuery,
   type HarnessLaunch,
 } from "./launch.ts";
-import { tryProviderPromise, type ProviderError } from "./ProviderAdapter.ts";
+import { ProviderError, tryProviderPromise } from "./ProviderAdapter.ts";
 import { getErrorMessage } from "../errors.ts";
 
 const exec = promisify(execFile);
@@ -113,16 +111,24 @@ const readClaudeModels = Effect.fn("readClaudeModels")(function* (launch: Harnes
   });
 }, Effect.scoped);
 
+const ClaudeAuthStatus = Schema.Struct({
+  loggedIn: Schema.optional(Schema.Boolean),
+  email: Schema.optional(Schema.NullOr(Schema.String)),
+  subscriptionType: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
 const probeClaude = Effect.fn("probeClaude")(function* (launch: HarnessLaunch) {
   const version = yield* readVersion("claude", launch);
-  const status = yield* tryProviderPromise("claude", async () =>
-    JSON.parse(
-      (
-        await exec(launch.bin, ["auth", "status"], { env: launch.env }).catch((error) => ({
-          stdout: error.stdout ?? "{}",
-        }))
-      ).stdout || "{}",
-    ),
+  // Signed out, it exits non-zero with the status still on stdout.
+  const { stdout } = yield* tryProviderPromise("claude", () =>
+    exec(launch.bin, ["auth", "status"], { env: launch.env }).catch((error) => ({
+      stdout: String(error.stdout ?? "{}"),
+    })),
+  );
+  const status = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ClaudeAuthStatus))(
+    stdout || "{}",
+  ).pipe(
+    Effect.mapError((error) => new ProviderError({ provider: "claude", message: error.message })),
   );
   const linked = status.loggedIn === true;
 
@@ -374,23 +380,22 @@ export class ProviderRegistry extends Context.Service<
 
 const make = Effect.gen(function* () {
   const settingsStore = yield* SettingsStore;
+  const scope = yield* Effect.scope;
 
-  /** Rejects when the CLI can't be found, like the spawns it feeds. */
-  function resolveLaunch(kind: ProviderKind) {
-    return Effect.runPromise(
-      Effect.flatMap(settingsStore.get, (settings) =>
-        resolveHarnessLaunch(kind, settings.providers[kind]),
-      ),
-    );
-  }
+  const resolveLaunch = Effect.fn("ProviderRegistry.resolveLaunch")(function* (kind: ProviderKind) {
+    const settings = yield* settingsStore.get;
+    return yield* resolveHarnessLaunch(kind, settings.providers[kind]);
+  });
 
   function probeHarness(kind: ProviderKind) {
-    return resolveLaunch(kind)
-      .then((launch) => Effect.runPromise(PROBE[kind](launch)))
-      .catch((error) => {
-        const text = getErrorMessage(error);
-        return buildUnknownStatus(kind, text.includes("Could not find") ? null : text);
-      });
+    return resolveLaunch(kind).pipe(
+      Effect.flatMap((launch) => PROBE[kind](launch)),
+      Effect.catch((error) =>
+        Effect.succeed(
+          buildUnknownStatus(kind, error.message.includes("Could not find") ? null : error.message),
+        ),
+      ),
+    );
   }
 
   // Checking the CLIs takes seconds; until it's done, clients get what the last check found rather
@@ -405,8 +410,10 @@ const make = Effect.gen(function* () {
       },
   );
   let listener: ProviderListener = { onProviders: () => {}, onFlow: () => {} };
-  /** In-flight sign-in per harness. */
-  const flows = new Map<ProviderKind, { child?: ChildProcess; rpc?: JsonRpc; loginId?: string }>();
+  /** In-flight sign-in per harness: starting another or cancelling interrupts it, closing what it opened. */
+  const linkFlows = yield* FiberMap.make<ProviderKind>();
+  /** Where a code the user types in MassCode goes, while a sign-in waits for one. */
+  const codeInputs = new Map<ProviderKind, Writable>();
 
   function reportLinkFlow(
     provider: ProviderKind,
@@ -417,37 +424,62 @@ const make = Effect.gen(function* () {
     listener.onFlow({ provider, stage, url, message: text });
   }
 
-  async function refreshProvider(kind: ProviderKind) {
-    const next = await probeHarness(kind);
+  /** Runs `task` past the request that started it, for as long as the registry lives; failures are only logged. */
+  function runInBackground<E>(task: Effect.Effect<void, E>) {
+    return task.pipe(
+      Effect.catch((error) => Effect.logWarning("provider task failed", getErrorMessage(error))),
+      Effect.forkIn(scope),
+      Effect.asVoid,
+    );
+  }
+
+  const refreshProvider = Effect.fn("ProviderRegistry.refreshProvider")(function* (
+    kind: ProviderKind,
+  ) {
+    const next = yield* probeHarness(kind);
     providers = providers.map((provider) => (provider.kind === kind ? next : provider));
     listener.onProviders(providers);
-    await Effect.runPromise(lastChecked.set(providers));
-  }
+    yield* lastChecked.set(providers);
+  });
 
-  async function refreshProviders() {
-    await Promise.all(ProviderKind.literals.map(refreshProvider));
-  }
-
-  async function finishLink(kind: ProviderKind, isSuccess: boolean, text: string | null) {
-    flows.delete(kind);
-    await refreshProvider(kind);
-    reportLinkFlow(kind, isSuccess ? "done" : "failed", null, text);
-  }
+  const refreshProviders = Effect.forEach(ProviderKind.literals, refreshProvider, {
+    concurrency: "unbounded",
+    discard: true,
+  });
 
   /**
    * Signs in with the CLI's own login command, which prints the page to open and exits once
    * signed in. At "awaiting-code" the page shows a code for the user to paste back into it.
+   * Resolves to why it failed, null once signed in.
    */
-  async function linkCli(
+  const linkCli = Effect.fn("ProviderRegistry.linkCli")(function* (
     kind: ProviderKind,
     args: ReadonlyArray<string>,
     stage: "awaiting-code" | "browser",
   ) {
-    const launch = await resolveLaunch(kind);
-    const child = spawn(launch.bin, args, { env: launch.env, stdio: ["pipe", "pipe", "pipe"] });
+    const launch = yield* resolveLaunch(kind);
+    const exited = yield* Deferred.make<number | null>();
+    const child = yield* Effect.acquireRelease(
+      Effect.try({
+        try: () => {
+          const spawned = spawn(launch.bin, args, {
+            env: launch.env,
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+          spawned.on("exit", (code) => Deferred.doneUnsafe(exited, Effect.succeed(code)));
+          return spawned;
+        },
+        catch: (error) => new ProviderError({ provider: kind, message: getErrorMessage(error) }),
+      }),
+      (child) =>
+        Effect.sync(() => {
+          if (codeInputs.get(kind) === child.stdin) codeInputs.delete(kind);
+          child.kill();
+        }),
+    );
     // Nothing to type in: the CLI reads end-of-input, as it would from /dev/null.
     if (stage === "browser") child.stdin.end();
-    flows.set(kind, { child });
+    else codeInputs.set(kind, child.stdin);
 
     let output = "";
     let hasAnnouncedUrl = false;
@@ -463,67 +495,78 @@ const make = Effect.gen(function* () {
 
     child.stdout.on("data", onData);
     child.stderr.on("data", onData);
-    child.on("exit", (code) => {
-      if (flows.get(kind)?.child !== child) return;
-      void finishLink(
-        kind,
-        code === 0,
-        code === 0 ? null : getFirstLine(output.slice(-500)) || `exited with ${code}`,
-      );
-    });
-  }
 
-  async function linkCodex() {
-    const rpc = await connectCodex(await resolveLaunch("codex"), undefined, {
+    const code = yield* Deferred.await(exited);
+    return code === 0 ? null : getFirstLine(output.slice(-500)) || `exited with ${code}`;
+  });
+
+  /** Codex's ChatGPT sign-in, finished through a local callback it listens on. Resolves like `linkCli`. */
+  const linkCodex = Effect.fn("ProviderRegistry.linkCodex")(function* () {
+    const launch = yield* resolveLaunch("codex");
+    const completed = yield* Deferred.make<string | null>();
+    const rpc = yield* acquireCodexConnection(launch, undefined, {
       onNotification: (notification) => {
         if (!CodexNotification.guards["account/login/completed"](notification)) return;
-        rpc.close();
+
         const { success, error } = notification.params;
-        void finishLink("codex", success, success ? null : (error ?? "Sign-in failed"));
+        Deferred.doneUnsafe(
+          completed,
+          Effect.succeed(success ? null : (error ?? "Sign-in failed")),
+        );
       },
     });
-    flows.set("codex", { rpc });
 
-    const login = await rpc.request(
-      "account/login/start",
-      { type: "chatgpt" },
-      Schema.Struct({ loginId: Schema.String, authUrl: Schema.String }),
+    const login = yield* tryProviderPromise("codex", () =>
+      rpc.request(
+        "account/login/start",
+        { type: "chatgpt" },
+        Schema.Struct({ loginId: Schema.String, authUrl: Schema.String }),
+      ),
     );
-    flows.set("codex", { rpc, loginId: login.loginId });
 
-    // Codex listens on a local callback, so opening the page is all that's needed. Elsewhere (a
-    // remote host) the app opens it, and the callback only lands when the browser runs there too.
+    // Elsewhere (a remote host) the app opens the page, and the callback only lands when the
+    // browser runs there too.
     if (process.platform === "darwin")
       spawn("open", [login.authUrl], { stdio: "ignore", detached: true }).unref();
     reportLinkFlow("codex", "browser", login.authUrl);
-  }
 
-  const LINK: Record<ProviderKind, () => Promise<void>> = {
-    claude: () => linkCli("claude", ["auth", "login", "--claudeai"], "awaiting-code"),
-    codex: linkCodex,
-    // Cursor's login opens the browser itself and finishes when the page does.
-    cursor: () => linkCli("cursor", ["login"], "browser"),
-  };
+    return yield* Deferred.await(completed).pipe(
+      Effect.onInterrupt(() =>
+        Effect.sync(() => {
+          void rpc
+            .request("account/login/cancel", { loginId: login.loginId }, Schema.Unknown)
+            .catch(() => {});
+        }),
+      ),
+    );
+  });
 
-  function cancelLinkFlow(kind: ProviderKind) {
-    const active = flows.get(kind);
-    flows.delete(kind);
-    active?.child?.kill();
-    if (active?.rpc && active.loginId) {
-      void active.rpc
-        .request("account/login/cancel", { loginId: active.loginId }, Schema.Unknown)
-        .catch(() => {});
-    }
-    active?.rpc?.close();
-  }
+  const LINK: Record<ProviderKind, () => Effect.Effect<string | null, ProviderError, Scope.Scope>> =
+    {
+      claude: () => linkCli("claude", ["auth", "login", "--claudeai"], "awaiting-code"),
+      codex: linkCodex,
+      // Cursor's login opens the browser itself and finishes when the page does.
+      cursor: () => linkCli("cursor", ["login"], "browser"),
+    };
 
-  function runInBackground(run: () => Promise<void>) {
-    return Effect.sync(() => {
-      void run().catch((error) =>
-        Effect.runFork(Effect.logWarning("provider task failed", getErrorMessage(error))),
+  const runLinkFlow = Effect.fn("ProviderRegistry.runLinkFlow")(
+    function* (kind: ProviderKind) {
+      reportLinkFlow(kind, "starting");
+      const failure = yield* Effect.scoped(LINK[kind]());
+
+      // Outlives the flow, so cancelling or linking again meanwhile doesn't swallow the outcome.
+      yield* runInBackground(
+        Effect.gen(function* () {
+          yield* refreshProvider(kind);
+          reportLinkFlow(kind, failure === null ? "done" : "failed", null, failure);
+        }),
       );
-    });
-  }
+    },
+    (flow, kind) =>
+      Effect.catch(flow, (error) =>
+        Effect.sync(() => reportLinkFlow(kind, "failed", null, error.message)),
+      ),
+  );
 
   // Initial status, without blocking startup.
   yield* runInBackground(refreshProviders);
@@ -531,41 +574,32 @@ const make = Effect.gen(function* () {
   return ProviderRegistry.of({
     list: Effect.sync(() => providers),
     refresh: runInBackground(refreshProviders),
-    link: (kind) =>
-      runInBackground(async () => {
-        cancelLinkFlow(kind);
-        reportLinkFlow(kind, "starting");
-        try {
-          await LINK[kind]();
-        } catch (error) {
-          cancelLinkFlow(kind);
-          reportLinkFlow(kind, "failed", null, getErrorMessage(error));
-        }
-      }),
+    link: (kind) => FiberMap.run(linkFlows, kind, runLinkFlow(kind)).pipe(Effect.asVoid),
     submitCode: (kind, code) =>
       Effect.sync(() => {
-        flows.get(kind)?.child?.stdin?.write(`${code.trim()}\n`);
+        codeInputs.get(kind)?.write(`${code.trim()}\n`);
       }),
-    cancelLink: (kind) => Effect.sync(() => cancelLinkFlow(kind)),
+    cancelLink: (kind) => FiberMap.remove(linkFlows, kind),
     unlink: (kind) =>
-      runInBackground(async () => {
-        const launch = await resolveLaunch(kind);
-        await exec(launch.bin, [...LOGOUT_ARGS[kind]], {
-          env: launch.env,
-        }).catch(() => {});
-        await refreshProvider(kind);
-      }),
+      runInBackground(
+        Effect.gen(function* () {
+          const launch = yield* resolveLaunch(kind);
+          yield* Effect.promise(() =>
+            exec(launch.bin, [...LOGOUT_ARGS[kind]], { env: launch.env }).catch(() => {}),
+          );
+          yield* refreshProvider(kind);
+        }),
+      ),
     readLimits: (kind) =>
-      Effect.promise(() =>
-        resolveLaunch(kind)
-          .then((launch) => Effect.runPromise(READ_LIMITS[kind](launch)))
-          .then(
-            (limits) => ({ limits, error: null }),
-            (error) => ({
-              limits: [],
-              error: `Couldn't read usage limits: ${getErrorMessage(error)}`,
-            }),
-          ),
+      resolveLaunch(kind).pipe(
+        Effect.flatMap((launch) => READ_LIMITS[kind](launch)),
+        Effect.map((limits) => ({ limits, error: null })),
+        Effect.catch((error) =>
+          Effect.succeed({
+            limits: [],
+            error: `Couldn't read usage limits: ${error.message}`,
+          }),
+        ),
       ),
     setListener: (next) => {
       listener = next;
