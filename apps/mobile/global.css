@@ -1,2 +1,66 @@
 @import "tailwindcss";
 @import "uniwind";
+@import "heroui-native/styles";
+
+@source "./node_modules/heroui-native/lib";
+
+/* The desktop's Vesper palette (packages/ui/src/styles/globals.css) on HeroUI's token names. */
+@layer theme {
+  :root {
+    @variant light {
+      --background: oklch(99% 0 0);
+      --foreground: oklch(15% 0 0);
+      --surface: oklch(97% 0 0);
+      --surface-secondary: oklch(93% 0 0);
+      --surface-tertiary: oklch(89% 0 0);
+      --overlay: oklch(97% 0 0);
+      --muted: oklch(50% 0 0);
+      --default: oklch(93% 0 0);
+      --default-foreground: var(--foreground);
+      --accent: #ffc799;
+      --accent-foreground: #101010;
+      --field-background: oklch(97% 0 0);
+      --field-foreground: var(--foreground);
+      --success: oklch(55% 0.1 175);
+      --success-foreground: oklch(99% 0 0);
+      --warning: oklch(60% 0.2 48);
+      --warning-foreground: oklch(99% 0 0);
+      --danger: oklch(58% 0.19 25);
+      --danger-foreground: oklch(99% 0 0);
+      --segment: oklch(99% 0 0);
+      --segment-foreground: var(--foreground);
+      --border: oklch(15% 0 0 / 0.06);
+      --separator: oklch(15% 0 0 / 0.1);
+      --focus: oklch(58% 0.13 50);
+      --link: oklch(58% 0.13 50);
+    }
+
+    @variant dark {
+      --background: #101010;
+      --foreground: #ffffff;
+      --surface: #161616;
+      --surface-secondary: #232323;
+      --surface-tertiary: #282828;
+      --overlay: #161616;
+      --muted: #a0a0a0;
+      --default: #232323;
+      --default-foreground: var(--foreground);
+      --accent: #ffc799;
+      --accent-foreground: #101010;
+      --field-background: #161616;
+      --field-foreground: var(--foreground);
+      --success: #99ffe4;
+      --success-foreground: #101010;
+      --warning: #ff7300;
+      --warning-foreground: #101010;
+      --danger: #ff8080;
+      --danger-foreground: #101010;
+      --segment: #232323;
+      --segment-foreground: var(--foreground);
+      --border: rgb(255 255 255 / 0.05);
+      --separator: rgb(255 255 255 / 0.09);
+      --focus: #ffc799;
+      --link: #ffc799;
+    }
+  }
+}

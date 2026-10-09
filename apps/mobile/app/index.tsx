@@ -1,12 +1,16 @@
 import { PROTOCOL_VERSION } from "@masscode/contracts";
-import { Text, View } from "react-native";
+import { Card } from "heroui-native";
+import { View } from "react-native";
 
 export default function Home() {
   return (
-    <View className="flex-1 items-center justify-center bg-white dark:bg-black">
-      <Text className="text-base text-black dark:text-white">
-        MassCode protocol v{PROTOCOL_VERSION}
-      </Text>
+    <View className="flex-1 justify-center bg-background p-6">
+      <Card>
+        <Card.Body>
+          <Card.Title>MassCode</Card.Title>
+          <Card.Description>Protocol v{PROTOCOL_VERSION}</Card.Description>
+        </Card.Body>
+      </Card>
     </View>
   );
 }
