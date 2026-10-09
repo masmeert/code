@@ -3,6 +3,7 @@
  * user's Cursor login.
  */
 import { Effort, RuntimeEvent, type ModelOption, type SlashCommand } from "@masscode/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
@@ -706,32 +707,30 @@ const listSkills: ProviderAdapter["listSkills"] = Effect.fn("CursorAdapter.listS
   harness,
 }) {
   const launch = yield* resolveHarnessLaunch("cursor", harness);
-  let report: (commands: ReadonlyArray<{ name: string; description: string }>) => void = () => {};
-  const reported = new Promise<ReadonlyArray<{ name: string; description: string }>>(
-    (resolve) => (report = resolve),
-  );
+  const reported = yield* Deferred.make<ReadonlyArray<{ name: string; description: string }>>();
   const rpc = yield* acquireCursorConnection(launch, cwd, {
     onUpdate: (update) => {
       if (SessionUpdate.guards.available_commands_update(update)) {
-        report(update.availableCommands);
+        Deferred.doneUnsafe(reported, Effect.succeed(update.availableCommands));
       }
     },
   });
 
-  return yield* tryProviderPromise("cursor", async () => {
-    await rpc.request("session/new", { cwd, mcpServers: [] }, SessionSetup);
-    const commands = await Promise.race([
-      reported,
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
-    ]);
-    if (commands === null) throw new Error("Cursor didn't list its skills within 15 s");
+  yield* tryProviderPromise("cursor", () =>
+    rpc.request("session/new", { cwd, mcpServers: [] }, SessionSetup),
+  );
+  const commands = yield* Deferred.await(reported).pipe(
+    Effect.timeoutOrElse({
+      duration: "15 seconds",
+      orElse: () => Effect.fail(createError("Cursor didn't list its skills within 15 s")),
+    }),
+  );
 
-    return commands.flatMap(({ name, description }) =>
-      SKILL_NOTE.test(description)
-        ? [{ name, description: description.replace(SKILL_NOTE, ""), path: null }]
-        : [],
-    );
-  });
+  return commands.flatMap(({ name, description }) =>
+    SKILL_NOTE.test(description)
+      ? [{ name, description: description.replace(SKILL_NOTE, ""), path: null }]
+      : [],
+  );
 }, Effect.scoped);
 
 function failUnsupported(action: string) {

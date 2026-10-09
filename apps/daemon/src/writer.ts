@@ -4,6 +4,7 @@
  */
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import type { ProviderKind, ProviderSettings, Settings } from "@masscode/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -100,13 +101,12 @@ const writeWithCodex = Effect.fn("writeWithCodex")(function* (
   model: string | undefined,
   prompt: string,
 ) {
-  let finish: (text: string) => void = () => {};
-  let abort: (error: Error) => void = () => {};
-  const done = new Promise<string>((resolve, reject) => {
-    finish = resolve;
-    abort = reject;
-  });
+  const done = yield* Deferred.make<string, ProviderError>();
   let text = "";
+
+  function fail(message: string) {
+    Deferred.doneUnsafe(done, Effect.fail(new ProviderError({ provider: "codex", message })));
+  }
 
   const launch = yield* resolveHarnessLaunch("codex", harness);
   const rpc = yield* acquireCodexConnection(launch, cwd, {
@@ -119,20 +119,20 @@ const writeWithCodex = Effect.fn("writeWithCodex")(function* (
           },
           "turn/completed": ({ params }) => {
             if (params.turn.status === "failed")
-              abort(new Error(params.turn.error?.message ?? "Codex turn failed"));
-            else finish(text);
+              fail(params.turn.error?.message ?? "Codex turn failed");
+            else Deferred.doneUnsafe(done, Effect.succeed(text));
           },
           error: ({ params }) => {
-            if (!params.willRetry) abort(new Error(params.error.message));
+            if (!params.willRetry) fail(params.error.message);
           },
         },
         () => {},
       ),
-    onExit: (code, stderr) => abort(new Error(`codex exited (${code}): ${stderr}`)),
+    onExit: (code, stderr) => fail(`codex exited (${code}): ${stderr}`),
   });
 
-  return yield* tryProviderPromise("codex", async () => {
-    const started = await rpc.request(
+  const started = yield* tryProviderPromise("codex", () =>
+    rpc.request(
       "thread/start",
       {
         cwd,
@@ -142,17 +142,20 @@ const writeWithCodex = Effect.fn("writeWithCodex")(function* (
         sandbox: "read-only",
       },
       ThreadResponse,
-    );
-    await rpc.request(
+    ),
+  );
+  yield* tryProviderPromise("codex", () =>
+    rpc.request(
       "turn/start",
       {
         threadId: started.thread.id,
         input: [{ type: "text", text: prompt, text_elements: [] }],
       },
       Schema.Unknown,
-    );
-    return await done;
-  });
+    ),
+  );
+
+  return yield* Deferred.await(done);
 });
 
 /** Cursor's print mode, read-only ("ask"); `--trust` skips the prompt for a folder it hasn't seen. */

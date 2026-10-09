@@ -107,32 +107,33 @@ export function connectJsonRpc(
     (chunk: Buffer) => (stderrTail = (stderrTail + chunk.toString()).slice(-4000)),
   );
 
-  let reportExit: (error: Error) => void = () => {};
-  const exited = new Promise<never>((_, reject) => (reportExit = reject));
-  // Settled with nothing awaiting it yet; requests race it.
-  exited.catch(() => {});
-  child.on("error", (error) => reportExit(error));
+  /** Why the child is gone, once it is; requests made after fail with it. */
+  let failure: Error | undefined;
+
+  function failRequests(error: Error) {
+    failure ??= error;
+    for (const waiter of inflight.values()) waiter.reject(failure);
+    inflight.clear();
+  }
+
+  child.on("error", failRequests);
   // A write racing the exit fails with EPIPE; the exit itself is what's reported.
   child.stdin.on("error", () => {});
 
   child.on("exit", (code) => {
-    const error = new Error(`${name} exited (code ${code}): ${stderrTail.trim() || "no output"}`);
-    reportExit(error);
-    for (const waiter of inflight.values()) waiter.reject(error);
-    inflight.clear();
+    failRequests(new Error(`${name} exited (code ${code}): ${stderrTail.trim() || "no output"}`));
     handlers.onExit?.(code, stderrTail);
   });
 
   return {
     request: (method, params, response) =>
-      Promise.race([
-        exited,
-        new Promise<RpcMessage>((resolve, reject) => {
-          const id = ++nextId;
-          inflight.set(id, { resolve, reject });
-          writeMessage({ id, method, params });
-        }),
-      ]).then((reply) =>
+      new Promise<RpcMessage>((resolve, reject) => {
+        if (failure) return reject(failure);
+
+        const id = ++nextId;
+        inflight.set(id, { resolve, reject });
+        writeMessage({ id, method, params });
+      }).then((reply) =>
         reply.error
           ? Promise.reject(new Error(reply.error.data?.message ?? reply.error.message))
           : Schema.decodeUnknownPromise(response)(reply.result),

@@ -9,6 +9,7 @@ import {
   type PermissionLevel,
   type ThreadUsage,
 } from "@masscode/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
@@ -774,34 +775,31 @@ const fork: ProviderAdapter["fork"] = Effect.fn("CodexAdapter.fork")(
 const readUsage: ProviderAdapter["readUsage"] = Effect.fn("CodexAdapter.readUsage")(
   function* ({ cwd, harness, resumeToken, model }) {
     const launch = yield* resolveHarnessLaunch("codex", harness);
-    let report: (usage: TokenUsage) => void = () => {};
-    const reported = new Promise<TokenUsage>((resolve) => (report = resolve));
+    const reported = yield* Deferred.make<TokenUsage>();
     const rpc = yield* acquireCodexConnection(launch, cwd, {
       onNotification: (notification) => {
         if (
           CodexNotification.guards["thread/tokenUsage/updated"](notification) &&
           notification.params.threadId === resumeToken
         ) {
-          report(notification.params.tokenUsage);
+          Deferred.doneUnsafe(reported, Effect.succeed(notification.params.tokenUsage));
         }
       },
     });
 
-    return yield* tryProviderPromise("codex", async () => {
-      const resumed = await rpc.request(
+    const resumed = yield* tryProviderPromise("codex", () =>
+      rpc.request(
         "thread/resume",
         { threadId: resumeToken, excludeTurns: true, cwd },
         ThreadResponse,
-      );
-      const usage = await Promise.race([
-        reported,
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-      ]);
+      ),
+    );
+    const usage = yield* Deferred.await(reported).pipe(Effect.timeoutOption("5 seconds"));
+    if (Option.isNone(usage)) return { context: null, costUsd: null };
 
-      return usage
-        ? await buildThreadUsage(usage, model ?? resumed.model)
-        : { context: null, costUsd: null };
-    });
+    return yield* tryProviderPromise("codex", () =>
+      buildThreadUsage(usage.value, model ?? resumed.model),
+    );
   },
   Effect.scoped,
   prefixErrorMessage("Couldn't read usage"),
