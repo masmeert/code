@@ -173,6 +173,22 @@ function reduceHost(host: HostState, event: RuntimeEvent): HostState {
 
 const sockets = new Map<string, ReconnectingWebSocket>();
 
+interface StartingThread {
+  readonly hostId: string;
+  readonly onCreated: (threadId: string) => void;
+  readonly onFailed: (message: string) => void;
+}
+
+/** Threads this phone asked a host to start, by request id, until the host answers. */
+const startingThreads = new Map<string, StartingThread>();
+
+function settleStartingThread(requestId: string, settle: (starting: StartingThread) => void) {
+  const starting = startingThreads.get(requestId);
+  startingThreads.delete(requestId);
+
+  if (starting) settle(starting);
+}
+
 /** Transcripts on screen, by `transcriptKey`, with how many screens show each. */
 const wanted = new Map<string, number>();
 
@@ -248,7 +264,14 @@ function onFrame(hostId: string, frame: ServerFrame) {
       if (previous) setTranscript(hostId, page.threadId, prependPage(previous, page));
     },
     event: ({ id, event }) => {
-      if (!isTranscriptEvent(event)) return updateHost(hostId, (host) => reduceHost(host, event));
+      if (!isTranscriptEvent(event)) {
+        updateHost(hostId, (host) => reduceHost(host, event));
+
+        if (RuntimeEvent.guards["thread.created"](event) && event.requestId !== null)
+          settleStartingThread(event.requestId, ({ onCreated }) => onCreated(event.thread.id));
+
+        return;
+      }
 
       const transcript = getTranscript(hostId, event.threadId);
 
@@ -267,6 +290,8 @@ function onFrame(hostId: string, frame: ServerFrame) {
     "image.signed": () => {},
     "project.cloned": () => {},
     "pairing.started": () => {},
+    "thread.createFailed": ({ requestId, message }) =>
+      settleStartingThread(requestId, ({ onFailed }) => onFailed(message)),
     "terminal.snapshot": () => {},
     "terminal.output": () => {},
     "terminal.error": () => {},
@@ -320,6 +345,14 @@ function connect(paired: PairedHost) {
       connection: host.connection === "outdated" ? "outdated" : connection,
     }));
 
+    for (const [requestId, starting] of startingThreads)
+      if (starting.hostId === paired.id)
+        settleStartingThread(requestId, ({ onFailed }) =>
+          onFailed(
+            `Lost the connection to ${paired.name} while it started the thread. If it isn't in your threads, send again.`,
+          ),
+        );
+
     // Retrying can't fix these; only pairing again or updating can.
     if (connection !== "offline") socket.close();
   });
@@ -358,6 +391,19 @@ export function removeHost(hostId: string) {
       ),
     };
   });
+}
+
+/** Starts a thread on the host with its first message; the host answers through `callbacks`. */
+export function createThread(
+  hostId: string,
+  command: Omit<Extract<ClientCommand, { _tag: "thread.create" }>, "_tag" | "requestId">,
+  callbacks: Omit<StartingThread, "hostId">,
+) {
+  const requestId = crypto.randomUUID();
+  startingThreads.set(requestId, { hostId, ...callbacks });
+  send(hostId, ClientCommand.cases["thread.create"].make({ requestId, ...command }));
+
+  return () => startingThreads.delete(requestId);
 }
 
 /** Follows the thread's transcript while a screen shows it; call what it returns to stop. */

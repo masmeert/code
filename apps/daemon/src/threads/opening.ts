@@ -184,10 +184,21 @@ export function createThreadOpener({
     const id = crypto.randomUUID();
     const title = deriveTitle(command.text, project.name);
 
+    const config = command.workspace
+      ? null
+      : yield* Effect.promise(() => readProjectConfig(project.path));
+
+    // Unpicked, as on the desktop's draft: the project's `masscode.toml` decides, else Settings.
+    const workspace =
+      command.workspace ??
+      (config instanceof Error || config?.worktree?.default === undefined
+        ? ((yield* settingsStore.get).workspace ?? "local")
+        : config.worktree.default
+          ? "worktree"
+          : "local");
+
     const cwd =
-      command.workspace === "worktree"
-        ? yield* createWorktree(project.path, title, id)
-        : project.path;
+      workspace === "worktree" ? yield* createWorktree(project.path, title, id) : project.path;
 
     const entry = yield* openThread(
       buildThreadInfo({
@@ -198,14 +209,14 @@ export function createThreadOpener({
         cwd,
         title,
         branch: yield* Effect.promise(() => readBranch(cwd)),
-        worktree: command.workspace === "worktree",
+        worktree: workspace === "worktree",
       }),
-      { path: cwd, isWorktree: command.workspace === "worktree" },
+      { path: cwd, isWorktree: workspace === "worktree" },
       command.text,
       command.requestId,
     );
 
-    if (command.workspace === "worktree") yield* setUpWorktree(entry, project.path);
+    if (workspace === "worktree") yield* setUpWorktree(entry, project.path);
 
     // New chats preselect whichever harness was used last.
     const settings = yield* settingsStore.get;

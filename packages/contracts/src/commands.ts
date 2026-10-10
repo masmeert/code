@@ -27,7 +27,8 @@ export const ClientCommand = Schema.TaggedUnion({
     text: Schema.String,
     options: TurnOptions,
     requestId: Schema.String,
-    workspace: Workspace,
+    /** Absent: the project's `masscode.toml` decides, else Settings. */
+    workspace: Schema.optional(Workspace),
   },
   /** A model of another harness switches the thread to it, when no turn is running. */
   "thread.setModel": {

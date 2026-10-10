@@ -99,6 +99,11 @@ export const ServerFrame = Schema.TaggedUnion({
     path: Schema.NullOr(Schema.String),
     error: Schema.NullOr(Schema.String),
   },
+  /** Answers a `thread.create` that failed before the thread existed; once it exists, errors go to the thread. */
+  "thread.createFailed": {
+    requestId: Schema.String,
+    message: Schema.String,
+  },
   /** A live event; `id` is set on stored (transcript) events and advances the thread's cursor. */
   event: {
     id: Schema.NullOr(Schema.Number),

@@ -41,6 +41,13 @@
           "recordAudioAndroid": false
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "MassCode attaches the photos you pick to your messages.",
+          "microphonePermission": false
+        }
+      ],
       "expo-secure-store",
       [
         "expo-font",

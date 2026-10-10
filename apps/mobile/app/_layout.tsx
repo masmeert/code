@@ -63,6 +63,7 @@ export default function RootLayout() {
                 name="pair"
                 options={{ title: "Pair a computer", presentation: "modal" }}
               />
+              <Stack.Screen name="new" options={{ title: "New thread", presentation: "modal" }} />
               <Stack.Screen name="thread/[hostId]/[threadId]" options={{ title: "" }} />
             </Stack>
             <PortalHost />

@@ -11,10 +11,11 @@ import {
 import { ClientCommand, type ThreadInfo } from "@masscode/contracts";
 import * as Haptics from "expo-haptics";
 import { router, Stack } from "expo-router";
-import { Archive, Laptop } from "lucide-react-native";
+import { Archive, Laptop, Plus } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, RefreshControl, SectionList, View } from "react-native";
 import Swipeable from "react-native-gesture-handler/ReanimatedSwipeable";
+import { OrbFace } from "@/components/OrbFace.tsx";
 import { ProviderLogo } from "@/components/ProviderLogo.tsx";
 import { Pulsing } from "@/components/Pulsing.tsx";
 import { Button } from "@/components/ui/button.tsx";
@@ -90,7 +91,23 @@ export default function ThreadsScreen() {
     <View className="flex-1 bg-background">
       <Stack.Screen
         options={{
-          headerRight: () => (
+          // The orb stands in for the title, so the large one goes.
+          headerLargeTitle: false,
+          // Unpaired, the pairing prompt centers on the whole screen rather than below the header.
+          headerTransparent: isLoaded && Object.keys(hosts).length === 0,
+          headerTitle: () => (
+            <OrbFace
+              size={36}
+              state={
+                Object.values(hosts).some((host) =>
+                  Object.values(host.threads).some((thread) => thread.status === "running"),
+                )
+                  ? "thinking"
+                  : "idle"
+              }
+            />
+          ),
+          headerLeft: () => (
             <Pressable
               accessibilityLabel="Computers"
               hitSlop={12}
@@ -103,13 +120,13 @@ export default function ThreadsScreen() {
         }}
       />
       {isLoaded && Object.keys(hosts).length === 0 ? (
-        <View className="flex-1 justify-center gap-3 px-8">
-          <Text className="text-xl font-semibold">Your threads, on the go</Text>
-          <Text className="text-sm leading-6 text-muted-foreground">
+        <View className="flex-1 items-center justify-center gap-3 px-8">
+          <Text className="text-center text-xl font-semibold">Your threads, on the go</Text>
+          <Text className="text-center text-sm leading-6 text-muted-foreground">
             Pair this phone with MassCode on your computer to follow your threads, answer the agent
             and steer it from anywhere on your Tailscale network.
           </Text>
-          <Button className="mt-3 self-start" onPress={() => router.push("/pair")}>
+          <Button className="mt-3" onPress={() => router.push("/pair")}>
             <Text>Pair with your computer</Text>
           </Button>
         </View>
@@ -122,12 +139,21 @@ export default function ThreadsScreen() {
           stickySectionHeadersEnabled={false}
           refreshControl={<RefreshControl refreshing={false} onRefresh={reconnectAll} />}
           ListHeaderComponent={
-            unreachable.length > 0 ? <UnreachableHosts hosts={unreachable} /> : undefined
+            <>
+              <View className="flex-row items-center justify-between px-5 pt-4 pb-2">
+                <Text className="text-2xl font-semibold">Threads</Text>
+                <Button variant="outline" size="sm" onPress={() => router.push("/new")}>
+                  <Icon as={Plus} className="size-3.5 text-foreground" />
+                  <Text>New thread</Text>
+                </Button>
+              </View>
+              {unreachable.length > 0 ? <UnreachableHosts hosts={unreachable} /> : null}
+            </>
           }
           ListEmptyComponent={
             isLoaded ? (
               <Text className="p-8 text-center text-sm text-muted-foreground">
-                No threads yet. Start one on your computer, and it shows up here.
+                No threads yet. Start one with New thread.
               </Text>
             ) : undefined
           }

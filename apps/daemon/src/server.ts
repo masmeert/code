@@ -367,6 +367,20 @@ export function serve(port: number) {
                   }),
                 ),
               ),
+            "thread.create": (command) =>
+              manager.dispatch(command).pipe(
+                Effect.catch((error) =>
+                  Effect.sync(() =>
+                    send(
+                      socket,
+                      ServerFrame.cases["thread.createFailed"].make({
+                        requestId: command.requestId,
+                        message: error.message,
+                      }),
+                    ),
+                  ),
+                ),
+              ),
             "settings.update": (command) =>
               manager.dispatch(command).pipe(Effect.ensuring(Effect.ignore(syncPhoneListener))),
             "browser.respond": (command) => {
