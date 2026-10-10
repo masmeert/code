@@ -37,6 +37,18 @@ export function serveRenderer() {
     return;
   }
 
+  // The device hub only allows localhost origins, so the iOS stream's fetch fails CORS from app://.
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: ["http://127.0.0.1/vendor/*"] },
+    (details, callback) =>
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          "access-control-allow-origin": ["app://masscode"],
+        },
+      }),
+  );
+
   protocol.handle("app", async (request) => {
     const { pathname } = new URL(request.url);
 

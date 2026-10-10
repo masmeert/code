@@ -16,6 +16,8 @@ export * from "./browser.ts";
 
 export * from "./devices.ts";
 
+export * from "./phones.ts";
+
 export * from "./desktop.ts";
 
 export * from "./events.ts";

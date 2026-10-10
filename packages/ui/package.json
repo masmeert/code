@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
+    "@masscode/client": "workspace:*",
     "@paper-design/shaders-react": "^0.0.81",
     "@tanstack/react-virtual": "^3.14.13",
     "class-variance-authority": "^0.7.1",

@@ -2,11 +2,10 @@ import type { PromptOption } from "@masscode/ui/agents/prompt-input";
 import { PROVIDER_LOGO } from "@/components/provider-logo";
 import { Star } from "lucide-react";
 import { createElement } from "react";
+import { getVisibleModels } from "@masscode/client";
 import {
-  type ModelOption,
   PROVIDER_NAME,
   ProviderKind,
-  type ProviderSettings,
   type ProviderStatus,
   type Settings,
 } from "@masscode/contracts";
@@ -14,22 +13,6 @@ import {
 /** The harness's name as the user set it in Settings, else its own. */
 export function formatHarnessLabel(settings: Settings, provider: ProviderKind) {
   return settings.providers[provider].displayName?.trim() || PROVIDER_NAME[provider];
-}
-
-/** Models in the order the user arranged them; ones they haven't placed keep the harness's order, after the rest. */
-export function orderModels(models: ReadonlyArray<ModelOption>, harness: ProviderSettings) {
-  const order = harness.modelOrder ?? [];
-
-  function getOrderIndex(id: string) {
-    return order.includes(id) ? order.indexOf(id) : order.length;
-  }
-
-  return models.toSorted((left, right) => getOrderIndex(left.id) - getOrderIndex(right.id));
-}
-
-/** Models offered in pickers: arranged, without the ones switched off. */
-function getVisibleModels(models: ReadonlyArray<ModelOption>, harness: ProviderSettings) {
-  return orderModels(models, harness).filter((model) => !harness.hiddenModels?.includes(model.id));
 }
 
 /** Star marking a harness's own default pick (model, effort) in menus. */
@@ -77,24 +60,6 @@ export function getFavoriteChoices(settings: Settings) {
       encodeChoice(provider, model),
     ),
   );
-}
-
-/** The model a harness uses when none is picked: the Settings default if still listed, else the recommended one, else its first. */
-export function findDefaultModel(
-  providers: ReadonlyArray<ProviderStatus>,
-  settings: Settings,
-  provider: ProviderKind,
-) {
-  const models = getVisibleModels(
-    providers.find((status) => status.kind === provider)?.models ?? [],
-    settings.providers[provider],
-  );
-
-  const saved = settings.providers[provider].defaultModel;
-
-  if (saved && (!models.length || models.some((model) => model.id === saved))) return saved;
-
-  return (models.find((model) => model.recommended) ?? models[0])?.id ?? saved ?? null;
 }
 
 /** The picked `<harness>:<model>` as its harness lists it. */

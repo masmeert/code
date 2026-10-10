@@ -4,14 +4,11 @@ import { ToolApproval, ToolApprovalCode } from "@masscode/ui/agents/tool-approva
 import { ScrollArea } from "@masscode/ui/components/scroll-area";
 import type { UserQuestion } from "@masscode/contracts";
 import { useState } from "react";
-import {
-  approvePlan,
-  BUILD_WITH_LABEL,
-  PERMISSIONS,
-  useNeedsRootConsent,
-} from "../lib/composer.ts";
+import { PERMISSIONS } from "@masscode/client";
+import { approvePlan, BUILD_WITH_LABEL, useNeedsRootConsent } from "../lib/composer.ts";
 import { getDraft } from "../lib/drafts.ts";
-import { respondApproval, useStore, useThreadHost, type TranscriptItem } from "../lib/store.ts";
+import type { TranscriptItem } from "@masscode/client";
+import { respondApproval, useStore, useThreadHost } from "../lib/store.ts";
 import { RootFullAccessDialog } from "./Composer.tsx";
 
 type ApprovalItem = Extract<TranscriptItem, { kind: "approval" }>;

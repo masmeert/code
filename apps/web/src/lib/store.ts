@@ -12,15 +12,13 @@ import {
   type ProviderKind,
   type ProviderSettings,
   type ProviderStatus,
+  type PairedPhone,
   type RemoteHost,
   type SourceControlStatus,
   type Settings,
   type ApprovalDecision,
-  type Attachment,
-  type CommandRun,
   ClientCommand,
   type GitAction,
-  type PageInfo,
   type PermissionLevel,
   type RepoStatus,
   RuntimeEvent,
@@ -28,18 +26,24 @@ import {
   ServerFrame,
   type Skill,
   type SlashCommand,
-  type StoredEvent,
   type ThreadInfo,
   type QueuedMessage,
   type TurnOptions,
   type UsageLimit,
   type UserAnswers,
-  type UserQuestion,
   findFileRestoreBlocker,
   isTranscriptEvent,
   isTurnActive,
 } from "@masscode/contracts";
-import type { ToolCall } from "@masscode/ui/agents/tool-group";
+import {
+  prependPage,
+  reduceItems,
+  reduceThreads,
+  replayTranscript,
+  snapshotTranscript,
+  type Transcript,
+  type TranscriptItem,
+} from "@masscode/client";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
@@ -47,103 +51,6 @@ import { normalizeUrl, openPreview, performBrowserAction } from "./browser.ts";
 import { showDevice } from "./simulator.ts";
 import { loadShell, loadTranscript, removeTranscript, saveShell, saveTranscript } from "./cache.ts";
 import { decodeChoice } from "./models.ts";
-
-export type TranscriptItem =
-  | {
-      readonly kind: "user";
-      readonly id: string;
-      readonly text: string;
-      readonly attachments: ReadonlyArray<Attachment>;
-      /** Sent into a running turn; those can't be rewound to. */
-      readonly steer: boolean;
-      /** Set when a finished command run sent it, rather than the user typing it. */
-      readonly run: CommandRun | null;
-      /** The harness it went to; null on messages from before threads could switch harness. */
-      readonly provider: ProviderKind | null;
-      /** What that harness was told ahead of it, having just been switched to. */
-      readonly handoff: {
-        readonly from: ProviderKind;
-        readonly messages: number;
-        readonly text: string;
-      } | null;
-    }
-  /** What a turn changed on disk; `id` is `checkpoint:<messageId>` of the message that started it. */
-  | {
-      readonly kind: "checkpoint";
-      readonly id: string;
-      readonly messageId: string;
-      readonly files: number;
-      readonly additions: number;
-      readonly deletions: number;
-    }
-  | { readonly kind: "assistant"; readonly id: string; readonly text: string }
-  /** The agent's thinking, folded to a line in the transcript. */
-  | { readonly kind: "reasoning"; readonly id: string; readonly text: string }
-  | {
-      readonly kind: "forked";
-      readonly id: string;
-      readonly fromThreadId: string;
-      readonly fromTitle: string;
-    }
-  /** Where a thread another thread's agent started begins: that thread. */
-  | {
-      readonly kind: "startedBy";
-      readonly id: string;
-      readonly byThreadId: string;
-      readonly byTitle: string;
-    }
-  | {
-      readonly kind: "tool";
-      readonly id: string;
-      readonly name: string;
-      readonly summary: string;
-      readonly output: string | null;
-      readonly isError: boolean;
-      /** Calls made by the subagent this call started. Missing on items cached before subagents showed. */
-      readonly children?: ReadonlyArray<ToolCall>;
-      /** What that subagent is doing now, in its own words; updated every half minute or so. */
-      readonly progress?: string;
-      readonly tokens?: number;
-      /** When that subagent started, back-dated from the run time its progress reports. */
-      readonly startedAt?: number;
-    }
-  | {
-      readonly kind: "approval";
-      readonly id: string;
-      readonly title: string;
-      readonly detail: string;
-      /** The subagent asking, when it isn't the main agent. */
-      readonly agent?: string;
-      readonly resolved: boolean;
-      readonly decision: ApprovalDecision | null;
-      /** Set when the agent asks questions rather than for permission. */
-      readonly questions?: ReadonlyArray<UserQuestion>;
-      /** What was answered; absent until then, and when the questions were skipped. */
-      readonly answers?: UserAnswers;
-    }
-  /** How the new worktree's setup command from `masscode.toml` ended. */
-  | {
-      readonly kind: "setup";
-      readonly id: string;
-      readonly run: CommandRun;
-      readonly stopped: boolean;
-    }
-  | { readonly kind: "error"; readonly id: string; readonly text: string };
-
-/**
- * One thread's messages, loaded when it's opened (the thread list never needs them).
- * Same lifecycle as t3code's thread state: `cached` from the last run, `loading` while
- * the daemon sends it, `live` once caught up and following new events.
- */
-interface Transcript {
-  readonly items: ReadonlyArray<TranscriptItem>;
-  /** Id of the newest stored event applied; the daemon replays whatever came after it. */
-  readonly cursor: number;
-  /** Set when only the latest turns are loaded. */
-  readonly page: PageInfo | null;
-  readonly status: "cached" | "loading" | "live";
-  readonly loadingOlder: boolean;
-}
 
 export interface State {
   readonly connected: boolean;
@@ -159,6 +66,8 @@ export interface State {
   readonly settings: Settings;
   readonly projects: ReadonlyArray<Project>;
   readonly providers: ReadonlyArray<ProviderStatus>;
+  /** Phones paired with this Mac's daemon. */
+  readonly phones: ReadonlyArray<PairedPhone>;
   /** GitHub and GitLab CLI status; null until Settings asks for it. */
   readonly sourceControl: ReadonlyArray<SourceControlStatus> | null;
   readonly authFlows: Partial<Record<ProviderKind, AuthFlow>>;
@@ -277,6 +186,7 @@ const initial: State = {
   settings: DEFAULT_SETTINGS,
   projects: [],
   providers: [],
+  phones: [],
   sourceControl: null,
   authFlows: {},
   limits: {},
@@ -339,228 +249,6 @@ export function findFirstTurnOptions(threadId: string) {
 /** Latest turns loaded when a thread opens, and per "load earlier" (t3code uses the same window). */
 const TURN_LIMIT = 10;
 
-/** Searches from the end: the item being updated is almost always the last one. */
-function upsert(
-  items: ReadonlyArray<TranscriptItem>,
-  id: string,
-  next: (prev: TranscriptItem | undefined) => TranscriptItem,
-) {
-  let index = items.length - 1;
-
-  while (index >= 0 && items[index].id !== id) index--;
-
-  if (index === -1) return [...items, next(undefined)];
-
-  const copy = items.slice();
-  copy[index] = next(items[index]);
-
-  return copy;
-}
-
-/** Applies a transcript event. Unchanged items keep their identity, so rendering can skip them. */
-function reduceItems(
-  items: ReadonlyArray<TranscriptItem>,
-  event: RuntimeEvent,
-  id: number | null,
-): ReadonlyArray<TranscriptItem> {
-  return RuntimeEvent.matchOrElse<ReadonlyArray<TranscriptItem>>(
-    event,
-    {
-      "user.message": (message) =>
-        upsert(items, message.messageId, () => ({
-          kind: "user",
-          id: message.messageId,
-          text: message.text,
-          attachments: message.attachments ?? [],
-          steer: message.steer === true,
-          run: message.run ?? null,
-          provider: message.provider ?? null,
-          handoff: message.handoff ?? null,
-        })),
-      "turn.checkpoint": ({ messageId, files, additions, deletions }) => {
-        const checkpoint: TranscriptItem = {
-          kind: "checkpoint",
-          id: `checkpoint:${messageId}`,
-          messageId,
-          files,
-          additions,
-          deletions,
-        };
-
-        // Worked out after the turn ends, by which time a queued message may have started the next
-        // turn: it goes at the end of its own turn, before the next prompt.
-        const start = items.findIndex((item) => item.id === messageId);
-
-        const next =
-          start === -1
-            ? -1
-            : items.findIndex(
-                (item, index) => index > start && item.kind === "user" && !item.steer,
-              );
-
-        if (next === -1) return upsert(items, checkpoint.id, () => checkpoint);
-
-        return [
-          ...items.slice(0, next).filter((item) => item.id !== checkpoint.id),
-          checkpoint,
-          ...items.slice(next).filter((item) => item.id !== checkpoint.id),
-        ];
-      },
-      "thread.forked": ({ fromThreadId, fromTitle }) =>
-        upsert(items, `forked:${fromThreadId}`, () => ({
-          kind: "forked",
-          id: `forked:${fromThreadId}`,
-          fromThreadId,
-          fromTitle,
-        })),
-      "thread.startedBy": ({ byThreadId, byTitle }) =>
-        upsert(items, `startedBy:${byThreadId}`, () => ({
-          kind: "startedBy",
-          id: `startedBy:${byThreadId}`,
-          byThreadId,
-          byTitle,
-        })),
-      "worktree.setup": ({ run, stopped }) =>
-        upsert(items, "setup", () => ({ kind: "setup", id: "setup", run, stopped })),
-      "thread.rewound": (rewound) => {
-        const index = items.findIndex((item) => item.id === rewound.messageId);
-
-        return index === -1 ? items : items.slice(0, index);
-      },
-      "assistant.delta": (delta) =>
-        upsert(items, delta.messageId, (prev) => ({
-          kind: "assistant",
-          id: delta.messageId,
-          text: (prev?.kind === "assistant" ? prev.text : "") + delta.delta,
-        })),
-      "assistant.completed": (completed) =>
-        upsert(items, completed.messageId, () => ({
-          kind: "assistant",
-          id: completed.messageId,
-          text: completed.text,
-        })),
-      "reasoning.delta": (delta) =>
-        upsert(items, delta.messageId, (prev) => ({
-          kind: "reasoning",
-          id: delta.messageId,
-          text: (prev?.kind === "reasoning" ? prev.text : "") + delta.delta,
-        })),
-      "reasoning.completed": (completed) =>
-        upsert(items, completed.messageId, () => ({
-          kind: "reasoning",
-          id: completed.messageId,
-          text: completed.text,
-        })),
-      "tool.started": (tool) => {
-        const call = {
-          id: tool.toolId,
-          name: tool.name,
-          summary: tool.summary,
-          output: null,
-          isError: false,
-        };
-
-        const parent = items.findLast((item) => item.id === tool.parentToolId);
-
-        if (parent?.kind !== "tool")
-          return upsert(items, tool.toolId, () => ({ kind: "tool", ...call }));
-
-        return upsert(items, parent.id, () => ({
-          ...parent,
-          children: [...(parent.children ?? []).filter((child) => child.id !== call.id), call],
-        }));
-      },
-      "tool.progress": (progress) =>
-        items.map((item) =>
-          item.kind === "tool" && item.id === progress.toolId
-            ? {
-                ...item,
-                progress: progress.summary ?? item.progress,
-                tokens: progress.tokens ?? item.tokens,
-                startedAt:
-                  progress.durationMs === undefined
-                    ? item.startedAt
-                    : Date.now() - progress.durationMs,
-              }
-            : item,
-        ),
-      "tool.completed": (tool) =>
-        items.map((item) => {
-          if (item.kind !== "tool") return item;
-
-          if (item.id === tool.toolId)
-            return { ...item, output: tool.output, isError: tool.isError };
-
-          if (!item.children?.some((child) => child.id === tool.toolId)) return item;
-
-          return {
-            ...item,
-            children: item.children.map((child) =>
-              child.id === tool.toolId
-                ? { ...child, output: tool.output, isError: tool.isError }
-                : child,
-            ),
-          };
-        }),
-      "approval.requested": (approval) =>
-        upsert(items, approval.requestId, () => ({
-          kind: "approval",
-          id: approval.requestId,
-          title: approval.title,
-          detail: approval.detail,
-          agent: approval.agent,
-          resolved: false,
-          decision: null,
-          questions: approval.questions,
-        })),
-      "approval.resolved": (approval) =>
-        items.map((item) =>
-          item.id === approval.requestId && item.kind === "approval"
-            ? { ...item, resolved: true, answers: approval.answers }
-            : item,
-        ),
-      error: (error) => {
-        const key = id === null ? crypto.randomUUID() : `error:${id}`;
-
-        return upsert(items, key, () => ({ kind: "error", id: key, text: error.message }));
-      },
-    },
-    () => items,
-  );
-}
-
-function applyStoredEvents(
-  items: ReadonlyArray<TranscriptItem>,
-  events: ReadonlyArray<StoredEvent>,
-  after: number,
-) {
-  let next = items;
-
-  for (const { id, event } of events) if (id > after) next = reduceItems(next, event, id);
-
-  return next;
-}
-
-/** Text of messages still streaming, sent whole with a snapshot or replay: it replaces what the cache had. */
-function applyStreaming(items: ReadonlyArray<TranscriptItem>, deltas: ReadonlyArray<RuntimeEvent>) {
-  const texts = new Map<string, { kind: "assistant" | "reasoning"; text: string }>();
-
-  for (const event of deltas) {
-    if (RuntimeEvent.isAnyOf(["assistant.delta", "reasoning.delta"])(event))
-      texts.set(event.messageId, {
-        kind: RuntimeEvent.guards["assistant.delta"](event) ? "assistant" : "reasoning",
-        text: (texts.get(event.messageId)?.text ?? "") + event.delta,
-      });
-  }
-
-  let next = items;
-
-  for (const [messageId, { kind, text }] of texts)
-    next = upsert(next, messageId, () => ({ kind, id: messageId, text }));
-
-  return next;
-}
-
 /** Everything but transcripts: the thread list, settings, projects, git state… */
 function reduceShell(state: State, event: RuntimeEvent): State {
   return RuntimeEvent.matchOrElse<State>(
@@ -585,6 +273,7 @@ function reduceShell(state: State, event: RuntimeEvent): State {
         };
       },
       "providers.updated": ({ providers }) => ({ ...state, providers }),
+      "phones.updated": ({ phones }) => ({ ...state, phones }),
       "sourceControl.updated": ({ statuses }) => ({ ...state, sourceControl: statuses }),
       "git.branches": ({ path, current, branches, error }) => ({
         ...state,
@@ -693,30 +382,6 @@ function reduceShell(state: State, event: RuntimeEvent): State {
         };
       },
       "terminal.closed": ({ threadId, terminalId }) => removeTerminal(state, threadId, terminalId),
-      "thread.status": ({ threadId, status }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, status })),
-      "thread.model": ({ threadId, provider, model }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, provider, model })),
-      "thread.archived": ({ threadId, archivedAt }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, archivedAt })),
-      "thread.shelved": ({ threadId, shelved }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, shelved })),
-      "thread.seen": ({ threadId, seenRev }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, seenRev })),
-      "thread.activity": ({ threadId, activity }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, activity: activity ?? undefined })),
-      "thread.request": ({ threadId, request }) =>
-        updateThreadInfo(state, threadId, (info) => ({ ...info, request: request ?? undefined })),
-      "thread.limitStop": ({ threadId, limitStop }) =>
-        updateThreadInfo(state, threadId, (info) => ({
-          ...info,
-          limitStop: limitStop ?? undefined,
-        })),
-      "thread.queue": ({ threadId, queue }) =>
-        updateThreadInfo(state, threadId, (info) => ({
-          ...info,
-          queue: queue.length > 0 ? queue : undefined,
-        })),
       "thread.usage": ({ threadId, usage }) => {
         const { [threadId]: _reading, ...readingUsage } = state.readingUsage;
         const next = { ...state, readingUsage };
@@ -727,17 +392,12 @@ function reduceShell(state: State, event: RuntimeEvent): State {
         ...state,
         limits: { ...state.limits, [provider]: { limits, error, loading: false } },
       }),
-      "thread.meta": ({ threadId, title, updatedAt, branch, cwd, worktree }) =>
-        updateThreadInfo(state, threadId, (info) => ({
-          ...info,
-          title,
-          updatedAt,
-          branch,
-          cwd,
-          worktree,
-        })),
     },
-    () => state,
+    () => {
+      const threads = reduceThreads(state.threads, event);
+
+      return threads === state.threads ? state : { ...state, threads };
+    },
   );
 }
 
@@ -1100,6 +760,7 @@ function onShell(connection: Connection, frame: Extract<ServerFrame, { _tag: "sh
           dataId: frame.dataId,
           settings: frame.settings,
           providers: frame.providers,
+          phones: frame.phones,
         }
       : updateHost(merged, host, (current) => ({
           ...current,
@@ -1173,53 +834,20 @@ function sendRequest<const ReplyTag extends Extract<ServerFrame, { requestId: st
 function onFrame(connection: Connection, frame: ServerFrame) {
   return ServerFrame.match(frame, {
     shell: (shell) => onShell(connection, shell),
-    "thread.snapshot": (snapshot) => {
-      const items = applyStreaming(applyStoredEvents([], snapshot.events, 0), snapshot.streaming);
+    "thread.snapshot": (snapshot) =>
+      setState(setTranscript(state, snapshot.threadId, snapshotTranscript(snapshot))),
+    "thread.replay": (replay) =>
       setState(
-        setTranscript(state, snapshot.threadId, {
-          items,
-          cursor: snapshot.cursor,
-          page: snapshot.page,
-          status: "live",
-          loadingOlder: false,
-        }),
-      );
-    },
-    "thread.replay": (replay) => {
-      const prev = state.transcripts[replay.threadId];
-      const base = prev?.items ?? [];
-
-      const items = applyStreaming(
-        applyStoredEvents(base, replay.events, prev?.cursor ?? 0),
-        replay.streaming,
-      );
-
-      const cursor = Math.max(prev?.cursor ?? 0, replay.cursor);
-      setState(
-        setTranscript(state, replay.threadId, {
-          items,
-          cursor,
-          page: prev?.page ?? null,
-          status: "live",
-          loadingOlder: false,
-        }),
-      );
-    },
+        setTranscript(
+          state,
+          replay.threadId,
+          replayTranscript(state.transcripts[replay.threadId], replay),
+        ),
+      ),
     "thread.page": (page) => {
-      const prev = state.transcripts[page.threadId];
+      const previous = state.transcripts[page.threadId];
 
-      if (!prev) return;
-
-      const known = new Set(prev.items.map((item) => item.id));
-      const older = applyStoredEvents([], page.events, 0).filter((item) => !known.has(item.id));
-      setState(
-        setTranscript(state, page.threadId, {
-          ...prev,
-          items: [...older, ...prev.items],
-          page: page.page,
-          loadingOlder: false,
-        }),
-      );
+      if (previous) setState(setTranscript(state, page.threadId, prependPage(previous, page)));
     },
     "search.results": resolveReply,
     "folder.entries": resolveReply,
@@ -1229,6 +857,7 @@ function onFrame(connection: Connection, frame: ServerFrame) {
     "project.cloned": resolveReply,
     "device.listed": resolveReply,
     "device.attached": resolveReply,
+    "pairing.started": resolveReply,
     "terminal.snapshot": ({ threadId, terminalId, data }) =>
       screens.get(getScreenKey(threadId, terminalId))?.reset(data),
     "terminal.output": ({ threadId, terminalId, data }) =>
@@ -1735,6 +1364,18 @@ export async function attachDevice(threadId: string, deviceId: string | null) {
   );
 
   return attached ? attached.error : "MassCode didn't answer in time. Try again.";
+}
+
+/** A one-time code for a phone to pair with this Mac, or why it can't pair. */
+export async function startPhonePairing() {
+  const started = await sendRequest(
+    null,
+    ClientCommand.cases["pairing.start"].make({ requestId: crypto.randomUUID() }),
+    "pairing.started",
+    10_000,
+  );
+
+  return started ?? { offer: null, error: "MassCode didn't answer in time. Try again." };
 }
 
 /** Signed URLs by thread and source, renewed before the daemon's hour runs out. */

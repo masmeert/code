@@ -21,7 +21,8 @@ import {
 import * as Schema from "effect/Schema";
 import { ArrowDown, ArrowUp, Monitor, Server, Star } from "lucide-react";
 import { useEffect, useState } from "react";
-import { findDefaultModel, formatHarnessLabel, orderModels } from "../../lib/models.ts";
+import { findDefaultModel, orderModels } from "@masscode/client";
+import { formatHarnessLabel } from "../../lib/models.ts";
 import { send, updateHarness, useProviders, useStore } from "../../lib/store.ts";
 import {
   SettingsSection,

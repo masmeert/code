@@ -15,7 +15,7 @@ import { X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { formatHarnessLabel } from "../lib/models.ts";
 import { askSideChat, closeSideChat, useStore } from "../lib/store.ts";
-import { NO_ITEMS, toBlocks, hasNewestItem, isShowingWork } from "../lib/transcriptBlocks.ts";
+import { NO_ITEMS, toBlocks, hasNewestItem, isShowingWork } from "@masscode/client";
 import { AgentBlock } from "./Transcript.tsx";
 
 /** Read-only side questions about one reply (BTW), over the thread; closing it ends them for good. */

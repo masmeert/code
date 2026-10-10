@@ -46,14 +46,16 @@ import {
 } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import {
-  allowFullAccessAsRoot,
   EFFORT_LABEL,
   EFFORTS,
-  createTextAttachment,
-  LARGE_PASTE_BYTES,
   PERMISSION_DESCRIPTION,
   PERMISSION_LABEL,
   PERMISSIONS,
+} from "@masscode/client";
+import {
+  allowFullAccessAsRoot,
+  createTextAttachment,
+  LARGE_PASTE_BYTES,
   fitToModel,
   toTurnOptions,
   useAttachments,
@@ -76,7 +78,8 @@ import {
   useProviders,
   useStore,
 } from "../lib/store.ts";
-import { formatAge, useNow } from "../lib/time.ts";
+import { formatAge } from "@masscode/client";
+import { useNow } from "@masscode/client";
 import { UsageMeter } from "./UsageMeter.tsx";
 
 const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {

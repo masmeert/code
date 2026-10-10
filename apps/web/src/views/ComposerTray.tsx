@@ -1,5 +1,6 @@
 import { Fold } from "@masscode/ui/motion/fold";
-import { livePhrase, summarize, ToolCallRow } from "@masscode/ui/agents/tool-group";
+import { livePhrase, summarize } from "@masscode/client";
+import { ToolCallRow } from "@masscode/ui/agents/tool-group";
 import { cn } from "@masscode/ui/lib/utils";
 import { PROVIDER_LOGO } from "@/components/provider-logo";
 import {
@@ -34,11 +35,11 @@ import { type ReactNode, useId, useState } from "react";
 import { appendToDraft, focusComposer } from "../lib/drafts.ts";
 import { formatKeybinding } from "../lib/keybindings.ts";
 import { describeRange, removeReviewComment, type ReviewComment } from "../lib/reviewComments.ts";
-import { useNow } from "../lib/time.ts";
+import { useNow } from "@masscode/client";
 import { formatResetLabel, tokenFormat } from "./UsageMeter.tsx";
 import { formatHarnessLabel } from "../lib/models.ts";
 import { send, sendQueuedNow, takeQueued } from "../lib/store.ts";
-import { type ToolItem } from "../lib/transcriptBlocks.ts";
+import { type ToolItem } from "@masscode/client";
 
 /** Held messages go back into the composer, after whatever is there. */
 export function returnToComposer(threadId: string, queued: ReadonlyArray<QueuedMessage>) {

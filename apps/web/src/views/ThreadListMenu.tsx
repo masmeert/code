@@ -13,7 +13,8 @@ import {
 } from "@masscode/ui/components/dropdown-menu";
 import { Button } from "@masscode/ui/motion/button";
 import { cn } from "@masscode/ui/lib/utils";
-import { ProjectBadge, formatProjectLabel } from "@/components/project-badge";
+import { formatProjectLabel } from "@masscode/client";
+import { ProjectBadge } from "@/components/project-badge";
 import type { Project } from "@masscode/contracts";
 import { SlidersHorizontal } from "lucide-react";
 import type { ReactNode } from "react";

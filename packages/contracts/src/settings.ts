@@ -92,6 +92,8 @@ export const Settings = Schema.Struct({
   followTemplates: Schema.optional(Schema.Boolean),
   /** System notifications when a thread finishes or needs you, while MassCode is in the background. Absent counts as on. */
   notifications: Schema.optional(Schema.Boolean),
+  /** Paired phones can reach the daemon over Tailscale. Absent counts as off. */
+  remoteAccess: Schema.optional(Schema.Boolean),
 });
 
 export type Settings = typeof Settings.Type;

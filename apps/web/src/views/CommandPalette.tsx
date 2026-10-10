@@ -1,4 +1,5 @@
-import { ProjectBadge, formatProjectLabel } from "@/components/project-badge";
+import { formatProjectLabel } from "@masscode/client";
+import { ProjectBadge } from "@/components/project-badge";
 import { searchCommands } from "@masscode/ui/lib/command-search";
 import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
 import { cn } from "@masscode/ui/lib/utils";

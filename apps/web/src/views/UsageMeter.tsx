@@ -12,7 +12,7 @@ import {
   useStore,
   useThreadHost,
 } from "../lib/store.ts";
-import { useNow } from "../lib/time.ts";
+import { useNow } from "@masscode/client";
 
 export const tokenFormat = new Intl.NumberFormat("en", {
   notation: "compact",

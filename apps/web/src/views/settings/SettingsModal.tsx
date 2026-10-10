@@ -3,7 +3,15 @@ import { SharedLayoutBg } from "@masscode/ui/motion/shared-layout-bg";
 import { ScrollArea } from "@masscode/ui/components/scroll-area";
 import { cn } from "@masscode/ui/lib/utils";
 import { ClientCommand } from "@masscode/contracts";
-import { Bot, FolderGit2, GitCommitHorizontal, Palette, Server, Settings2 } from "lucide-react";
+import {
+  Bot,
+  FolderGit2,
+  GitCommitHorizontal,
+  Palette,
+  Server,
+  Settings2,
+  Smartphone,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { send } from "../../lib/store.ts";
 import { AppearancePage } from "./AppearancePage.tsx";
@@ -11,6 +19,7 @@ import { ConnectionsPage } from "./ConnectionsPage.tsx";
 import { GeneralPage } from "./GeneralPage.tsx";
 import { GitPage } from "./GitPage.tsx";
 import { HarnessesPage } from "./HarnessesPage.tsx";
+import { PhonesPage } from "./PhonesPage.tsx";
 import { ProjectsPage } from "./ProjectsPage.tsx";
 
 const PAGES = [
@@ -20,6 +29,7 @@ const PAGES = [
   { page: "harnesses", title: "Harnesses", icon: Bot, Content: HarnessesPage },
   { page: "git", title: "Git", icon: GitCommitHorizontal, Content: GitPage },
   { page: "connections", title: "Connections", icon: Server, Content: ConnectionsPage },
+  { page: "phone", title: "Phone", icon: Smartphone, Content: PhonesPage },
 ] as const;
 
 /** Settings, over the app; its pages are listed down the side. */

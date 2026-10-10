@@ -21,7 +21,8 @@ import {
 import { SPRING_LAYOUT, SPRING_SWAP } from "@masscode/ui/lib/ease";
 import { NumberTicker } from "@masscode/ui/motion/number-ticker";
 import { SharedLayoutBg } from "@masscode/ui/motion/shared-layout-bg";
-import { ProjectBadge, formatProjectLabel } from "@/components/project-badge";
+import { formatProjectLabel, getProjectKey } from "@masscode/client";
+import { ProjectBadge } from "@/components/project-badge";
 import { getHarnessTint, PROVIDER_LOGO } from "@/components/provider-logo";
 import { cn } from "@masscode/ui/lib/utils";
 import { formatBinding, isMac } from "@masscode/ui/lib/keys";
@@ -29,11 +30,10 @@ import {
   ClientCommand,
   isAwaitingUser,
   type Project,
-  type ThreadActivity,
   type ThreadInfo,
   UpdateStatus,
 } from "@masscode/contracts";
-import { categoryOf, livePhrase } from "@masscode/ui/agents/tool-group";
+import { categoryOf, describeActivity } from "@masscode/client";
 import { TextShimmer } from "@masscode/ui/motion/text-shimmer";
 import {
   Archive,
@@ -70,13 +70,13 @@ import {
   useStore,
 } from "../lib/store.ts";
 import { formatKeybinding } from "../lib/keybindings.ts";
-import { getProjectKey } from "../lib/projects.ts";
 import { useThreadListView } from "../lib/threadListView.ts";
-import { formatAge, useNow } from "../lib/time.ts";
+import { formatAge } from "@masscode/client";
+import { useNow } from "@masscode/client";
 import { useUpdateStatus } from "../lib/updates.ts";
 import { getUpdateAction } from "../lib/updateAction.ts";
 import { buildFallbackProject } from "../lib/fallbackProject.ts";
-import { PLAN_APPROVAL_TITLE } from "../lib/transcriptBlocks.ts";
+import { getStatusDotStyle, NEEDS_YOU, PLAN_APPROVAL_TITLE } from "@masscode/client";
 import { usePersistedFlag } from "../lib/usePersistedFlag.ts";
 import { ThreadListMenu } from "./ThreadListMenu.tsx";
 
@@ -560,48 +560,6 @@ function StatusDot({
   return (
     <span role="img" aria-label={label} className={cn("size-2 shrink-0 rounded-full", tone)} />
   );
-}
-
-/** Why a thread needs you, as its dot and its trailing label say it. */
-const NEEDS_YOU: Partial<
-  Record<ThreadInfo["status"], { label: string; dotTone: string; labelTone: string }>
-> = {
-  "awaiting-approval": {
-    label: "Needs approval",
-    dotTone: "bg-warning",
-    labelTone: "text-warning",
-  },
-  "awaiting-answer": { label: "Needs an answer", dotTone: "bg-warning", labelTone: "text-warning" },
-  error: { label: "Error", dotTone: "bg-destructive", labelTone: "text-destructive" },
-};
-
-function getStatusDotStyle(info: ThreadInfo, isUnread: boolean, isShelved: boolean) {
-  const needsYou = NEEDS_YOU[info.status];
-
-  if (needsYou) return { label: needsYou.label, tone: needsYou.dotTone };
-
-  if (info.status === "running") return { label: "Working", tone: "bg-success animate-pulse" };
-
-  if (isUnread) return { label: "New activity", tone: "bg-brand" };
-
-  if (isShelved) return { label: "Shelved", tone: "bg-muted-foreground/25" };
-
-  return { label: "Idle", tone: "bg-brand" };
-}
-
-/** What a running thread is doing: the command it runs, else the tool call in words. */
-function describeActivity(activity: ThreadActivity | undefined) {
-  if (!activity) return "Thinking…";
-
-  if (categoryOf(activity.tool) === "run") return activity.summary;
-
-  return livePhrase({
-    id: activity.toolId,
-    name: activity.tool,
-    summary: activity.summary,
-    output: null,
-    isError: false,
-  });
 }
 
 /** Provider mark; spins while the agent works. */

@@ -1,16 +1,17 @@
 import { OrbFace } from "@masscode/ui/agents/orb-face";
 import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
 import { ProjectBadge } from "@/components/project-badge";
-import { addProject, getProjectKey } from "../lib/projects.ts";
+import { getProjectKey } from "@masscode/client";
+import { addProject } from "../lib/projects.ts";
 import { Button } from "@masscode/ui/motion/button/base";
 import { cn } from "@masscode/ui/lib/utils";
 import { type Project, parseRepository } from "@masscode/contracts";
 import { Check, FolderPlus, LoaderCircle, Monitor, Server } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import { findDefaultModel } from "@masscode/client";
 import { focusComposer } from "../lib/drafts.ts";
 import {
   decodeChoice,
-  findDefaultModel,
   encodeChoice,
   formatHarnessLabel,
   buildModelChoices,

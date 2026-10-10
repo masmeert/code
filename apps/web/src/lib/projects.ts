@@ -1,4 +1,3 @@
-import { type Project, parseRepository } from "@masscode/contracts";
 import { useSyncExternalStore } from "react";
 import { addProjectOn, getHosts, getSettings } from "./store.ts";
 
@@ -60,6 +59,3 @@ export function addProject(): Promise<string | null> {
  * Which project this is on every machine: its repo, and where it sits in it since a repo can
  * hold several projects. A folder outside git, or in a repo without a remote, is only itself.
  */
-export function getProjectKey(project: Pick<Project, "id" | "remote" | "folder">) {
-  return project.remote ? `${parseRepository(project.remote)}#${project.folder ?? ""}` : project.id;
-}
