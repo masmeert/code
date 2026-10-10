@@ -83,7 +83,9 @@ const DiffPanel = lazy(() =>
 );
 
 const TerminalPanel = lazy(() =>
-  import("./TerminalPanel.tsx").then((module) => ({ default: module.TerminalPanel })),
+  import("./TerminalPanel.tsx").then((module) => ({
+    default: module.TerminalPanel,
+  })),
 );
 
 const NO_QUEUE: ReadonlyArray<QueuedMessage> = [];
@@ -152,6 +154,15 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
   const reviewComments = useReviewComments(threadId);
   const [revealedComment, setRevealedComment] = useState<ReviewComment | null>(null);
   const clearRevealedComment = useCallback(() => setRevealedComment(null), []);
+
+  const [composerHeightPx, setComposerHeightPx] = useState(0);
+
+  const observeComposer = useCallback((node: HTMLDivElement) => {
+    const observer = new ResizeObserver(() => setComposerHeightPx(node.offsetHeight));
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, []);
 
   const followUps = useStore((state) => state.threads[threadId]?.queue) ?? NO_QUEUE;
   const followUpMode = useStore((state) => state.settings.followUp ?? "queue");
@@ -322,98 +333,112 @@ export const ThreadView = memo(function ThreadView({ threadId }: { threadId: str
                 </Message>
               ) : null}
             </MessageGroup>
+            {/* The composer floats over the transcript's end; this keeps the last message clear of it. */}
+            <div aria-hidden style={{ height: composerHeightPx }} />
           </MessageScroller>
 
-          <Composer
-            prefsKey={threadId}
-            threadId={threadId}
-            history={history}
-            provider={provider}
-            cwd={info.cwd}
-            isBusy={isBusy}
-            header={
-              <>
-                <PromptInputTray open={runningAgents.length > 0} detached>
-                  <RunningAgents
-                    threadId={threadId}
-                    agents={runningAgents}
-                    // Stopping one Codex subagent leaves the main agent waiting on it; Stop ends them all.
-                    canStopOne={provider === "claude"}
-                    onReveal={(toolId) => setReveal({ toolId })}
-                  />
-                </PromptInputTray>
-                <PromptInputTray open={info.limitStop !== undefined} detached>
-                  {info.limitStop ? (
-                    <LimitStopNotice
+          <div ref={observeComposer} className="pointer-events-none absolute inset-x-0 bottom-0">
+            <Composer
+              prefsKey={threadId}
+              threadId={threadId}
+              history={history}
+              provider={provider}
+              cwd={info.cwd}
+              isBusy={isBusy}
+              header={
+                <>
+                  <PromptInputTray open={runningAgents.length > 0} detached>
+                    <RunningAgents
                       threadId={threadId}
-                      stop={info.limitStop}
-                      provider={provider}
-                      providers={providers}
-                      settings={settings}
-                      options={toTurnOptions({ effort, fast, permission }, catalog, [])}
+                      agents={runningAgents}
+                      // Stopping one Codex subagent leaves the main agent waiting on it; Stop ends them all.
+                      canStopOne={provider === "claude"}
+                      onReveal={(toolId) => setReveal({ toolId })}
                     />
-                  ) : null}
-                </PromptInputTray>
-                <PromptInputTray open={followUps.length > 0 || reviewComments.length > 0}>
-                  {reviewComments.map((comment) => (
-                    <ReviewCommentRow
-                      key={comment.id}
-                      threadId={threadId}
-                      comment={comment}
-                      onReveal={() => {
-                        setIsDiffOpen(true);
-                        setRevealedComment(comment);
-                      }}
-                    />
-                  ))}
-                  {followUps.map((followUp, index) => (
-                    <QueuedFollowUp
-                      key={followUp.id}
-                      threadId={threadId}
-                      followUp={followUp}
-                      isNext={index === 0}
-                    />
-                  ))}
-                </PromptInputTray>
-              </>
-            }
-            models={choices}
-            model={modelChoice}
-            onModelChange={(value) =>
-              send(
-                ClientCommand.cases["thread.setModel"].make({ threadId, ...decodeChoice(value) }),
-              )
-            }
-            placeholder={
-              isBusy
-                ? followUpMode === "queue"
-                  ? "Queue a follow-up (⌘↩ to send now)"
-                  : `Steer ${formatHarnessLabel(settings, provider)} (⌘↩ to queue)`
-                : `Ask ${formatHarnessLabel(settings, provider)}…`
-            }
-            hasPendingContent={reviewComments.length > 0}
-            onSubmit={(typed, options, how) => {
-              const text = buildReviewMessage(takeReviewComments(threadId), typed);
-              // While the agent works, a message waits for the turn to end, or steers it; ⌘Enter flips that.
-              const steer = (followUpMode === "steer") !== how.alternate;
+                  </PromptInputTray>
+                  <PromptInputTray open={info.limitStop !== undefined} detached>
+                    {info.limitStop ? (
+                      <LimitStopNotice
+                        threadId={threadId}
+                        stop={info.limitStop}
+                        provider={provider}
+                        providers={providers}
+                        settings={settings}
+                        options={toTurnOptions({ effort, fast, permission }, catalog, [])}
+                      />
+                    ) : null}
+                  </PromptInputTray>
+                  <PromptInputTray open={followUps.length > 0 || reviewComments.length > 0}>
+                    {reviewComments.map((comment) => (
+                      <ReviewCommentRow
+                        key={comment.id}
+                        threadId={threadId}
+                        comment={comment}
+                        onReveal={() => {
+                          setIsDiffOpen(true);
+                          setRevealedComment(comment);
+                        }}
+                      />
+                    ))}
+                    {followUps.map((followUp, index) => (
+                      <QueuedFollowUp
+                        key={followUp.id}
+                        threadId={threadId}
+                        followUp={followUp}
+                        isNext={index === 0}
+                      />
+                    ))}
+                  </PromptInputTray>
+                </>
+              }
+              models={choices}
+              model={modelChoice}
+              onModelChange={(value) =>
+                send(
+                  ClientCommand.cases["thread.setModel"].make({
+                    threadId,
+                    ...decodeChoice(value),
+                  }),
+                )
+              }
+              placeholder={
+                isBusy
+                  ? followUpMode === "queue"
+                    ? "Queue a follow-up (⌘↩ to send now)"
+                    : `Steer ${formatHarnessLabel(settings, provider)} (⌘↩ to queue)`
+                  : `Ask ${formatHarnessLabel(settings, provider)}…`
+              }
+              hasPendingContent={reviewComments.length > 0}
+              onSubmit={(typed, options, how) => {
+                const text = buildReviewMessage(takeReviewComments(threadId), typed);
+                // While the agent works, a message waits for the turn to end, or steers it; ⌘Enter flips that.
+                const steer = (followUpMode === "steer") !== how.alternate;
 
-              if (isBusy && !steer) queueMessage(threadId, text, options);
-              else send(ClientCommand.cases["thread.send"].make({ threadId, text, options }));
-            }}
-            onAskAside={
-              asideReplyId
-                ? (question) => {
-                    openSideChat(threadId, asideReplyId);
+                if (isBusy && !steer) queueMessage(threadId, text, options);
+                else
+                  send(
+                    ClientCommand.cases["thread.send"].make({
+                      threadId,
+                      text,
+                      options,
+                    }),
+                  );
+              }}
+              onAskAside={
+                asideReplyId
+                  ? (question) => {
+                      openSideChat(threadId, asideReplyId);
 
-                    if (question) askSideChat(question);
-                  }
-                : undefined
-            }
-            onStop={() => {
-              send(ClientCommand.cases["thread.interrupt"].make({ threadId }));
-              returnToComposer(threadId, takeQueued(threadId));
-            }}
-          />
+                      if (question) askSideChat(question);
+                    }
+                  : undefined
+              }
+              onStop={() => {
+                send(ClientCommand.cases["thread.interrupt"].make({ threadId }));
+                returnToComposer(threadId, takeQueued(threadId));
+              }}
+            />
+          </div>
         </div>
         {isDiffOpen ? (
           <Suspense

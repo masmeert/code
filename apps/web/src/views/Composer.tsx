@@ -492,7 +492,7 @@ export function Composer(props: ComposerProps) {
 
   return (
     <div className="shrink-0 px-3 pb-3">
-      <div className="relative mx-auto max-w-3xl">
+      <div className="pointer-events-auto relative mx-auto max-w-3xl">
         {menu ? (
           <SuggestionMenu
             label={menu.label}
