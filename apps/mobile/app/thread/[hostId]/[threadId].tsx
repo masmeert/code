@@ -1,5 +1,5 @@
 import { formatProjectLabel, isShowingWork, toTurns } from "@masscode/client";
-import { ClientCommand } from "@masscode/contracts";
+import { ClientCommand, isTurnActive } from "@masscode/contracts";
 import { KeyboardAwareLegendList, useKeyboardChatComposerInset } from "@legendapp/list/keyboard";
 import type { LegendListRef } from "@legendapp/list/react-native";
 import { BlurView } from "expo-blur";
@@ -9,6 +9,7 @@ import { ActivityIndicator, Platform, View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { withUniwind } from "uniwind";
 import { Composer } from "@/components/Composer.tsx";
+import { OrbFace, type OrbFaceState } from "@/components/OrbFace.tsx";
 import { ProjectBadge } from "@/components/ProjectBadge.tsx";
 import { Pulsing } from "@/components/Pulsing.tsx";
 import { Text } from "@/components/ui/text.tsx";
@@ -56,6 +57,20 @@ export default function ThreadScreen() {
 
   const project = host.projects.find((candidate) => candidate.id === thread.projectId);
   const isThinking = thread.status === "running" && !isShowingWork(transcript?.items ?? []);
+  const lastTurn = turns.at(-1);
+  const lastItem = lastTurn?.from === "assistant" ? lastTurn.items.at(-1) : undefined;
+
+  const faceState: OrbFaceState | null = isThinking
+    ? "thinking"
+    : lastItem === undefined
+      ? null
+      : isTurnActive(thread.status)
+        ? lastItem.kind === "assistant"
+          ? "streaming"
+          : "thinking"
+        : lastItem.kind === "error"
+          ? "error"
+          : "done";
 
   return (
     <View className="flex-1 bg-background">
@@ -136,11 +151,18 @@ export default function ThreadScreen() {
             </View>
           ) : null
         }
+        // One face, at the end of the newest reply: repeated down the thread it reads as wallpaper.
+        // A single element in one place, so it stays mounted and animates between states.
         ListFooterComponent={
-          isThinking ? (
-            <Pulsing className="px-4 py-2">
-              <Text className="text-sm text-muted-foreground">Thinking…</Text>
-            </Pulsing>
+          faceState ? (
+            <View className="flex-row items-center gap-2 px-4 py-2">
+              <OrbFace state={faceState} size={28} />
+              {isThinking ? (
+                <Pulsing>
+                  <Text className="text-sm text-muted-foreground">Thinking…</Text>
+                </Pulsing>
+              ) : null}
+            </View>
           ) : null
         }
       />
