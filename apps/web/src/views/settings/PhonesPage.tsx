@@ -1,12 +1,13 @@
 import { Button } from "@masscode/ui/motion/button/base";
 import { Switch } from "@masscode/ui/motion/switch";
 import { cn } from "@masscode/ui/lib/utils";
-import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { EASE_OUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
 import { ClientCommand, type PairedPhone, type PairingOffer } from "@masscode/contracts";
 import { Fold } from "@masscode/ui/motion/fold";
+import { ActionSwapRollText } from "@masscode/ui/motion/action-swap-roll";
 import { LoaderCircle, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { encode } from "uqr";
 import { send, startPhonePairing, updateSettings, useStore } from "../../lib/store.ts";
 import { formatAge } from "@masscode/client";
@@ -133,6 +134,17 @@ function PairingCode({ offer, onClose }: { offer: PairingOffer; onClose: () => v
   const secondsLeft = Math.max(0, Math.round((offer.expiresAt - now) / 1000));
   const { data, size } = encode(offer.url, { border: 1 });
   const reduce = useReducedMotion();
+  const [copied, setCopied] = useState<"code" | "address" | null>(null);
+  const copiedTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
+
+  async function copy(text: string, what: "code" | "address") {
+    await navigator.clipboard?.writeText(text);
+    setCopied(what);
+    window.clearTimeout(copiedTimer.current);
+    copiedTimer.current = window.setTimeout(() => setCopied(null), 1600);
+  }
 
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
@@ -185,10 +197,22 @@ function PairingCode({ offer, onClose }: { offer: PairingOffer; onClose: () => v
             <p className="text-sm text-destructive">This code expired. Get a new one.</p>
           ) : (
             <>
-              <p className="text-xs text-muted-foreground">Pairing code</p>
-              <p className="mt-0.5 font-mono text-3xl tracking-[0.12em] tabular-nums select-text">
-                {offer.code.slice(0, 3)} {offer.code.slice(3)}
+              <p className="text-xs text-muted-foreground">
+                <ActionSwapRollText value={copied ?? "idle"}>
+                  {copied ? `${copied === "code" ? "Code" : "Address"} copied` : "Pairing code"}
+                </ActionSwapRollText>
               </p>
+              <motion.button
+                type="button"
+                title="Copy code"
+                onClick={() => copy(offer.code, "code")}
+                whileTap={reduce ? undefined : { scale: 0.97 }}
+                transition={SPRING_PRESS}
+                className="-mx-1.5 mt-0.5 block rounded-lg px-1.5 font-mono text-3xl tracking-[0.12em] tabular-nums transition-colors outline-none hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
+              >
+                {offer.code.slice(0, 3)}
+                <span className="ml-1">{offer.code.slice(3)}</span>
+              </motion.button>
               <p className="mt-1 text-xs text-muted-foreground tabular-nums">
                 Expires in {Math.floor(secondsLeft / 60)}:
                 {String(secondsLeft % 60).padStart(2, "0")}
@@ -197,8 +221,17 @@ function PairingCode({ offer, onClose }: { offer: PairingOffer; onClose: () => v
           )}
           <p className="mt-4 max-w-72 text-xs leading-5 text-muted-foreground">
             Can't scan? On the phone, enter{" "}
-            <span className="font-mono text-foreground select-text">{offer.host}</span> and this
-            code.
+            <motion.button
+              type="button"
+              title="Copy address"
+              onClick={() => copy(offer.host, "address")}
+              whileTap={reduce ? undefined : { scale: 0.97 }}
+              transition={SPRING_PRESS}
+              className="inline-block rounded-md px-1 font-mono text-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
+            >
+              {offer.host}
+            </motion.button>{" "}
+            and this code.
           </p>
         </div>
       </motion.div>
