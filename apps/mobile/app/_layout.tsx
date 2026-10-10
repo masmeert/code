@@ -57,8 +57,8 @@ export default function RootLayout() {
             <Stack
               screenOptions={{ headerShadowVisible: false, headerBackButtonDisplayMode: "minimal" }}
             >
-              <Stack.Screen name="index" options={{ title: "Threads", headerLargeTitle: true }} />
-              <Stack.Screen name="hosts" options={{ title: "Computers" }} />
+              <Stack.Screen name="index" options={{ title: "Threads" }} />
+              <Stack.Screen name="hosts" options={{ title: "Settings", presentation: "modal" }} />
               <Stack.Screen
                 name="pair"
                 options={{ title: "Pair a computer", presentation: "modal" }}

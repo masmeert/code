@@ -1,12 +1,14 @@
 import { findDefaultModel, getVisibleModels } from "@masscode/client";
 import { PROVIDER_NAME } from "@masscode/contracts";
-import { router } from "expo-router";
+import { router, Stack } from "expo-router";
+import { Check } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { Composer, PrefMenu } from "@/components/Composer.tsx";
 import { ProjectBadge } from "@/components/ProjectBadge.tsx";
 import { ProviderLogo } from "@/components/ProviderLogo.tsx";
+import { Icon } from "@/components/ui/icon.tsx";
 import { Text } from "@/components/ui/text.tsx";
 import { cn } from "@/lib/cn.ts";
 import { createThread, useStore } from "@/lib/store.ts";
@@ -18,6 +20,7 @@ export default function NewThreadScreen() {
   const [pickedModel, setPickedModel] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const stopWaiting = useRef<() => void>(null);
 
   useEffect(() => () => stopWaiting.current?.(), []);
@@ -87,10 +90,27 @@ export default function NewThreadScreen() {
 
   return (
     <View className="flex-1 bg-background">
+      {Platform.OS === "ios" ? (
+        <Stack.Toolbar placement="left">
+          <Stack.Toolbar.Button
+            icon="xmark"
+            accessibilityLabel="Cancel"
+            onPress={() => router.back()}
+          />
+        </Stack.Toolbar>
+      ) : null}
+      {projects.length > 6 ? (
+        <Stack.SearchBar
+          placeholder="Search projects"
+          hideWhenScrolling={false}
+          onChangeText={(event) => setQuery(event.nativeEvent.text)}
+          onCancelButtonPress={() => setQuery("")}
+        />
+      ) : null}
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
-        contentContainerClassName="gap-1 px-3 pt-3 pb-48"
+        contentContainerClassName="gap-1 px-4 pt-3 pb-48"
       >
         {hostList.length > 1 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-2 grow-0">
@@ -118,27 +138,42 @@ export default function NewThreadScreen() {
             </View>
           </ScrollView>
         ) : null}
-        <Text className="px-2 pb-1 text-xs font-medium text-muted-foreground">Project</Text>
-        {projects.map((candidate) => (
-          <Pressable
-            key={candidate.id}
-            accessibilityRole="radio"
-            accessibilityState={{ checked: candidate === project }}
-            onPress={() => setPickedPath(candidate.path)}
-            className={cn(
-              "flex-row items-center gap-2.5 rounded-xl px-3 py-2.5 active:bg-muted",
-              candidate === project && "bg-card",
-            )}
-          >
-            <ProjectBadge project={candidate} />
-            <Text
-              numberOfLines={1}
-              className={cn("flex-1 text-[15px]", candidate === project && "font-semibold")}
-            >
-              {candidate.name}
-            </Text>
-          </Pressable>
-        ))}
+        <Text className="px-4 pb-1 text-[13px] text-muted-foreground">Project</Text>
+        <View className="overflow-hidden rounded-2xl bg-card">
+          {projects
+            .filter((candidate) =>
+              `${candidate.name} ${candidate.path}`
+                .toLowerCase()
+                .includes(query.trim().toLowerCase()),
+            )
+            .map((candidate, index) => (
+              <Pressable
+                key={candidate.id}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: candidate === project }}
+                onPress={() => setPickedPath(candidate.path)}
+                className={cn(
+                  "flex-row items-center gap-3 px-4 py-3 active:bg-muted",
+                  index > 0 && "border-t border-border",
+                )}
+              >
+                <ProjectBadge project={candidate} />
+                <View className="flex-1 gap-0.5">
+                  <Text numberOfLines={1} className="text-[16px] font-medium">
+                    {candidate.name}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    ellipsizeMode="head"
+                    className="text-[13px] text-muted-foreground"
+                  >
+                    {candidate.path}
+                  </Text>
+                </View>
+                {candidate === project ? <Icon as={Check} className="size-5 text-brand" /> : null}
+              </Pressable>
+            ))}
+        </View>
       </ScrollView>
       <View pointerEvents="box-none" className="absolute inset-x-0 bottom-0">
         <KeyboardStickyView>

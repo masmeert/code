@@ -2,7 +2,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Platform, ScrollView, View } from "react-native";
 import { Button } from "@/components/ui/button.tsx";
 import { Input } from "@/components/ui/input.tsx";
 import { Text } from "@/components/ui/text.tsx";
@@ -73,15 +73,15 @@ export default function PairScreen() {
       contentContainerClassName="gap-4 p-5"
       keyboardShouldPersistTaps="handled"
     >
-      <Stack.Screen
-        options={{
-          headerLeft: () => (
-            <Pressable hitSlop={12} onPress={() => router.dismissTo("/")} className="px-2">
-              <Text className="text-base">Cancel</Text>
-            </Pressable>
-          ),
-        }}
-      />
+      {Platform.OS === "ios" ? (
+        <Stack.Toolbar placement="left">
+          <Stack.Toolbar.Button
+            icon="xmark"
+            accessibilityLabel="Cancel"
+            onPress={() => router.dismissTo("/")}
+          />
+        </Stack.Toolbar>
+      ) : null}
       <Text className="text-sm leading-6 text-muted-foreground">
         In MassCode on your computer, open Settings → Phone → Pair a phone, then scan the code.
       </Text>

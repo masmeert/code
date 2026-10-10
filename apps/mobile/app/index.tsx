@@ -11,9 +11,9 @@ import {
 import { ClientCommand, type ThreadInfo } from "@masscode/contracts";
 import * as Haptics from "expo-haptics";
 import { router, Stack } from "expo-router";
-import { Archive, Laptop, Plus } from "lucide-react-native";
+import { Archive, Settings, SquarePen } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, RefreshControl, SectionList, View } from "react-native";
+import { Platform, Pressable, RefreshControl, SectionList, View } from "react-native";
 import Swipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { OrbFace } from "@/components/OrbFace.tsx";
 import { ProviderLogo } from "@/components/ProviderLogo.tsx";
@@ -46,6 +46,9 @@ export default function ThreadsScreen() {
   const isLoaded = useStore((state) => state.isLoaded);
   const hosts = useStore((state) => state.hosts);
   const [archived, setArchived] = useState<ArchivedThread | null>(null);
+  const [query, setQuery] = useState("");
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
+  const [hostFilter, setHostFilter] = useState<string | null>(null);
 
   useEffect(() => {
     if (!archived) return;
@@ -55,25 +58,44 @@ export default function ThreadsScreen() {
     return () => clearTimeout(timer);
   }, [archived]);
 
-  const sections = useMemo(() => {
-    const hasManyHosts = Object.keys(hosts).length > 1;
+  const hasManyHosts = Object.keys(hosts).length > 1;
 
-    const rows = Object.entries(hosts)
-      .flatMap(([hostId, host]) =>
-        Object.values(host.threads)
-          // Shelved threads stay on the desktop's sidebar; here they only come back when they need you.
-          .filter(
-            (thread) => thread.archivedAt === null && (!thread.shelved || NEEDS_YOU[thread.status]),
-          )
-          .map((thread): ThreadRow => ({
-            hostId,
-            hostName: hasManyHosts ? host.paired.name : null,
-            projectName:
-              host.projects.find((project) => project.id === thread.projectId)?.name ?? "",
-            thread,
-          })),
-      )
-      .sort((left, right) => right.thread.updatedAt - left.thread.updatedAt);
+  const allRows = useMemo(
+    () =>
+      Object.entries(hosts)
+        .flatMap(([hostId, host]) =>
+          Object.values(host.threads)
+            // Shelved threads stay on the desktop's sidebar; here they only come back when they need you.
+            .filter(
+              (thread) =>
+                thread.archivedAt === null && (!thread.shelved || NEEDS_YOU[thread.status]),
+            )
+            .map((thread): ThreadRow => ({
+              hostId,
+              hostName: hasManyHosts ? host.paired.name : null,
+              projectName:
+                host.projects.find((project) => project.id === thread.projectId)?.name ?? "",
+              thread,
+            })),
+        )
+        .sort((left, right) => right.thread.updatedAt - left.thread.updatedAt),
+    [hosts, hasManyHosts],
+  );
+
+  const projectNames = [...new Set(allRows.map((row) => row.projectName).filter(Boolean))].sort();
+
+  const sections = useMemo(() => {
+    const words = query.trim().toLowerCase();
+
+    const rows = allRows.filter(
+      (row) =>
+        (hostFilter === null || row.hostId === hostFilter) &&
+        (projectFilter === null || row.projectName === projectFilter) &&
+        (!words ||
+          [row.thread.title, row.projectName, row.thread.branch ?? ""].some((field) =>
+            field.toLowerCase().includes(words),
+          )),
+    );
 
     const needsYou = rows.filter((row) => NEEDS_YOU[row.thread.status]);
 
@@ -81,44 +103,135 @@ export default function ThreadsScreen() {
       { key: "needs-you", data: needsYou },
       { key: "active", data: rows.filter((row) => !NEEDS_YOU[row.thread.status]) },
     ].filter((section) => section.data.length > 0);
-  }, [hosts]);
+  }, [allRows, query, hostFilter, projectFilter]);
+
+  const isFiltered = hostFilter !== null || projectFilter !== null;
 
   const unreachable = Object.values(hosts).filter(
     (host) => host.connection !== "connected" && host.connection !== "connecting",
   );
 
+  const orbState = Object.values(hosts).some((host) =>
+    Object.values(host.threads).some((thread) => thread.status === "running"),
+  )
+    ? "thinking"
+    : "idle";
+
   return (
     <View className="flex-1 bg-background">
       <Stack.Screen
         options={{
-          // The orb stands in for the title, so the large one goes.
-          headerLargeTitle: false,
           // Unpaired, the pairing prompt centers on the whole screen rather than below the header.
           headerTransparent: isLoaded && Object.keys(hosts).length === 0,
-          headerTitle: () => (
-            <OrbFace
-              size={36}
-              state={
-                Object.values(hosts).some((host) =>
-                  Object.values(host.threads).some((thread) => thread.status === "running"),
-                )
-                  ? "thinking"
-                  : "idle"
-              }
-            />
-          ),
-          headerLeft: () => (
-            <Pressable
-              accessibilityLabel="Computers"
-              hitSlop={12}
-              onPress={() => router.push("/hosts")}
-              className="size-9 items-center justify-center"
-            >
-              <Icon as={Laptop} className="size-5 text-foreground" />
-            </Pressable>
-          ),
+          headerTitleAlign: "left",
+          // iOS puts the orb in a left toolbar item, as a title would sit centered there.
+          headerTitle: Platform.OS === "ios" ? "" : () => <OrbFace size={36} state={orbState} />,
+          // iOS gets its native toolbars below; Android keeps plain header buttons.
+          headerRight:
+            Platform.OS === "ios"
+              ? undefined
+              : () => (
+                  <View className="flex-row gap-2">
+                    <Pressable
+                      accessibilityLabel="New thread"
+                      hitSlop={12}
+                      onPress={() => router.push("/new")}
+                      className="size-9 items-center justify-center"
+                    >
+                      <Icon as={SquarePen} className="size-5 text-foreground" />
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel="Settings"
+                      hitSlop={12}
+                      onPress={() => router.push("/hosts")}
+                      className="size-9 items-center justify-center"
+                    >
+                      <Icon as={Settings} className="size-5 text-foreground" />
+                    </Pressable>
+                  </View>
+                ),
         }}
       />
+      {Platform.OS === "ios" ? (
+        <>
+          <Stack.Toolbar placement="left">
+            <Stack.Toolbar.View hidesSharedBackground>
+              <OrbFace size={36} state={orbState} />
+            </Stack.Toolbar.View>
+          </Stack.Toolbar>
+          <Stack.Toolbar placement="right">
+            <Stack.Toolbar.Button
+              icon="gearshape"
+              accessibilityLabel="Settings"
+              onPress={() => router.push("/hosts")}
+            />
+          </Stack.Toolbar>
+        </>
+      ) : null}
+      {Platform.OS === "ios" && Object.keys(hosts).length > 0 ? (
+        <>
+          <Stack.SearchBar
+            placeholder="Search threads"
+            onChangeText={(event) => setQuery(event.nativeEvent.text)}
+            onCancelButtonPress={() => setQuery("")}
+          />
+          <Stack.Toolbar>
+            <Stack.Toolbar.Menu
+              icon={
+                isFiltered ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease"
+              }
+              accessibilityLabel="Filter threads"
+              separateBackground
+              title="Show threads from"
+            >
+              {hasManyHosts ? (
+                <Stack.Toolbar.Menu title="Computer" icon="laptopcomputer">
+                  <Stack.Toolbar.MenuAction
+                    isOn={hostFilter === null}
+                    onPress={() => setHostFilter(null)}
+                  >
+                    All computers
+                  </Stack.Toolbar.MenuAction>
+                  {Object.values(hosts).map((host) => (
+                    <Stack.Toolbar.MenuAction
+                      key={host.paired.id}
+                      isOn={hostFilter === host.paired.id}
+                      onPress={() => setHostFilter(host.paired.id)}
+                    >
+                      {host.paired.name}
+                    </Stack.Toolbar.MenuAction>
+                  ))}
+                </Stack.Toolbar.Menu>
+              ) : null}
+              <Stack.Toolbar.Menu title="Project" icon="folder">
+                <Stack.Toolbar.MenuAction
+                  isOn={projectFilter === null}
+                  onPress={() => setProjectFilter(null)}
+                >
+                  All projects
+                </Stack.Toolbar.MenuAction>
+                {projectNames.map((name) => (
+                  <Stack.Toolbar.MenuAction
+                    key={name}
+                    isOn={projectFilter === name}
+                    onPress={() => setProjectFilter(name)}
+                  >
+                    {name}
+                  </Stack.Toolbar.MenuAction>
+                ))}
+              </Stack.Toolbar.Menu>
+            </Stack.Toolbar.Menu>
+            <Stack.Toolbar.SearchBarSlot />
+            <Stack.Toolbar.Spacer width={8} />
+            <Stack.Toolbar.Button
+              icon="square.and.pencil"
+              accessibilityLabel="New thread"
+              separateBackground
+              onPress={() => router.push("/new")}
+            />
+          </Stack.Toolbar>
+        </>
+      ) : null}
       {isLoaded && Object.keys(hosts).length === 0 ? (
         <View className="flex-1 items-center justify-center gap-3 px-8">
           <Text className="text-center text-xl font-semibold">Your threads, on the go</Text>
@@ -139,21 +252,14 @@ export default function ThreadsScreen() {
           stickySectionHeadersEnabled={false}
           refreshControl={<RefreshControl refreshing={false} onRefresh={reconnectAll} />}
           ListHeaderComponent={
-            <>
-              <View className="flex-row items-center justify-between px-5 pt-4 pb-2">
-                <Text className="text-2xl font-semibold">Threads</Text>
-                <Button variant="outline" size="sm" onPress={() => router.push("/new")}>
-                  <Icon as={Plus} className="size-3.5 text-foreground" />
-                  <Text>New thread</Text>
-                </Button>
-              </View>
-              {unreachable.length > 0 ? <UnreachableHosts hosts={unreachable} /> : null}
-            </>
+            unreachable.length > 0 ? <UnreachableHosts hosts={unreachable} /> : undefined
           }
           ListEmptyComponent={
             isLoaded ? (
               <Text className="p-8 text-center text-sm text-muted-foreground">
-                No threads yet. Start one with New thread.
+                {query.trim() || isFiltered
+                  ? "No threads match. Clear the search or the filter to see them all."
+                  : "No threads yet. Start one with the compose button."}
               </Text>
             ) : undefined
           }
@@ -189,7 +295,7 @@ export default function ThreadsScreen() {
         />
       )}
       {archived ? (
-        <View className="bottom-safe-offset-4 absolute inset-x-4 flex-row items-center gap-3 rounded-2xl border border-border bg-popover py-2 pr-2 pl-4">
+        <View className="bottom-safe-offset-4 ios:bottom-safe-offset-16 absolute inset-x-4 flex-row items-center gap-3 rounded-2xl border border-border bg-popover py-2 pr-2 pl-4">
           <Text numberOfLines={1} className="flex-1 text-sm">
             Archived <Text className="text-sm text-muted-foreground">{archived.title}</Text>
           </Text>
