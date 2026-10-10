@@ -5,9 +5,8 @@ import { Check } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { Composer, PrefMenu } from "@/components/Composer.tsx";
+import { Composer } from "@/components/Composer.tsx";
 import { ProjectBadge } from "@/components/ProjectBadge.tsx";
-import { ProviderLogo } from "@/components/ProviderLogo.tsx";
 import { Icon } from "@/components/ui/icon.tsx";
 import { Text } from "@/components/ui/text.tsx";
 import { cn } from "@/lib/cn.ts";
@@ -25,7 +24,7 @@ export default function NewThreadScreen() {
 
   useEffect(() => () => stopWaiting.current?.(), []);
 
-  const hostList = Object.values(hosts);
+  const hostList = Object.values(hosts).filter((candidate) => candidate.connection !== "off");
 
   const host =
     hostList.find((candidate) => candidate.paired.id === pickedHostId) ??
@@ -194,20 +193,15 @@ export default function NewThreadScreen() {
               provider={choice?.provider ?? settings?.lastProvider ?? "claude"}
               model={choice?.model ?? null}
               disabled={!isConnected || !project || !choice || isStarting}
-              modelMenu={
-                choice ? (
-                  <PrefMenu
-                    title="Model"
-                    value={choice.value}
-                    options={choices}
-                    onChange={setPickedModel}
-                  >
-                    <ProviderLogo provider={choice.provider} className="size-3.5 text-foreground" />
-                    <Text numberOfLines={1} className="shrink text-xs">
-                      {choice.label}
-                    </Text>
-                  </PrefMenu>
-                ) : null
+              modelChoice={
+                choice
+                  ? {
+                      title: "Model",
+                      value: choice.value,
+                      options: choices,
+                      onChange: setPickedModel,
+                    }
+                  : null
               }
               onCreate={(text, options) => {
                 if (!project || !choice) return;

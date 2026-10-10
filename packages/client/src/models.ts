@@ -14,7 +14,7 @@ export function orderModels(models: ReadonlyArray<ModelOption>, harness: Provide
     return order.includes(id) ? order.indexOf(id) : order.length;
   }
 
-  return models.toSorted((left, right) => getOrderIndex(left.id) - getOrderIndex(right.id));
+  return [...models].sort((left, right) => getOrderIndex(left.id) - getOrderIndex(right.id));
 }
 
 /** Models offered in pickers: arranged, without the ones switched off. */

@@ -9,9 +9,9 @@ import {
 import {
   AttachmentInput,
   ClientCommand,
-  type Effort,
+  Effort,
   isTurnActive,
-  type PermissionLevel,
+  PermissionLevel,
   PROVIDER_NAME,
   type ProviderKind,
   type ProviderStatus,
@@ -19,22 +19,28 @@ import {
   type ThreadInfo,
   type TurnOptions,
 } from "@masscode/contracts";
+import * as Schema from "effect/Schema";
+import * as DocumentPicker from "expo-document-picker";
+import { File } from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import {
   ArrowUp,
   ChevronDown,
   FilePen,
-  ImagePlus,
+  FileText,
+  Folder,
+  Image as ImageIcon,
   ListChecks,
   LockOpen,
   type LucideIcon,
+  Paperclip,
   ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react-native";
 import { useState } from "react";
-import { Image, Pressable, TextInput, View } from "react-native";
+import { Alert, Image, Pressable, ScrollView, TextInput, View } from "react-native";
 import { useKeyboardState } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "@/lib/cn.ts";
@@ -43,9 +49,11 @@ import { ProviderLogo } from "./ProviderLogo.tsx";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu.tsx";
 import { Icon } from "./ui/icon.tsx";
@@ -55,6 +63,33 @@ interface TurnPrefs {
   readonly permission: PermissionLevel;
   /** Null leaves it to the harness. */
   readonly effort: Effort | null;
+}
+
+/** One single-choice list in a composer menu. */
+export interface ChoiceGroup<Value extends string = string> {
+  readonly title: string;
+  readonly value: Value;
+  readonly options: ReadonlyArray<{ value: Value; label: string; description?: string }>;
+  readonly onChange: (value: Value) => void;
+}
+
+/** A file waiting to go with the next message. */
+interface PendingFile {
+  readonly uri: string;
+  readonly name: string;
+  readonly isImage: boolean;
+  readonly sizeBytes: number;
+  readonly input: AttachmentInput;
+}
+
+// Files ride as base64 in one WebSocket frame, which Bun caps at 16 MB; base64 adds a third.
+const MAX_FILES_BYTES = 10 * 1024 * 1024;
+
+function alertTooBig(names: ReadonlyArray<string>) {
+  Alert.alert(
+    names.length === 1 ? `${names[0]} is too big` : `${names.length} files are too big`,
+    "A message from the phone can carry up to 10 MB of files. Send bigger files from your computer.",
+  );
 }
 
 const PERMISSION_ICON: Record<PermissionLevel, LucideIcon> = {
@@ -87,8 +122,9 @@ function fitTurnPrefs(
 }
 
 /**
- * The desktop's composer card: the message, then the turn's effort and permission, then send.
- * Without a thread it drafts a new one: `onCreate` starts it, and `modelMenu` picks its model.
+ * The desktop's composer, cut down for a phone: the message and its files, the model and effort,
+ * permissions, then attach and send. Without a thread it drafts a new one: `onCreate` starts it,
+ * and `modelChoice` picks its model.
  */
 export function Composer({
   hostId,
@@ -105,7 +141,7 @@ export function Composer({
       thread: null;
       provider: ProviderKind;
       model: string | null;
-      modelMenu: React.ReactNode;
+      modelChoice: ChoiceGroup | null;
       disabled: boolean;
       onCreate: (text: string, options: TurnOptions) => void;
     }
@@ -113,7 +149,7 @@ export function Composer({
   const thread = target.thread;
   const provider = target.thread ? target.thread.provider : target.provider;
   const [text, setText] = useState("");
-  const [images, setImages] = useState<ReadonlyArray<{ uri: string; input: AttachmentInput }>>([]);
+  const [files, setFiles] = useState<ReadonlyArray<PendingFile>>([]);
   const prefsKey = thread?.id ?? "new";
   const [remembered, setRemembered] = useState(() => prefsByThread.get(prefsKey));
   const prefs = fitTurnPrefs(settings, remembered, provider);
@@ -134,6 +170,7 @@ export function Composer({
     ?.models.find((option) => option.id === modelId);
 
   const effort = prefs.effort ?? model?.defaultEffort ?? null;
+  const isFullAccess = prefs.permission === "full-access";
 
   function changePrefs(patch: Partial<TurnPrefs>) {
     const next = { ...prefs, ...patch };
@@ -148,9 +185,9 @@ export function Composer({
 
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    const options = { ...prefs, attachments: images.map((image) => image.input) };
+    const options = { ...prefs, attachments: files.map((file) => file.input) };
 
-    // A draft keeps its text and images until the thread exists, in case the host doesn't start it.
+    // A draft keeps its text and files until the thread exists, in case the host doesn't start it.
     if (target.thread === null) return target.onCreate(message, options);
 
     send(
@@ -164,29 +201,51 @@ export function Composer({
       }),
     );
     setText("");
-    setImages([]);
+    setFiles([]);
   }
 
-  async function pickImages() {
-    // ponytail: photos go as base64 in one WebSocket frame, which Bun caps at 16 MB; 4 photos at
-    // this quality stay well under. Downscale with expo-image-manipulator if they don't.
+  /** Adds what fits under the cap, and says which files didn't. */
+  function addFiles(picked: ReadonlyArray<PendingFile>) {
+    let totalBytes = files.reduce((sum, file) => sum + file.sizeBytes, 0);
+    const rejected: string[] = [];
+
+    const fitting = picked.filter((file) => {
+      if (files.some((other) => other.uri === file.uri)) return false;
+
+      if (totalBytes + file.sizeBytes > MAX_FILES_BYTES) {
+        rejected.push(file.name);
+
+        return false;
+      }
+
+      totalBytes += file.sizeBytes;
+
+      return true;
+    });
+
+    if (rejected.length > 0) alertTooBig(rejected);
+    setFiles([...files, ...fitting]);
+  }
+
+  async function pickPhotos() {
     const picked = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       allowsMultipleSelection: true,
-      selectionLimit: 4,
       quality: 0.5,
       base64: true,
     });
 
     if (picked.canceled) return;
 
-    setImages((current) => [
-      ...current,
-      ...picked.assets.flatMap((asset) =>
+    addFiles(
+      picked.assets.flatMap((asset) =>
         asset.base64
           ? [
               {
                 uri: asset.uri,
+                name: asset.fileName ?? "photo.jpg",
+                isImage: true,
+                sizeBytes: Math.ceil((asset.base64.length * 3) / 4),
                 input: AttachmentInput.cases.data.make({
                   name: asset.fileName ?? "photo.jpg",
                   mediaType: asset.mimeType ?? "image/jpeg",
@@ -196,7 +255,47 @@ export function Composer({
             ]
           : [],
       ),
-    ]);
+    );
+  }
+
+  async function pickDocuments() {
+    const picked = await DocumentPicker.getDocumentAsync({ multiple: true });
+
+    if (picked.canceled) return;
+
+    // Too big to send anyway, so not worth reading into memory.
+    const tooBig = picked.assets.filter((asset) => (asset.size ?? 0) > MAX_FILES_BYTES);
+
+    if (tooBig.length > 0) alertTooBig(tooBig.map((asset) => asset.name));
+
+    const fitting = picked.assets.filter((asset) => !tooBig.includes(asset));
+
+    try {
+      addFiles(
+        await Promise.all(
+          fitting.map(async (asset) => {
+            const mediaType = asset.mimeType ?? "application/octet-stream";
+
+            return {
+              uri: asset.uri,
+              name: asset.name,
+              isImage: mediaType.startsWith("image/"),
+              sizeBytes: asset.size ?? 0,
+              input: AttachmentInput.cases.data.make({
+                name: asset.name,
+                mediaType,
+                data: await new File(asset.uri).base64(),
+              }),
+            };
+          }),
+        ),
+      );
+    } catch {
+      Alert.alert(
+        "Couldn't read that file",
+        "Check it's downloaded to this phone, not only in iCloud, then attach it again.",
+      );
+    }
   }
 
   return (
@@ -231,28 +330,45 @@ export function Composer({
       ))}
       <View
         className={cn(
-          "rounded-2xl border border-border bg-card p-1.5",
+          "rounded-3xl border border-border bg-card p-2",
           // Down at the screen's rounded corners, the card's own corners follow them, and its
-          // padding keeps the buttons above the home indicator.
-          isAtScreenEdge && "rounded-b-[46px] pb-5",
+          // padding keeps the buttons clear of the corners and the home indicator.
+          isAtScreenEdge && "rounded-b-[46px] px-3 pb-5",
         )}
       >
-        {images.length > 0 ? (
-          <View className="flex-row flex-wrap gap-1.5 pb-1.5">
-            {images.map((image) => (
-              <View key={image.uri}>
-                <Image source={{ uri: image.uri }} className="size-14 rounded-lg bg-muted" />
+        {files.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerClassName="gap-1.5 px-1 pt-1"
+          >
+            {files.map((file) => (
+              <View
+                key={file.uri}
+                className="h-10 max-w-52 flex-row items-center gap-2 rounded-xl bg-muted pr-1 pl-1"
+              >
+                {file.isImage ? (
+                  <Image source={{ uri: file.uri }} className="size-8 rounded-lg bg-background" />
+                ) : (
+                  <View className="size-8 items-center justify-center rounded-lg bg-background">
+                    <Icon as={FileText} className="size-4 text-muted-foreground" />
+                  </View>
+                )}
+                <Text numberOfLines={1} className="shrink text-xs">
+                  {file.name}
+                </Text>
                 <Pressable
-                  accessibilityLabel="Remove this photo"
+                  accessibilityLabel={`Remove ${file.name}`}
                   hitSlop={8}
-                  onPress={() => setImages((current) => current.filter((other) => other !== image))}
-                  className="absolute -top-1.5 -right-1.5 size-5 items-center justify-center rounded-full border border-border bg-popover"
+                  onPress={() => setFiles((current) => current.filter((other) => other !== file))}
+                  className="size-7 items-center justify-center rounded-lg active:bg-background"
                 >
-                  <Icon as={X} className="size-3 text-foreground" />
+                  <Icon as={X} className="size-3.5 text-muted-foreground" />
                 </Pressable>
               </View>
             ))}
-          </View>
+          </ScrollView>
         ) : null}
         <TextInput
           value={text}
@@ -262,122 +378,141 @@ export function Composer({
           placeholderTextColorClassName="accent-muted-foreground/55"
           selectionColorClassName="accent-brand"
           cursorColorClassName="accent-brand"
-          className="max-h-40 min-h-14 rounded-xl border border-border bg-background px-3.5 pt-2.5 pb-2.5 font-sans text-[15px] leading-6 text-foreground"
+          className="max-h-40 min-h-12 px-2 pt-2 pb-2 font-sans text-[15px] leading-6 text-foreground"
         />
-        <View className="flex-row items-center gap-1.5 pt-1.5">
-          <Pressable
-            accessibilityLabel="Attach photos"
-            onPress={() => void pickImages()}
-            className="size-9 items-center justify-center rounded-full border border-border bg-background active:bg-muted"
-          >
-            <Icon as={ImagePlus} className="size-4 text-muted-foreground" />
-          </Pressable>
-          {target.thread === null ? target.modelMenu : null}
-          <PrefMenu
-            title="Effort"
-            value={prefs.effort ?? "default"}
-            options={[
+        <View className="flex-row items-center gap-1.5 pt-1">
+          <ChoiceMenu
+            label="Model and effort"
+            className="h-9 shrink flex-row items-center gap-1.5 rounded-full bg-muted px-3 active:opacity-80"
+            groups={[
+              ...(target.thread === null && target.modelChoice ? [target.modelChoice] : []),
               {
-                value: "default",
-                label: model?.defaultEffort
-                  ? `${EFFORT_LABEL[model.defaultEffort]} (model default)`
-                  : "Model default",
+                title: "Effort",
+                value: prefs.effort ?? "default",
+                options: [
+                  {
+                    value: "default",
+                    label: model?.defaultEffort
+                      ? `${EFFORT_LABEL[model.defaultEffort]} (model default)`
+                      : "Model default",
+                  },
+                  ...(model?.efforts ?? EFFORTS[provider]).map((option) => ({
+                    value: option,
+                    label: EFFORT_LABEL[option],
+                  })),
+                ],
+                onChange: (picked) =>
+                  changePrefs({ effort: Schema.is(Effort)(picked) ? picked : null }),
               },
-              ...(model?.efforts ?? EFFORTS[provider]).map((option) => ({
-                value: option,
-                label: EFFORT_LABEL[option],
-              })),
             ]}
-            onChange={(picked) => changePrefs({ effort: picked === "default" ? null : picked })}
           >
-            {thread ? (
-              <>
-                <ProviderLogo provider={provider} className="size-3.5 text-foreground" />
-                <Text numberOfLines={1} className="shrink text-xs">
-                  {model?.label ?? PROVIDER_NAME[provider]}
-                </Text>
-              </>
+            <ProviderLogo provider={provider} className="size-3.5 text-foreground" />
+            <Text numberOfLines={1} className="shrink text-[13px]">
+              {model?.label ?? PROVIDER_NAME[provider]}
+            </Text>
+            {effort ? (
+              <Text className="text-[13px] text-muted-foreground">{EFFORT_LABEL[effort]}</Text>
             ) : null}
-            {effort || !thread ? (
-              <Text className="text-xs text-muted-foreground">
-                {effort ? EFFORT_LABEL[effort] : "Effort"}
-              </Text>
-            ) : null}
-          </PrefMenu>
-          <PrefMenu
-            title="Permissions"
-            value={prefs.permission}
-            options={PERMISSIONS[provider].map((level) => ({
-              value: level,
-              label: PERMISSION_LABEL[level],
-              description: PERMISSION_DESCRIPTION[level],
-            }))}
-            onChange={(permission) => changePrefs({ permission })}
+            <Icon as={ChevronDown} className="size-3.5 text-muted-foreground" />
+          </ChoiceMenu>
+          <ChoiceMenu
+            label={`Permissions: ${PERMISSION_LABEL[prefs.permission]}`}
+            className={cn(
+              "size-9 items-center justify-center rounded-full active:opacity-80",
+              isFullAccess ? "bg-warning/15" : "bg-muted",
+            )}
+            groups={[
+              {
+                title: "Permissions",
+                value: prefs.permission,
+                options: PERMISSIONS[provider].map((level) => ({
+                  value: level,
+                  label: PERMISSION_LABEL[level],
+                  description: PERMISSION_DESCRIPTION[level],
+                })),
+                onChange: (permission) =>
+                  Schema.is(PermissionLevel)(permission) && changePrefs({ permission }),
+              },
+            ]}
           >
             <Icon
               as={PERMISSION_ICON[prefs.permission]}
-              className={cn(
-                "size-3.5",
-                prefs.permission === "full-access" ? "text-warning" : "text-muted-foreground",
-              )}
+              className={cn("size-4", isFullAccess ? "text-warning" : "text-muted-foreground")}
             />
-            <Text
-              className={cn(
-                "text-xs",
-                prefs.permission === "full-access" ? "text-warning" : "text-muted-foreground",
-              )}
-            >
-              {PERMISSION_LABEL[prefs.permission]}
-            </Text>
-          </PrefMenu>
-          {thread && isWorking && !text.trim() ? (
-            <Pressable
-              accessibilityLabel="Stop the agent"
-              onPress={() => {
-                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                send(hostId, ClientCommand.cases["thread.interrupt"].make({ threadId: thread.id }));
-              }}
-              className="ml-auto size-9 items-center justify-center rounded-full bg-primary active:opacity-85"
-            >
-              <View className="size-3 rounded-[3px] bg-primary-foreground" />
-            </Pressable>
-          ) : (
-            <Pressable
-              accessibilityLabel={willQueue ? "Queue message" : "Send message"}
-              disabled={!canSend}
-              onPress={submit}
-              className={cn(
-                "ml-auto size-9 items-center justify-center rounded-full bg-primary active:opacity-85",
-                !canSend && "opacity-40",
-              )}
-            >
-              <Icon as={ArrowUp} className="size-4 text-primary-foreground" />
-            </Pressable>
-          )}
+          </ChoiceMenu>
+          <View className="ml-auto flex-row items-center gap-1.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Attach files"
+                  className="size-9 items-center justify-center rounded-full bg-muted active:opacity-80"
+                >
+                  <Icon as={Paperclip} className="size-4 text-muted-foreground" />
+                </Pressable>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="end" sideOffset={6} insets={{ right: 12 }}>
+                <DropdownMenuItem closeOnPress onPress={() => void pickPhotos()}>
+                  <Icon as={ImageIcon} className="size-4 text-muted-foreground" />
+                  <Text>Photos</Text>
+                </DropdownMenuItem>
+                <DropdownMenuItem closeOnPress onPress={() => void pickDocuments()}>
+                  <Icon as={Folder} className="size-4 text-muted-foreground" />
+                  <Text>Files</Text>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {thread && isWorking && !text.trim() ? (
+              <Pressable
+                accessibilityLabel="Stop the agent"
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  send(
+                    hostId,
+                    ClientCommand.cases["thread.interrupt"].make({ threadId: thread.id }),
+                  );
+                }}
+                className="size-9 items-center justify-center rounded-full bg-primary active:opacity-85"
+              >
+                <View className="size-3 rounded-[3px] bg-primary-foreground" />
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityLabel={willQueue ? "Queue message" : "Send message"}
+                disabled={!canSend}
+                onPress={submit}
+                className={cn(
+                  "size-9 items-center justify-center rounded-full bg-primary active:opacity-85",
+                  !canSend && "opacity-40",
+                )}
+              >
+                <Icon as={ArrowUp} className="size-4 text-primary-foreground" />
+              </Pressable>
+            )}
+          </View>
         </View>
       </View>
     </View>
   );
 }
 
-/** A composer pill that opens a single-choice menu above it. */
-export function PrefMenu<Value extends string>(props: {
-  title: string;
-  value: Value;
-  options: ReadonlyArray<{ value: Value; label: string; description?: string }>;
-  onChange: (value: Value) => void;
+/** A composer button that opens one or more single-choice lists above it. */
+function ChoiceMenu({
+  label,
+  className,
+  groups,
+  children,
+}: {
+  label: string;
+  className: string;
+  groups: ReadonlyArray<ChoiceGroup>;
   children: React.ReactNode;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={props.title}
-          className="h-9 shrink flex-row items-center gap-1.5 rounded-full border border-border bg-background px-3 active:bg-muted"
-        >
-          {props.children}
-          <Icon as={ChevronDown} className="size-3 text-muted-foreground opacity-60" />
+        <Pressable accessibilityRole="button" accessibilityLabel={label} className={className}>
+          {children}
         </Pressable>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -385,35 +520,41 @@ export function PrefMenu<Value extends string>(props: {
         align="start"
         sideOffset={6}
         insets={{ left: 12, right: 12 }}
-        className="w-72"
+        className="max-h-96 w-72"
       >
-        <DropdownMenuLabel>{props.title}</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={props.value}
-          onValueChange={(chosen) => {
-            const option = props.options.find((candidate) => candidate.value === chosen);
-
-            if (option) props.onChange(option.value);
-          }}
-        >
-          {props.options.map((option) => (
-            <DropdownMenuRadioItem
-              key={option.value}
-              value={option.value}
-              closeOnPress
-              className="items-start"
-            >
-              <View className="flex-1 gap-0.5">
-                <Text className="text-sm">{option.label}</Text>
-                {option.description ? (
-                  <Text className="text-xs leading-4 text-muted-foreground">
-                    {option.description}
-                  </Text>
-                ) : null}
-              </View>
-            </DropdownMenuRadioItem>
+        <ScrollView bounces={false}>
+          {groups.map((group, index) => (
+            <View key={group.title}>
+              {index > 0 ? <DropdownMenuSeparator /> : null}
+              <DropdownMenuLabel>{group.title}</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={group.value}
+                onValueChange={(chosen) => {
+                  if (group.options.some((option) => option.value === chosen))
+                    group.onChange(chosen);
+                }}
+              >
+                {group.options.map((option) => (
+                  <DropdownMenuRadioItem
+                    key={option.value}
+                    value={option.value}
+                    closeOnPress
+                    className="items-start"
+                  >
+                    <View className="flex-1 gap-0.5">
+                      <Text className="text-sm">{option.label}</Text>
+                      {option.description ? (
+                        <Text className="text-xs leading-4 text-muted-foreground">
+                          {option.description}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </View>
           ))}
-        </DropdownMenuRadioGroup>
+        </ScrollView>
       </DropdownMenuContent>
     </DropdownMenu>
   );

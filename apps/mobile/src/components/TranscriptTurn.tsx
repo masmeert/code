@@ -12,13 +12,13 @@ import {
   toToolGroups,
   type Turn,
 } from "@masscode/client";
-import { ClientCommand } from "@masscode/contracts";
-import { ChevronRight, FileDiff } from "lucide-react-native";
-import { memo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { type Attachment, ClientCommand } from "@masscode/contracts";
+import { ChevronRight, FileDiff, Paperclip } from "lucide-react-native";
+import { memo, useEffect, useState } from "react";
+import { Image, Modal, Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { cn } from "@/lib/cn.ts";
-import { send } from "@/lib/store.ts";
+import { fetchImageUrl, send, useStore } from "@/lib/store.ts";
 import { ApprovalCard } from "./ApprovalCard.tsx";
 import { Markdown } from "./Markdown.tsx";
 import { Pulsing } from "./Pulsing.tsx";
@@ -35,17 +35,30 @@ interface TurnProps {
 export const TranscriptTurn = memo(function TranscriptTurn({ hostId, threadId, turn }: TurnProps) {
   if (turn.from === "user")
     return (
-      <View className="items-end px-4 py-2">
-        <View className="max-w-[82%] rounded-2xl bg-muted px-3.5 py-2.5">
-          <Text selectable className="text-[15px] leading-6">
-            {turn.item.text}
-          </Text>
-          {turn.item.attachments.length > 0 ? (
-            <Text className="mt-1 text-xs text-muted-foreground">
-              {turn.item.attachments.map((attachment) => attachment.name).join(", ")}
+      <View className="items-end gap-1.5 px-4 py-2">
+        {turn.item.attachments.length > 0 ? (
+          <View className="max-w-[82%] flex-row flex-wrap justify-end gap-1.5">
+            {turn.item.attachments.map((attachment) =>
+              attachment.isImage ? (
+                <AttachmentThumbnail
+                  key={attachment.path}
+                  hostId={hostId}
+                  threadId={threadId}
+                  attachment={attachment}
+                />
+              ) : (
+                <AttachmentChip key={attachment.path} attachment={attachment} />
+              ),
+            )}
+          </View>
+        ) : null}
+        {turn.item.text ? (
+          <View className="max-w-[82%] rounded-2xl bg-muted px-3.5 py-2.5">
+            <Text selectable className="text-[15px] leading-6">
+              {turn.item.text}
             </Text>
-          ) : null}
-        </View>
+          </View>
+        ) : null}
       </View>
     );
 
@@ -77,6 +90,86 @@ export const TranscriptTurn = memo(function TranscriptTurn({ hostId, threadId, t
     </View>
   );
 }, isSameTurn);
+
+function AttachmentChip({ attachment }: { attachment: Attachment }) {
+  return (
+    <View className="flex-row items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5">
+      <Icon as={Paperclip} className="size-3.5 text-muted-foreground" />
+      <Text numberOfLines={1} className="max-w-48 text-xs text-muted-foreground">
+        {attachment.name}
+      </Text>
+    </View>
+  );
+}
+
+/** Falls back to the chip when the file is gone or the host can't serve it; tap to see it whole. */
+function AttachmentThumbnail({
+  hostId,
+  threadId,
+  attachment,
+}: {
+  hostId: string;
+  threadId: string;
+  attachment: Attachment;
+}) {
+  const isConnected = useStore((state) => state.hosts[hostId]?.connection === "connected");
+  // Undefined while signing, null once it can't be shown.
+  const [url, setUrl] = useState<string | null | undefined>(undefined);
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    let isCurrent = true;
+    setUrl(undefined);
+    void fetchImageUrl(hostId, threadId, attachment.path).then(
+      (signed) => isCurrent && setUrl(signed),
+      () => isCurrent && setUrl(null),
+    );
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [hostId, threadId, attachment.path, isConnected]);
+
+  if (url === null) return <AttachmentChip attachment={attachment} />;
+
+  if (url === undefined) return <View className="size-20 rounded-lg bg-muted" />;
+
+  return (
+    <>
+      <Pressable
+        accessibilityRole="imagebutton"
+        accessibilityLabel={`View ${attachment.name}`}
+        onPress={() => setIsOpen(true)}
+        className="overflow-hidden rounded-lg border border-border active:opacity-80"
+      >
+        <Image
+          source={{ uri: url }}
+          onError={() => setUrl(null)}
+          className="h-20 w-28 bg-muted"
+          resizeMode="cover"
+        />
+      </Pressable>
+      <Modal
+        visible={isOpen}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setIsOpen(false)}
+      >
+        <Pressable
+          accessibilityLabel="Close"
+          onPress={() => setIsOpen(false)}
+          className="flex-1 items-center justify-center gap-3 bg-black/90 p-4"
+        >
+          <Image source={{ uri: url }} className="h-4/5 w-full" resizeMode="contain" />
+          <Text numberOfLines={1} className="text-xs text-white/70">
+            {attachment.name}
+          </Text>
+        </Pressable>
+      </Modal>
+    </>
+  );
+}
 
 /** `toTurns` makes new turns on every change; one whose items are the same objects needn't render again. */
 function isSameTurn(previous: TurnProps, next: TurnProps) {
