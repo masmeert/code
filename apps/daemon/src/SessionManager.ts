@@ -153,6 +153,7 @@ const make = Effect.gen(function* () {
   );
 
   const phones = yield* createPhones({
+    dataId: store.dataId,
     isRemoteAccessOn: Effect.map(settingsStore.get, (settings) => settings.remoteAccess === true),
     onChanged: (paired) =>
       publish(RuntimeEvent.cases["phones.updated"].make({ phones: [...paired] })),

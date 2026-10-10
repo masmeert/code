@@ -14,6 +14,7 @@ import {
   type ProviderStatus,
   PROTOCOL_MISMATCH,
   PROTOCOL_VERSION,
+  UNPAIRED,
   RuntimeEvent,
   ServerFrame,
   type Settings,
@@ -62,9 +63,6 @@ interface State {
 
 /** Latest turns loaded when a thread opens, and per "load earlier", as on the desktop. */
 const TURN_LIMIT = 10;
-
-/** The host closes an unpaired phone's sockets with this. */
-const UNPAIRED = 4001;
 
 const NO_ITEMS: ReadonlyArray<TranscriptItem> = [];
 
@@ -366,10 +364,17 @@ export function reconnectAll() {
     if (useStore.getState().hosts[hostId]?.connection === "offline") socket.reconnect();
 }
 
-/** Pairing with a host again replaces what this phone had for it. */
+/**
+ * Pairing with a host again replaces what this phone had for it. Another daemon at the same
+ * address, on its own data directory, is another host: replacing would strand this one.
+ */
 export function addHost(paired: PairedHost) {
-  for (const host of Object.values(useStore.getState().hosts))
-    if (host.paired.address === paired.address) removeHost(host.paired.id);
+  for (const host of Object.values(useStore.getState().hosts)) {
+    const knownDataId = host.paired.dataId ?? host.dataId;
+
+    if (knownDataId ? knownDataId === paired.dataId : host.paired.address === paired.address)
+      removeHost(host.paired.id);
+  }
 
   useStore.setState((state) => ({
     hosts: { ...state.hosts, [paired.id]: createHost(paired) },

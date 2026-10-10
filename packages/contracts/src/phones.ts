@@ -49,6 +49,11 @@ export const PairingGrant = Schema.Struct({
   token: Schema.String,
   /** The host's name, for a phone that typed its address rather than scanning the offer. */
   name: Schema.String,
+  /**
+   * The host's database, as its shell reports it: the same host across addresses and ports, and
+   * another host for a daemon on another data directory at the same address.
+   */
+  dataId: Schema.String,
 });
 
 export type PairingGrant = typeof PairingGrant.Type;

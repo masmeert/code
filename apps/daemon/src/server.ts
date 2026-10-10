@@ -4,6 +4,7 @@ import {
   PairingRequest,
   PROTOCOL_MISMATCH,
   PROTOCOL_VERSION,
+  UNPAIRED,
   ServerFrame,
 } from "@masscode/contracts";
 import * as Effect from "effect/Effect";
@@ -95,6 +96,8 @@ interface ConnectionData {
   protocol: string | null;
   /** The paired phone on the other end; null for the desktop. */
   phoneId: string | null;
+  /** A phone offering a token no paired phone holds; it's closed as soon as it opens. */
+  unpaired?: boolean;
   /**
    * Threads whose transcript this client follows, each with the publish position its
    * read was taken at: live events up to there are already in what it got.
@@ -361,7 +364,7 @@ export function serve(port: number) {
                     for (const phoneSocket of phoneSockets)
                       if (phoneSocket.data.phoneId === command.phoneId)
                         phoneSocket.close(
-                          4001,
+                          UNPAIRED,
                           "This phone was unpaired. Pair it again on your computer.",
                         );
                   }),
@@ -403,6 +406,9 @@ export function serve(port: number) {
     const websocket: WebSocketHandler<ConnectionData> = {
       open(socket) {
         // Upgraded before closing: a refused upgrade reaches a browser with no reason attached.
+        if (socket.data.unpaired)
+          return socket.close(UNPAIRED, "This phone isn't paired. Pair it again on your computer.");
+
         if (socket.data.protocol !== String(PROTOCOL_VERSION))
           return socket.close(
             PROTOCOL_MISMATCH,
@@ -415,7 +421,7 @@ export function serve(port: number) {
         runFork(FiberMap.run(streams, socket, streamToClient(socket)));
       },
       message(socket, raw) {
-        if (socket.data.protocol !== String(PROTOCOL_VERSION)) return;
+        if (socket.data.unpaired || socket.data.protocol !== String(PROTOCOL_VERSION)) return;
 
         runFork(
           decodeCommand(raw.toString()).pipe(
@@ -473,13 +479,17 @@ export function serve(port: number) {
         );
 
       const token = findOfferedToken(request);
-      const phoneId = token && (await Effect.runPromise(manager.phones.authenticate(token)));
 
-      if (!phoneId) return new Response("Unauthorized", { status: 401 });
+      if (!token) return new Response("Unauthorized", { status: 401 });
 
+      const phoneId = await Effect.runPromise(manager.phones.authenticate(token));
+
+      // An unknown token is upgraded only to be closed with UNPAIRED: refused outright, the phone
+      // sees a dropped connection and says the computer can't be reached.
       const data: ConnectionData = {
         protocol: searchParams.get("protocol"),
         phoneId,
+        unpaired: phoneId === null,
         threads: new Map(),
         sideChats: new Map(),
       };

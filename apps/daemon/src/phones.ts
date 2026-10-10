@@ -80,6 +80,7 @@ function findTailnetName() {
 
 /** Phones paired with this daemon, and the one-time codes that pair them. */
 export function createPhones(options: {
+  readonly dataId: string;
   readonly isRemoteAccessOn: Effect.Effect<boolean>;
   readonly onChanged: (phones: ReadonlyArray<PairedPhone>) => void;
 }) {
@@ -181,7 +182,7 @@ export function createPhones(options: {
               { ...phone, pairedAt: Date.now(), lastSeenAt: null, tokenHash: hashToken(token) },
             ]),
           ),
-          Effect.as({ phoneId: phone.id, token, name: findHostName() }),
+          Effect.as({ phoneId: phone.id, token, name: findHostName(), dataId: options.dataId }),
         );
       });
     }

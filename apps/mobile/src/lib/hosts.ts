@@ -14,6 +14,8 @@ export const PairedHost = Schema.Struct({
   dnsName: Schema.optional(Schema.NullOr(Schema.String)),
   port: Schema.Number,
   token: Schema.String,
+  /** Which host it is, wherever it listens; absent for pairings from before hosts said. */
+  dataId: Schema.optional(Schema.String),
 });
 
 export type PairedHost = typeof PairedHost.Type;
@@ -100,5 +102,6 @@ export async function pairWithHost(offer: {
     dnsName: offer.dnsName ?? null,
     port: offer.port,
     token: grant.token,
+    dataId: grant.dataId,
   };
 }
