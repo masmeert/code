@@ -38,7 +38,9 @@ export type HostConnection =
   /** The host unpaired this phone; only pairing again helps. */
   | "unpaired"
   /** The phone and the host run versions that don't understand each other. */
-  | "outdated";
+  | "outdated"
+  /** Turned off on this phone. */
+  | "off";
 
 export interface HostState {
   /** How to reach it, from pairing. */
@@ -73,7 +75,7 @@ const decodeKept = Schema.decodeUnknownSync(Schema.Struct({ paired: Schema.Array
 function createHost(paired: PairedHost): HostState {
   return {
     paired,
-    connection: "connecting",
+    connection: paired.enabled === false ? "off" : "connecting",
     dataId: null,
     settings: null,
     projects: [],
@@ -112,7 +114,8 @@ export const useStore = create<State>()(
       onRehydrateStorage: () => () => {
         useStore.setState({ isLoaded: true });
 
-        for (const host of Object.values(useStore.getState().hosts)) connect(host.paired);
+        for (const host of Object.values(useStore.getState().hosts))
+          if (host.paired.enabled !== false) connect(host.paired);
       },
     },
   ),
@@ -186,6 +189,18 @@ function settleStartingThread(requestId: string, settle: (starting: StartingThre
 
   if (starting) settle(starting);
 }
+
+/** Image URLs this phone asked a host to sign, by request id, until the host answers. */
+const signingImages = new Map<
+  string,
+  { readonly hostId: string; readonly resolve: (path: string | null) => void }
+>();
+
+/** Signed URLs by `transcriptKey` and path, renewed before the host's hour runs out. */
+const signedImages = new Map<
+  string,
+  { readonly url: Promise<string | null>; readonly signedAtMs: number }
+>();
 
 /** Transcripts on screen, by `transcriptKey`, with how many screens show each. */
 const wanted = new Map<string, number>();
@@ -285,7 +300,10 @@ function onFrame(hostId: string, frame: ServerFrame) {
     "project.config": () => {},
     "project.configSaved": () => {},
     "folder.entries": () => {},
-    "image.signed": () => {},
+    "image.signed": ({ requestId, url }) => {
+      signingImages.get(requestId)?.resolve(url);
+      signingImages.delete(requestId);
+    },
     "project.cloned": () => {},
     "pairing.started": () => {},
     "thread.createFailed": ({ requestId, message }) =>
@@ -327,21 +345,30 @@ function connect(paired: PairedHost) {
           ? "outdated"
           : "offline";
 
-    useStore.setState((state) => ({
-      // Kept on screen, marked cached until the next connection catches them up.
-      transcripts: Object.fromEntries(
-        Object.entries(state.transcripts).map(([key, transcript]) => [
-          key,
-          key.startsWith(`${paired.id}/`)
-            ? { ...transcript, status: "cached" as const }
-            : transcript,
-        ]),
-      ),
-    }));
-    updateHost(paired.id, (host) => ({
-      ...host,
-      connection: host.connection === "outdated" ? "outdated" : connection,
-    }));
+    // A socket turned off or replaced closes late, when the host's state is no longer its own.
+    if (sockets.get(paired.id) === socket) {
+      useStore.setState((state) => ({
+        // Kept on screen, marked cached until the next connection catches them up.
+        transcripts: Object.fromEntries(
+          Object.entries(state.transcripts).map(([key, transcript]) => [
+            key,
+            key.startsWith(`${paired.id}/`)
+              ? { ...transcript, status: "cached" as const }
+              : transcript,
+          ]),
+        ),
+      }));
+      updateHost(paired.id, (host) => ({
+        ...host,
+        connection: host.connection === "outdated" ? "outdated" : connection,
+      }));
+    }
+
+    for (const [requestId, signing] of signingImages)
+      if (signing.hostId === paired.id) {
+        signing.resolve(null);
+        signingImages.delete(requestId);
+      }
 
     for (const [requestId, starting] of startingThreads)
       if (starting.hostId === paired.id)
@@ -364,6 +391,16 @@ export function reconnectAll() {
     if (useStore.getState().hosts[hostId]?.connection === "offline") socket.reconnect();
 }
 
+/** Tries the host now, without waiting out the backoff; also after it unpaired or was outdated. */
+export function reconnectHost(hostId: string) {
+  const socket = sockets.get(hostId);
+
+  if (!socket) return;
+
+  updateHost(hostId, (host) => ({ ...host, connection: "connecting" }));
+  socket.reconnect();
+}
+
 /**
  * Pairing with a host again replaces what this phone had for it. Another daemon at the same
  * address, on its own data directory, is another host: replacing would strand this one.
@@ -380,6 +417,28 @@ export function addHost(paired: PairedHost) {
     hosts: { ...state.hosts, [paired.id]: createHost(paired) },
   }));
   connect(paired);
+}
+
+/** Off keeps the pairing but drops the connection and what came over it, until it's turned on again. */
+export function setHostEnabled(hostId: string, enabled: boolean) {
+  const host = useStore.getState().hosts[hostId];
+
+  if (!host || (host.paired.enabled !== false) === enabled) return;
+
+  const paired = { ...host.paired, enabled };
+
+  useStore.setState((state) => ({
+    hosts: { ...state.hosts, [hostId]: createHost(paired) },
+    transcripts: Object.fromEntries(
+      Object.entries(state.transcripts).filter(([key]) => !key.startsWith(`${hostId}/`)),
+    ),
+  }));
+
+  if (enabled) connect(paired);
+  else {
+    sockets.get(hostId)?.close();
+    sockets.delete(hostId);
+  }
 }
 
 /** Forgets the host on this phone; the host still lists the phone until it's unpaired there. */
@@ -409,6 +468,39 @@ export function createThread(
   send(hostId, ClientCommand.cases["thread.create"].make({ requestId, ...command }));
 
   return () => startingThreads.delete(requestId);
+}
+
+/** A URL `<Image>` can load for an image file on the thread's host; null when it can't be shown now. */
+export function fetchImageUrl(hostId: string, threadId: string, path: string) {
+  const key = `${transcriptKey(hostId, threadId)}\n${path}`;
+  const cached = signedImages.get(key);
+
+  if (cached && Date.now() - cached.signedAtMs < 50 * 60 * 1000) return cached.url;
+
+  const socket = sockets.get(hostId);
+  const thread = useStore.getState().hosts[hostId]?.threads[threadId];
+
+  if (!socket || socket.readyState !== socket.OPEN || !thread) return Promise.resolve(null);
+
+  const requestId = crypto.randomUUID();
+
+  const url = new Promise<string | null>((resolve) => {
+    signingImages.set(requestId, { hostId, resolve });
+    send(hostId, ClientCommand.cases["image.sign"].make({ path, cwd: thread.cwd, requestId }));
+  }).then((signed) => {
+    if (!signed) {
+      signedImages.delete(key);
+
+      return null;
+    }
+
+    // The socket's address, MagicDNS name or Tailscale IP, is the one that worked just now.
+    return new URL(signed, socket.url.replace(/^ws/, "http")).href;
+  });
+
+  signedImages.set(key, { url, signedAtMs: Date.now() });
+
+  return url;
 }
 
 /** Follows the thread's transcript while a screen shows it; call what it returns to stop. */

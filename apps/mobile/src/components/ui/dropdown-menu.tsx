@@ -87,11 +87,43 @@ function DropdownMenuRadioItem({
   );
 }
 
+function DropdownMenuItem({
+  className,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Item>) {
+  return (
+    <TextClassContext.Provider value="text-sm text-foreground">
+      <DropdownMenuPrimitive.Item
+        className={cn(
+          "flex-row items-center gap-2.5 rounded-lg px-2 py-2 active:bg-muted",
+          props.disabled && "opacity-50",
+          className,
+        )}
+        {...props}
+      />
+    </TextClassContext.Provider>
+  );
+}
+
+function DropdownMenuSeparator({
+  className,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Separator>) {
+  return (
+    <DropdownMenuPrimitive.Separator
+      className={cn("-mx-1.5 my-1.5 h-px bg-border", className)}
+      {...props}
+    />
+  );
+}
+
 export {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 };

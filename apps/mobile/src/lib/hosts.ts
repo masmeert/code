@@ -16,6 +16,8 @@ export const PairedHost = Schema.Struct({
   token: Schema.String,
   /** Which host it is, wherever it listens; absent for pairings from before hosts said. */
   dataId: Schema.optional(Schema.String),
+  /** Turned off on this phone: kept paired, but not connected to. Absent counts as on. */
+  enabled: Schema.optional(Schema.Boolean),
 });
 
 export type PairedHost = typeof PairedHost.Type;

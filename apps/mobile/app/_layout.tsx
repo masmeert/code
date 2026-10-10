@@ -58,7 +58,10 @@ export default function RootLayout() {
               screenOptions={{ headerShadowVisible: false, headerBackButtonDisplayMode: "minimal" }}
             >
               <Stack.Screen name="index" options={{ title: "Threads" }} />
-              <Stack.Screen name="hosts" options={{ title: "Settings", presentation: "modal" }} />
+              <Stack.Screen
+                name="settings"
+                options={{ headerShown: false, presentation: "modal" }}
+              />
               <Stack.Screen
                 name="pair"
                 options={{ title: "Pair a computer", presentation: "modal" }}

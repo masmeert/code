@@ -1,0 +1,119 @@
+import { EFFORT_LABEL, EFFORTS, getVisibleModels, PERMISSION_LABEL } from "@masscode/client";
+import { PermissionLevel, PROVIDER_NAME } from "@masscode/contracts";
+import { ScrollView } from "react-native";
+import {
+  SettingsChoiceRow,
+  SettingsScopeHeader,
+  SettingsSection,
+} from "@/components/SettingsList.tsx";
+import {
+  type SettingsTarget,
+  uniformSetting,
+  updateSettings,
+  useSettingsScope,
+} from "@/lib/settings-scope.ts";
+
+function modelsOf(host: SettingsTarget) {
+  return host.providers.flatMap((status) =>
+    status.linked
+      ? getVisibleModels(status.models, host.settings.providers[status.kind]).map((model) => ({
+          value: `${status.kind}:${model.id}`,
+          label: `${model.label} · ${PROVIDER_NAME[status.kind]}`,
+          provider: status.kind,
+        }))
+      : [],
+  );
+}
+
+function effortsOf(host: SettingsTarget) {
+  const savedModel = modelsOf(host).find((model) => model.value === host.settings.newThreadModel);
+
+  return EFFORTS[savedModel?.provider ?? host.settings.lastProvider];
+}
+
+export default function NewThreadsSettingsScreen() {
+  const { targets } = useSettingsScope();
+
+  // Only what every selected computer can run, so one choice fits them all.
+  const models = targets
+    .slice(0, 1)
+    .flatMap(modelsOf)
+    .filter((model) =>
+      targets.every((host) => modelsOf(host).some((other) => other.value === model.value)),
+    );
+
+  const efforts = targets
+    .slice(0, 1)
+    .flatMap(effortsOf)
+    .filter((effort) => targets.every((host) => effortsOf(host).includes(effort)));
+
+  return (
+    <ScrollView
+      className="flex-1 bg-background"
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerClassName="gap-6 p-4"
+    >
+      <SettingsScopeHeader />
+      {targets.length > 0 ? (
+        <SettingsSection footer="New threads begin with these.">
+          <SettingsChoiceRow
+            label="Model"
+            value={uniformSetting(
+              targets,
+              (host) =>
+                modelsOf(host).find((model) => model.value === host.settings.newThreadModel)
+                  ?.value ?? "last",
+            )}
+            options={[{ value: "last", label: "Last used" }, ...models]}
+            onChange={(value) =>
+              updateSettings(targets, {
+                newThreadModel: value === "last" ? null : value,
+              })
+            }
+          />
+          <SettingsChoiceRow
+            label="Effort"
+            value={uniformSetting(targets, (host) =>
+              host.settings.newThreadEffort &&
+              effortsOf(host).includes(host.settings.newThreadEffort)
+                ? host.settings.newThreadEffort
+                : "default",
+            )}
+            options={[
+              { value: "default", label: "Model default" },
+              ...efforts.map((effort) => ({
+                value: effort,
+                label: EFFORT_LABEL[effort],
+              })),
+            ]}
+            onChange={(value) =>
+              updateSettings(targets, {
+                newThreadEffort: value === "default" ? null : value,
+              })
+            }
+          />
+          <SettingsChoiceRow
+            label="Permissions"
+            description="What new threads may do without asking"
+            value={uniformSetting(targets, (host) => host.settings.newThreadPermission ?? "ask")}
+            options={PermissionLevel.literals.map((level) => ({
+              value: level,
+              label: PERMISSION_LABEL[level],
+            }))}
+            onChange={(newThreadPermission) => updateSettings(targets, { newThreadPermission })}
+          />
+          <SettingsChoiceRow
+            label="Workspace"
+            description="Where new threads start"
+            value={uniformSetting(targets, (host) => host.settings.workspace ?? "local")}
+            options={[
+              { value: "local", label: "Project folder" },
+              { value: "worktree", label: "New worktree" },
+            ]}
+            onChange={(workspace) => updateSettings(targets, { workspace })}
+          />
+        </SettingsSection>
+      ) : null}
+    </ScrollView>
+  );
+}

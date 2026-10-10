@@ -108,7 +108,10 @@ export default function ThreadsScreen() {
   const isFiltered = hostFilter !== null || projectFilter !== null;
 
   const unreachable = Object.values(hosts).filter(
-    (host) => host.connection !== "connected" && host.connection !== "connecting",
+    (host) =>
+      host.connection !== "connected" &&
+      host.connection !== "connecting" &&
+      host.connection !== "off",
   );
 
   const orbState = Object.values(hosts).some((host) =>
@@ -143,7 +146,7 @@ export default function ThreadsScreen() {
                     <Pressable
                       accessibilityLabel="Settings"
                       hitSlop={12}
-                      onPress={() => router.push("/hosts")}
+                      onPress={() => router.push("/settings")}
                       className="size-9 items-center justify-center"
                     >
                       <Icon as={Settings} className="size-5 text-foreground" />
@@ -163,7 +166,7 @@ export default function ThreadsScreen() {
             <Stack.Toolbar.Button
               icon="gearshape"
               accessibilityLabel="Settings"
-              onPress={() => router.push("/hosts")}
+              onPress={() => router.push("/settings")}
             />
           </Stack.Toolbar>
         </>
@@ -222,7 +225,7 @@ export default function ThreadsScreen() {
               </Stack.Toolbar.Menu>
             </Stack.Toolbar.Menu>
             <Stack.Toolbar.SearchBarSlot />
-            <Stack.Toolbar.Spacer width={8} />
+            <Stack.Toolbar.Spacer width={0} />
             <Stack.Toolbar.Button
               icon="square.and.pencil"
               accessibilityLabel="New thread"
@@ -318,7 +321,7 @@ export default function ThreadsScreen() {
 function UnreachableHosts({ hosts }: { hosts: ReadonlyArray<HostState> }) {
   return (
     <Pressable
-      onPress={() => router.push("/hosts")}
+      onPress={() => router.push("/settings/computers")}
       className="mx-4 mt-2 mb-1 gap-0.5 rounded-2xl border border-border bg-card px-4 py-3 active:bg-muted"
     >
       <Text className="text-sm font-medium">
