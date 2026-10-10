@@ -12,7 +12,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
 import { z } from "zod";
-import type { Devices } from "./devices.ts";
+import { type Devices, nameAgentSession } from "./devices.ts";
 import { PORT } from "./port.ts";
 import { getErrorMessage } from "./errors.ts";
 
@@ -351,7 +351,7 @@ function createDeviceServer(threadId: string, devices: Devices) {
     ({ deviceId, platform }) =>
       runDeviceTool(async () => {
         const { device, cli } = await devices.open(threadId, deviceId ?? null, platform ?? null);
-        const target = `${device.platform === "ios" ? `--platform ios --udid ${device.id}` : `--platform android --serial ${device.streamId}`} --session masscode-${threadId}`;
+        const target = `${device.platform === "ios" ? `--platform ios --udid ${device.id}` : `--platform android --serial ${device.streamId}`} --session ${nameAgentSession(threadId)}`;
         const app = device.platform === "ios" ? "<bundle-id>" : "<package>";
 
         return [

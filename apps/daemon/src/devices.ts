@@ -172,9 +172,48 @@ async function listEmulators(): Promise<ReadonlyArray<Device>> {
   }));
 }
 
+const AGENT_DEVICE_CLI = join(getToolDirectory("agent-device"), "node_modules/.bin/agent-device");
+
+const SESSION_PREFIX = "masscode-";
+
+/** The thread's agent-device session; agent-device lends a device to one session until it's closed. */
+export function nameAgentSession(threadId: string) {
+  return `${SESSION_PREFIX}${threadId}`;
+}
+
+/** Ending a session also quits the app it opened; agent-device has no way to keep it running. */
+function closeAgentSession(threadId: string) {
+  return runCommand(AGENT_DEVICE_CLI, ["close", "--session", nameAgentSession(threadId)], 30_000)
+    .then(() => undefined)
+    .catch(() => {});
+}
+
+/** Threads whose agent-device sessions hold `device`. */
+async function findSessionHolders(device: Device) {
+  // SAFETY: the shape of `agent-device session list --json`, as of the pinned version.
+  const listing = JSON.parse(
+    await runCommand(AGENT_DEVICE_CLI, ["session", "list", "--json"], 30_000),
+  ) as { data?: { sessions?: ReadonlyArray<{ name: string; id?: string }> } };
+
+  return (listing.data?.sessions ?? [])
+    .filter(
+      (session) =>
+        session.name.startsWith(SESSION_PREFIX) &&
+        (session.id === device.id || session.id === device.streamId),
+    )
+    .map((session) => session.name.slice(SESSION_PREFIX.length));
+}
+
 export type Devices = ReturnType<typeof createDevices>;
 
-export function createDevices(onAttach: (threadId: string, deviceId: string | null) => void) {
+export function createDevices({
+  onAttach,
+  isTurnActive,
+}: {
+  onAttach: (threadId: string, deviceId: string | null) => void;
+  /** Unknown threads, gone while MassCode was closed, count as done. */
+  isTurnActive: (threadId: string) => boolean;
+}) {
   const attached = new Map<string, Device>();
 
   /** Devices booted for a thread, so ours to shut down; with the timer that will once idle. */
@@ -395,8 +434,10 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
       return { installed: true, devices: await listDevices(), hub: await startHub() };
     },
     attach,
-    /** The thread is gone or archived: its device shuts down once idle, if booted for it. */
+    /** The thread is gone or archived: its device is free for others, and shuts down once idle if booted for it. */
     release(threadId: string) {
+      void closeAgentSession(threadId);
+
       const device = attached.get(threadId);
 
       if (!device) return;
@@ -427,11 +468,18 @@ export function createDevices(onAttach: (threadId: string, deviceId: string | nu
 
       await attach(threadId, chosen.id);
 
-      return {
-        // SAFETY: attach just set it.
-        device: attached.get(threadId)!,
-        cli: join(getToolDirectory("agent-device"), "node_modules/.bin/agent-device"),
-      };
+      // SAFETY: attach just set it.
+      const device = attached.get(threadId)!;
+
+      // A thread between turns would hold the device until archived; one mid-turn keeps it.
+      const holders = await findSessionHolders(device).catch(() => []);
+      await Promise.all(
+        holders
+          .filter((holder) => holder !== threadId && !isTurnActive(holder))
+          .map(closeAgentSession),
+      );
+
+      return { device, cli: AGENT_DEVICE_CLI };
     },
     async takeScreenshot(threadId: string) {
       const device = attached.get(threadId);

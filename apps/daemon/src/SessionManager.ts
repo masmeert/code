@@ -148,9 +148,15 @@ const make = Effect.gen(function* () {
 
   const browsers = createBrowsers();
 
-  const devices = createDevices((threadId, deviceId) =>
-    publish(RuntimeEvent.cases["thread.device"].make({ threadId, deviceId })),
-  );
+  const devices = createDevices({
+    onAttach: (threadId, deviceId) =>
+      publish(RuntimeEvent.cases["thread.device"].make({ threadId, deviceId })),
+    isTurnActive: (threadId) => {
+      const entry = threads.get(threadId);
+
+      return entry !== undefined && isBusy(entry);
+    },
+  });
 
   const phones = yield* createPhones({
     dataId: store.dataId,
