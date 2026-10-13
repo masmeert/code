@@ -76,7 +76,7 @@ import {
 } from "./composer-tray.tsx";
 import { SideChatDrawer } from "./side-chat-drawer.tsx";
 import { QuoteSelection } from "./quote-selection.tsx";
-import { IconButton } from "@/shared/ui";
+import { ErrorBoundary, IconButton } from "@/shared/ui";
 
 // Loaded on first open, keeping the diff renderer out of startup.
 const DiffPanel = lazy(() =>
@@ -442,27 +442,55 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
           </div>
         </div>
         {isDiffOpen ? (
-          <Suspense
-            fallback={
-              <div
-                style={{
-                  width: readWidth(DIFF_PANEL_WIDTH_KEY, getDefaultDiffPanelWidth()),
-                }}
-                className="shrink-0 border-l border-border"
-              />
-            }
+          <ErrorBoundary
+            fallback={(error, retry) => (
+              <aside
+                aria-label="Changes"
+                style={{ width: readWidth(DIFF_PANEL_WIDTH_KEY, getDefaultDiffPanelWidth()) }}
+                className="flex shrink-0 flex-col items-center justify-center gap-3 border-l border-border px-6 text-center text-sm text-muted-foreground"
+              >
+                <p>Couldn't show the changes: {error.message}</p>
+                <span className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={retry}
+                    className="rounded-lg border border-border px-2.5 py-1 text-xs transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Try again
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsDiffOpen(false)}
+                    className="rounded-lg border border-border px-2.5 py-1 text-xs transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Close
+                  </button>
+                </span>
+              </aside>
+            )}
           >
-            <DiffPanel
-              threadId={threadId}
-              cwd={info.cwd}
-              refreshKey={diffKey}
-              turn={diffTurn ? { threadId, messageId: diffTurn } : null}
-              reveal={revealedComment}
-              onRevealed={clearRevealedComment}
-              onShowAll={() => setDiffTurn(null)}
-              onClose={() => setIsDiffOpen(false)}
-            />
-          </Suspense>
+            <Suspense
+              fallback={
+                <div
+                  style={{
+                    width: readWidth(DIFF_PANEL_WIDTH_KEY, getDefaultDiffPanelWidth()),
+                  }}
+                  className="shrink-0 border-l border-border"
+                />
+              }
+            >
+              <DiffPanel
+                threadId={threadId}
+                cwd={info.cwd}
+                refreshKey={diffKey}
+                turn={diffTurn ? { threadId, messageId: diffTurn } : null}
+                reveal={revealedComment}
+                onRevealed={clearRevealedComment}
+                onShowAll={() => setDiffTurn(null)}
+                onClose={() => setIsDiffOpen(false)}
+              />
+            </Suspense>
+          </ErrorBoundary>
         ) : null}
         {isBrowserOpen && window.desktop ? <BrowserPanel threadId={threadId} /> : null}
         {isSimulatorOpen && isSimulatorAvailable ? <SimulatorPanel threadId={threadId} /> : null}

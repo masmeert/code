@@ -66,12 +66,19 @@ function parseFiles(patch: string): Array<FileDiffMetadata> {
   try {
     // Key each file's highlight cache by its blob ids, so an unchanged file is never re-highlighted
     // and a changed one never shows a stale render.
-    files = parsePatchFiles(patch)
-      .flatMap((parsed) => parsed.files)
-      .map((file) => ({
-        ...file,
-        cacheKey: `${file.name}:${file.prevObjectId ?? ""}:${file.newObjectId ?? ""}`,
-      }));
+    // A path moved out of the index (`git mv`) and then recreated on disk comes twice: deleted in
+    // the tracked diff, then new as untracked. The file tree and the diff view both key by path, so
+    // keep one, the last: it matches what's on disk.
+    files = [
+      ...new Map(
+        parsePatchFiles(patch)
+          .flatMap((parsed) => parsed.files)
+          .map((file) => [file.name, file]),
+      ).values(),
+    ].map((file) => ({
+      ...file,
+      cacheKey: `${file.name}:${file.prevObjectId ?? ""}:${file.newObjectId ?? ""}`,
+    }));
   } catch {}
 
   lastParse = { patch, files };
