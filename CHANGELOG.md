@@ -2,6 +2,39 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.8](https://github.com/masmeert/code/compare/v0.1.7...v0.1.8) (2026-10-13)
+
+
+### Added
+
+* an orb face at the end of the newest reply on mobile ([0050139](https://github.com/masmeert/code/commit/005013938a758c89fd4d2b5c7cf77c98f321b300))
+* attach files from the phone, and show attachments in the transcript ([b81ee94](https://github.com/masmeert/code/commit/b81ee94836fe1ee5a106c1a31ae2fa0c2688df2d))
+* copy the pairing code and address on click, and tighten the code's split ([a38eea0](https://github.com/masmeert/code/commit/a38eea0a2f78133d15d4f1b18acf905d750696cd))
+* curve the composer's bottom corners with the screen's ([0b8afde](https://github.com/masmeert/code/commit/0b8afde0f46cc4a4546d6c75e951c31c85b60518))
+* float the composer over the transcript so the thread isn't cut off above it ([a6da92b](https://github.com/masmeert/code/commit/a6da92b3e2bd9a662443f36c27a579c94f024499))
+* follow and steer threads from the phone ([074a06b](https://github.com/masmeert/code/commit/074a06bb4abef4b2561a3098c88fc4f091f3e083))
+* give the mobile app the desktop's look, and call paired machines hosts ([ff0df63](https://github.com/masmeert/code/commit/ff0df6388dbbbc94fa3553af1418e53f44367893))
+* give the mobile app the desktop's orb icon ([6889989](https://github.com/masmeert/code/commit/6889989fc54e94d0b059920940bfdc2510d571cb))
+* let paired phones reach the daemon over Tailscale ([e5c61f4](https://github.com/masmeert/code/commit/e5c61f45cf48f17e898bf899ad1e2e150bf9c452))
+* lift the transcript with the keyboard and reconnect on network changes ([ee09fd3](https://github.com/masmeert/code/commit/ee09fd3e86bd053e04b112a384e860ab6986a027))
+* mobile settings that scale to several computers ([c595381](https://github.com/masmeert/code/commit/c595381b1b5ab8959f75f003afdb4fcbb4d0243d))
+* native iOS mobile app with dictation, mentions and thread settings ([2fc1f6f](https://github.com/masmeert/code/commit/2fc1f6fb688515bc56c2d554bf8f42479d380406))
+* native iOS toolbars, search and filters on mobile ([8cc2921](https://github.com/masmeert/code/commit/8cc2921f9d4fc813ed41601d8afa48776456251a))
+* pair phones from Settings → Phone ([4e90546](https://github.com/masmeert/code/commit/4e90546cfb70ed4264819286d4d5dbc1dd1d028b))
+* pair phones with the daemon ([dfa90de](https://github.com/masmeert/code/commit/dfa90de594976fc674c69bc0ced6bab8ba343cdb))
+* pick permission and effort, archive by swipe, and run on Android ([134451c](https://github.com/masmeert/code/commit/134451c2050eaa310f3652e3ee29f3b5ce6ce47d))
+* reach the Mac by its MagicDNS name ([269d946](https://github.com/masmeert/code/commit/269d946504e60d84c211fc9afa88611edee4cecb))
+* start threads from the phone, with photos ([56d1705](https://github.com/masmeert/code/commit/56d1705fae16bf1a4025e71b50939009fb8cae0b))
+* store app state as TOML ([b94d288](https://github.com/masmeert/code/commit/b94d288a429256e9e35fcabdf6dfe5033607a850))
+
+
+### Fixed
+
+* free a thread's simulator once it's archived, or idle when another thread opens it ([8738e26](https://github.com/masmeert/code/commit/8738e26ec2a35d02cae23cf4b23f3c91d7abc55f))
+* tell paired hosts apart by their database, and say when a phone isn't paired ([b85d8ab](https://github.com/masmeert/code/commit/b85d8abdaf71c9d6183971016787c56216a97938))
+* truncate long subagent names in the composer tray ([42c7a7d](https://github.com/masmeert/code/commit/42c7a7db6cb0c2ff4d29c6af425716bc908b6217))
+* **web:** keep the changes panel up when a diff lists a path twice ([4bb4ec2](https://github.com/masmeert/code/commit/4bb4ec223d4b4b1129b2d3ec61a2abf88004aea8))
+
 ## [0.1.7](https://github.com/masmeert/code/compare/v0.1.6...v0.1.7) (2026-10-09)
 
 
