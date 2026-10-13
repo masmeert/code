@@ -10,7 +10,7 @@ import {
   FormList,
   FormSection,
   FormTextFieldRow,
-} from "@/components/FormList.tsx";
+} from "@/components/form-list.tsx";
 import { pairWithHost, parsePairingLink } from "@/lib/hosts.ts";
 import { addHost } from "@/lib/store.ts";
 

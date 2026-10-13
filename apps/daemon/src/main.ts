@@ -1,10 +1,10 @@
-import "./shellEnv.ts"; // must stay first: fixes process.env before other modules read it
+import "./shell-env.ts"; // must stay first: fixes process.env before other modules read it
 import { BunRuntime } from "@effect/platform-bun";
 import * as Effect from "effect/Effect";
-import * as ProviderRegistryLive from "./providers/ProviderRegistry.ts";
-import * as SessionManagerLive from "./SessionManager.ts";
+import * as ProviderRegistryLive from "./providers/provider-registry.ts";
+import * as SessionManagerLive from "./session-manager.ts";
 import { PORT } from "./port.ts";
-import { SessionManager } from "./SessionManager.ts";
+import { SessionManager } from "./session-manager.ts";
 import { serve } from "./server.ts";
 
 /** Whether process `pid` is still running. */

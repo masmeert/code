@@ -1,6 +1,6 @@
 import { router } from "expo-router";
-import { FormLinkRow, FormList, FormSection } from "@/components/FormList.tsx";
-import { SettingsScopeHeader } from "@/components/SettingsScopeHeader.tsx";
+import { FormLinkRow, FormList, FormSection } from "@/components/form-list.tsx";
+import { SettingsScopeHeader } from "@/components/settings-scope-header.tsx";
 import { useSettingsScope } from "@/lib/settings-scope.ts";
 import { useStore } from "@/lib/store.ts";
 

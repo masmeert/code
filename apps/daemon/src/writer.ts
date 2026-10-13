@@ -8,12 +8,16 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { acquireCodexConnection, CodexNotification, ThreadResponse } from "./providers/codexRpc.ts";
+import {
+  acquireCodexConnection,
+  CodexNotification,
+  ThreadResponse,
+} from "./providers/codex-rpc.ts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { buildCursorModelFlag } from "./providers/CursorAdapter.ts";
+import { buildCursorModelFlag } from "./providers/cursor-adapter.ts";
 import { acquireClaudeQuery, toClaudeExtraArgs, resolveHarnessLaunch } from "./providers/launch.ts";
-import { ProviderError, tryProviderPromise } from "./providers/ProviderAdapter.ts";
+import { ProviderError, tryProviderPromise } from "./providers/provider-adapter.ts";
 
 /** Enough of the patch to describe it; the model doesn't need every line of a big change. */
 const MAX_PROMPT_PATCH = 60_000;

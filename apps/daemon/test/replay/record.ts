@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
 import { writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { resolveExecutable } from "../../src/providers/resolveExecutable.ts";
+import { resolveExecutable } from "../../src/providers/resolve-executable.ts";
 import { FAKE_CLI, createProject, startDaemon } from "./daemon.ts";
 import { readRecording, toFixture, type Recorded } from "./peer.ts";
 

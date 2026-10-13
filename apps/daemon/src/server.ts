@@ -23,8 +23,8 @@ import { REMOTE_PORT } from "./phones.ts";
 import { CommandError, getErrorMessage } from "./errors.ts";
 import { cloneRepository } from "./git.ts";
 import { setPort } from "./port.ts";
-import { parseProjectConfig, readProjectConfigText, writeProjectConfig } from "./projectConfig.ts";
-import { SessionManager } from "./SessionManager.ts";
+import { parseProjectConfig, readProjectConfigText, writeProjectConfig } from "./project-config.ts";
+import { SessionManager } from "./session-manager.ts";
 import type { BrowserHost } from "./browsers.ts";
 import type { TerminalViewer } from "./terminals.ts";
 

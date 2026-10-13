@@ -5,9 +5,9 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getErrorMessage } from "../errors.ts";
 import { expandHome } from "../folders.ts";
-import { DATA_DIR } from "../storage/tomlFile.ts";
-import { ProviderError } from "./ProviderAdapter.ts";
-import { resolveExecutable } from "./resolveExecutable.ts";
+import { DATA_DIR } from "../storage/toml-file.ts";
+import { ProviderError } from "./provider-adapter.ts";
+import { resolveExecutable } from "./resolve-executable.ts";
 
 /** How to run one harness CLI, from its Settings. */
 export interface HarnessLaunch {

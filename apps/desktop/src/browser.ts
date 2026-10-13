@@ -7,7 +7,7 @@ import {
   shell,
   type WebContents,
 } from "electron";
-import { recordConsole } from "./browserAutomation.ts";
+import { recordConsole } from "./browser-automation.ts";
 
 function isWebUrl(url: string) {
   return url.startsWith("https://") || url.startsWith("http://");

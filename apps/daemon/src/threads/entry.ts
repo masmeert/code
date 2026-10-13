@@ -9,8 +9,13 @@ import {
 } from "@masscode/contracts";
 import * as Semaphore from "effect/Semaphore";
 import { createHash } from "node:crypto";
-import type { ProviderSession } from "../providers/ProviderAdapter.ts";
-import type { Coverage, ResumeTokens, ShelveOverride, ThreadHome } from "../storage/ThreadStore.ts";
+import type { ProviderSession } from "../providers/provider-adapter.ts";
+import type {
+  Coverage,
+  ResumeTokens,
+  ShelveOverride,
+  ThreadHome,
+} from "../storage/thread-store.ts";
 
 export interface ThreadEntry {
   info: ThreadInfo;

@@ -1,5 +1,5 @@
 import { router, Stack } from "expo-router";
-import { FormButtonRow, FormLinkRow, FormList, FormSection } from "@/components/FormList.tsx";
+import { FormButtonRow, FormLinkRow, FormList, FormSection } from "@/components/form-list.tsx";
 import { CONNECTION_STATUS } from "@/lib/host-connection.ts";
 import { useStore } from "@/lib/store.ts";
 

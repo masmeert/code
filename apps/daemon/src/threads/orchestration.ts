@@ -4,8 +4,8 @@ import * as Effect from "effect/Effect";
 import { CommandError } from "../errors.ts";
 import { readBranch } from "../git.ts";
 import type { SendMessageInput, StartThreadInput } from "../mcp.ts";
-import type { ProjectsStore } from "../storage/ProjectsStore.ts";
-import type { ThreadStore } from "../storage/ThreadStore.ts";
+import type { ProjectsStore } from "../storage/projects-store.ts";
+import type { ThreadStore } from "../storage/thread-store.ts";
 import type { Agents } from "./agents.ts";
 import {
   buildThreadInfo,

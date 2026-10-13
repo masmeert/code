@@ -1,7 +1,7 @@
 import { formatAge, formatProjectLabel, useNow } from "@masscode/client";
 import { ClientCommand } from "@masscode/contracts";
 import * as Haptics from "expo-haptics";
-import { FormActionRow, FormList, FormSection } from "@/components/FormList.tsx";
+import { FormActionRow, FormList, FormSection } from "@/components/form-list.tsx";
 import { send, useStore } from "@/lib/store.ts";
 
 export default function ArchivedThreadsScreen() {

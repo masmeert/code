@@ -19,14 +19,14 @@ import { realpath } from "node:fs/promises";
 import { basename } from "node:path";
 import { CommandError } from "../errors.ts";
 import { readBranch } from "../git.ts";
-import type { SettingsStore } from "../storage/SettingsStore.ts";
+import type { SettingsStore } from "../storage/settings-store.ts";
 import {
   type Coverage,
   isPersisted,
   type ResumeTokens,
   type ShelveOverride,
   type ThreadStore,
-} from "../storage/ThreadStore.ts";
+} from "../storage/thread-store.ts";
 import { createEntry, deriveTitle, isShelved, type ThreadEntry } from "./entry.ts";
 
 export interface SequencedEvent {

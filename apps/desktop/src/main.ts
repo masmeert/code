@@ -5,7 +5,7 @@ import { BROWSER_PARTITION } from "@masscode/contracts";
 import { app, BrowserWindow, session } from "electron";
 import { registerBridge } from "./bridge.ts";
 import { configureBrowserSession } from "./browser.ts";
-import { findFreePort } from "./freePort.ts";
+import { findFreePort } from "./free-port.ts";
 import { closeTunnels, loadHosts } from "./hosts.ts";
 import { APP_URL, registerRendererScheme, serveRenderer } from "./renderer.ts";
 import { watchForUpdates } from "./updates.ts";

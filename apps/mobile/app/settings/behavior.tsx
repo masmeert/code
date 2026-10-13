@@ -1,6 +1,6 @@
 import { DEFAULT_AUTO_SHELVE_DAYS } from "@masscode/contracts";
-import { FormChoiceSection, FormList } from "@/components/FormList.tsx";
-import { SettingsScopeHeader } from "@/components/SettingsScopeHeader.tsx";
+import { FormChoiceSection, FormList } from "@/components/form-list.tsx";
+import { SettingsScopeHeader } from "@/components/settings-scope-header.tsx";
 import { uniformSetting, updateSettings, useSettingsScope } from "@/lib/settings-scope.ts";
 
 const AUTO_SHELVE_DAYS = [1, 3, 7, 14, 30];

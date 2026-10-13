@@ -17,7 +17,7 @@ import {
 import * as Effect from "effect/Effect";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
-import { coalesceLoads } from "../coalesceLoads.ts";
+import { coalesceLoads } from "../coalesce-loads.ts";
 import type { Devices } from "../devices.ts";
 import { CommandError, getErrorMessage } from "../errors.ts";
 import {
@@ -31,12 +31,12 @@ import {
 import { buildHandoff } from "../handoff.ts";
 import { ADAPTERS, getHarnessName } from "../harnesses.ts";
 import type { Mcp } from "../mcp.ts";
-import type { ProviderError, ProviderSession } from "../providers/ProviderAdapter.ts";
-import type { ProviderRegistry } from "../providers/ProviderRegistry.ts";
+import type { ProviderError, ProviderSession } from "../providers/provider-adapter.ts";
+import type { ProviderRegistry } from "../providers/provider-registry.ts";
 import type { createSkillCatalog } from "../skills.ts";
-import { DATA_DIR } from "../storage/tomlFile.ts";
-import type { SettingsStore } from "../storage/SettingsStore.ts";
-import type { ThreadStore } from "../storage/ThreadStore.ts";
+import { DATA_DIR } from "../storage/toml-file.ts";
+import type { SettingsStore } from "../storage/settings-store.ts";
+import type { ThreadStore } from "../storage/thread-store.ts";
 import type { Terminals } from "../terminals.ts";
 import { isBusy, type ThreadEntry } from "./entry.ts";
 import type { ThreadRegistry } from "./registry.ts";

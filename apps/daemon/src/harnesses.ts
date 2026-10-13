@@ -1,10 +1,10 @@
 /** Each harness's adapter, and which harness the settings pick for what. */
 import { PROVIDER_NAME, ProviderKind, type Settings } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
-import { ClaudeAdapter } from "./providers/ClaudeAdapter.ts";
-import { CodexAdapter } from "./providers/CodexAdapter.ts";
-import { CursorAdapter } from "./providers/CursorAdapter.ts";
-import type { ProviderAdapter } from "./providers/ProviderAdapter.ts";
+import { ClaudeAdapter } from "./providers/claude-adapter.ts";
+import { CodexAdapter } from "./providers/codex-adapter.ts";
+import { CursorAdapter } from "./providers/cursor-adapter.ts";
+import type { ProviderAdapter } from "./providers/provider-adapter.ts";
 
 export const ADAPTERS: Record<ProviderKind, ProviderAdapter> = {
   claude: ClaudeAdapter,

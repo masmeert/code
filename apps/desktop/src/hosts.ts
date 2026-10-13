@@ -10,7 +10,7 @@ import { pipeline as pipeStreams, Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { app, BrowserWindow, net, session } from "electron";
 import { configureBrowserSession } from "./browser.ts";
-import { findFreePort } from "./freePort.ts";
+import { findFreePort } from "./free-port.ts";
 
 /**
  * Remote hosts: each runs its own daemon, started over SSH and reached through a tunnel,

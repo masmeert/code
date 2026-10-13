@@ -2,8 +2,8 @@ import { getProjectKey } from "@masscode/client";
 import type { Project } from "@masscode/contracts";
 import { router, Stack } from "expo-router";
 import { useState } from "react";
-import { ProjectBadge } from "@/components/ProjectBadge.tsx";
-import { FormButtonRow, FormLinkRow, FormList, FormSection } from "@/components/FormList.tsx";
+import { ProjectBadge } from "@/components/project-badge.tsx";
+import { FormButtonRow, FormLinkRow, FormList, FormSection } from "@/components/form-list.tsx";
 import { type HostState, useStore } from "@/lib/store.ts";
 
 export default function ChooseProjectScreen() {

@@ -13,8 +13,8 @@ import {
 } from "@expo/ui/swift-ui/modifiers";
 import { router, Stack } from "expo-router";
 import { useEffect, useState } from "react";
-import { FormLinkRow, FormList, FormSection } from "@/components/FormList.tsx";
-import { ProviderLogo } from "@/components/ProviderLogo.tsx";
+import { FormLinkRow, FormList, FormSection } from "@/components/form-list.tsx";
+import { ProviderLogo } from "@/components/provider-logo.tsx";
 import { send, useStore } from "@/lib/store.ts";
 import { useThreadSettings } from "@/lib/thread-settings.ts";
 

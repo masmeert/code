@@ -1,7 +1,7 @@
 import { EFFORT_LABEL, EFFORTS, getVisibleModels, PERMISSION_LABEL } from "@masscode/client";
 import { PermissionLevel, PROVIDER_NAME } from "@masscode/contracts";
-import { FormChoiceSection, FormList } from "@/components/FormList.tsx";
-import { SettingsScopeHeader } from "@/components/SettingsScopeHeader.tsx";
+import { FormChoiceSection, FormList } from "@/components/form-list.tsx";
+import { SettingsScopeHeader } from "@/components/settings-scope-header.tsx";
 import {
   type SettingsTarget,
   uniformSetting,

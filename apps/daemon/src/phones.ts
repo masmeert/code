@@ -10,7 +10,7 @@ import { execFile } from "node:child_process";
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { hostname, networkInterfaces } from "node:os";
 import { CommandError } from "./errors.ts";
-import { openTomlFile } from "./storage/tomlFile.ts";
+import { openTomlFile } from "./storage/toml-file.ts";
 
 /** Where paired phones reach the daemon, on its Tailscale address. */
 export const REMOTE_PORT = Number(process.env.MASSCODE_REMOTE_PORT) || 47822;

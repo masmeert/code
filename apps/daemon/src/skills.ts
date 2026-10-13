@@ -8,7 +8,7 @@ import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FiberSet from "effect/FiberSet";
-import type { ProviderError, ProviderSkill } from "./providers/ProviderAdapter.ts";
+import type { ProviderError, ProviderSkill } from "./providers/provider-adapter.ts";
 import { getErrorMessage } from "./errors.ts";
 
 /** Asking a harness takes seconds (Claude starts a process), so a listing is reused this long before a refresh. */

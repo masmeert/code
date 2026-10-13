@@ -6,12 +6,12 @@ import { useLocalSearchParams } from "expo-router";
 import { type ComponentRef, useEffect, useMemo, useRef } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { Composer } from "@/components/Composer.tsx";
-import { OrbFace, type OrbFaceState } from "@/components/OrbFace.tsx";
-import { Pulsing } from "@/components/Pulsing.tsx";
+import { Composer } from "@/components/composer.tsx";
+import { OrbFace, type OrbFaceState } from "@/components/orb-face.tsx";
+import { Pulsing } from "@/components/pulsing.tsx";
 import { Text } from "@/components/ui/text.tsx";
-import { ThreadHeader } from "@/components/ThreadHeader.tsx";
-import { TranscriptTurn } from "@/components/TranscriptTurn.tsx";
+import { ThreadHeader } from "@/components/thread-header.tsx";
+import { TranscriptTurn } from "@/components/transcript-turn.tsx";
 import { loadOlder, openThread, send, transcriptKey, useStore } from "@/lib/store.ts";
 
 export default function ThreadScreen() {

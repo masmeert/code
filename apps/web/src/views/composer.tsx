@@ -1,0 +1,897 @@
+import {
+  PromptInput,
+  PromptModelMenu,
+  type PromptOption,
+  PromptSelect,
+} from "@masscode/ui/agents/prompt-input";
+import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
+import { cn } from "@masscode/ui/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogTitle,
+} from "@masscode/ui/components/alert-dialog";
+import {
+  ClientCommand,
+  Effort,
+  PermissionLevel,
+  type ProviderKind,
+  type TurnOptions,
+} from "@masscode/contracts";
+import * as Schema from "effect/Schema";
+import {
+  Archive,
+  FilePen,
+  Folder,
+  FolderTree,
+  GitBranch,
+  ListChecks,
+  LockOpen,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  type SyntheticEvent,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { motion, useReducedMotion } from "motion/react";
+import {
+  EFFORT_LABEL,
+  EFFORTS,
+  PERMISSION_DESCRIPTION,
+  PERMISSION_LABEL,
+  PERMISSIONS,
+} from "@masscode/client";
+import {
+  allowFullAccessAsRoot,
+  createTextAttachment,
+  LARGE_PASTE_BYTES,
+  fitToModel,
+  toTurnOptions,
+  useAttachments,
+  useNeedsRootConsent,
+  useTurnPrefs,
+} from "../lib/composer.ts";
+import { restoreStash, setDraft, stashDraft, useDraft, useStashes } from "../lib/drafts.ts";
+import { formatKeybinding, KEYBINDINGS, useKeybinding } from "../lib/keybindings.ts";
+import {
+  findCatalogModel,
+  getFavoriteChoices,
+  type buildModelChoices,
+  renderRecommendedBadge,
+} from "../lib/models.ts";
+import {
+  send,
+  getSkillsKey,
+  toggleFavoriteModel,
+  usePathHost,
+  useProviders,
+  useStore,
+} from "../lib/store.ts";
+import { formatAge } from "@masscode/client";
+import { useNow } from "@masscode/client";
+import { UsageMeter } from "./usage-meter.tsx";
+
+const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {
+  plan: ListChecks,
+  ask: ShieldCheck,
+  "auto-edit": FilePen,
+  auto: Sparkles,
+  "full-access": LockOpen,
+};
+
+function buildPermissionOption(level: PermissionLevel) {
+  const Icon = PERMISSION_ICON[level];
+
+  return {
+    value: level,
+    label: PERMISSION_LABEL[level],
+    description: PERMISSION_DESCRIPTION[level],
+    icon: <Icon />,
+  };
+}
+
+interface ComposerProps {
+  /** Whose draft, and effort/permission picks, these are: a thread id, or "draft:new". */
+  prefsKey: string;
+  provider: ProviderKind;
+  /** Project folder; null in a draft whose project isn't picked yet. */
+  cwd: string | null;
+  /** The thread this composer writes to; enables slash commands. */
+  threadId?: string;
+  /** Prompts sent in this thread, oldest first, for ↑ recall. */
+  history?: ReadonlyArray<string>;
+  /** Drafts only: called instead of sending while no project is picked. */
+  onNeedProject?: () => void;
+  /** Drafts only, with remote hosts: the machine the new thread runs on. */
+  machine?: {
+    readonly options: Array<PromptOption>;
+    readonly value: string;
+    readonly onChange: (value: string) => void;
+  };
+  /** Drafts only: where the new thread will run. */
+  workspace?: {
+    readonly value: "local" | "worktree";
+    readonly onChange: (value: "local" | "worktree") => void;
+  };
+  /** Card on top of the composer, e.g. queued messages. */
+  header?: ReactNode;
+  /** Something goes out with the next message besides its text, so an empty prompt can send. */
+  hasPendingContent?: boolean;
+  isBusy?: boolean;
+  disabled?: boolean;
+  models: ReturnType<typeof buildModelChoices>;
+  model: string | undefined;
+  onModelChange: (value: string) => void;
+  extraModels?: string[];
+  onToggleModel?: (value: string) => void;
+  placeholder: string;
+  /** `alternate`: sent with ⌘/Ctrl+Enter, for the opposite of the usual behavior. */
+  onSubmit: (text: string, options: TurnOptions, how: { alternate: boolean }) => void;
+  onStop?: () => void;
+  /** Offers `/btw`, which asks a read-only side question (empty to just open the side chat) instead of sending. */
+  onAskAside?: (question: string) => void;
+}
+
+interface SlashItem {
+  readonly name: string;
+  readonly description: string;
+  readonly hint: string;
+  /** Runs on pick instead of being inserted as text. */
+  readonly run?: () => void;
+}
+
+interface MenuItem {
+  readonly id: string;
+  readonly name: string;
+  readonly hint?: string;
+  readonly description: string;
+}
+
+const MAX_FILE_MATCHES = 50;
+
+/** Paths containing `query`, file-name matches first, then shallower paths. */
+function matchFiles(files: ReadonlyArray<string>, query: string) {
+  function getMatchRank(path: string) {
+    const name = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
+
+    return name.startsWith(query) ? 0 : name.includes(query) ? 1 : 2;
+  }
+
+  return files
+    .flatMap((path) =>
+      path.toLowerCase().includes(query) ? [{ path, rank: getMatchRank(path) }] : [],
+    )
+    .sort((first, second) => first.rank - second.rank || first.path.length - second.path.length)
+    .slice(0, MAX_FILE_MATCHES)
+    .map(({ path }) => path);
+}
+
+export function Composer(props: ComposerProps) {
+  const { prefsKey, threadId } = props;
+  const draft = useDraft(prefsKey);
+  const host = usePathHost(props.cwd);
+  const [prefs, setPrefs] = useTurnPrefs(prefsKey, props.provider, host);
+  const needsRootConsent = useNeedsRootConsent(host);
+  const [isConfirmingRoot, setIsConfirmingRoot] = useState(false);
+
+  const files = useAttachments({
+    key: prefsKey,
+    shouldAcceptDrops: !props.disabled,
+    isRemote: host !== null,
+  });
+
+  const providers = useProviders(host);
+  const settings = useStore((state) => state.settings);
+  const stashes = useStashes();
+  const [stashSignal, setStashSignal] = useState(0);
+
+  const isWorktree = useStore((state) =>
+    threadId ? state.threads[threadId]?.worktree : undefined,
+  );
+
+  const catalog = findCatalogModel(providers, props.model);
+  // No pick means the model's own default, which the menu stars; picking the starred level keeps following it.
+  const fallbackEffort = catalog?.defaultEffort;
+  const efforts = catalog?.efforts ?? EFFORTS[props.provider];
+  const { effort, fast } = fitToModel(prefs, catalog);
+
+  const effortOptions = efforts.map((level) => ({
+    value: level,
+    label: EFFORT_LABEL[level],
+    badge: level === fallbackEffort ? renderRecommendedBadge() : undefined,
+  }));
+
+  function setText(text: string) {
+    setDraft(prefsKey, (previous) => ({ ...previous, text }));
+  }
+
+  // ↑ recall: walks back through sent prompts while the composer holds one untouched.
+  const recall = useRef<{ index: number; text: string } | null>(null);
+  const history = props.history ?? [];
+
+  function recallPrompt(index: number) {
+    const text = history[index] ?? "";
+    recall.current = index < history.length ? { index, text } : null;
+    setText(text);
+  }
+
+  // Slash commands: "/" at the start opens the menu.
+  const commands = useStore((state) => (threadId ? state.commands[threadId] : undefined));
+
+  const slashQuery =
+    threadId && /^\/\S*$/.test(draft.text) ? draft.text.slice(1).toLowerCase() : null;
+
+  const [dismissed, setDismissed] = useState<string | null>(null);
+
+  const slashItems: Array<SlashItem> =
+    slashQuery === null || dismissed === draft.text
+      ? []
+      : [
+          {
+            name: "compact",
+            description: "Summarize the conversation so far to free up context",
+            hint: "",
+            run: () => threadId && send(ClientCommand.cases["thread.compact"].make({ threadId })),
+          },
+          ...(props.onAskAside
+            ? [
+                {
+                  name: "btw",
+                  description: "Ask a read-only side question about the latest reply",
+                  hint: "question",
+                },
+              ]
+            : []),
+          ...(commands ?? [])
+            .filter((command) => command.name !== "compact" && command.name !== "btw")
+            .map((command) => ({
+              name: command.name,
+              description: command.description,
+              hint: command.argumentHint,
+            })),
+        ].filter((item) => item.name.toLowerCase().startsWith(slashQuery));
+
+  const isSlashTyped = slashQuery !== null;
+
+  useEffect(() => {
+    if (isSlashTyped && threadId)
+      send(ClientCommand.cases["thread.listCommands"].make({ threadId }));
+  }, [isSlashTyped, threadId]);
+
+  function pickSlashCommand(item: SlashItem) {
+    if (item.run) {
+      setText("");
+      item.run();
+    } else setText(`/${item.name} `);
+  }
+
+  // @ mentions: "@" at the start or after whitespace searches the project's files.
+  const input = useRef<HTMLTextAreaElement | null>(null);
+  const [caret, setCaret] = useState(0);
+
+  function trackCaret(event: SyntheticEvent<HTMLTextAreaElement>) {
+    input.current = event.currentTarget;
+    setCaret(event.currentTarget.selectionStart);
+  }
+
+  const mention = props.cwd ? /(?:^|\s)@(\S*)$/.exec(draft.text.slice(0, caret)) : null;
+  const mentionQuery = mention && dismissed !== draft.text ? mention[1].toLowerCase() : null;
+  const repoFiles = useStore((state) => (props.cwd ? state.files[props.cwd] : undefined));
+
+  const fileMatches = useMemo(
+    () => (repoFiles && mentionQuery !== null ? matchFiles(repoFiles, mentionQuery) : []),
+    [repoFiles, mentionQuery],
+  );
+
+  const isMentionTyped = mention !== null;
+
+  useEffect(() => {
+    if (isMentionTyped && props.cwd)
+      send(ClientCommand.cases["git.listFiles"].make({ path: props.cwd }));
+  }, [isMentionTyped, props.cwd]);
+
+  /** Swaps the word at the caret, `typedLength` characters of which are before it, for `token`. */
+  function replaceTypedWord(typedLength: number, token: string) {
+    const start = caret - typedLength;
+    const end = caret + /^\S*/.exec(draft.text.slice(caret))![0].length;
+    const rest = draft.text.slice(end).replace(/^ +/, "");
+    const nextCaret = start + token.length;
+    setText(draft.text.slice(0, start) + token + rest);
+    setCaret(nextCaret);
+    requestAnimationFrame(() => input.current?.setSelectionRange(nextCaret, nextCaret));
+  }
+
+  function pickFile(path: string) {
+    // Quoted so a path with spaces still reads as one mention.
+    replaceTypedWord(mention![1].length + 1, /\s/.test(path) ? `@"${path}" ` : `@${path} `);
+  }
+
+  // $ skills: "$" at the start or after whitespace offers the skills the harness loads here.
+  // A letter must follow, so prices like "$20" never open the menu.
+  const skillMention = props.cwd
+    ? /(?:^|\s)\$((?:[A-Za-z][\w:-]*)?)$/.exec(draft.text.slice(0, caret))
+    : null;
+
+  const skillQuery =
+    skillMention && dismissed !== draft.text ? skillMention[1].toLowerCase() : null;
+
+  const skillList = useStore((state) =>
+    props.cwd ? state.skills[getSkillsKey(props.provider, props.cwd)] : undefined,
+  );
+
+  const skillMatches =
+    skillList && skillQuery !== null
+      ? skillList.skills
+          .filter((skill) => skill.name.toLowerCase().includes(skillQuery))
+          .sort(
+            (first, second) =>
+              Number(!first.name.toLowerCase().startsWith(skillQuery)) -
+              Number(!second.name.toLowerCase().startsWith(skillQuery)),
+          )
+      : [];
+
+  const isSkillTyped = skillMention !== null;
+
+  useEffect(() => {
+    if (isSkillTyped && props.cwd)
+      send(ClientCommand.cases["skills.list"].make({ provider: props.provider, path: props.cwd }));
+  }, [isSkillTyped, props.cwd, props.provider]);
+
+  let menu: {
+    label: string;
+    items: ReadonlyArray<MenuItem>;
+    pick: (index: number) => void;
+    empty: string | null;
+  } | null = null;
+
+  if (slashItems.length > 0) {
+    menu = {
+      label: "Commands",
+      items: slashItems.map((item) => ({
+        id: item.name,
+        name: `/${item.name}`,
+        hint: item.hint,
+        description: item.description,
+      })),
+      pick: (index) => pickSlashCommand(slashItems[index]),
+      empty: null,
+    };
+  }
+  // Once a name is typed, no match means it's likely prose ("$HOME"), so the menu steps aside.
+  else if (skillQuery !== null && (skillMatches.length || !skillList || !skillQuery)) {
+    menu = {
+      label: "Skills",
+      items: skillMatches.map((skill) => ({
+        id: skill.name,
+        name: `$${skill.name}`,
+        description: skill.description,
+      })),
+      pick: (index) =>
+        replaceTypedWord(skillMention![1].length + 1, `$${skillMatches[index].name} `),
+      empty: !skillList
+        ? "Loading skills…"
+        : (skillList.error ??
+          `No skills here yet. Add one as ${{ claude: ".claude", codex: ".agents", cursor: ".cursor" }[props.provider]}/skills/<name>/SKILL.md in the project.`),
+    };
+  } else if (mentionQuery !== null) {
+    menu = {
+      label: "Files",
+      items: fileMatches.map((path) => ({
+        id: path,
+        name: path.slice(path.lastIndexOf("/") + 1),
+        description: path.slice(0, path.lastIndexOf("/") + 1),
+      })),
+      pick: (index) => pickFile(fileMatches[index]),
+      empty: repoFiles ? "No matching files" : "Loading files…",
+    };
+  }
+
+  const shouldReduceMotion = useReducedMotion();
+
+  const {
+    activeIndex: menuIndex,
+    pointed: isPointed,
+    moveTo,
+    moveActive,
+  } = useRowCursor(menu?.items ?? [], slashQuery ?? skillQuery ?? mentionQuery ?? "", {
+    loop: true,
+  });
+
+  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    input.current = event.currentTarget;
+
+    if (menu && event.key === "Escape") {
+      event.preventDefault();
+      setDismissed(draft.text);
+
+      return;
+    }
+
+    if (menu?.items.length) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        moveActive(event.key === "ArrowDown" ? 1 : -1);
+
+        return;
+      }
+
+      if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
+        event.preventDefault();
+        menu.pick(menuIndex);
+
+        return;
+      }
+    }
+
+    const textarea = event.currentTarget;
+    const text = textarea.value;
+    const isUntouched = text === "" || text === recall.current?.text;
+
+    if (
+      event.key === "ArrowUp" &&
+      isUntouched &&
+      history.length &&
+      !text.slice(0, textarea.selectionStart).includes("\n")
+    ) {
+      const index = recall.current ? recall.current.index - 1 : history.length - 1;
+
+      if (index < 0) return;
+      event.preventDefault();
+      recallPrompt(index);
+    } else if (
+      event.key === "ArrowDown" &&
+      recall.current &&
+      text === recall.current.text &&
+      !text.slice(textarea.selectionEnd).includes("\n")
+    ) {
+      event.preventDefault();
+      recallPrompt(recall.current.index + 1);
+    }
+  }
+
+  // ⌘S stash: tucks the prompt away; on an empty composer, brings one back.
+  useKeybinding(props.disabled ? undefined : "composer.stash", () => {
+    if (stashDraft(prefsKey)) return;
+
+    if (stashes.length === 1) restoreStash(prefsKey, stashes[0].id);
+    else if (stashes.length > 1) setStashSignal((signal) => signal + 1);
+  });
+
+  function submitPrompt(text: string, how: { alternate: boolean }) {
+    if (props.onNeedProject && !props.cwd) {
+      props.onNeedProject();
+
+      return;
+    }
+
+    recall.current = null;
+    const aside = props.onAskAside && /^\s*\/btw(?:\s+([\s\S]*))?$/i.exec(text);
+
+    if (aside) {
+      setText("");
+      props.onAskAside?.(aside[1]?.trim() ?? "");
+
+      return;
+    }
+
+    const options = toTurnOptions(prefs, catalog, files.takeAttachments());
+    setDraft(prefsKey, { text: "", attachments: [] });
+    props.onSubmit(text, options, how);
+  }
+
+  return (
+    <div className="shrink-0 px-3 pb-3">
+      <div className="pointer-events-auto relative mx-auto max-w-3xl">
+        {menu ? (
+          <SuggestionMenu
+            label={menu.label}
+            items={menu.items}
+            empty={menu.empty}
+            activeIndex={menuIndex}
+            // Glides after the pointer only, like the command palette: arrow keys want each step at once.
+            shouldGlide={isPointed && !shouldReduceMotion}
+            onPoint={moveTo}
+            onPick={menu.pick}
+          />
+        ) : null}
+        <PromptInput
+          value={draft.text}
+          onValueChange={(text) => {
+            if (recall.current && text !== recall.current.text) recall.current = null;
+            setText(text);
+            setCaret(input.current?.selectionStart ?? text.length);
+          }}
+          onKeyDown={onKeyDown}
+          onSelect={trackCaret}
+          onFocus={trackCaret}
+          loading={props.isBusy ?? false}
+          disabled={props.disabled ?? false}
+          controls={[
+            <PromptModelMenu
+              key="model"
+              // The model can't change mid-turn; effort and fast mode apply from the next message.
+              models={
+                props.isBusy
+                  ? props.models.map((option) => ({ ...option, disabled: true }))
+                  : props.models
+              }
+              model={props.model}
+              onModelChange={props.onModelChange}
+              extraModels={props.extraModels}
+              onToggleModel={props.onToggleModel}
+              favorites={getFavoriteChoices(settings)}
+              onToggleFavorite={toggleFavoriteModel}
+              efforts={effortOptions}
+              effort={effort ?? fallbackEffort}
+              onEffortChange={(value) =>
+                Schema.is(Effort)(value) &&
+                setPrefs({ effort: value === fallbackEffort ? null : value })
+              }
+              fast={
+                catalog?.fast
+                  ? { on: fast, onChange: (on: boolean) => setPrefs({ fast: on }) }
+                  : undefined
+              }
+              disabled={props.disabled ?? false}
+              modelShortcut={KEYBINDINGS["picker.model"]}
+              effortShortcut={KEYBINDINGS["picker.effort"]}
+            />,
+            <PromptSelect
+              key="permission"
+              title="Permissions"
+              options={PERMISSIONS[props.provider].map(buildPermissionOption)}
+              value={prefs.permission}
+              onChange={(value) => {
+                if (!Schema.is(PermissionLevel)(value)) return;
+
+                if (value === "full-access" && needsRootConsent) setIsConfirmingRoot(true);
+                else setPrefs({ permission: value });
+              }}
+              disabled={props.disabled}
+              shortcut={KEYBINDINGS["picker.permission"]}
+              showOptionIcon
+              width="w-72"
+              className={
+                prefs.permission === "full-access" ? "text-warning hover:text-warning" : undefined
+              }
+            />,
+          ]}
+          attachments={[...files.attachments]}
+          onAttach={() => void files.pickFiles()}
+          onRemoveAttachment={files.removeAttachment}
+          onPasteFiles={(pasted) => void files.addFiles(pasted)}
+          onPasteText={(text, plain) => {
+            if (plain || new TextEncoder().encode(text).length < LARGE_PASTE_BYTES) return false;
+            files.addAttachments([createTextAttachment(text)]);
+
+            return true;
+          }}
+          onSubmit={submitPrompt}
+          onStop={props.onStop}
+          minRows={2}
+          maxRows={10}
+          placeholder={props.placeholder}
+          data-composer=""
+          trailingAction={
+            threadId ? (
+              <UsageMeter
+                threadId={threadId}
+                provider={props.provider}
+                isBusy={props.isBusy ?? false}
+              />
+            ) : null
+          }
+          header={props.header}
+          pendingContent={props.hasPendingContent ?? false}
+          footer={
+            <>
+              <span className="flex min-w-0 items-center gap-0.5">
+                {props.machine ? (
+                  <PromptSelect
+                    title="Run on"
+                    options={props.machine.options}
+                    value={props.machine.value}
+                    onChange={props.machine.onChange}
+                    shortcut={KEYBINDINGS["picker.machine"]}
+                    showOptionIcon
+                    width="w-72"
+                    variant="plain"
+                  />
+                ) : null}
+                {props.workspace ? (
+                  <WorkspaceSelect {...props.workspace} disabled={props.disabled} />
+                ) : isWorktree === undefined ? null : (
+                  <span className="flex min-w-0 items-center gap-1.5 px-2 text-[11px]">
+                    {isWorktree ? (
+                      <FolderTree className="size-3.5 shrink-0" />
+                    ) : (
+                      <Folder className="size-3.5 shrink-0" />
+                    )}
+                    {isWorktree ? "Worktree" : "Local checkout"}
+                  </span>
+                )}
+              </span>
+              <span className="flex min-w-0 items-center gap-0.5">
+                {stashes.length ? (
+                  <StashSelect prefsKey={prefsKey} openSignal={stashSignal} />
+                ) : null}
+                {props.cwd ? (
+                  <BranchPicker
+                    cwd={props.cwd}
+                    isWorktree={props.workspace?.value === "worktree"}
+                    disabled={(props.disabled || props.isBusy) ?? false}
+                  />
+                ) : (
+                  <span />
+                )}
+              </span>
+            </>
+          }
+          autoFocus
+        />
+      </div>
+      {isConfirmingRoot && host ? (
+        <RootFullAccessDialog
+          host={host}
+          onAllow={() => setPrefs({ permission: "full-access" })}
+          onClose={() => setIsConfirmingRoot(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** The one-time OK for Full access on a host whose daemon runs as root. */
+export function RootFullAccessDialog({
+  host,
+  onAllow,
+  onClose,
+}: {
+  host: string;
+  onAllow: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <AlertDialog open onOpenChange={(isOpen) => isOpen || onClose()}>
+      <AlertDialogContent className="gap-4 bg-popover p-4 data-[size=default]:sm:max-w-sm">
+        <div className="flex items-center gap-3">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-warning/10 text-warning">
+            <LockOpen className="size-4" />
+          </span>
+          <AlertDialogTitle className="text-sm">Allow Full access on {host}?</AlertDialogTitle>
+        </div>
+        <AlertDialogDescription className="text-xs">
+          MassCode signs in to {host} as root, so agents with Full access can run anything on that
+          machine without asking. To limit what they can reach, connect as a normal user instead.
+        </AlertDialogDescription>
+        <AlertDialogFooter className="flex-row justify-end">
+          <AlertDialogCancel size="sm">
+            Cancel
+            <kbd aria-hidden className="font-sans text-[10px] text-muted-foreground">
+              esc
+            </kbd>
+          </AlertDialogCancel>
+          <AlertDialogAction
+            size="sm"
+            onClick={() => {
+              allowFullAccessAsRoot(host);
+              onAllow();
+            }}
+          >
+            Allow on this host
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function SuggestionMenu({
+  label,
+  items,
+  empty,
+  activeIndex,
+  shouldGlide,
+  onPoint,
+  onPick,
+}: {
+  label: string;
+  items: ReadonlyArray<MenuItem>;
+  /** Shown when there are no items. */
+  empty: string | null;
+  activeIndex: number;
+  /** Whether the highlight glides to the active row, rather than appearing there. */
+  shouldGlide: boolean;
+  onPoint: (id: string) => void;
+  onPick: (index: number) => void;
+}) {
+  const highlightId = useId();
+
+  return (
+    // layoutScroll: the glide accounts for how far the list is scrolled. isolate: the highlight
+    // passes under the rows it crosses instead of over the ones before its own.
+    <motion.div
+      role="listbox"
+      aria-label={label}
+      layoutScroll
+      className="absolute inset-x-0 bottom-full isolate z-20 mb-2 max-h-72 overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-1.5 shadow-panel"
+    >
+      {items.length ? null : (
+        <div className="px-2.5 py-1.5 text-xs text-muted-foreground">{empty}</div>
+      )}
+      {items.map((item, index) => (
+        <button
+          key={item.id}
+          type="button"
+          role="option"
+          tabIndex={-1}
+          aria-selected={index === activeIndex}
+          ref={
+            index === activeIndex ? (node) => node?.scrollIntoView({ block: "nearest" }) : undefined
+          }
+          // Not mouseenter: rows scrolling under a resting pointer would take the highlight from the keyboard.
+          onMouseMove={index === activeIndex ? undefined : () => onPoint(item.id)}
+          // Keep focus in the textarea.
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onPick(index)}
+          className={cn(
+            "relative flex w-full items-baseline gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] outline-none",
+            index === activeIndex ? "text-foreground" : "text-muted-foreground",
+          )}
+        >
+          {index === activeIndex ? (
+            <motion.span
+              layoutId={highlightId}
+              transition={
+                shouldGlide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }
+              }
+              className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-muted"
+            />
+          ) : null}
+          <span className="shrink-0 font-mono text-foreground">{item.name}</span>
+          {item.hint ? (
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">
+              {item.hint}
+            </span>
+          ) : null}
+          <span className="min-w-0 truncate text-xs">{item.description}</span>
+        </button>
+      ))}
+    </motion.div>
+  );
+}
+
+function StashSelect({ prefsKey, openSignal }: { prefsKey: string; openSignal: number }) {
+  const stashes = useStashes();
+  const now = useNow();
+
+  return (
+    <PromptSelect
+      title={`Stashed prompts (${formatKeybinding("composer.stash")} stashes the current one)`}
+      icon={<Archive />}
+      options={stashes.map((stash) => ({
+        value: stash.id,
+        label: stash.text.split("\n")[0] || `${stash.attachments.length} files`,
+        description: `${formatAge(stash.at, now)}${stash.attachments.length ? `, ${stash.attachments.length} files` : ""}`,
+      }))}
+      value={undefined}
+      placeholder={String(stashes.length)}
+      onChange={(id) => restoreStash(prefsKey, id)}
+      openSignal={openSignal}
+      align="end"
+      width="w-80"
+      variant="plain"
+    />
+  );
+}
+
+const WORKSPACE_OPTIONS = [
+  {
+    value: "local",
+    label: "Local checkout",
+    description: "Work in the project folder",
+    icon: <Folder />,
+  },
+  {
+    value: "worktree",
+    label: "New worktree",
+    description: "A git worktree on its own branch, for parallel work",
+    icon: <FolderTree />,
+  },
+];
+
+function WorkspaceSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: "local" | "worktree";
+  onChange: (value: "local" | "worktree") => void;
+  disabled: boolean | undefined;
+}) {
+  return (
+    <PromptSelect
+      title="Workspace"
+      options={WORKSPACE_OPTIONS}
+      value={value}
+      onChange={(next) => onChange(next === "worktree" ? "worktree" : "local")}
+      shortcut={KEYBINDINGS["picker.workspace"]}
+      disabled={disabled}
+      showOptionIcon
+      width="w-72"
+      variant="plain"
+    />
+  );
+}
+
+/** Current branch of the project folder; picking another checks it out. */
+function BranchPicker({
+  cwd,
+  isWorktree,
+  disabled,
+}: {
+  cwd: string;
+  /** A new worktree will start from this branch, so it reads "From main". */
+  isWorktree: boolean;
+  disabled: boolean;
+}) {
+  const list = useStore((state) => state.branches[cwd]);
+  const isFromOrigin = useStore((state) => state.settings.worktreeFromOrigin === true);
+
+  useEffect(() => send(ClientCommand.cases["git.listBranches"].make({ path: cwd })), [cwd]);
+
+  if (!list) return null;
+
+  if (!list.current && !list.branches.length)
+    return <span className="px-1.5 text-muted-foreground/70">Not a git repo</span>;
+
+  return (
+    <PromptSelect
+      title={isWorktree ? "Start the worktree from" : "Switch branch"}
+      icon={<GitBranch />}
+      searchPlaceholder="Find or create a branch…"
+      onCreate={(branch) =>
+        send(ClientCommand.cases["git.createBranch"].make({ path: cwd, branch }))
+      }
+      createLabel={(branch) => (
+        <>
+          Create <span className="text-foreground">{branch}</span>
+        </>
+      )}
+      options={list.branches.map((branch) => ({
+        value: branch,
+        label: isWorktree ? `From ${isFromOrigin ? "origin/" : ""}${branch}` : branch,
+      }))}
+      value={list.current ?? undefined}
+      placeholder="Detached"
+      onChange={(branch) =>
+        branch !== list.current &&
+        send(ClientCommand.cases["git.checkout"].make({ path: cwd, branch }))
+      }
+      onOpenChange={(isOpen) =>
+        isOpen && send(ClientCommand.cases["git.listBranches"].make({ path: cwd }))
+      }
+      disabled={disabled}
+      shortcut={KEYBINDINGS["picker.branch"]}
+      note={
+        list.error ? (
+          <span className="whitespace-pre-wrap text-destructive">{list.error}</span>
+        ) : undefined
+      }
+      align="end"
+      width="w-72"
+      variant="plain"
+    />
+  );
+}

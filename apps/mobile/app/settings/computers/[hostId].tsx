@@ -1,14 +1,14 @@
 import { PROVIDER_NAME } from "@masscode/contracts";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { Alert } from "react-native";
-import { ProviderLogo } from "@/components/ProviderLogo.tsx";
+import { ProviderLogo } from "@/components/provider-logo.tsx";
 import {
   FormButtonRow,
   FormInfoRow,
   FormList,
   FormSection,
   FormSwitchRow,
-} from "@/components/FormList.tsx";
+} from "@/components/form-list.tsx";
 import { CONNECTION_HELP, CONNECTION_STATUS } from "@/lib/host-connection.ts";
 import { reconnectHost, removeHost, setHostEnabled, useStore } from "@/lib/store.ts";
 

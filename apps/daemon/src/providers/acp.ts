@@ -4,7 +4,7 @@
  */
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { CLIENT_INFO, connectJsonRpc, type JsonRpc, type RpcId } from "./jsonRpc.ts";
+import { CLIENT_INFO, connectJsonRpc, type JsonRpc, type RpcId } from "./json-rpc.ts";
 import type { HarnessLaunch } from "./launch.ts";
 
 /** A setting the session takes, like its mode, model or effort. */

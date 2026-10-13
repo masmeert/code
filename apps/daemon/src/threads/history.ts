@@ -4,8 +4,8 @@ import * as Effect from "effect/Effect";
 import { CommandError } from "../errors.ts";
 import { copyCheckpoints, deleteCheckpoints, hasCheckpoint, restoreCheckpoint } from "../git.ts";
 import { ADAPTERS } from "../harnesses.ts";
-import type { SettingsStore } from "../storage/SettingsStore.ts";
-import type { Coverage, ThreadStore } from "../storage/ThreadStore.ts";
+import type { SettingsStore } from "../storage/settings-store.ts";
+import type { Coverage, ThreadStore } from "../storage/thread-store.ts";
 import type { Agents } from "./agents.ts";
 import {
   buildThreadInfo,

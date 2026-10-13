@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, extname } from "node:path";
-import { automateBrowser } from "./browserAutomation.ts";
+import { automateBrowser } from "./browser-automation.ts";
 import {
   addHost,
   ensureHostDaemon,

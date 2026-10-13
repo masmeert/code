@@ -1,5 +1,5 @@
 import { router, Stack, useLocalSearchParams } from "expo-router";
-import { FormChoiceSection, FormList } from "@/components/FormList.tsx";
+import { FormChoiceSection, FormList } from "@/components/form-list.tsx";
 import { useThreadSettings } from "@/lib/thread-settings.ts";
 
 /** One option's choices, like effort; picking one applies it and goes back. */
