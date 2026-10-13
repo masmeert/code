@@ -9,7 +9,8 @@
  * class reads the same on both. Vesper in dark; light is MassCode's own.
  */
 @theme {
-  --font-sans: Figtree;
+  /* SF Pro, as the native controls use. */
+  --font-sans: System;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -89,12 +90,6 @@
     }
 
     /* React Native takes one font name, not a fallback list. */
-    @variant ios {
-      --font-mono: Menlo;
-    }
-
-    @variant android {
-      --font-mono: monospace;
-    }
+    --font-mono: Menlo;
   }
 }

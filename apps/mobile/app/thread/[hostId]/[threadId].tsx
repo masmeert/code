@@ -1,22 +1,18 @@
-import { formatProjectLabel, isShowingWork, toTurns } from "@masscode/client";
+import { isShowingWork, toTurns } from "@masscode/client";
 import { ClientCommand, isTurnActive } from "@masscode/contracts";
 import { KeyboardAwareLegendList, useKeyboardChatComposerInset } from "@legendapp/list/keyboard";
 import type { LegendListRef } from "@legendapp/list/react-native";
-import { BlurView } from "expo-blur";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { type ComponentRef, useEffect, useMemo, useRef } from "react";
-import { ActivityIndicator, Platform, View } from "react-native";
+import { ActivityIndicator, View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { withUniwind } from "uniwind";
 import { Composer } from "@/components/Composer.tsx";
 import { OrbFace, type OrbFaceState } from "@/components/OrbFace.tsx";
-import { ProjectBadge } from "@/components/ProjectBadge.tsx";
 import { Pulsing } from "@/components/Pulsing.tsx";
 import { Text } from "@/components/ui/text.tsx";
+import { ThreadHeader } from "@/components/ThreadHeader.tsx";
 import { TranscriptTurn } from "@/components/TranscriptTurn.tsx";
 import { loadOlder, openThread, send, transcriptKey, useStore } from "@/lib/store.ts";
-
-const StyledBlurView = withUniwind(BlurView);
 
 export default function ThreadScreen() {
   const { hostId, threadId } = useLocalSearchParams<{ hostId: string; threadId: string }>();
@@ -74,50 +70,10 @@ export default function ThreadScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <Stack.Screen
-        options={{
-          // iOS draws its glass bar over the transcript, which scrolls on underneath.
-          headerTransparent: Platform.OS === "ios",
-          headerBackground:
-            Platform.OS === "ios"
-              ? () => (
-                  <StyledBlurView
-                    tint="systemChromeMaterial"
-                    intensity={100}
-                    className="flex-1 border-b-[0.5px] border-border-strong"
-                  />
-                )
-              : undefined,
-          headerTitle: () => (
-            <View className="max-w-60 items-center gap-0.5">
-              <Text numberOfLines={1} className="text-[15px] leading-5 font-semibold">
-                {thread.title || "New thread"}
-              </Text>
-              {project ? (
-                <View className="flex-row items-center gap-1">
-                  <ProjectBadge project={project} />
-                  <Text
-                    numberOfLines={1}
-                    className="shrink text-xs leading-4 text-muted-foreground"
-                  >
-                    {formatProjectLabel(project.name, null)}
-                  </Text>
-                  {thread.branch ? (
-                    <>
-                      <View className="mx-1 h-3 w-px bg-border-strong" />
-                      <Text
-                        numberOfLines={1}
-                        className="shrink text-xs leading-4 text-muted-foreground/70"
-                      >
-                        {thread.branch}
-                      </Text>
-                    </>
-                  ) : null}
-                </View>
-              ) : null}
-            </View>
-          ),
-        }}
+      <ThreadHeader
+        title={thread.title || "New thread"}
+        project={project}
+        hostName={host.paired.name}
       />
       {/* First in the screen even while loading, so iOS finds it and blurs it under the glass header. */}
       <KeyboardAwareLegendList
@@ -168,7 +124,18 @@ export default function ThreadScreen() {
       />
       <View pointerEvents="box-none" className="absolute inset-x-0 bottom-0">
         <KeyboardStickyView>
-          <View ref={composer} onLayout={onComposerLayout} className="bg-background">
+          <View
+            ref={composer}
+            onLayout={(event) => {
+              // Growing into the card would cover the transcript's end; it stays in view instead.
+              const wasAtEnd = list.current?.getState().isAtEnd;
+
+              onComposerLayout(event);
+
+              if (wasAtEnd)
+                requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
+            }}
+          >
             {host.connection === "connected" ? null : (
               <Text className="px-4 pt-2 text-center text-xs text-warning">
                 Not connected to {host.paired.name}; showing what was last loaded.

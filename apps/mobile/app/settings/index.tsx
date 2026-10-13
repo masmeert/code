@@ -1,10 +1,6 @@
-import { Archive, Laptop, MessageSquarePlus, SlidersHorizontal } from "lucide-react-native";
-import { ScrollView } from "react-native";
-import {
-  SettingsLinkRow,
-  SettingsScopeHeader,
-  SettingsSection,
-} from "@/components/SettingsList.tsx";
+import { router } from "expo-router";
+import { FormLinkRow, FormList, FormSection } from "@/components/FormList.tsx";
+import { SettingsScopeHeader } from "@/components/SettingsScopeHeader.tsx";
 import { useSettingsScope } from "@/lib/settings-scope.ts";
 import { useStore } from "@/lib/store.ts";
 
@@ -20,49 +16,47 @@ export default function SettingsScreen() {
   );
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentInsetAdjustmentBehavior="automatic"
-      contentContainerClassName="gap-6 p-4"
-    >
+    <>
       <SettingsScopeHeader closeSettings />
-      <SettingsSection title="Connections">
-        <SettingsLinkRow
-          icon={Laptop}
-          label="Computers"
-          value={String(hostList.length)}
-          href="/settings/computers"
-        />
-      </SettingsSection>
-      <SettingsSection title="Threads">
-        <SettingsLinkRow
-          icon={Archive}
-          label="Archived threads"
-          value={archivedCount ? String(archivedCount) : undefined}
-          href="/settings/archived"
-        />
-      </SettingsSection>
-      <SettingsSection
-        title="Computer settings"
-        footer={
-          targets.length === 0
-            ? "Connect to a computer to change its settings."
-            : `Saved on ${targets.map((host) => host.paired.name).join(", ")}, so ${targets.length === 1 ? "its desktop uses" : "their desktops use"} them too.`
-        }
-      >
-        <SettingsLinkRow
-          icon={MessageSquarePlus}
-          label="New threads"
-          disabled={targets.length === 0}
-          href="/settings/new-threads"
-        />
-        <SettingsLinkRow
-          icon={SlidersHorizontal}
-          label="Thread behavior"
-          disabled={targets.length === 0}
-          href="/settings/behavior"
-        />
-      </SettingsSection>
-    </ScrollView>
+      <FormList>
+        <FormSection title="Connections">
+          <FormLinkRow
+            icon="laptopcomputer"
+            label="Computers"
+            value={String(hostList.length)}
+            onPress={() => router.push("/settings/computers")}
+          />
+        </FormSection>
+        <FormSection title="Threads">
+          <FormLinkRow
+            icon="archivebox"
+            label="Archived threads"
+            value={archivedCount ? String(archivedCount) : undefined}
+            onPress={() => router.push("/settings/archived")}
+          />
+        </FormSection>
+        <FormSection
+          title="Computer settings"
+          footer={
+            targets.length === 0
+              ? "Connect to a computer to change its settings."
+              : `Saved on ${targets.map((host) => host.paired.name).join(", ")}, so ${targets.length === 1 ? "its desktop uses" : "their desktops use"} them too.`
+          }
+        >
+          <FormLinkRow
+            icon="square.and.pencil"
+            label="New threads"
+            isDisabled={targets.length === 0}
+            onPress={() => router.push("/settings/new-threads")}
+          />
+          <FormLinkRow
+            icon="slider.horizontal.3"
+            label="Thread behavior"
+            isDisabled={targets.length === 0}
+            onPress={() => router.push("/settings/behavior")}
+          />
+        </FormSection>
+      </FormList>
+    </>
   );
 }

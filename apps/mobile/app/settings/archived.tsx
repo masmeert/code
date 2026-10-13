@@ -1,10 +1,7 @@
 import { formatAge, formatProjectLabel, useNow } from "@masscode/client";
 import { ClientCommand } from "@masscode/contracts";
 import * as Haptics from "expo-haptics";
-import { FlatList, View } from "react-native";
-import { Button } from "@/components/ui/button.tsx";
-import { Text } from "@/components/ui/text.tsx";
-import { cn } from "@/lib/cn.ts";
+import { FormActionRow, FormList, FormSection } from "@/components/FormList.tsx";
 import { send, useStore } from "@/lib/store.ts";
 
 export default function ArchivedThreadsScreen() {
@@ -28,51 +25,33 @@ export default function ArchivedThreadsScreen() {
     .sort((left, right) => (right.thread.archivedAt ?? 0) - (left.thread.archivedAt ?? 0));
 
   return (
-    <FlatList
-      className="flex-1 bg-background"
-      contentInsetAdjustmentBehavior="automatic"
-      contentContainerClassName="p-4"
-      data={rows}
-      keyExtractor={(row) => `${row.hostId}/${row.thread.id}`}
-      ListEmptyComponent={
-        <Text className="p-8 text-center text-sm text-muted-foreground">
-          No archived threads. Swipe a thread left in the list to archive it.
-        </Text>
-      }
-      renderItem={({ item, index }) => (
-        <View
-          className={cn(
-            "flex-row items-center gap-3 bg-card py-3 pr-2 pl-4",
-            index === 0 && "rounded-t-2xl",
-            index === rows.length - 1 && "rounded-b-2xl",
-          )}
-        >
-          <View className="flex-1 gap-0.5">
-            <Text numberOfLines={1} className="text-[16px] font-medium">
-              {item.thread.title || "New thread"}
-            </Text>
-            <Text numberOfLines={1} className="text-[13px] text-muted-foreground">
-              {item.project} · {formatAge(item.thread.archivedAt ?? item.thread.updatedAt, now)}
-            </Text>
-          </View>
-          <Button
-            size="sm"
-            variant="ghost"
+    <FormList>
+      <FormSection
+        footer={
+          rows.length === 0
+            ? "No archived threads. Swipe a thread left in the list to archive it."
+            : "Restoring puts a thread back in the list."
+        }
+      >
+        {rows.map((row) => (
+          <FormActionRow
+            key={`${row.hostId}/${row.thread.id}`}
+            label={row.thread.title || "New thread"}
+            detail={`${row.project} · ${formatAge(row.thread.archivedAt ?? row.thread.updatedAt, now)}`}
+            actionLabel="Restore"
             onPress={() => {
               void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               send(
-                item.hostId,
+                row.hostId,
                 ClientCommand.cases["thread.archive"].make({
-                  threadId: item.thread.id,
+                  threadId: row.thread.id,
                   archived: false,
                 }),
               );
             }}
-          >
-            <Text className="text-brand">Restore</Text>
-          </Button>
-        </View>
-      )}
-    />
+          />
+        ))}
+      </FormSection>
+    </FormList>
   );
 }

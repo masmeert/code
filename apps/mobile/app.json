@@ -12,90 +12,44 @@
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
-        }
+        },
+        "NSMicrophoneUsageDescription": "MassCode listens while you dictate a message, and turns your words into text on this iPhone."
       },
       "icon": "./assets/app.icon"
-    },
-    "android": {
-      "package": "com.apkiosk.masscode.mobile",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FFFFFF"
-      }
     },
     "plugins": [
       "expo-router",
       [
         "expo-build-properties",
         {
-          "android": {
-            "usesCleartextTraffic": true
+          "ios": {
+            "deploymentTarget": "26.0"
           }
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "MassCode scans the pairing code your Mac shows in Settings \u2192 Phone.",
-          "microphonePermission": false,
-          "recordAudioAndroid": false
+          "cameraPermission": "MassCode scans the pairing code your Mac shows in Settings → Phone."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "MassCode attaches the photos you pick to your messages.",
-          "microphonePermission": false
+          "photosPermission": "MassCode attaches the photos you pick to your messages."
         }
       ],
       "expo-secure-store",
       [
-        "expo-font",
+        "expo-audio",
         {
-          "ios": {
-            "fonts": [
-              "./assets/fonts/Figtree-Regular.ttf",
-              "./assets/fonts/Figtree-Italic.ttf",
-              "./assets/fonts/Figtree-Medium.ttf",
-              "./assets/fonts/Figtree-SemiBold.ttf",
-              "./assets/fonts/Figtree-Bold.ttf"
-            ]
-          },
-          "android": {
-            "fonts": [
-              {
-                "fontFamily": "Figtree",
-                "fontDefinitions": [
-                  {
-                    "path": "./assets/fonts/Figtree-Regular.ttf",
-                    "weight": 400
-                  },
-                  {
-                    "path": "./assets/fonts/Figtree-Italic.ttf",
-                    "weight": 400,
-                    "style": "italic"
-                  },
-                  {
-                    "path": "./assets/fonts/Figtree-Medium.ttf",
-                    "weight": 500
-                  },
-                  {
-                    "path": "./assets/fonts/Figtree-SemiBold.ttf",
-                    "weight": 600
-                  },
-                  {
-                    "path": "./assets/fonts/Figtree-Bold.ttf",
-                    "weight": 700
-                  }
-                ]
-              }
-            ]
-          }
+          "enableBackgroundPlayback": false
         }
       ]
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "platforms": ["ios"]
   }
 }

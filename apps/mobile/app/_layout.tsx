@@ -2,25 +2,15 @@ import "@/polyfills.ts";
 import "../global.css";
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { PortalHost } from "@rn-primitives/portal";
 import { useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaListener } from "react-native-safe-area-context";
 import { Uniwind } from "uniwind";
 
-// The desktop's font, for the native headers too.
-const FONTS = {
-  regular: { fontFamily: "Figtree", fontWeight: "400" },
-  medium: { fontFamily: "Figtree", fontWeight: "500" },
-  bold: { fontFamily: "Figtree", fontWeight: "600" },
-  heavy: { fontFamily: "Figtree", fontWeight: "700" },
-} as const;
-
 // The desktop's Vesper palette (global.css) for the native headers, which Tailwind can't reach.
 const LIGHT = {
   ...DefaultTheme,
-  fonts: FONTS,
   colors: {
     ...DefaultTheme.colors,
     primary: "#a8642f",
@@ -33,7 +23,6 @@ const LIGHT = {
 
 const DARK = {
   ...DarkTheme,
-  fonts: FONTS,
   colors: {
     ...DarkTheme.colors,
     primary: "#ffc799",
@@ -66,10 +55,22 @@ export default function RootLayout() {
                 name="pair"
                 options={{ title: "Pair a computer", presentation: "modal" }}
               />
-              <Stack.Screen name="new" options={{ title: "New thread", presentation: "modal" }} />
+              <Stack.Screen
+                name="new"
+                options={{ title: "Choose project", presentation: "modal" }}
+              />
               <Stack.Screen name="thread/[hostId]/[threadId]" options={{ title: "" }} />
+              <Stack.Screen name="thread/[hostId]/new" options={{ title: "" }} />
+              <Stack.Screen
+                name="thread-settings"
+                options={{
+                  headerShown: false,
+                  presentation: "formSheet",
+                  sheetAllowedDetents: [0.6, 1],
+                  sheetGrabberVisible: true,
+                }}
+              />
             </Stack>
-            <PortalHost />
           </ThemeProvider>
         </KeyboardProvider>
       </SafeAreaListener>

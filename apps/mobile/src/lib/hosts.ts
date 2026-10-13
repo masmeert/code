@@ -1,7 +1,6 @@
 import { PairingGrant, type PairingRequest } from "@masscode/contracts";
 import Constants from "expo-constants";
 import * as Schema from "effect/Schema";
-import { Platform } from "react-native";
 
 /** A host this phone paired with: where its daemon listens, and the token it gave this phone. */
 export const PairedHost = Schema.Struct({
@@ -59,8 +58,8 @@ export async function pairWithHost(offer: {
 }): Promise<PairedHost> {
   const request: PairingRequest = {
     code: offer.code,
-    name: Constants.deviceName ?? (Platform.OS === "ios" ? "iPhone" : "Android phone"),
-    platform: Platform.OS === "ios" ? "ios" : "android",
+    name: Constants.deviceName ?? "iPhone",
+    platform: "ios",
   };
 
   const controller = new AbortController();

@@ -13,7 +13,6 @@ import {
   type Turn,
 } from "@masscode/client";
 import { type Attachment, ClientCommand } from "@masscode/contracts";
-import { ChevronRight, FileDiff, Paperclip } from "lucide-react-native";
 import { memo, useEffect, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
@@ -94,7 +93,7 @@ export const TranscriptTurn = memo(function TranscriptTurn({ hostId, threadId, t
 function AttachmentChip({ attachment }: { attachment: Attachment }) {
   return (
     <View className="flex-row items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5">
-      <Icon as={Paperclip} className="size-3.5 text-muted-foreground" />
+      <Icon name="paperclip" className="size-3.5 text-muted-foreground" />
       <Text numberOfLines={1} className="max-w-48 text-xs text-muted-foreground">
         {attachment.name}
       </Text>
@@ -234,7 +233,7 @@ function BlockView({
     case "checkpoint":
       return (
         <View className="my-1 flex-row items-center gap-1.5 self-start rounded-lg border border-border px-2.5 py-1">
-          <Icon as={FileDiff} className="size-3.5 text-muted-foreground" />
+          <Icon name="plus.forwardslash.minus" className="size-3.5 text-muted-foreground" />
           <Text className="text-xs text-muted-foreground">
             {block.files === 1 ? "1 file changed" : `${block.files} files changed`}
           </Text>
@@ -399,7 +398,7 @@ function Disclosure({
       >
         {label}
         <Icon
-          as={ChevronRight}
+          name="chevron.right"
           className={cn("size-3.5 text-muted-foreground/50", isOpen && "rotate-90")}
         />
       </Pressable>

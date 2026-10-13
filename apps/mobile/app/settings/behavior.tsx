@@ -1,10 +1,6 @@
 import { DEFAULT_AUTO_SHELVE_DAYS } from "@masscode/contracts";
-import { ScrollView } from "react-native";
-import {
-  SettingsChoiceRow,
-  SettingsScopeHeader,
-  SettingsSection,
-} from "@/components/SettingsList.tsx";
+import { FormChoiceSection, FormList } from "@/components/FormList.tsx";
+import { SettingsScopeHeader } from "@/components/SettingsScopeHeader.tsx";
 import { uniformSetting, updateSettings, useSettingsScope } from "@/lib/settings-scope.ts";
 
 const AUTO_SHELVE_DAYS = [1, 3, 7, 14, 30];
@@ -13,16 +9,12 @@ export default function ThreadBehaviorSettingsScreen() {
   const { targets } = useSettingsScope();
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentInsetAdjustmentBehavior="automatic"
-      contentContainerClassName="gap-6 p-4"
-    >
+    <>
       <SettingsScopeHeader />
       {targets.length > 0 ? (
-        <SettingsSection>
-          <SettingsChoiceRow
-            label="Follow-ups"
+        <FormList>
+          <FormChoiceSection
+            title="Follow-ups"
             description="A message sent while the agent works"
             value={uniformSetting(targets, (host) => host.settings.followUp ?? "queue")}
             options={[
@@ -31,8 +23,8 @@ export default function ThreadBehaviorSettingsScreen() {
             ]}
             onChange={(followUp) => updateSettings(targets, { followUp })}
           />
-          <SettingsChoiceRow
-            label="Shelve idle threads"
+          <FormChoiceSection
+            title="Shelve idle threads"
             description="Read or not; new activity brings them back"
             value={uniformSetting(targets, (host) =>
               host.settings.autoShelve === false
@@ -55,8 +47,8 @@ export default function ThreadBehaviorSettingsScreen() {
               )
             }
           />
-          <SettingsChoiceRow
-            label="New worktrees branch from"
+          <FormChoiceSection
+            title="New worktrees branch from"
             value={uniformSetting(targets, (host) =>
               host.settings.worktreeFromOrigin ? "origin" : "local",
             )}
@@ -70,8 +62,8 @@ export default function ThreadBehaviorSettingsScreen() {
               })
             }
           />
-        </SettingsSection>
+        </FormList>
       ) : null}
-    </ScrollView>
+    </>
   );
 }

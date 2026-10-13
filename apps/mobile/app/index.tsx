@@ -11,14 +11,13 @@ import {
 import { ClientCommand, type ThreadInfo } from "@masscode/contracts";
 import * as Haptics from "expo-haptics";
 import { router, Stack } from "expo-router";
-import { Archive, Settings, SquarePen } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
-import { Platform, Pressable, RefreshControl, SectionList, View } from "react-native";
+import { Pressable, RefreshControl, SectionList, View } from "react-native";
 import Swipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { OrbFace } from "@/components/OrbFace.tsx";
 import { ProviderLogo } from "@/components/ProviderLogo.tsx";
 import { Pulsing } from "@/components/Pulsing.tsx";
-import { Button } from "@/components/ui/button.tsx";
+import { NativeButton } from "@/components/ui/native-button.tsx";
 import { Icon } from "@/components/ui/icon.tsx";
 import { Text } from "@/components/ui/text.tsx";
 import { cn } from "@/lib/cn.ts";
@@ -126,52 +125,23 @@ export default function ThreadsScreen() {
         options={{
           // Unpaired, the pairing prompt centers on the whole screen rather than below the header.
           headerTransparent: isLoaded && Object.keys(hosts).length === 0,
-          headerTitleAlign: "left",
-          // iOS puts the orb in a left toolbar item, as a title would sit centered there.
-          headerTitle: Platform.OS === "ios" ? "" : () => <OrbFace size={36} state={orbState} />,
-          // iOS gets its native toolbars below; Android keeps plain header buttons.
-          headerRight:
-            Platform.OS === "ios"
-              ? undefined
-              : () => (
-                  <View className="flex-row gap-2">
-                    <Pressable
-                      accessibilityLabel="New thread"
-                      hitSlop={12}
-                      onPress={() => router.push("/new")}
-                      className="size-9 items-center justify-center"
-                    >
-                      <Icon as={SquarePen} className="size-5 text-foreground" />
-                    </Pressable>
-                    <Pressable
-                      accessibilityLabel="Settings"
-                      hitSlop={12}
-                      onPress={() => router.push("/settings")}
-                      className="size-9 items-center justify-center"
-                    >
-                      <Icon as={Settings} className="size-5 text-foreground" />
-                    </Pressable>
-                  </View>
-                ),
+          // The orb sits in a left toolbar item, as a title would sit centered there.
+          headerTitle: "",
         }}
       />
-      {Platform.OS === "ios" ? (
-        <>
-          <Stack.Toolbar placement="left">
-            <Stack.Toolbar.View hidesSharedBackground>
-              <OrbFace size={36} state={orbState} />
-            </Stack.Toolbar.View>
-          </Stack.Toolbar>
-          <Stack.Toolbar placement="right">
-            <Stack.Toolbar.Button
-              icon="gearshape"
-              accessibilityLabel="Settings"
-              onPress={() => router.push("/settings")}
-            />
-          </Stack.Toolbar>
-        </>
-      ) : null}
-      {Platform.OS === "ios" && Object.keys(hosts).length > 0 ? (
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.View hidesSharedBackground>
+          <OrbFace size={36} state={orbState} />
+        </Stack.Toolbar.View>
+      </Stack.Toolbar>
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button
+          icon="gearshape"
+          accessibilityLabel="Settings"
+          onPress={() => router.push("/settings")}
+        />
+      </Stack.Toolbar>
+      {Object.keys(hosts).length > 0 ? (
         <>
           <Stack.SearchBar
             placeholder="Search threads"
@@ -242,9 +212,11 @@ export default function ThreadsScreen() {
             Pair this phone with MassCode on your computer to follow your threads, answer the agent
             and steer it from anywhere on your Tailscale network.
           </Text>
-          <Button className="mt-3" onPress={() => router.push("/pair")}>
-            <Text>Pair with your computer</Text>
-          </Button>
+          <NativeButton
+            label="Pair with your computer"
+            className="mt-3"
+            onPress={() => router.push("/pair")}
+          />
         </View>
       ) : (
         <SectionList
@@ -298,20 +270,19 @@ export default function ThreadsScreen() {
         />
       )}
       {archived ? (
-        <View className="bottom-safe-offset-4 ios:bottom-safe-offset-16 absolute inset-x-4 flex-row items-center gap-3 rounded-2xl border border-border bg-popover py-2 pr-2 pl-4">
+        <View className="bottom-safe-offset-16 absolute inset-x-4 flex-row items-center gap-3 rounded-2xl border border-border bg-popover py-2 pr-2 pl-4">
           <Text numberOfLines={1} className="flex-1 text-sm">
             Archived <Text className="text-sm text-muted-foreground">{archived.title}</Text>
           </Text>
-          <Button
-            size="sm"
-            variant="secondary"
+          <NativeButton
+            label="Undo"
+            variant="outlined"
+            size="small"
             onPress={() => {
               archive(archived.hostId, archived.threadId, false);
               setArchived(null);
             }}
-          >
-            <Text>Undo</Text>
-          </Button>
+          />
         </View>
       ) : null}
     </View>
@@ -376,7 +347,7 @@ function ThreadRowView({ row, onArchive }: { row: ThreadRow; onArchive: () => vo
           onPress={onArchive}
           className="w-24 items-center justify-center gap-1 bg-muted"
         >
-          <Icon as={Archive} className="size-4 text-muted-foreground" />
+          <Icon name="archivebox" className="size-4 text-muted-foreground" />
           <Text className="text-xs text-muted-foreground">Archive</Text>
         </Pressable>
       )}
@@ -451,23 +422,29 @@ function ThreadRowView({ row, onArchive }: { row: ThreadRow; onArchive: () => vo
               <Text className="font-mono text-[11px]">{request.title}</Text> {request.detail}
             </Text>
             <View className="mt-2 flex-row gap-1.5">
-              <Button size="sm" disabled={isResponding} onPress={() => respond("allow")}>
-                <Text>Allow</Text>
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={isResponding}
+              <NativeButton
+                label="Allow"
+                size="small"
+                isDisabled={isResponding}
+                onPress={() => respond("allow")}
+              />
+              <NativeButton
+                label="Deny"
+                variant="text"
+                size="small"
+                isDisabled={isResponding}
                 onPress={() => respond("deny")}
-              >
-                <Text>Deny</Text>
-              </Button>
+              />
             </View>
           </>
         ) : request ? (
-          <Button size="sm" variant="secondary" className="mt-2 self-start" onPress={open}>
-            <Text>{request.asksQuestions ? "Answer" : "Review plan"}</Text>
-          </Button>
+          <NativeButton
+            label={request.asksQuestions ? "Answer" : "Review plan"}
+            variant="outlined"
+            size="small"
+            className="mt-2 self-start"
+            onPress={open}
+          />
         ) : null}
       </Pressable>
     </Swipeable>

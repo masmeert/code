@@ -11,6 +11,7 @@ import {
   ClientCommand,
   isTranscriptEvent,
   type Project,
+  type ProviderKind,
   type ProviderStatus,
   PROTOCOL_MISMATCH,
   PROTOCOL_VERSION,
@@ -18,6 +19,8 @@ import {
   RuntimeEvent,
   ServerFrame,
   type Settings,
+  type Skill,
+  type SlashCommand,
   type ThreadInfo,
 } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
@@ -53,6 +56,23 @@ export interface HostState {
   /** The host's harnesses and their models, for the composer's model label. */
   readonly providers: ReadonlyArray<ProviderStatus>;
   readonly threads: Readonly<Record<string, ThreadInfo>>;
+  /** Files per repo path, fetched when an `@` mention starts. */
+  readonly files: Readonly<Record<string, ReadonlyArray<string>>>;
+  /** Slash commands per thread, fetched when a `/` command starts. */
+  readonly commands: Readonly<Record<string, ReadonlyArray<SlashCommand>>>;
+  /** Skills per harness and folder (see `getSkillsKey`), fetched when a `$` mention starts. */
+  readonly skills: Readonly<Record<string, SkillList>>;
+}
+
+export interface SkillList {
+  readonly skills: ReadonlyArray<Skill>;
+  /** Why the harness couldn't be asked; `skills` then holds what it said last time. */
+  readonly error: string | null;
+}
+
+/** Where `skills` keeps a harness's skills for a folder. */
+export function getSkillsKey(provider: ProviderKind, path: string) {
+  return `${provider}:${path}`;
 }
 
 interface State {
@@ -81,6 +101,9 @@ function createHost(paired: PairedHost): HostState {
     projects: [],
     providers: [],
     threads: {},
+    files: {},
+    commands: {},
+    skills: {},
   };
 }
 
@@ -161,6 +184,15 @@ function reduceHost(host: HostState, event: RuntimeEvent): HostState {
       "thread.created": ({ thread }) => ({
         ...host,
         threads: { ...host.threads, [thread.id]: thread },
+      }),
+      "git.files": ({ path, files }) => ({ ...host, files: { ...host.files, [path]: files } }),
+      "thread.commands": ({ threadId, commands }) => ({
+        ...host,
+        commands: { ...host.commands, [threadId]: commands },
+      }),
+      "skills.listed": ({ provider, path, skills, error }) => ({
+        ...host,
+        skills: { ...host.skills, [getSkillsKey(provider, path)]: { skills, error } },
       }),
       "thread.removed": ({ threadId }) => {
         const { [threadId]: _removed, ...threads } = host.threads;

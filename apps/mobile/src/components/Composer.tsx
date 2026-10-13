@@ -2,7 +2,6 @@ import {
   EFFORT_LABEL,
   EFFORTS,
   findDefaultModel,
-  PERMISSION_DESCRIPTION,
   PERMISSION_LABEL,
   PERMISSIONS,
 } from "@masscode/client";
@@ -13,49 +12,60 @@ import {
   isTurnActive,
   PermissionLevel,
   PROVIDER_NAME,
-  type ProviderKind,
+  ProviderKind,
   type ProviderStatus,
   type Settings,
   type ThreadInfo,
   type TurnOptions,
 } from "@masscode/contracts";
+import { MenuView } from "@expo/ui/community/menu";
 import * as Schema from "effect/Schema";
 import * as DocumentPicker from "expo-document-picker";
-import { File } from "expo-file-system";
+import { File, Paths } from "expo-file-system";
+import { GlassView } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import {
-  ArrowUp,
-  ChevronDown,
-  FilePen,
-  FileText,
-  Folder,
-  Image as ImageIcon,
-  ListChecks,
-  LockOpen,
-  type LucideIcon,
-  Paperclip,
-  ShieldCheck,
-  Sparkles,
-  X,
-} from "lucide-react-native";
-import { useState } from "react";
-import { Alert, Image, Pressable, ScrollView, TextInput, View } from "react-native";
+import type { SFSymbol } from "expo-symbols";
+import { useEffect, useState } from "react";
+import { Alert, Image, Pressable, ScrollView, View } from "react-native";
 import { useKeyboardState } from "react-native-keyboard-controller";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, {
+  type LayoutAnimationFunction,
+  ReduceMotion,
+  withTiming,
+} from "react-native-reanimated";
+import { withUniwind } from "uniwind";
 import { cn } from "@/lib/cn.ts";
-import { send } from "@/lib/store.ts";
-import { ProviderLogo } from "./ProviderLogo.tsx";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "./ui/dropdown-menu.tsx";
+  detectComposerTrigger,
+  formatFileMention,
+  matchFiles,
+  nextPastedTextFileName,
+  replaceTypedWord,
+} from "@/lib/composer-mentions.ts";
+import { getSkillsKey, send, useStore } from "@/lib/store.ts";
+import {
+  type ChoiceGroup,
+  type ThreadSettingsSession,
+  useThreadSettings,
+} from "@/lib/thread-settings.ts";
+import { useVoiceInput } from "@/lib/voice-input/use-voice-input.ts";
+import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu.tsx";
+import {
+  ComposerDictationCancelAction,
+  ComposerDictationDraftContent,
+  ComposerDictationPrimaryAction,
+  ComposerDictationStartAction,
+  ComposerDictationStatus,
+  ComposerDictationToolbar,
+} from "./ComposerDictation.tsx";
+import {
+  type ComposerEditorSelection,
+  ComposerEditor,
+  type ComposerTextPaste,
+} from "./ComposerEditor.tsx";
+import { ProviderLogo } from "./ProviderLogo.tsx";
 import { Icon } from "./ui/icon.tsx";
 import { Text } from "./ui/text.tsx";
 
@@ -63,14 +73,6 @@ interface TurnPrefs {
   readonly permission: PermissionLevel;
   /** Null leaves it to the harness. */
   readonly effort: Effort | null;
-}
-
-/** One single-choice list in a composer menu. */
-export interface ChoiceGroup<Value extends string = string> {
-  readonly title: string;
-  readonly value: Value;
-  readonly options: ReadonlyArray<{ value: Value; label: string; description?: string }>;
-  readonly onChange: (value: Value) => void;
 }
 
 /** A file waiting to go with the next message. */
@@ -92,12 +94,48 @@ function alertTooBig(names: ReadonlyArray<string>) {
   );
 }
 
-const PERMISSION_ICON: Record<PermissionLevel, LucideIcon> = {
-  plan: ListChecks,
-  ask: ShieldCheck,
-  "auto-edit": FilePen,
-  auto: Sparkles,
-  "full-access": LockOpen,
+/** Morphs the pill into the card and back: only height and vertical position animate. */
+const COMPOSER_LAYOUT_TRANSITION: LayoutAnimationFunction = (values) => {
+  "worklet";
+
+  const timing = { duration: 220, reduceMotion: ReduceMotion.System };
+
+  return {
+    initialValues: {
+      originX: values.targetOriginX,
+      originY: values.currentOriginY,
+      width: values.targetWidth,
+      height: values.currentHeight,
+    },
+    animations: {
+      originX: values.targetOriginX,
+      originY: withTiming(values.targetOriginY, timing),
+      width: values.targetWidth,
+      height: withTiming(values.targetHeight, timing),
+    },
+  };
+};
+
+const StyledGlassView = withUniwind(GlassView, {
+  tintColor: { fromClassName: "tintColorClassName", styleProperty: "accentColor" },
+});
+
+/** Where each harness looks for a project's skills. */
+const SKILLS_FOLDER: Record<ProviderKind, string> = {
+  claude: ".claude",
+  codex: ".agents",
+  cursor: ".cursor",
+};
+
+type FollowUp = "queue" | "steer";
+
+const FOLLOW_UP: Record<FollowUp, { label: string; menuTitle: string; icon: SFSymbol }> = {
+  queue: { label: "Queue", menuTitle: "Queue: run after the current turn", icon: "list.number" },
+  steer: {
+    label: "Steer",
+    menuTitle: "Steer now: interrupt what the agent is doing",
+    icon: "arrow.turn.left.up",
+  },
 };
 
 /** What each thread (or the new-thread draft, as "new") was last sent with from this phone, while the app runs. */
@@ -139,9 +177,12 @@ export function Composer({
   | { thread: ThreadInfo }
   | {
       thread: null;
+      /** The project folder the thread will start in, for `@` files and `$` skills. */
+      path: string;
       provider: ProviderKind;
       model: string | null;
-      modelChoice: ChoiceGroup | null;
+      /** The draft's model as "provider:model", and how to change it. */
+      modelChoice: { value: string; onChange: (value: string) => void } | null;
       disabled: boolean;
       onCreate: (text: string, options: TurnOptions) => void;
     }
@@ -154,12 +195,32 @@ export function Composer({
   const [remembered, setRemembered] = useState(() => prefsByThread.get(prefsKey));
   const prefs = fitTurnPrefs(settings, remembered, provider);
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
-  const insets = useSafeAreaInsets();
-  // A bottom inset means a home indicator or gesture bar, on a screen with rounded corners.
-  const isAtScreenEdge = !isKeyboardVisible && insets.bottom > 0;
+  const [isFocused, setIsFocused] = useState(false);
+  // The editor's caret, which dictation and the `@`/`$`/`/` menu insert at.
+  const [selection, setSelection] = useState<ComposerEditorSelection>({ start: 0, end: 0 });
+
+  const voiceInput = useVoiceInput({
+    readDraft: () => ({ ownerKey: `${hostId}:${prefsKey}`, text, selection }),
+    commitDraft: (dictated, dictatedSelection) => {
+      setText(dictated);
+      setSelection(dictatedSelection);
+    },
+  });
+
+  /** Replaces the draft, with the caret at `caret`. */
+  function changeDraft(nextText: string, caret = nextText.length) {
+    setText(nextText);
+    setSelection({ start: caret, end: caret });
+  }
+
+  const isVoiceInputPresented = voiceInput.presentation.statusLabel !== null;
+  const isExpanded = isFocused || Boolean(text) || files.length > 0;
+  const isToolbarVisible = isExpanded || isVoiceInputPresented;
   const isWorking = thread !== null && isTurnActive(thread.status);
   const willQueue = isWorking && settings?.followUp !== "steer";
-  const canSend = Boolean(text.trim()) && !(target.thread === null && target.disabled);
+
+  const canSend =
+    Boolean(text.trim()) && !(target.thread === null && target.disabled) && !voiceInput.isBusy;
 
   const modelId =
     (target.thread ? target.thread.model : target.model) ??
@@ -169,16 +230,14 @@ export function Composer({
     .find((status) => status.kind === provider)
     ?.models.find((option) => option.id === modelId);
 
-  const effort = prefs.effort ?? model?.defaultEffort ?? null;
-  const isFullAccess = prefs.permission === "full-access";
-
   function changePrefs(patch: Partial<TurnPrefs>) {
     const next = { ...prefs, ...patch };
     prefsByThread.set(prefsKey, next);
     setRemembered(next);
   }
 
-  function submit() {
+  /** Sends the draft; while a turn runs, `followUp` overrides the setting for queueing or steering. */
+  function submit(followUp?: FollowUp) {
     const message = text.trim();
 
     if (!canSend) return;
@@ -196,11 +255,11 @@ export function Composer({
         threadId: target.thread.id,
         text: message,
         options,
-        queue: willQueue,
+        queue: followUp ? followUp === "queue" : willQueue,
         messageId: crypto.randomUUID(),
       }),
     );
-    setText("");
+    changeDraft("");
     setFiles([]);
   }
 
@@ -298,264 +357,537 @@ export function Composer({
     }
   }
 
-  return (
-    <View className={cn("gap-2 bg-background pt-1", isAtScreenEdge ? "px-2 pb-2" : "px-3 pb-2")}>
-      {thread?.queue?.map((queued) => (
-        <View
-          key={queued.id}
-          className="flex-row items-center gap-2 rounded-xl border border-border bg-card py-2 pr-2 pl-3"
-        >
-          <Text className="text-xs text-muted-foreground">Queued</Text>
-          <Text numberOfLines={1} className="flex-1 text-sm">
-            {queued.text}
-          </Text>
-          <Pressable
-            accessibilityLabel="Take back this message"
-            hitSlop={8}
-            onPress={() => {
-              setText(queued.text);
+  async function attachPastedImages(uris: ReadonlyArray<string>) {
+    try {
+      addFiles(
+        await Promise.all(
+          uris.map(async (uri) => {
+            const file = new File(uri);
+
+            return {
+              uri,
+              name: "Pasted image.png",
+              isImage: true,
+              sizeBytes: file.size,
+              input: AttachmentInput.cases.data.make({
+                name: "Pasted image.png",
+                mediaType: "image/png",
+                data: await file.base64(),
+              }),
+            };
+          }),
+        ),
+      );
+    } catch {
+      Alert.alert("Couldn't attach the pasted image", "Copy the image again, then paste it.");
+    }
+  }
+
+  /** Text too big to paste inline goes as a text file, if it fits under the cap; else inline after all. */
+  async function pasteText(paste: ComposerTextPaste) {
+    const sizeBytes = new TextEncoder().encode(paste.text).byteLength;
+    const usedBytes = files.reduce((sum, file) => sum + file.sizeBytes, 0);
+
+    if (usedBytes + sizeBytes > MAX_FILES_BYTES)
+      return changeDraft(
+        paste.value.slice(0, paste.selection.start) +
+          paste.text +
+          paste.value.slice(paste.selection.end),
+        paste.selection.start + paste.text.length,
+      );
+
+    const name = nextPastedTextFileName(files.map((file) => file.name));
+    const file = new File(Paths.cache, `${crypto.randomUUID()}.txt`);
+
+    try {
+      await file.write(paste.text);
+      addFiles([
+        {
+          uri: file.uri,
+          name,
+          isImage: false,
+          sizeBytes,
+          input: AttachmentInput.cases.data.make({
+            name,
+            mediaType: "text/plain",
+            data: await file.base64(),
+          }),
+        },
+      ]);
+    } catch {
+      Alert.alert(
+        "Couldn't attach the pasted text",
+        "This phone may be out of storage. Free some space, then paste again.",
+      );
+    }
+  }
+
+  // `/` commands (threads only, as on the desktop), `$` skills and `@` files at the caret.
+  const folder = target.thread ? target.thread.cwd : target.path;
+
+  const detectedTrigger =
+    selection.start === selection.end && !voiceInput.isBusy
+      ? detectComposerTrigger(text, selection.end)
+      : null;
+
+  const trigger = detectedTrigger?.kind === "command" && !thread ? null : detectedTrigger;
+  const triggerKind = trigger?.kind ?? null;
+  const threadId = thread?.id ?? null;
+  const repoFiles = useStore((state) => state.hosts[hostId]?.files[folder]);
+
+  const commands = useStore((state) =>
+    threadId ? state.hosts[hostId]?.commands[threadId] : undefined,
+  );
+
+  const skillList = useStore(
+    (state) => state.hosts[hostId]?.skills[getSkillsKey(provider, folder)],
+  );
+
+  // Asked afresh each time a menu opens, so it shows what's there now.
+  useEffect(() => {
+    if (triggerKind === "command" && threadId)
+      send(hostId, ClientCommand.cases["thread.listCommands"].make({ threadId }));
+    else if (triggerKind === "skill")
+      send(hostId, ClientCommand.cases["skills.list"].make({ provider, path: folder }));
+    else if (triggerKind === "file")
+      send(hostId, ClientCommand.cases["git.listFiles"].make({ path: folder }));
+  }, [triggerKind, threadId, hostId, provider, folder]);
+
+  /** Puts `token` in place of the word typed at the caret. */
+  function insertToken(typedLength: number, token: string) {
+    const replaced = replaceTypedWord(text, selection.end, typedLength, token);
+    changeDraft(replaced.text, replaced.caret);
+  }
+
+  function getCommandMenu() {
+    if (!trigger) return null;
+
+    const query = trigger.query.toLowerCase();
+
+    if (trigger.kind === "command") {
+      const items: ReadonlyArray<ComposerCommandItem> = [
+        {
+          id: "compact",
+          label: "/compact",
+          description: "Summarize the conversation so far to free up context",
+          onSelect: () => {
+            changeDraft("");
+
+            if (threadId) send(hostId, ClientCommand.cases["thread.compact"].make({ threadId }));
+          },
+        },
+        ...(commands ?? [])
+          .filter((command) => command.name !== "compact" && command.name !== "btw")
+          .map((command) => ({
+            id: command.name,
+            label: `/${command.name}`,
+            description: command.description,
+            onSelect: () => changeDraft(`/${command.name} `),
+          })),
+      ].filter((item) => item.id.toLowerCase().startsWith(query));
+
+      return items.length > 0
+        ? { title: "Commands", icon: "terminal" as const, items, emptyText: "" }
+        : null;
+    }
+
+    if (trigger.kind === "skill") {
+      const matches = (skillList?.skills ?? [])
+        .filter((skill) => skill.name.toLowerCase().includes(query))
+        .sort(
+          (first, second) =>
+            Number(!first.name.toLowerCase().startsWith(query)) -
+            Number(!second.name.toLowerCase().startsWith(query)),
+        );
+
+      // Once a name is typed, no match means it's likely prose ("$HOME"), so the menu steps aside.
+      if (skillList && query && matches.length === 0) return null;
+
+      return {
+        title: "Skills",
+        icon: "cube" as const,
+        items: matches.map((skill) => ({
+          id: skill.name,
+          label: `$${skill.name}`,
+          description: skill.description,
+          onSelect: () => insertToken(trigger.typedLength, `$${skill.name} `),
+        })),
+        emptyText: !skillList
+          ? "Loading skills…"
+          : (skillList.error ??
+            `No skills here yet. Add one as ${SKILLS_FOLDER[provider]}/skills/<name>/SKILL.md in the project.`),
+      };
+    }
+
+    return {
+      title: "Files",
+      icon: "doc" as const,
+      items: matchFiles(repoFiles ?? [], query).map((path) => ({
+        id: path,
+        label: path.slice(path.lastIndexOf("/") + 1),
+        description: path.slice(0, path.lastIndexOf("/") + 1),
+        onSelect: () => insertToken(trigger.typedLength, formatFileMention(path)),
+      })),
+      emptyText: repoFiles ? "No matching files" : "Loading files…",
+    };
+  }
+
+  const commandMenu = getCommandMenu();
+
+  const queuedRows = thread?.queue?.map((queued) => (
+    <View
+      key={queued.id}
+      className="flex-row items-center gap-2 rounded-xl border border-border bg-card py-2 pr-2 pl-3"
+    >
+      <Text className="text-xs text-muted-foreground">Queued</Text>
+      <Text numberOfLines={1} className="flex-1 text-sm">
+        {queued.text}
+      </Text>
+      <Pressable
+        accessibilityLabel="Take back this message"
+        hitSlop={8}
+        onPress={() => {
+          changeDraft(queued.text);
+          send(
+            hostId,
+            ClientCommand.cases["thread.unqueue"].make({
+              threadId: thread.id,
+              messageIds: [queued.id],
+            }),
+          );
+        }}
+        className="size-6 items-center justify-center rounded-full active:bg-muted"
+      >
+        <Icon name="xmark" className="size-3.5 text-muted-foreground" />
+      </Pressable>
+    </View>
+  ));
+
+  const fileStrip =
+    files.length > 0 ? (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerClassName="gap-1.5 px-3.5 pb-2.5"
+      >
+        {files.map((file) => (
+          <View
+            key={file.uri}
+            className="h-10 max-w-52 flex-row items-center gap-2 rounded-xl bg-muted pr-1 pl-1"
+          >
+            {file.isImage ? (
+              <Image source={{ uri: file.uri }} className="size-8 rounded-lg bg-background" />
+            ) : (
+              <View className="size-8 items-center justify-center rounded-lg bg-background">
+                <Icon name="doc.text" className="size-4 text-muted-foreground" />
+              </View>
+            )}
+            <Text numberOfLines={1} className="shrink text-xs">
+              {file.name}
+            </Text>
+            <Pressable
+              accessibilityLabel={`Remove ${file.name}`}
+              hitSlop={8}
+              onPress={() => setFiles((current) => current.filter((other) => other !== file))}
+              className="size-7 items-center justify-center rounded-lg active:bg-background"
+            >
+              <Icon name="xmark" className="size-3.5 text-muted-foreground" />
+            </Pressable>
+          </View>
+        ))}
+      </ScrollView>
+    ) : null;
+
+  const optionGroups: ReadonlyArray<ChoiceGroup> = [
+    {
+      title: "Effort",
+      value: prefs.effort ?? "default",
+      options: [
+        {
+          value: "default",
+          label: model?.defaultEffort
+            ? `${EFFORT_LABEL[model.defaultEffort]} (model default)`
+            : "Model default",
+        },
+        ...(model?.efforts ?? EFFORTS[provider]).map((option) => ({
+          value: option,
+          label: EFFORT_LABEL[option],
+        })),
+      ],
+      onChange: (picked) => changePrefs({ effort: Schema.is(Effort)(picked) ? picked : null }),
+    },
+    {
+      title: "Permissions",
+      value: prefs.permission,
+      options: PERMISSIONS[provider].map((level) => ({
+        value: level,
+        label: PERMISSION_LABEL[level],
+      })),
+      onChange: (permission) =>
+        Schema.is(PermissionLevel)(permission) && changePrefs({ permission }),
+    },
+  ];
+
+  // A draft picks its model; a thread switches its own between turns.
+  const settingsSession: ThreadSettingsSession = {
+    ownerKey: `${hostId}/${prefsKey}`,
+    hostId,
+    model: modelId ? `${provider}:${modelId}` : null,
+    onModelChange:
+      target.thread === null
+        ? (target.modelChoice?.onChange ?? null)
+        : isWorking
+          ? null
+          : (picked) => {
+              const [kind, ...modelParts] = picked.split(":");
+
+              if (!Schema.is(ProviderKind)(kind)) return;
+
               send(
                 hostId,
-                ClientCommand.cases["thread.unqueue"].make({
-                  threadId: thread.id,
-                  messageIds: [queued.id],
+                ClientCommand.cases["thread.setModel"].make({
+                  threadId: target.thread.id,
+                  provider: kind,
+                  model: modelParts.join(":"),
                 }),
               );
-            }}
-            className="size-6 items-center justify-center rounded-full active:bg-muted"
-          >
-            <Icon as={X} className="size-3.5 text-muted-foreground" />
-          </Pressable>
-        </View>
-      ))}
+            },
+    options: optionGroups,
+  };
+
+  // The open sheet keeps reading this composer's choices as they change.
+  useEffect(() => {
+    if (useThreadSettings.getState().session?.ownerKey === settingsSession.ownerKey)
+      useThreadSettings.setState({ session: settingsSession });
+  });
+
+  const attachMenu = (
+    <MenuView
+      actions={[
+        { id: "photos", title: "Photo Library", image: "photo" },
+        { id: "files", title: "Choose Files", image: "folder" },
+      ]}
+      onPressAction={({ nativeEvent }) =>
+        void (nativeEvent.event === "photos" ? pickPhotos() : pickDocuments())
+      }
+    >
       <View
-        className={cn(
-          "rounded-3xl border border-border bg-card p-2",
-          // Down at the screen's rounded corners, the card's own corners follow them, and its
-          // padding keeps the buttons clear of the corners and the home indicator.
-          isAtScreenEdge && "rounded-b-[46px] px-3 pb-5",
-        )}
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel="Add attachment"
+        className="size-11 items-center justify-center"
       >
-        {files.length > 0 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerClassName="gap-1.5 px-1 pt-1"
-          >
-            {files.map((file) => (
-              <View
-                key={file.uri}
-                className="h-10 max-w-52 flex-row items-center gap-2 rounded-xl bg-muted pr-1 pl-1"
-              >
-                {file.isImage ? (
-                  <Image source={{ uri: file.uri }} className="size-8 rounded-lg bg-background" />
-                ) : (
-                  <View className="size-8 items-center justify-center rounded-lg bg-background">
-                    <Icon as={FileText} className="size-4 text-muted-foreground" />
-                  </View>
-                )}
-                <Text numberOfLines={1} className="shrink text-xs">
-                  {file.name}
-                </Text>
-                <Pressable
-                  accessibilityLabel={`Remove ${file.name}`}
-                  hitSlop={8}
-                  onPress={() => setFiles((current) => current.filter((other) => other !== file))}
-                  className="size-7 items-center justify-center rounded-lg active:bg-background"
-                >
-                  <Icon as={X} className="size-3.5 text-muted-foreground" />
-                </Pressable>
-              </View>
-            ))}
-          </ScrollView>
-        ) : null}
-        <TextInput
-          value={text}
-          onChangeText={setText}
-          multiline
-          placeholder={willQueue ? "Queue a follow-up" : `Ask ${PROVIDER_NAME[provider]}…`}
-          placeholderTextColorClassName="accent-muted-foreground/55"
-          selectionColorClassName="accent-brand"
-          cursorColorClassName="accent-brand"
-          className="max-h-40 min-h-12 px-2 pt-2 pb-2 font-sans text-[15px] leading-6 text-foreground"
-        />
-        <View className="flex-row items-center gap-1.5 pt-1">
-          <ChoiceMenu
-            label="Model and effort"
-            className="h-9 shrink flex-row items-center gap-1.5 rounded-full bg-muted px-3 active:opacity-80"
-            groups={[
-              ...(target.thread === null && target.modelChoice ? [target.modelChoice] : []),
-              {
-                title: "Effort",
-                value: prefs.effort ?? "default",
-                options: [
-                  {
-                    value: "default",
-                    label: model?.defaultEffort
-                      ? `${EFFORT_LABEL[model.defaultEffort]} (model default)`
-                      : "Model default",
-                  },
-                  ...(model?.efforts ?? EFFORTS[provider]).map((option) => ({
-                    value: option,
-                    label: EFFORT_LABEL[option],
-                  })),
-                ],
-                onChange: (picked) =>
-                  changePrefs({ effort: Schema.is(Effort)(picked) ? picked : null }),
-              },
-            ]}
-          >
-            <ProviderLogo provider={provider} className="size-3.5 text-foreground" />
-            <Text numberOfLines={1} className="shrink text-[13px]">
-              {model?.label ?? PROVIDER_NAME[provider]}
-            </Text>
-            {effort ? (
-              <Text className="text-[13px] text-muted-foreground">{EFFORT_LABEL[effort]}</Text>
-            ) : null}
-            <Icon as={ChevronDown} className="size-3.5 text-muted-foreground" />
-          </ChoiceMenu>
-          <ChoiceMenu
-            label={`Permissions: ${PERMISSION_LABEL[prefs.permission]}`}
+        <Icon name="plus" className="size-5" />
+      </View>
+    </MenuView>
+  );
+
+  // A 30-point circle in a 44-point tap target; with nothing to send it fades rather than greys.
+  const sendButton =
+    thread && isWorking && !text.trim() ? (
+      <Pressable
+        accessibilityLabel="Stop the agent"
+        onPress={() => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          send(hostId, ClientCommand.cases["thread.interrupt"].make({ threadId: thread.id }));
+        }}
+        className="size-11 items-center justify-center active:opacity-70"
+      >
+        <View className="size-[30px] items-center justify-center rounded-full bg-destructive">
+          <Icon name="stop.fill" weight="semibold" className="size-3.5 text-white" />
+        </View>
+      </Pressable>
+    ) : (
+      // While a turn runs, a long press picks the other follow-up: queue it, or steer the turn now.
+      <MenuView
+        shouldOpenOnLongPress
+        actions={
+          isWorking && canSend
+            ? (["queue", "steer"] as const).map((followUp) => ({
+                id: followUp,
+                title: FOLLOW_UP[followUp].menuTitle,
+                image: FOLLOW_UP[followUp].icon,
+                state:
+                  followUp === (willQueue ? "queue" : "steer") ? ("on" as const) : ("off" as const),
+              }))
+            : []
+        }
+        onPressAction={({ nativeEvent }) =>
+          submit(nativeEvent.event === "queue" ? "queue" : "steer")
+        }
+      >
+        <Pressable
+          accessibilityLabel={
+            isWorking ? FOLLOW_UP[willQueue ? "queue" : "steer"].label : "Send message"
+          }
+          accessibilityHint={isWorking ? "Long press to choose queue or steer" : undefined}
+          accessibilityState={{ disabled: !canSend }}
+          disabled={!canSend}
+          onPress={() => submit()}
+          className="size-11 items-center justify-center active:opacity-70"
+        >
+          <View
             className={cn(
-              "size-9 items-center justify-center rounded-full active:opacity-80",
-              isFullAccess ? "bg-warning/15" : "bg-muted",
+              "size-[30px] items-center justify-center rounded-full",
+              canSend ? "bg-primary" : "bg-primary/15",
             )}
-            groups={[
-              {
-                title: "Permissions",
-                value: prefs.permission,
-                options: PERMISSIONS[provider].map((level) => ({
-                  value: level,
-                  label: PERMISSION_LABEL[level],
-                  description: PERMISSION_DESCRIPTION[level],
-                })),
-                onChange: (permission) =>
-                  Schema.is(PermissionLevel)(permission) && changePrefs({ permission }),
-              },
-            ]}
           >
             <Icon
-              as={PERMISSION_ICON[prefs.permission]}
-              className={cn("size-4", isFullAccess ? "text-warning" : "text-muted-foreground")}
+              name={isWorking ? FOLLOW_UP[willQueue ? "queue" : "steer"].icon : "arrow.up"}
+              weight="semibold"
+              className="size-4 text-primary-foreground"
             />
-          </ChoiceMenu>
-          <View className="ml-auto flex-row items-center gap-1.5">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+          </View>
+        </Pressable>
+      </MenuView>
+    );
+
+  return (
+    <View
+      className={cn(
+        "gap-2 px-3",
+        isExpanded ? "pt-2" : "pt-1.5",
+        isKeyboardVisible ? (isExpanded ? "pb-2" : "pb-1.5") : "pb-safe",
+      )}
+    >
+      {/* The transcript fades out behind the composer rather than ending at a hard edge. */}
+      <View
+        pointerEvents="none"
+        className="absolute inset-0 bg-linear-to-b from-background/0 via-background/60 to-background/90"
+      />
+      {commandMenu ? <ComposerCommandMenu {...commandMenu} /> : null}
+      {queuedRows}
+      {/* At rest a one-line pill; focused or holding a draft, a card with its toolbar. The field
+          keeps its place among the children either way, so it keeps focus as it grows, and every
+          part follows the card's height in one transition. */}
+      <Animated.View
+        layout={COMPOSER_LAYOUT_TRANSITION}
+        className={cn(
+          "overflow-hidden shadow-lg shadow-black/10",
+          isExpanded ? "rounded-[26px]" : "rounded-[27px]",
+        )}
+      >
+        <StyledGlassView
+          pointerEvents="none"
+          glassEffectStyle="regular"
+          // Tinted with the page, so the transcript scrolling under it frosts rather than reads through.
+          tintColorClassName="accent-background/70"
+          className={cn("absolute inset-0", isExpanded ? "rounded-[26px]" : "rounded-[27px]")}
+        />
+        <ComposerDictationDraftContent
+          layout={COMPOSER_LAYOUT_TRANSITION}
+          className={isExpanded ? "pt-3.5" : "flex-row items-center py-0.5"}
+          compact={!isExpanded}
+          // Collapsed, the pill turns over to the dictation controls; a card keeps its draft in view.
+          hidden={isVoiceInputPresented && !isExpanded}
+        >
+          {isExpanded ? null : attachMenu}
+          {isExpanded ? fileStrip : null}
+          <Animated.View
+            layout={COMPOSER_LAYOUT_TRANSITION}
+            className={isExpanded ? "px-3.5" : "min-w-0 flex-1 px-1"}
+          >
+            <ComposerEditor
+              value={text}
+              selection={selection}
+              onChangeText={setText}
+              onSelectionChange={setSelection}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
+              onPasteImages={(uris) => void attachPastedImages(uris)}
+              onPasteText={(paste) => void pasteText(paste)}
+              onSubmit={(alternate) =>
+                submit(alternate && isWorking ? (willQueue ? "steer" : "queue") : undefined)
+              }
+              submitTitle={
+                isWorking
+                  ? `${FOLLOW_UP[willQueue ? "queue" : "steer"].label} Message`
+                  : "Send Message"
+              }
+              alternateSubmitTitle={
+                isWorking
+                  ? `${FOLLOW_UP[willQueue ? "steer" : "queue"].label} Message`
+                  : "Send Message"
+              }
+              readOnly={voiceInput.isBusy}
+              scrollEnabled={isExpanded}
+              placeholder={willQueue ? "Queue a follow-up" : `Ask ${PROVIDER_NAME[provider]}…`}
+              contentInsetVertical={isExpanded ? 4 : 7}
+              className={isExpanded ? "max-h-40 min-h-[72px]" : "max-h-9 min-h-9"}
+            />
+          </Animated.View>
+          {isExpanded ? null : (
+            <View className="flex-row items-center">
+              <ComposerDictationStartAction
+                state={voiceInput.state}
+                isAvailable={voiceInput.isAvailable}
+                onStart={voiceInput.start}
+                onCancel={voiceInput.cancel}
+              />
+              {sendButton}
+            </View>
+          )}
+        </ComposerDictationDraftContent>
+        {/* The card's toolbar; collapsed, it lies over the pill and only shows while dictating. */}
+        <Animated.View
+          accessibilityElementsHidden={!isToolbarVisible}
+          collapsable={false}
+          layout={COMPOSER_LAYOUT_TRANSITION}
+          pointerEvents={isToolbarVisible ? "auto" : "none"}
+          className={isExpanded ? "px-1.5 pt-2 pb-1.5" : "absolute inset-x-0 bottom-0.5"}
+        >
+          <ComposerDictationToolbar
+            showsDictation={isVoiceInputPresented}
+            visible={isToolbarVisible}
+          >
+            <ComposerDictationCancelAction
+              presentation={voiceInput.presentation}
+              onCancel={voiceInput.cancel}
+            />
+            {isVoiceInputPresented ? (
+              <ComposerDictationStatus
+                audioLevels={voiceInput.audioLevels}
+                elapsedSeconds={voiceInput.elapsedSeconds}
+                phase={voiceInput.state.phase}
+                presentation={voiceInput.presentation}
+                onDismissError={voiceInput.cancel}
+              />
+            ) : (
+              <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
+                {attachMenu}
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Attach files"
-                  className="size-9 items-center justify-center rounded-full bg-muted active:opacity-80"
+                  accessibilityLabel="Model, effort and permissions"
+                  onPress={() => {
+                    useThreadSettings.setState({ session: settingsSession });
+                    router.push("/thread-settings");
+                  }}
+                  className="h-11 max-w-[190px] shrink flex-row items-center gap-2 rounded-xl px-2 active:bg-muted"
                 >
-                  <Icon as={Paperclip} className="size-4 text-muted-foreground" />
+                  <ProviderLogo provider={provider} className="size-4 text-foreground" />
+                  <Text numberOfLines={1} className="shrink text-sm font-medium">
+                    {model?.label ?? PROVIDER_NAME[provider]}
+                  </Text>
+                  <Icon name="chevron.down" weight="semibold" className="size-2.5" />
                 </Pressable>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent side="top" align="end" sideOffset={6} insets={{ right: 12 }}>
-                <DropdownMenuItem closeOnPress onPress={() => void pickPhotos()}>
-                  <Icon as={ImageIcon} className="size-4 text-muted-foreground" />
-                  <Text>Photos</Text>
-                </DropdownMenuItem>
-                <DropdownMenuItem closeOnPress onPress={() => void pickDocuments()}>
-                  <Icon as={Folder} className="size-4 text-muted-foreground" />
-                  <Text>Files</Text>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {thread && isWorking && !text.trim() ? (
-              <Pressable
-                accessibilityLabel="Stop the agent"
-                onPress={() => {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  send(
-                    hostId,
-                    ClientCommand.cases["thread.interrupt"].make({ threadId: thread.id }),
-                  );
-                }}
-                className="size-9 items-center justify-center rounded-full bg-primary active:opacity-85"
-              >
-                <View className="size-3 rounded-[3px] bg-primary-foreground" />
-              </Pressable>
-            ) : (
-              <Pressable
-                accessibilityLabel={willQueue ? "Queue message" : "Send message"}
-                disabled={!canSend}
-                onPress={submit}
-                className={cn(
-                  "size-9 items-center justify-center rounded-full bg-primary active:opacity-85",
-                  !canSend && "opacity-40",
-                )}
-              >
-                <Icon as={ArrowUp} className="size-4 text-primary-foreground" />
-              </Pressable>
+              </View>
             )}
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-/** A composer button that opens one or more single-choice lists above it. */
-function ChoiceMenu({
-  label,
-  className,
-  groups,
-  children,
-}: {
-  label: string;
-  className: string;
-  groups: ReadonlyArray<ChoiceGroup>;
-  children: React.ReactNode;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Pressable accessibilityRole="button" accessibilityLabel={label} className={className}>
-          {children}
-        </Pressable>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        side="top"
-        align="start"
-        sideOffset={6}
-        insets={{ left: 12, right: 12 }}
-        className="max-h-96 w-72"
-      >
-        <ScrollView bounces={false}>
-          {groups.map((group, index) => (
-            <View key={group.title}>
-              {index > 0 ? <DropdownMenuSeparator /> : null}
-              <DropdownMenuLabel>{group.title}</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={group.value}
-                onValueChange={(chosen) => {
-                  if (group.options.some((option) => option.value === chosen))
-                    group.onChange(chosen);
-                }}
-              >
-                {group.options.map((option) => (
-                  <DropdownMenuRadioItem
-                    key={option.value}
-                    value={option.value}
-                    closeOnPress
-                    className="items-start"
-                  >
-                    <View className="flex-1 gap-0.5">
-                      <Text className="text-sm">{option.label}</Text>
-                      {option.description ? (
-                        <Text className="text-xs leading-4 text-muted-foreground">
-                          {option.description}
-                        </Text>
-                      ) : null}
-                    </View>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
+            <View className="shrink-0 flex-row items-center">
+              <ComposerDictationPrimaryAction
+                state={voiceInput.state}
+                presentation={voiceInput.presentation}
+                isAvailable={voiceInput.isAvailable}
+                onStart={voiceInput.start}
+                onConfirm={voiceInput.stop}
+                onCancel={voiceInput.cancel}
+              />
+              {/* Stopping the agent stays at hand while dictating; sending waits for the text. */}
+              {voiceInput.presentation.showsSend || (isWorking && !text.trim()) ? sendButton : null}
             </View>
-          ))}
-        </ScrollView>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          </ComposerDictationToolbar>
+        </Animated.View>
+      </Animated.View>
+    </View>
   );
 }

@@ -1,13 +1,12 @@
 import { PLAN_APPROVAL_TITLE, type TranscriptItem } from "@masscode/client";
 import { type ApprovalDecision, ClientCommand, type UserAnswers } from "@masscode/contracts";
 import * as Haptics from "expo-haptics";
-import { ShieldCheck } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
 import { cn } from "@/lib/cn.ts";
 import { send } from "@/lib/store.ts";
 import { Markdown } from "./Markdown.tsx";
-import { Button } from "./ui/button.tsx";
+import { NativeButton } from "./ui/native-button.tsx";
 import { Icon } from "./ui/icon.tsx";
 import { Text } from "./ui/text.tsx";
 
@@ -89,22 +88,13 @@ export function ApprovalCard({
           </View>
         ))}
         <View className="flex-row gap-2">
-          <Button
-            size="sm"
-            className="rounded-full"
-            disabled={!isComplete}
+          <NativeButton
+            label="Send answers"
+            size="small"
+            isDisabled={!isComplete}
             onPress={() => respond("allow", { answers })}
-          >
-            <Text>Send answers</Text>
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="rounded-full"
-            onPress={() => respond("deny")}
-          >
-            <Text>Skip</Text>
-          </Button>
+          />
+          <NativeButton label="Skip" variant="text" size="small" onPress={() => respond("deny")} />
         </View>
       </View>
     );
@@ -121,21 +111,17 @@ export function ApprovalCard({
         </View>
         <Markdown text={item.detail} />
         <View className="flex-row gap-2">
-          <Button
-            size="sm"
-            className="rounded-full"
+          <NativeButton
+            label="Build it"
+            size="small"
             onPress={() => respond("allow", { permission: "auto-edit" })}
-          >
-            <Text>Build it</Text>
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="rounded-full"
+          />
+          <NativeButton
+            label="Keep planning"
+            variant="outlined"
+            size="small"
             onPress={() => respond("deny")}
-          >
-            <Text>Keep planning</Text>
-          </Button>
+          />
         </View>
       </View>
     );
@@ -145,7 +131,7 @@ export function ApprovalCard({
       <View className="gap-3 p-3.5">
         <View className="flex-row gap-3">
           <View className="size-9 items-center justify-center rounded-full bg-muted">
-            <Icon as={ShieldCheck} className="size-4 text-muted-foreground" />
+            <Icon name="checkmark.shield" className="size-4 text-muted-foreground" />
           </View>
           <View className="flex-1 gap-0.5">
             <Text className="text-[15px] font-medium">
@@ -168,20 +154,14 @@ export function ApprovalCard({
         ) : null}
       </View>
       <View className="flex-row items-center gap-2 border-t border-border px-3.5 py-3">
-        <Button size="sm" className="rounded-full" onPress={() => respond("allow")}>
-          <Text>Allow once</Text>
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          className="rounded-full"
+        <NativeButton label="Allow once" size="small" onPress={() => respond("allow")} />
+        <NativeButton
+          label="Always allow"
+          variant="outlined"
+          size="small"
           onPress={() => respond("allow-session")}
-        >
-          <Text>Always allow</Text>
-        </Button>
-        <Button size="sm" variant="ghost" className="rounded-full" onPress={() => respond("deny")}>
-          <Text>Deny</Text>
-        </Button>
+        />
+        <NativeButton label="Deny" variant="text" size="small" onPress={() => respond("deny")} />
       </View>
     </View>
   );

@@ -1,11 +1,7 @@
 import { EFFORT_LABEL, EFFORTS, getVisibleModels, PERMISSION_LABEL } from "@masscode/client";
 import { PermissionLevel, PROVIDER_NAME } from "@masscode/contracts";
-import { ScrollView } from "react-native";
-import {
-  SettingsChoiceRow,
-  SettingsScopeHeader,
-  SettingsSection,
-} from "@/components/SettingsList.tsx";
+import { FormChoiceSection, FormList } from "@/components/FormList.tsx";
+import { SettingsScopeHeader } from "@/components/SettingsScopeHeader.tsx";
 import {
   type SettingsTarget,
   uniformSetting,
@@ -48,16 +44,12 @@ export default function NewThreadsSettingsScreen() {
     .filter((effort) => targets.every((host) => effortsOf(host).includes(effort)));
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentInsetAdjustmentBehavior="automatic"
-      contentContainerClassName="gap-6 p-4"
-    >
+    <>
       <SettingsScopeHeader />
       {targets.length > 0 ? (
-        <SettingsSection footer="New threads begin with these.">
-          <SettingsChoiceRow
-            label="Model"
+        <FormList>
+          <FormChoiceSection
+            title="Model"
             value={uniformSetting(
               targets,
               (host) =>
@@ -71,8 +63,8 @@ export default function NewThreadsSettingsScreen() {
               })
             }
           />
-          <SettingsChoiceRow
-            label="Effort"
+          <FormChoiceSection
+            title="Effort"
             value={uniformSetting(targets, (host) =>
               host.settings.newThreadEffort &&
               effortsOf(host).includes(host.settings.newThreadEffort)
@@ -92,8 +84,8 @@ export default function NewThreadsSettingsScreen() {
               })
             }
           />
-          <SettingsChoiceRow
-            label="Permissions"
+          <FormChoiceSection
+            title="Permissions"
             description="What new threads may do without asking"
             value={uniformSetting(targets, (host) => host.settings.newThreadPermission ?? "ask")}
             options={PermissionLevel.literals.map((level) => ({
@@ -102,8 +94,8 @@ export default function NewThreadsSettingsScreen() {
             }))}
             onChange={(newThreadPermission) => updateSettings(targets, { newThreadPermission })}
           />
-          <SettingsChoiceRow
-            label="Workspace"
+          <FormChoiceSection
+            title="Workspace"
             description="Where new threads start"
             value={uniformSetting(targets, (host) => host.settings.workspace ?? "local")}
             options={[
@@ -112,8 +104,8 @@ export default function NewThreadsSettingsScreen() {
             ]}
             onChange={(workspace) => updateSettings(targets, { workspace })}
           />
-        </SettingsSection>
+        </FormList>
       ) : null}
-    </ScrollView>
+    </>
   );
 }
