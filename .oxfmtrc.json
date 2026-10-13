@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "sortTailwindcss": {
-    "stylesheet": "./apps/web/src/styles.css",
+    "stylesheet": "./apps/web/src/app/styles/styles.css",
     "functions": ["cn", "cva", "clsx", "twMerge"]
   },
   "ignorePatterns": ["tools/oxlint/anti-slop/**"]

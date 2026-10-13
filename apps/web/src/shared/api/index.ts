@@ -1,0 +1,16 @@
+export {
+  connectTo,
+  disconnectFrom,
+  getConnectionHttpUrl,
+  hasConnection,
+  isConnectionOpen,
+  listDaemonHosts,
+  onDisconnect,
+  onFrame,
+  onIncompatible,
+  reconnectNow,
+  routeCommandsWith,
+  send,
+  sendIfConnected,
+  sendRequest,
+} from "./daemon.ts";

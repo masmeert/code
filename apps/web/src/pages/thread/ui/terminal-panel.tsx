@@ -1,0 +1,331 @@
+import { ClientCommand } from "@masscode/contracts";
+import { ResizeHandle } from "@masscode/ui/components/resize-handle";
+import { cn } from "@masscode/ui/lib/utils";
+import { FitAddon } from "@xterm/addon-fit";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { WebglAddon } from "@xterm/addon-webgl";
+import { type ITheme, Terminal } from "@xterm/xterm";
+import "@xterm/xterm/css/xterm.css";
+import { ChevronDown, Plus, SquareTerminal, X } from "lucide-react";
+import { useEffect, useRef } from "react";
+import symbolsFontUrl from "./symbols-nerd-font-mono.woff2";
+import { IconButton } from "@/shared/ui";
+import { isLocalUrl, openTab } from "@/entities/browser";
+import { focusComposer } from "@/widgets/composer";
+import {
+  attachTerminal,
+  closeTerminal,
+  createTerminal,
+  findTerminalScript,
+  showTerminal,
+  toggleTerminalPanel,
+  useTerminalStore,
+} from "@/entities/terminal";
+import { sendIfConnected } from "@/shared/api";
+import { useResizableSize } from "@masscode/ui/hooks/use-resizable";
+
+const symbolsFont = new FontFace("Symbols Nerd Font Mono", `url(${symbolsFontUrl})`);
+
+document.fonts.add(symbolsFont);
+
+function getTerminalTheme(isDark: boolean): ITheme {
+  return isDark
+    ? {
+        background: "#101010",
+        foreground: "#ffffff",
+        cursor: "#ffc799",
+        cursorAccent: "#101010",
+        selectionBackground: "rgba(255, 255, 255, 0.15)",
+        scrollbarSliderBackground: "rgba(255, 255, 255, 0.12)",
+        scrollbarSliderHoverBackground: "rgba(255, 255, 255, 0.2)",
+        scrollbarSliderActiveBackground: "rgba(255, 255, 255, 0.28)",
+        black: "#484f58",
+        red: "#ff8080",
+        green: "#99ffe4",
+        yellow: "#ffc799",
+        blue: "#58a6ff",
+        magenta: "#bc8cff",
+        cyan: "#39c5cf",
+        white: "#b1bac4",
+        brightBlack: "#6e7681",
+        brightRed: "#ffa198",
+        brightGreen: "#56d364",
+        brightYellow: "#e3b341",
+        brightBlue: "#79c0ff",
+        brightMagenta: "#d2a8ff",
+        brightCyan: "#56d4dd",
+        brightWhite: "#ffffff",
+      }
+    : {
+        background: "#fcfcfc",
+        foreground: "#101010",
+        cursor: "#b66028",
+        cursorAccent: "#fcfcfc",
+        selectionBackground: "rgba(182, 96, 40, 0.2)",
+        scrollbarSliderBackground: "rgba(0, 0, 0, 0.12)",
+        scrollbarSliderHoverBackground: "rgba(0, 0, 0, 0.2)",
+        scrollbarSliderActiveBackground: "rgba(0, 0, 0, 0.28)",
+        black: "#24292f",
+        red: "#d33a3c",
+        green: "#11846e",
+        yellow: "#b66028",
+        blue: "#0969da",
+        magenta: "#8250df",
+        cyan: "#1b7c83",
+        white: "#6e7781",
+        brightBlack: "#57606a",
+        brightRed: "#a40e26",
+        brightGreen: "#1a7f37",
+        brightYellow: "#633c01",
+        brightBlue: "#218bff",
+        brightMagenta: "#a475f9",
+        brightCyan: "#3192aa",
+        brightWhite: "#8c959f",
+      };
+}
+
+export function TerminalPanel({
+  threadId,
+  activeTerminal,
+}: {
+  threadId: string;
+  activeTerminal: string;
+}) {
+  const terminalIds = useTerminalStore((state) => state.terminals[threadId]) ?? [];
+  const section = useRef<HTMLElement>(null);
+
+  const panel = useResizableSize({
+    key: "masscode.terminalHeight",
+    initial: 288,
+    side: "start",
+    axis: "y",
+    clamp: (height) =>
+      Math.max(
+        120,
+        Math.min(
+          height,
+          (section.current?.parentElement?.clientHeight ?? window.innerHeight) - 200,
+        ),
+      ),
+  });
+
+  return (
+    <section
+      ref={section}
+      aria-label="Terminal"
+      style={{ height: panel.size }}
+      className="relative flex shrink-0 flex-col border-t border-border bg-background"
+    >
+      <ResizeHandle
+        side="start"
+        axis="y"
+        label="Resize terminal"
+        value={panel.size}
+        dragging={panel.dragging}
+        {...panel.handleProps}
+      />
+      <div className="flex h-9 shrink-0 items-center gap-1 pr-2 pl-3">
+        <div
+          role="tablist"
+          aria-label="Terminals"
+          className="scrollbar-hide flex min-w-0 items-center gap-0.5 overflow-x-auto"
+        >
+          {terminalIds.map((terminalId, index) => (
+            <div
+              key={terminalId}
+              className={cn(
+                "group/tab flex h-7 shrink-0 items-center rounded-lg pr-0.5 text-xs transition-colors",
+                terminalId === activeTerminal
+                  ? "bg-muted/60 text-foreground"
+                  : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+              )}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={terminalId === activeTerminal}
+                onClick={() => showTerminal(threadId, terminalId)}
+                className="flex h-full items-center gap-1.5 rounded-lg pl-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <SquareTerminal className="size-3.5" />
+                {findTerminalScript(terminalId)?.name ?? `Terminal ${index + 1}`}
+              </button>
+              <button
+                type="button"
+                title="Close terminal"
+                aria-label={`Close ${findTerminalScript(terminalId)?.name ?? `terminal ${index + 1}`}`}
+                onClick={() => closeTerminal(threadId, terminalId)}
+                className={cn(
+                  "grid size-6 place-items-center rounded-md transition-opacity outline-none hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring",
+                  terminalId === activeTerminal
+                    ? "opacity-100"
+                    : "opacity-0 group-hover/tab:opacity-100",
+                )}
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <IconButton label="New terminal" onClick={() => createTerminal(threadId)}>
+          <Plus className="size-3.5" />
+        </IconButton>
+        <IconButton
+          label="Hide terminal"
+          className="ml-auto"
+          onClick={() => {
+            toggleTerminalPanel(threadId);
+            focusComposer();
+          }}
+        >
+          <ChevronDown className="size-3.5" />
+        </IconButton>
+      </div>
+      <TerminalView key={activeTerminal} threadId={threadId} terminalId={activeTerminal} />
+    </section>
+  );
+}
+
+export function TerminalView({
+  threadId,
+  terminalId,
+  autoFocus = true,
+  className,
+}: {
+  threadId: string;
+  terminalId: string;
+  autoFocus?: boolean;
+  className?: string;
+}) {
+  const host = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+    let dispose = () => {};
+
+    void symbolsFont
+      .load()
+      .catch(() => symbolsFont)
+      .then(() => {
+        if (isCancelled || !host.current) return;
+
+        const terminal = new Terminal({
+          allowProposedApi: true,
+          cursorBlink: true,
+          fontFamily: '"SF Mono", Menlo, Monaco, "Symbols Nerd Font Mono", monospace',
+          fontSize: 12,
+          lineHeight: 1.2,
+          scrollback: 5000,
+          macOptionClickForcesSelection: true,
+          minimumContrastRatio: 4.5,
+          theme: getTerminalTheme(document.documentElement.classList.contains("dark")),
+        });
+
+        const fitAddon = new FitAddon();
+        terminal.loadAddon(fitAddon);
+        terminal.loadAddon(new Unicode11Addon());
+        terminal.unicode.activeVersion = "11";
+        terminal.loadAddon(
+          new WebLinksAddon((event, uri) => {
+            if (!event.metaKey && !event.ctrlKey) return;
+
+            if (window.desktop && isLocalUrl(uri)) openTab(threadId, uri);
+            else window.open(uri, "_blank");
+          }),
+        );
+        terminal.open(host.current);
+
+        try {
+          const webgl = new WebglAddon();
+          webgl.onContextLoss(() => webgl.dispose());
+          terminal.loadAddon(webgl);
+        } catch {}
+
+        fitAddon.fit();
+
+        let isReplaying = false;
+
+        function acknowledge(characters: number) {
+          sendIfConnected(
+            ClientCommand.cases["terminal.acknowledge"].make({ threadId, terminalId, characters }),
+          );
+        }
+
+        const detach = attachTerminal({
+          threadId,
+          terminalId,
+          size: () => ({ columns: terminal.cols, rows: terminal.rows }),
+          reset: (data) => {
+            isReplaying = true;
+            terminal.reset();
+            terminal.write(data, () => {
+              isReplaying = false;
+              acknowledge(data.length);
+            });
+          },
+          write: (data) => terminal.write(data, () => acknowledge(data.length)),
+          fail: (message) => terminal.write(`\r\n\x1b[31m${message}\x1b[0m\r\n`),
+        });
+
+        terminal.onData((data) => {
+          if (!isReplaying) {
+            sendIfConnected(
+              ClientCommand.cases["terminal.write"].make({ threadId, terminalId, data }),
+            );
+          }
+        });
+        terminal.onResize(({ cols, rows }) =>
+          sendIfConnected(
+            ClientCommand.cases["terminal.resize"].make({
+              threadId,
+              terminalId,
+              columns: cols,
+              rows,
+            }),
+          ),
+        );
+
+        let frame = 0;
+
+        const sizeObserver = new ResizeObserver(() => {
+          cancelAnimationFrame(frame);
+          frame = requestAnimationFrame(() => fitAddon.fit());
+        });
+
+        sizeObserver.observe(host.current);
+
+        const themeObserver = new MutationObserver(() => {
+          terminal.options.theme = getTerminalTheme(
+            document.documentElement.classList.contains("dark"),
+          );
+        });
+
+        themeObserver.observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ["class"],
+        });
+
+        if (autoFocus) terminal.focus();
+
+        dispose = () => {
+          cancelAnimationFrame(frame);
+          sizeObserver.disconnect();
+          themeObserver.disconnect();
+          detach();
+          terminal.dispose();
+        };
+      });
+
+    return () => {
+      isCancelled = true;
+      dispose();
+    };
+  }, [threadId, terminalId, autoFocus]);
+
+  return (
+    <div className={cn("min-h-0 flex-1 pb-1 pl-3", className)}>
+      <div ref={host} className="size-full" />
+    </div>
+  );
+}

@@ -13,16 +13,19 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @masscode/daemon test",
     "lint": "oxlint",
+    "lint:fsd": "steiger apps/web/src && steiger apps/mobile/src",
     "lint:fix": "oxlint --fix --no-error-on-unmatched-pattern",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "prepare": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
+    "@feature-sliced/steiger-plugin": "^0.8.0",
     "@oxlint/plugins": "1.85.0",
     "lint-staged": "^17.5.1",
     "oxfmt": "^0.70.0",
-    "oxlint": "1.85.0"
+    "oxlint": "1.85.0",
+    "steiger": "^0.7.0"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}": [

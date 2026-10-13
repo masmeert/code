@@ -1,0 +1,17 @@
+export {
+  applyTerminalEvent,
+  attachTerminal,
+  closeTerminal,
+  createTerminal,
+  findScriptTerminal,
+  findTerminalScript,
+  forgetThreads,
+  receiveShellTerminals,
+  receiveTerminalFrame,
+  reopenScreens,
+  type RunningCommand,
+  runCommand,
+  showTerminal,
+  toggleTerminalPanel,
+  useTerminalStore,
+} from "./model/terminal-store.ts";
