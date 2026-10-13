@@ -18,7 +18,12 @@
       "icon": "./assets/app.icon"
     },
     "plugins": [
-      "expo-router",
+      [
+        "expo-router",
+        {
+          "root": "app"
+        }
+      ],
       [
         "expo-build-properties",
         {
