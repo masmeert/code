@@ -76,6 +76,7 @@ import { getUpdateAction, useUpdateStatus } from "@/features/update-app";
 import { getStatusDotStyle, NEEDS_YOU, PLAN_APPROVAL_TITLE } from "@masscode/client";
 import { usePersistedFlag } from "@/shared/lib/storage";
 import { hasTrafficLights } from "@/shared/config";
+import { KeepAwakeIndicator } from "./keep-awake-indicator.tsx";
 import { ThreadListMenu } from "./thread-list-menu.tsx";
 
 /** Waiting on you: an approval, an answer, or a look at what went wrong. */
@@ -526,6 +527,7 @@ export function Sidebar(props: {
             <span className="ml-auto text-xs tabular-nums opacity-70">v{updateStatus.version}</span>
           </Button>
         ) : null}
+        <KeepAwakeIndicator />
         <Button
           variant="ghost"
           onClick={props.onOpenSettings}

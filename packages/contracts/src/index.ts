@@ -6,6 +6,8 @@ export * from "./threads.ts";
 
 export * from "./settings.ts";
 
+export * from "./keep-awake.ts";
+
 export * from "./git.ts";
 
 export * from "./projects.ts";

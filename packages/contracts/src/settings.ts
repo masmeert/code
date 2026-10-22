@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { MergeMethod } from "./git.ts";
+import { KeepAwakeSettings } from "./keep-awake.ts";
 import { Effort, NullableString, ProviderKind } from "./providers.ts";
 import { PermissionLevel, Workspace } from "./threads.ts";
 
@@ -99,6 +100,7 @@ export const Settings = Schema.Struct({
   compactIdleThreads: Schema.optional(Schema.Boolean),
   /** Paired phones can reach the daemon over Tailscale. Absent counts as off. */
   remoteAccess: Schema.optional(Schema.Boolean),
+  keepAwake: Schema.optional(KeepAwakeSettings),
 });
 
 export type Settings = typeof Settings.Type;

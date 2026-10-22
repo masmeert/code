@@ -22,6 +22,7 @@ export const KEYBINDINGS = {
   "browser.toggle": "mod+shift+b",
   "simulator.toggle": "mod+shift+i",
   "usage.toggle": "mod+shift+u",
+  "keepAwake.toggle": "mod+shift+k",
   "diff.saveComment": "mod+enter",
   "scripts.save": "mod+enter",
   "thread.find": "mod+f",

@@ -16,6 +16,7 @@ import {
   setPhones,
   setRemoteHosts as setHosts,
 } from "@/entities/host";
+import { applyKeepAwakeEvent, receiveKeepAwake } from "@/entities/keep-awake";
 import {
   applyProjectEvent,
   forgetHostProjects,
@@ -92,6 +93,7 @@ function receiveHostShell(host: string | null, shell: Extract<ServerFrame, { _ta
   const reopened = receiveShellTerminals(others, incoming, shell.terminals);
   receiveProjects(host, shell.projects);
   receiveProviders(host, shell.providers);
+  receiveKeepAwake(host, shell.keepAwake);
   receiveShell(host, shell);
 
   resubscribeHost(host, isSameData);
@@ -112,6 +114,7 @@ function applyShellEvent(host: string | null, event: RuntimeEvent) {
   if (RuntimeEvent.guards["phones.updated"](event)) setPhones(event.phones);
 
   applySettingsEvent(host, event);
+  applyKeepAwakeEvent(host, event);
   applyProviderEvent(host, event);
   applyRepoEvent(host, event);
   applyProjectEvent(host, event);

@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { BrowserAction } from "./browser.ts";
 import { Device, DeviceHub } from "./devices.ts";
 import { RuntimeEvent, StoredEvent } from "./events.ts";
+import { AppChoice, KeepAwakeStatus } from "./keep-awake.ts";
 import { PairedPhone, PairingOffer } from "./phones.ts";
 import { Project, ProjectConfig } from "./projects.ts";
 import { ProviderStatus } from "./providers.ts";
@@ -35,6 +36,8 @@ export const ServerFrame = Schema.TaggedUnion({
     root: Schema.Boolean,
     /** Its `PROTOCOL_VERSION`; missing from daemons older than the check. */
     protocol: Schema.optional(Schema.Number),
+    /** Missing from daemons older than keeping the Mac awake. */
+    keepAwake: Schema.optional(KeepAwakeStatus),
   },
   /** A transcript from scratch: the latest turns, plus the text of any message still streaming. */
   "thread.snapshot": {
@@ -135,6 +138,12 @@ export const ServerFrame = Schema.TaggedUnion({
     installed: Schema.Boolean,
     hub: Schema.NullOr(DeviceHub),
     devices: Schema.Array(Device),
+    error: Schema.NullOr(Schema.String),
+  },
+  /** Answers `keepAwake.listApps`: running apps first, then installed ones. */
+  "keepAwake.apps": {
+    requestId: Schema.String,
+    apps: Schema.Array(AppChoice),
     error: Schema.NullOr(Schema.String),
   },
   "device.attached": {

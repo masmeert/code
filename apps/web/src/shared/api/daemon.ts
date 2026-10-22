@@ -42,6 +42,7 @@ const REPLY_TAGS = new Set<ServerFrame["_tag"]>([
   "project.cloned",
   "device.listed",
   "device.attached",
+  "keepAwake.apps",
   "pairing.started",
   "thread.createFailed",
 ]);

@@ -1,7 +1,10 @@
+import { formatTimeLeft } from "@masscode/client";
 import { ChatApp } from "@masscode/ui/agents/chat-app";
 import { AnimatedSidebarInset } from "@masscode/ui/motion/animated-sidebar";
+import { DEFAULT_KEEP_AWAKE_MANUAL_MINUTES } from "@masscode/contracts";
 import {
   AppWindow,
+  Coffee,
   Globe,
   Settings as SettingsIcon,
   Smartphone,
@@ -12,6 +15,7 @@ import { MotionConfig } from "motion/react";
 import { Activity, useCallback, useEffect, useState } from "react";
 import { toggleBrowser } from "@/entities/browser";
 import { useHostStore } from "@/entities/host";
+import { startKeepAwake, stopKeepAwake, useKeepAwake } from "@/entities/keep-awake";
 import { useProjectStore } from "@/entities/project";
 import { useSetting } from "@/entities/settings";
 import { toggleTerminalPanel } from "@/entities/terminal";
@@ -78,6 +82,17 @@ export function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   useKeybinding("palette.open", () => setIsPaletteOpen((isOpen) => !isOpen));
+  const keepAwakeStatus = useKeepAwake();
+  const keepAwakeSettings = useSetting((settings) => settings.keepAwake);
+  const keepAwakeMinutes = keepAwakeSettings?.manualMinutes ?? DEFAULT_KEEP_AWAKE_MANUAL_MINUTES;
+  const canKeepAwake = keepAwakeStatus?.available === true && keepAwakeSettings?.enabled === true;
+
+  function toggleKeepAwake() {
+    if (keepAwakeStatus?.session) stopKeepAwake();
+    else startKeepAwake(keepAwakeMinutes);
+  }
+
+  useKeybinding(canKeepAwake ? "keepAwake.toggle" : undefined, toggleKeepAwake);
   useTheme(theme);
 
   // Stable, so sidebar rows (memoized) don't all redraw on every render.
@@ -237,6 +252,19 @@ export function App() {
                 icon: <AppWindow />,
                 run: () => openWindow(currentPath),
               },
+              ...(canKeepAwake
+                ? [
+                    {
+                      id: "keepAwake.toggle",
+                      label: keepAwakeStatus?.session
+                        ? "Stop keeping this Mac awake"
+                        : `Keep this Mac awake for ${formatTimeLeft(keepAwakeMinutes * 60_000)}`,
+                      hint: formatKeybinding("keepAwake.toggle"),
+                      icon: <Coffee />,
+                      run: toggleKeepAwake,
+                    },
+                  ]
+                : []),
               {
                 id: "settings.open",
                 label: "Settings",
