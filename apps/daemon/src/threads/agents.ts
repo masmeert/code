@@ -10,6 +10,7 @@ import {
   type Attachment,
   type CommandRun,
   type LimitStop,
+  MessageSender,
   type ProviderKind,
   type QueuedMessage,
   type TurnOptions,
@@ -410,7 +411,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
       // Writing in an archived thread brings it back.
       yield* setArchived(entry, false);
 
-      const { text, attachments, effort, fast, permission } = message;
+      const { text, attachments, effort, fast, permission, from } = message;
       const settings = yield* settingsStore.get;
 
       const turn = {
@@ -446,18 +447,24 @@ export const createAgents = Effect.fn("createAgents")(function* ({
         ...(run && { run }),
         provider,
         ...(handoff && { handoff }),
+        ...(from && { from }),
       });
 
       entry.permission = permission;
 
       // A turn is running: the message joins it.
       if (entry.session && isTurnActive(entry.info.status)) {
+        if (from && MessageSender.guards.agent(from)) entry.report?.to.add(from.threadId);
         publish({ ...event, steer: true });
 
         return yield* entry.session.steer(turn);
       }
 
       entry.isStopRequested = false;
+      entry.report = {
+        turn: message.id,
+        to: new Set(from && MessageSender.guards.agent(from) ? [from.threadId] : []),
+      };
 
       if (entry.info.limitStop) setLimitStop(entry, null);
       publish(event);
@@ -499,7 +506,13 @@ export const createAgents = Effect.fn("createAgents")(function* ({
       run,
       queue = false,
       messageId = crypto.randomUUID(),
-    }: { run?: CommandRun; queue?: boolean | undefined; messageId?: string | undefined } = {},
+      from,
+    }: {
+      run?: CommandRun;
+      queue?: boolean | undefined;
+      messageId?: string | undefined;
+      from?: MessageSender | undefined;
+    } = {},
   ) {
     if (!UUID_PATTERN.test(messageId))
       return yield* new CommandError({ message: `Message ids must be UUIDs, not "${messageId}"` });
@@ -517,6 +530,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
       effort: options.effort,
       fast: options.fast,
       permission: options.permission,
+      ...(from && { from }),
     };
 
     if ((queue && isTurnActive(entry.info.status)) || entry.isSettingUp)

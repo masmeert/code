@@ -26,6 +26,7 @@ import {
   type Attachment,
   ClientCommand,
   type CommandRun,
+  MessageSender,
   type ProviderKind,
   WORKTREE_SETUP_TERMINAL_ID,
 } from "@masscode/contracts";
@@ -409,6 +410,7 @@ const UserTurn = memo(
     ) : (
       <Message from="user" animateIn={animateIn} className="group/turn">
         <MessageContent className="gap-1.5">
+          {item.from ? <SenderNote from={item.from} /> : null}
           {item.handoff && item.provider ? (
             <HandoffNote handoff={item.handoff} to={item.provider} />
           ) : null}
@@ -433,6 +435,32 @@ const UserTurn = memo(
     previous.threadId === next.threadId &&
     previous.isBusy === next.isBusy,
 );
+
+/** Above a message the user didn't write: the thread it came from, to go to. */
+function SenderNote({ from }: { from: MessageSender }) {
+  const source = useThreadStore((state) => state.threads[from.threadId]);
+  const label = `${MessageSender.match(from, { agent: () => "From", report: () => "Report from" })} ${source?.title ?? from.title}`;
+
+  return (
+    <div className="flex justify-end text-xs text-muted-foreground">
+      {source ? (
+        <button
+          type="button"
+          onClick={() => switchToThread(from.threadId)}
+          className="flex max-w-full items-center gap-1.5 rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Workflow className="size-3.5 shrink-0" />
+          <span className="truncate">{label}</span>
+        </button>
+      ) : (
+        <span className="flex max-w-full items-center gap-1.5">
+          <Workflow className="size-3.5 shrink-0" />
+          <span className="truncate">{label} (deleted)</span>
+        </span>
+      )}
+    </div>
+  );
+}
 
 /** Above a message sent right after switching harness: what the new one was told it missed. */
 function HandoffNote({

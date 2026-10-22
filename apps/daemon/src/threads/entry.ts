@@ -47,6 +47,11 @@ export interface ThreadEntry {
   permission: PermissionLevel | null;
   /** Its new worktree's setup command is running, and messages queue until it ends. */
   isSettingUp: boolean;
+  /**
+   * Threads whose agents sent messages into the turn in progress, told how it ended when it does;
+   * `turn` is the message that started it, so a report is never sent twice.
+   */
+  report: { readonly turn: string; readonly to: Set<string> } | null;
 }
 
 export function createEntry(
@@ -71,6 +76,7 @@ export function createEntry(
     subagentTools: new Set(),
     permission: null,
     isSettingUp: false,
+    report: null,
   };
 }
 

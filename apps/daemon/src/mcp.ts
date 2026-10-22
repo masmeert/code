@@ -43,7 +43,12 @@ const StartThreadInput = {
     .boolean()
     .optional()
     .describe("Start it in a new git worktree on a branch of its own, instead of your folder."),
-  wait: z.boolean().optional().describe("Wait for its answer before returning."),
+  wait: z
+    .boolean()
+    .optional()
+    .describe(
+      "Wait for its answer before returning. Without it, or if the wait times out, its answer comes to you as a message once its turn ends.",
+    ),
   timeoutSeconds: z
     .number()
     .int()
@@ -119,7 +124,7 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
     { name: "masscode", version: "1.0.0" },
     {
       instructions:
-        "MassCode's threads. Start agents (Claude or Codex) in threads of their own to work on tasks in parallel, get a second opinion from the other harness, or review work; message them, wait for and read their answers. Threads you start show in the user's sidebar, in your project, where the user can watch and steer them. Stopping your thread stops them too.",
+        "MassCode's threads. Start agents (Claude or Codex) in threads of their own to work on tasks in parallel, get a second opinion from the other harness, or review work; message them, wait for and read their answers. A thread you start or message reports back to you as a message when its turn ends, unless you were waiting on it, so you can carry on with other work meanwhile. Threads you start show in the user's sidebar, in your project, where the user can watch and steer them. Stopping your thread stops them too.",
     },
   );
 
@@ -158,7 +163,8 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
   server.registerTool(
     "send_message",
     {
-      description: "Sends a message to a thread: it starts a turn, or joins the one running.",
+      description:
+        "Sends a message to a thread: it starts a turn, or joins the one running. Its answer comes to you as a message once the turn ends.",
       inputSchema: SendMessageInput,
     },
     (input) => runToolEffect(orchestration.sendMessage(caller, input)),

@@ -2,6 +2,7 @@ import {
   type ApprovalDecision,
   type Attachment,
   type CommandRun,
+  type MessageSender,
   type PageInfo,
   type ProviderKind,
   RuntimeEvent,
@@ -40,6 +41,8 @@ export type TranscriptItem =
         readonly messages: number;
         readonly text: string;
       } | null;
+      /** Null when the user wrote it. */
+      readonly from: MessageSender | null;
     }
   /** What a turn changed on disk; `id` is `checkpoint:<messageId>` of the message that started it. */
   | {
@@ -156,6 +159,7 @@ export function reduceItems(
           run: message.run ?? null,
           provider: message.provider ?? null,
           handoff: message.handoff ?? null,
+          from: message.from ?? null,
         })),
       "turn.checkpoint": ({ messageId, files, additions, deletions }) => {
         const checkpoint: TranscriptItem = {

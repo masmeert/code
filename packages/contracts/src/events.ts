@@ -15,6 +15,7 @@ import { CommandRun, TerminalInfo } from "./terminals.ts";
 import {
   Attachment,
   LimitStop,
+  MessageSender,
   PendingRequest,
   QueuedMessage,
   ThreadActivity,
@@ -109,6 +110,8 @@ export const RuntimeEvent = Schema.TaggedUnion({
     provider: Schema.optionalKey(ProviderKind),
     /** What the harness was told ahead of it. */
     handoff: Schema.optionalKey(Handoff),
+    /** Missing when the user wrote it. */
+    from: Schema.optionalKey(MessageSender),
   },
   "assistant.delta": {
     threadId: Schema.String,

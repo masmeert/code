@@ -274,6 +274,7 @@ const make = Effect.gen(function* () {
     threads,
     getEntry,
     publish,
+    subscribe,
     reportErrorsIn,
     send,
     interrupt,
@@ -316,6 +317,7 @@ const make = Effect.gen(function* () {
   );
 
   yield* Effect.forkScoped(Effect.schedule(reapIdleSessions, Schedule.spaced(REAP_INTERVAL_MS)));
+  yield* Effect.forkScoped(orchestration.followTurns);
 
   function dispatch(command: ClientCommand) {
     return ClientCommand.match<Effect.Effect<void, CommandError | ProviderError | ProjectNotFound>>(

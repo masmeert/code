@@ -156,12 +156,23 @@ export const PendingRequest = Schema.Struct({
 
 export type PendingRequest = typeof PendingRequest.Type;
 
+/** Who sent a message, when it isn't the user typing it. */
+export const MessageSender = Schema.TaggedUnion({
+  /** Another thread's agent, through MassCode's thread tools. */
+  agent: { threadId: Schema.String, title: Schema.String },
+  /** MassCode, passing on what a thread this one's agent started has to say. */
+  report: { threadId: Schema.String, title: Schema.String },
+});
+
+export type MessageSender = typeof MessageSender.Type;
+
 /** A message written while the agent worked, held by the daemon until the turn reaches a point it takes messages at. */
 export const QueuedMessage = Schema.Struct({
   id: Schema.String,
   text: Schema.String,
   attachments: Schema.Array(Attachment),
   ...TurnSettings.fields,
+  from: Schema.optional(MessageSender),
 });
 
 export type QueuedMessage = typeof QueuedMessage.Type;

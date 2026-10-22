@@ -1,6 +1,15 @@
-/** What agents do to other threads through MassCode's MCP tools: start, message, wait on and stop them. */
-import { isTurnActive, type PermissionLevel, RuntimeEvent } from "@masscode/contracts";
+/**
+ * What agents do to other threads through MassCode's MCP tools: start, message, wait on and stop
+ * them. A thread an agent sent work to reports back to it as a message once its turn ends.
+ */
+import {
+  isTurnActive,
+  MessageSender,
+  type PermissionLevel,
+  RuntimeEvent,
+} from "@masscode/contracts";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import { CommandError } from "../errors.ts";
 import { readBranch } from "../git.ts";
 import type { SendMessageInput, StartThreadInput } from "../mcp.ts";
@@ -17,12 +26,16 @@ import {
 import type { ThreadOpener } from "./opening.ts";
 import type { ThreadRegistry } from "./registry.ts";
 
+/** Long enough for any answer worth passing on whole; read_thread has the rest. */
+const MAX_REPORT_CHARS = 8000;
+
 export function createOrchestration({
   store,
   projectsStore,
   threads,
   getEntry,
   publish,
+  subscribe,
   reportErrorsIn,
   send,
   interrupt,
@@ -30,12 +43,15 @@ export function createOrchestration({
   createWorktree,
   setUpWorktree,
   openThread,
-}: Pick<ThreadRegistry, "threads" | "getEntry" | "publish" | "reportErrorsIn"> &
+}: Pick<ThreadRegistry, "threads" | "getEntry" | "publish" | "subscribe" | "reportErrorsIn"> &
   Pick<Agents, "send" | "interrupt" | "ensureHarnessReady"> &
   Pick<ThreadOpener, "createWorktree" | "setUpWorktree" | "openThread"> & {
     readonly store: typeof ThreadStore.Service;
     readonly projectsStore: typeof ProjectsStore.Service;
   }) {
+  /** Callers waiting on a thread, by `${callerId}\0${threadId}`: their wait returns what a report would say. */
+  const waiting = new Map<string, number>();
+
   /** A thread as the tools describe it. */
   function summarizeThread({ info }: ThreadEntry) {
     return {
@@ -86,18 +102,95 @@ export function createOrchestration({
     );
   }
 
-  /** Waits for the thread's turn to end, up to `timeoutMs`. */
-  const waitForTurn = Effect.fn("waitForTurn")(function* (entry: ThreadEntry, timeoutMs: number) {
+  /** Waits for the thread's turn to end, up to `timeoutMs`; the caller then gets no report of it. */
+  const waitForTurn = Effect.fn("waitForTurn")(function* (
+    callerId: string,
+    entry: ThreadEntry,
+    timeoutMs: number,
+  ) {
     const deadline = Date.now() + timeoutMs;
+    const key = `${callerId}\0${entry.info.id}`;
+    waiting.set(key, (waiting.get(key) ?? 0) + 1);
 
-    // ponytail: polls the thread's status; a per-thread signal if many agents wait at once.
-    while (entry.isSettingUp || isTurnActive(entry.info.status)) {
-      if (Date.now() >= deadline) return { ...summarizeThread(entry), timedOut: true };
-      yield* Effect.sleep("200 millis");
-    }
+    return yield* Effect.gen(function* () {
+      // ponytail: polls the thread's status; a per-thread signal if many agents wait at once.
+      while (entry.isSettingUp || isTurnActive(entry.info.status)) {
+        if (Date.now() >= deadline) return { ...summarizeThread(entry), timedOut: true };
+        yield* Effect.sleep("200 millis");
+      }
 
-    return { ...summarizeThread(entry), ...readLastTurn(entry.info.id) };
+      entry.report?.to.delete(callerId);
+
+      return { ...summarizeThread(entry), ...readLastTurn(entry.info.id) };
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          const count = waiting.get(key)! - 1;
+
+          if (count === 0) waiting.delete(key);
+          else waiting.set(key, count);
+        }),
+      ),
+    );
   });
+
+  /** Tells the threads that sent work into `entry`'s turn, now ended, how it went. */
+  function reportTurn(entry: ThreadEntry) {
+    const { report } = entry;
+    entry.report = null;
+
+    if (!report) return Effect.void;
+
+    const { id: threadId, title } = entry.info;
+    const { answer, error } = readLastTurn(threadId);
+
+    const text = [
+      `"${title}" (thread ${threadId}) finished the turn you sent it${error ? ", with an error" : ""}.`,
+      answer
+        ? `Its answer:\n\n${answer.length > MAX_REPORT_CHARS ? `${answer.slice(0, MAX_REPORT_CHARS)}…` : answer}`
+        : "It gave no answer.",
+      ...(error ? [`Error: ${error}`] : []),
+      "read_thread shows the whole thread; send_message carries it on.",
+    ].join("\n\n");
+
+    return Effect.forEach(
+      [...report.to],
+      (recipientId) => {
+        const recipient = threads.get(recipientId);
+
+        if (
+          !recipient ||
+          recipient.info.archivedAt !== null ||
+          waiting.has(`${recipientId}\0${threadId}`)
+        )
+          return Effect.void;
+
+        return send(
+          recipient,
+          text,
+          { effort: null, permission: recipient.permission ?? "ask", attachments: [] },
+          {
+            queue: true,
+            messageId: deriveRequestUuid(threadId, `report:${report.turn}`),
+            from: MessageSender.cases.report.make({ threadId, title }),
+          },
+        ).pipe(reportErrorsIn(recipientId), Effect.ignore);
+      },
+      { discard: true },
+    );
+  }
+
+  /** Reports each turn that ends, for as long as the daemon runs. */
+  const followTurns = Effect.flatMap(subscribe, (events) =>
+    Stream.runForEach(events, ({ event }) => {
+      if (!RuntimeEvent.guards["thread.status"](event) || isTurnActive(event.status))
+        return Effect.void;
+
+      const entry = threads.get(event.threadId);
+
+      return entry && !entry.isSettingUp ? reportTurn(entry) : Effect.void;
+    }),
+  );
 
   const startThread = Effect.fn("startThread")(function* (
     callerId: string,
@@ -153,13 +246,16 @@ export function createOrchestration({
           byTitle: caller.info.title,
         }),
       );
-      yield* send(entry, input.prompt, { effort: null, permission, attachments: [] }).pipe(
-        reportErrorsIn(entry.info.id),
-      );
+      yield* send(
+        entry,
+        input.prompt,
+        { effort: null, permission, attachments: [] },
+        { from: MessageSender.cases.agent.make({ threadId: callerId, title: caller.info.title }) },
+      ).pipe(reportErrorsIn(entry.info.id));
     }
 
     return input.wait
-      ? yield* waitForTurn(entry, (input.timeoutSeconds ?? 600) * 1000)
+      ? yield* waitForTurn(callerId, entry, (input.timeoutSeconds ?? 600) * 1000)
       : summarizeThread(entry);
   });
 
@@ -191,6 +287,7 @@ export function createOrchestration({
       {
         queue: input.queue,
         messageId: input.requestId ? deriveRequestUuid(callerId, input.requestId) : undefined,
+        from: MessageSender.cases.agent.make({ threadId: callerId, title: caller.info.title }),
       },
     );
 
@@ -198,6 +295,7 @@ export function createOrchestration({
   });
 
   return {
+    followTurns,
     listThreads: (callerId: string) =>
       Effect.map(getEntry(callerId), (caller) => ({
         threads: [...threads.values()]
@@ -233,8 +331,8 @@ export function createOrchestration({
       }),
     startThread,
     sendMessage,
-    waitForThread: (_callerId: string, threadId: string, timeoutMs: number) =>
-      Effect.flatMap(getTargetEntry(threadId), (entry) => waitForTurn(entry, timeoutMs)),
+    waitForThread: (callerId: string, threadId: string, timeoutMs: number) =>
+      Effect.flatMap(getTargetEntry(threadId), (entry) => waitForTurn(callerId, entry, timeoutMs)),
     stopThread: (_callerId: string, threadId: string) =>
       Effect.flatMap(getTargetEntry(threadId), (entry) =>
         Effect.as(interrupt(entry), summarizeThread(entry)),
