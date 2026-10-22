@@ -24,3 +24,7 @@ minimumReleaseAgeExclude:
 patchedDependencies:
   "@react-native-ai/apple@0.12.0": patches/@react-native-ai__apple@0.12.0.patch
   expo-audio@58.0.4: patches/expo-audio@58.0.4.patch
+
+overrides:
+  "uuid@<11.1.1": ^11.1.1
+  "source-map-js@<1.2.2": ^1.2.2
