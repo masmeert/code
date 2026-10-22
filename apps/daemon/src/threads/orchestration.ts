@@ -7,13 +7,17 @@ import {
   isTurnActive,
   MessageSender,
   type PermissionLevel,
+  type ProviderKind,
   RuntimeEvent,
+  type StoredEvent,
+  type UserAnswers,
 } from "@masscode/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { CommandError } from "../errors.ts";
 import { readBranch } from "../git.ts";
 import type { AnswerQuestionsInput, SendMessageInput, StartThreadInput } from "../mcp.ts";
+import { clip } from "../handoff.ts";
 import { getHarnessName } from "../harnesses.ts";
 import type { ProviderRegistry } from "../providers/provider-registry.ts";
 import type { ProjectsStore } from "../storage/projects-store.ts";
@@ -29,6 +33,47 @@ import {
 } from "./entry.ts";
 import type { ThreadOpener } from "./opening.ts";
 import type { SequencedEvent, ThreadRegistry } from "./registry.ts";
+
+/** A tool call the main agent made, as read_thread's activity view lists it. */
+interface ToolActivity {
+  readonly position: number;
+  readonly tool: string;
+  readonly summary: string;
+  failed?: string;
+}
+
+/** An approval or questions, as read_thread's activity view lists them. */
+interface RequestActivity {
+  readonly position: number;
+  readonly request: string;
+  readonly questions?: ReadonlyArray<string>;
+  resolved: boolean;
+  answers?: UserAnswers | undefined;
+}
+
+type TimelineItem =
+  | {
+      readonly position: number;
+      readonly from: "user" | "assistant";
+      readonly text: string;
+      readonly sentBy?: {
+        readonly kind: string;
+        readonly threadId?: string;
+        readonly title?: string;
+      };
+      readonly handedOverFrom?: ProviderKind;
+    }
+  | ToolActivity
+  | RequestActivity
+  | { readonly position: number; readonly error: string }
+  | {
+      readonly position: number;
+      readonly changed: {
+        readonly files: number;
+        readonly additions: number;
+        readonly deletions: number;
+      };
+    };
 
 /** Long enough for any answer worth passing on whole; read_thread has the rest. */
 const MAX_REPORT_CHARS = 8000;
@@ -85,6 +130,79 @@ export function createOrchestration({
     }
 
     return { answer, ...(error && { error }) };
+  }
+
+  /**
+   * A thread's messages, saying who sent each user message that the user didn't write; with
+   * `withActivity`, also its tool calls, requests, errors and file changes, in order.
+   */
+  function readTimeline(events: ReadonlyArray<StoredEvent>, withActivity: boolean) {
+    const items: Array<TimelineItem> = [];
+    const tools = new Map<string, ToolActivity>();
+    const requests = new Map<string, RequestActivity>();
+
+    for (const { id: position, event } of events) {
+      if (RuntimeEvent.guards["user.message"](event)) {
+        const { from, handoff } = event;
+
+        items.push({
+          position,
+          from: "user",
+          text: clip(event.text, MAX_REPORT_CHARS),
+          ...(from && {
+            sentBy: MessageSender.match(from, {
+              agent: ({ threadId, title }) => ({ kind: "agent", threadId, title }),
+              report: ({ threadId, title }) => ({ kind: "report", threadId, title }),
+              restart: () => ({ kind: "masscode-restart" }),
+            }),
+          }),
+          ...(withActivity && handoff && { handedOverFrom: handoff.from }),
+        });
+      } else if (RuntimeEvent.guards["assistant.completed"](event) && event.text) {
+        items.push({ position, from: "assistant", text: clip(event.text, MAX_REPORT_CHARS) });
+      } else if (!withActivity) {
+        continue;
+      } else if (RuntimeEvent.guards["tool.started"](event) && !event.parentToolId) {
+        const tool: ToolActivity = {
+          position,
+          tool: event.name,
+          summary: clip(event.summary, 300),
+        };
+
+        tools.set(event.toolId, tool);
+        items.push(tool);
+      } else if (RuntimeEvent.guards["tool.completed"](event) && event.isError) {
+        const tool = tools.get(event.toolId);
+
+        if (tool) tool.failed = clip(event.output, 500);
+      } else if (RuntimeEvent.guards["approval.requested"](event)) {
+        const request: RequestActivity = {
+          position,
+          request: event.title,
+          ...(event.questions && {
+            questions: event.questions.map((question) => question.question),
+          }),
+          resolved: false,
+        };
+
+        requests.set(event.requestId, request);
+        items.push(request);
+      } else if (RuntimeEvent.guards["approval.resolved"](event)) {
+        const request = requests.get(event.requestId);
+
+        if (request) {
+          request.resolved = true;
+          request.answers = event.answers;
+        }
+      } else if (RuntimeEvent.guards.error(event)) {
+        items.push({ position, error: clip(event.message, 500) });
+      } else if (RuntimeEvent.guards["turn.checkpoint"](event)) {
+        const { files, additions, deletions } = event;
+        items.push({ position, changed: { files, additions, deletions } });
+      }
+    }
+
+    return items;
   }
 
   /** What the thread waits on the user for, with the questions when it asks some; null when nothing. */
@@ -203,9 +321,7 @@ export function createOrchestration({
 
     const text = [
       `"${title}" (thread ${threadId}) finished the turn you sent it${error ? ", with an error" : ""}.`,
-      answer
-        ? `Its answer:\n\n${answer.length > MAX_REPORT_CHARS ? `${answer.slice(0, MAX_REPORT_CHARS)}…` : answer}`
-        : "It gave no answer.",
+      answer ? `Its answer:\n\n${clip(answer, MAX_REPORT_CHARS)}` : "It gave no answer.",
       ...(error ? [`Error: ${error}`] : []),
       "read_thread shows the whole thread; send_message carries it on.",
     ].join("\n\n");
@@ -495,24 +611,19 @@ export function createOrchestration({
           .slice(0, 50)
           .map(summarizeThread),
       })),
-    readThread: (_callerId: string, threadId: string, after: number | undefined) =>
+    readThread: (
+      _callerId: string,
+      threadId: string,
+      after: number | undefined,
+      view: "messages" | "activity" = "messages",
+    ) =>
       Effect.map(getTargetEntry(threadId), (entry) => {
-        const messages = store.readAfter(threadId, after ?? 0).flatMap(({ id, event }) =>
-          RuntimeEvent.isAnyOf(["user.message", "assistant.completed"])(event)
-            ? [
-                {
-                  position: id,
-                  from: RuntimeEvent.guards["user.message"](event) ? "user" : "assistant",
-                  text: event.text.length > 8000 ? `${event.text.slice(0, 8000)}…` : event.text,
-                },
-              ]
-            : [],
-        );
+        const items = readTimeline(store.readAfter(threadId, after ?? 0), view === "activity");
 
         return {
           ...summarizeThread(entry),
-          messages: messages.slice(0, 50),
-          ...(messages.length > 50 && { more: true }),
+          [view]: items.slice(0, 50),
+          ...(items.length > 50 && { more: true }),
         };
       }),
     startThread,

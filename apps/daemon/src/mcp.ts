@@ -110,6 +110,7 @@ interface Orchestration {
     caller: string,
     threadId: string,
     after: number | undefined,
+    view: "messages" | "activity" | undefined,
   ) => Effect.Effect<unknown, Error>;
   readonly startThread: (caller: string, input: StartThreadInput) => Effect.Effect<unknown, Error>;
   readonly sendMessage: (caller: string, input: SendMessageInput) => Effect.Effect<unknown, Error>;
@@ -175,11 +176,21 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
     "read_thread",
     {
       description:
-        "A thread's messages, oldest first. Pass `after` (a message's position) to read only what came since.",
-      inputSchema: { threadId: z.string(), after: z.number().int().optional() },
+        "A thread's messages, oldest first; `sentBy` marks user messages another agent or MassCode sent rather than the user. Pass `after` (an item's position) to read only what came since.",
+      inputSchema: {
+        threadId: z.string(),
+        after: z.number().int().optional(),
+        view: z
+          .enum(["messages", "activity"])
+          .optional()
+          .describe(
+            "`activity` adds its tool calls (with failures), approvals and questions, errors and file changes. `messages` when left out.",
+          ),
+      },
       annotations: readOnly,
     },
-    ({ threadId, after }) => runToolEffect(orchestration.readThread(caller, threadId, after)),
+    ({ threadId, after, view }) =>
+      runToolEffect(orchestration.readThread(caller, threadId, after, view)),
   );
 
   server.registerTool(
