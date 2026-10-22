@@ -25,7 +25,7 @@ import {
   type ThreadEntry,
 } from "./entry.ts";
 import type { ThreadOpener } from "./opening.ts";
-import type { ThreadRegistry } from "./registry.ts";
+import type { SequencedEvent, ThreadRegistry } from "./registry.ts";
 
 /** Long enough for any answer worth passing on whole; read_thread has the rest. */
 const MAX_REPORT_CHARS = 8000;
@@ -36,7 +36,6 @@ export function createOrchestration({
   threads,
   getEntry,
   publish,
-  subscribe,
   reportErrorsIn,
   setQueue,
   send,
@@ -45,10 +44,7 @@ export function createOrchestration({
   createWorktree,
   setUpWorktree,
   openThread,
-}: Pick<
-  ThreadRegistry,
-  "threads" | "getEntry" | "publish" | "subscribe" | "reportErrorsIn" | "setQueue"
-> &
+}: Pick<ThreadRegistry, "threads" | "getEntry" | "publish" | "reportErrorsIn" | "setQueue"> &
   Pick<Agents, "send" | "interrupt" | "ensureHarnessReady"> &
   Pick<ThreadOpener, "createWorktree" | "setUpWorktree" | "openThread"> & {
     readonly store: typeof ThreadStore.Service;
@@ -125,7 +121,7 @@ export function createOrchestration({
 
   /** The most `caller`'s agent can give another: its own access. */
   function checkPermissionCeiling(caller: ThreadEntry, wanted: PermissionLevel | null | undefined) {
-    const ceiling = caller.permission ?? "ask";
+    const ceiling = caller.turnSettings?.permission ?? "ask";
     const level = wanted ?? ceiling;
 
     return getPermissionRank(level) <= getPermissionRank(ceiling)
@@ -212,7 +208,11 @@ export function createOrchestration({
         send(
           recipient,
           text,
-          { effort: null, permission: recipient.permission ?? "ask", attachments: [] },
+          {
+            effort: null,
+            permission: recipient.turnSettings?.permission ?? "ask",
+            attachments: [],
+          },
           {
             queue: true,
             messageId: deriveRequestUuid(threadId, `report:${report.turn}`),
@@ -257,7 +257,11 @@ export function createOrchestration({
         send(
           recipient,
           text,
-          { effort: null, permission: recipient.permission ?? "ask", attachments: [] },
+          {
+            effort: null,
+            permission: recipient.turnSettings?.permission ?? "ask",
+            attachments: [],
+          },
           {
             queue: true,
             messageId: deriveRequestUuid(threadId, `question:${pending.requestId}`),
@@ -284,8 +288,8 @@ export function createOrchestration({
   }
 
   /** Reports each turn that ends, and each question asked, for as long as the daemon runs. */
-  const followTurns = Effect.flatMap(subscribe, (events) =>
-    Stream.runForEach(events, ({ event }) => {
+  function followTurns(events: Stream.Stream<SequencedEvent>) {
+    return Stream.runForEach(events, ({ event }) => {
       const entry = "threadId" in event && event.threadId ? threads.get(event.threadId) : undefined;
 
       if (!entry) return Effect.void;
@@ -298,8 +302,8 @@ export function createOrchestration({
       if (event.status === "awaiting-answer") return forwardQuestions(entry);
 
       return isTurnActive(event.status) || entry.isSettingUp ? Effect.void : reportTurn(entry);
-    }),
-  );
+    });
+  }
 
   const answerQuestions = Effect.fn("answerQuestions")(function* (
     _callerId: string,
@@ -405,12 +409,13 @@ export function createOrchestration({
         message: "That's your own thread; reply in your turn instead.",
       });
 
-    const ceiling = caller.permission ?? "ask";
+    const ceiling = caller.turnSettings?.permission ?? "ask";
 
     // The target's own level, unless that's more than the caller may give.
     const fallback =
-      target.permission && getPermissionRank(target.permission) < getPermissionRank(ceiling)
-        ? target.permission
+      target.turnSettings &&
+      getPermissionRank(target.turnSettings.permission) < getPermissionRank(ceiling)
+        ? target.turnSettings.permission
         : ceiling;
 
     const permission = yield* checkPermissionCeiling(caller, input.permission ?? fallback);

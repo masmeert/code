@@ -6,6 +6,7 @@ import {
   type RuntimeEvent,
   type Settings,
   type ThreadInfo,
+  type TurnSettings,
 } from "@masscode/contracts";
 import * as Semaphore from "effect/Semaphore";
 import { createHash } from "node:crypto";
@@ -43,8 +44,11 @@ export interface ThreadEntry {
   isStopRequested: boolean;
   /** Tool calls made inside subagents: one ending isn't a point the main agent takes messages at. */
   readonly subagentTools: Set<string>;
-  /** Access of the last message sent: the most the thread's agent can give threads it starts. */
-  permission: PermissionLevel | null;
+  /**
+   * Settings of the last message sent, which a turn picked up after a restart goes on with; its
+   * access is the most the thread's agent can give threads it starts.
+   */
+  turnSettings: TurnSettings | null;
   /** Its new worktree's setup command is running, and messages queue until it ends. */
   isSettingUp: boolean;
   /**
@@ -60,6 +64,7 @@ export function createEntry(
   resumeTokens: ResumeTokens = {},
   coverage: Coverage = {},
   shelveOverride: ShelveOverride = null,
+  turnSettings: TurnSettings | null = null,
 ): ThreadEntry {
   return {
     info,
@@ -74,7 +79,7 @@ export function createEntry(
     generation: 0,
     isStopRequested: false,
     subagentTools: new Set(),
-    permission: null,
+    turnSettings,
     isSettingUp: false,
     report: null,
   };

@@ -84,7 +84,15 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
 
   let latestSettings = yield* settingsStore.get;
 
-  for (const { info, home, resumeTokens, coverage, shelveOverride, queue } of yield* store.load) {
+  for (const {
+    info,
+    home,
+    resumeTokens,
+    coverage,
+    shelveOverride,
+    queue,
+    turnSettings,
+  } of yield* store.load) {
     threads.set(
       info.id,
       createEntry(
@@ -97,6 +105,7 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
         resumeTokens,
         coverage,
         shelveOverride,
+        turnSettings,
       ),
     );
   }

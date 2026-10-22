@@ -78,13 +78,15 @@ export const Attachment = Schema.Struct({
 export type Attachment = typeof Attachment.Type;
 
 /** How the agent works on a message, as chosen in the composer. */
-const TurnSettings = Schema.Struct({
+export const TurnSettings = Schema.Struct({
   /** Null uses the harness's default effort. */
   effort: Schema.NullOr(Effort),
   /** Faster output at a higher price, on models that offer it; absent leaves it as it was. */
   fast: Schema.optional(Schema.Boolean),
   permission: PermissionLevel,
 });
+
+export type TurnSettings = typeof TurnSettings.Type;
 
 /** Per-message settings chosen in the composer. */
 export const TurnOptions = Schema.Struct({
@@ -162,6 +164,8 @@ export const MessageSender = Schema.TaggedUnion({
   agent: { threadId: Schema.String, title: Schema.String },
   /** MassCode, passing on what a thread this one's agent started has to say. */
   report: { threadId: Schema.String, title: Schema.String },
+  /** MassCode, picking up a turn it cut short by quitting or crashing. */
+  restart: {},
 });
 
 export type MessageSender = typeof MessageSender.Type;

@@ -39,6 +39,7 @@ import {
   GitFork,
   ImageIcon,
   LoaderCircle,
+  RotateCcw,
   Square,
   Undo2,
   Workflow,
@@ -436,26 +437,55 @@ const UserTurn = memo(
     previous.isBusy === next.isBusy,
 );
 
-/** Above a message the user didn't write: the thread it came from, to go to. */
+/** Above a message the user didn't write: who or what sent it. */
 function SenderNote({ from }: { from: MessageSender }) {
-  const source = useThreadStore((state) => state.threads[from.threadId]);
-  const label = `${MessageSender.match(from, { agent: () => "From", report: () => "Report from" })} ${source?.title ?? from.title}`;
+  return MessageSender.match(from, {
+    agent: ({ threadId, title }) => (
+      <ThreadSenderNote threadId={threadId} title={title} label="From" />
+    ),
+    report: ({ threadId, title }) => (
+      <ThreadSenderNote threadId={threadId} title={title} label="Report from" />
+    ),
+    restart: () => (
+      <div className="flex items-center justify-end gap-1.5 text-xs text-muted-foreground">
+        <RotateCcw className="size-3.5 shrink-0" />
+        Sent by MassCode to pick up a turn it cut short
+      </div>
+    ),
+  });
+}
+
+/** The thread a message came from, to go to. */
+function ThreadSenderNote({
+  threadId,
+  title,
+  label,
+}: {
+  threadId: string;
+  title: string;
+  label: string;
+}) {
+  const source = useThreadStore((state) => state.threads[threadId]);
 
   return (
     <div className="flex justify-end text-xs text-muted-foreground">
       {source ? (
         <button
           type="button"
-          onClick={() => switchToThread(from.threadId)}
+          onClick={() => switchToThread(threadId)}
           className="flex max-w-full items-center gap-1.5 rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Workflow className="size-3.5 shrink-0" />
-          <span className="truncate">{label}</span>
+          <span className="truncate">
+            {label} {source.title}
+          </span>
         </button>
       ) : (
         <span className="flex max-w-full items-center gap-1.5">
           <Workflow className="size-3.5 shrink-0" />
-          <span className="truncate">{label} (deleted)</span>
+          <span className="truncate">
+            {label} {title} (deleted)
+          </span>
         </span>
       )}
     </div>

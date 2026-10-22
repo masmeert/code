@@ -183,6 +183,8 @@ const make = Effect.gen(function* () {
 
   const {
     dropSession,
+    closeAtQuit,
+    resumeCutTurns,
     interrupt,
     runOnLiveSession,
     removeThread,
@@ -274,7 +276,6 @@ const make = Effect.gen(function* () {
     threads,
     getEntry,
     publish,
-    subscribe,
     reportErrorsIn,
     setQueue,
     send,
@@ -318,7 +319,9 @@ const make = Effect.gen(function* () {
   );
 
   yield* Effect.forkScoped(Effect.schedule(reapIdleSessions, Schedule.spaced(REAP_INTERVAL_MS)));
-  yield* Effect.forkScoped(orchestration.followTurns);
+  // Subscribed before any cut turn picks up, so none ends unreported.
+  yield* Effect.forkScoped(orchestration.followTurns(yield* subscribe));
+  yield* Effect.forkScoped(resumeCutTurns);
 
   function dispatch(command: ClientCommand) {
     return ClientCommand.match<Effect.Effect<void, CommandError | ProviderError | ProjectNotFound>>(
@@ -591,13 +594,10 @@ const make = Effect.gen(function* () {
 
       yield* Effect.promise(() => devices.close());
       yield* sideChats.closeAll;
+      // A turn going now picks up when MassCode next starts.
       yield* Effect.forEach(
         [...threads.values()],
-        (entry) =>
-          dropSession(
-            entry,
-            "MassCode quit while this turn was running. Send a message to pick up where it left off.",
-          ),
+        (entry) => (isBusy(entry) ? closeAtQuit(entry) : dropSession(entry, null)),
         { discard: true },
       );
     }),

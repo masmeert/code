@@ -39,7 +39,7 @@ import { DATA_DIR } from "../storage/toml-file.ts";
 import type { SettingsStore } from "../storage/settings-store.ts";
 import type { ThreadStore } from "../storage/thread-store.ts";
 import type { Terminals } from "../terminals.ts";
-import { isBusy, type ThreadEntry } from "./entry.ts";
+import { deriveRequestUuid, isBusy, type ThreadEntry } from "./entry.ts";
 import type { ThreadRegistry } from "./registry.ts";
 
 /** An agent process idle this long is stopped; the next message resumes it (t3code reaps at 30 min too). */
@@ -49,6 +49,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 const AGENT_GONE =
   "The agent stopped before finishing its turn. Send a message to pick up where it left off.";
+
+const PICK_UP_TEXT =
+  "MassCode quit or crashed while you were working on this, cutting your turn short. Carry on where you left off; check the files on disk, since your last steps may not have finished.";
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 
@@ -101,7 +104,7 @@ function resolveAttachments(inputs: ReadonlyArray<AttachmentInput>) {
 
 export type Agents = Effect.Success<ReturnType<typeof createAgents>>;
 
-/** Ends the turns that were going when the daemon died, since nothing else will. */
+/** Ends the turns that were going when the daemon quit or died, since nothing else will; `resumeCutTurns` picks them up. */
 export const createAgents = Effect.fn("createAgents")(function* ({
   runFork,
   store,
@@ -264,13 +267,28 @@ export const createAgents = Effect.fn("createAgents")(function* ({
     if (session) yield* session.close;
   });
 
-  // Turns going when the daemon died: nothing else will end them.
-  for (const { threadId, messageId } of store.listUnfinishedTurns()) {
+  // Turns going when the daemon quit or died: nothing else will end them. Each picks up once
+  // (see `resumeCutTurns`), unless it was itself picking up or has no conversation to resume.
+  const cutTurns = store.listUnfinishedTurns().flatMap(({ threadId, messageId }) => {
     const entry = threads.get(threadId);
 
-    if (!entry) continue;
+    if (!entry) return [];
 
     publish(RuntimeEvent.cases["turn.completed"].make({ threadId, durationMs: null }));
+    entry.currentTurn = messageId;
+    endTurn(entry);
+
+    const started = store.findUserMessage(threadId, messageId);
+
+    if (
+      started &&
+      !(started.event.from && MessageSender.guards.restart(started.event.from)) &&
+      entry.resumeTokens[entry.info.provider] !== undefined &&
+      entry.info.archivedAt === null &&
+      !entry.info.limitStop
+    )
+      return [{ entry, messageId, seq: started.seq }];
+
     publish(
       RuntimeEvent.cases.error.make({
         threadId,
@@ -278,9 +296,47 @@ export const createAgents = Effect.fn("createAgents")(function* ({
           "MassCode stopped while this turn was running. Send a message to pick up where it left off.",
       }),
     );
-    entry.currentTurn = messageId;
-    endTurn(entry);
-  }
+
+    return [];
+  });
+
+  /** Has each turn the daemon cut short carry on, reporting to whoever it would have. */
+  const resumeCutTurns = Effect.suspend(() =>
+    Effect.forEach(
+      cutTurns,
+      ({ entry, messageId, seq }) => {
+        const threadId = entry.info.id;
+
+        const senders = store
+          .readAfter(threadId, seq - 1)
+          .flatMap(({ event }) =>
+            RuntimeEvent.guards["user.message"](event) &&
+            event.from &&
+            MessageSender.guards.agent(event.from)
+              ? [event.from.threadId]
+              : [],
+          );
+
+        entry.report = { turn: messageId, to: new Set(senders) };
+
+        return send(
+          entry,
+          PICK_UP_TEXT,
+          {
+            effort: entry.turnSettings?.effort ?? null,
+            fast: entry.turnSettings?.fast,
+            permission: entry.turnSettings?.permission ?? "ask",
+            attachments: [],
+          },
+          {
+            messageId: deriveRequestUuid(threadId, `restart:${messageId}`),
+            from: MessageSender.cases.restart.make({}),
+          },
+        ).pipe(reportErrorsIn(threadId), Effect.ignore);
+      },
+      { discard: true },
+    ),
+  );
 
   /** Holds the thread's queue on a usage limit, and asks for the reset when the harness didn't say. */
   function stopForLimit(entry: ThreadEntry, limitStop: LimitStop) {
@@ -342,6 +398,15 @@ export const createAgents = Effect.fn("createAgents")(function* ({
     for (const started of threads.values())
       if (started.info.startedBy === entry.info.id && isTurnActive(started.info.status))
         yield* Effect.ignore(interrupt(started));
+  });
+
+  /** Closes the thread's agent process as MassCode quits, leaving a turn it had going for the next start to pick up. */
+  const closeAtQuit = Effect.fn("closeAtQuit")(function* (entry: ThreadEntry) {
+    const session = entry.session;
+    entry.session = null;
+    entry.generation++;
+
+    if (session) yield* session.close;
   });
 
   /** Runs `action` against the thread's live session, if it has one. */
@@ -450,7 +515,8 @@ export const createAgents = Effect.fn("createAgents")(function* ({
         ...(from && { from }),
       });
 
-      entry.permission = permission;
+      entry.turnSettings = { effort, fast, permission };
+      store.setTurnSettings(threadId, entry.turnSettings);
 
       // A turn is running: the message joins it.
       if (entry.session && isTurnActive(entry.info.status)) {
@@ -463,7 +529,14 @@ export const createAgents = Effect.fn("createAgents")(function* ({
       entry.isStopRequested = false;
       entry.report = {
         turn: message.id,
-        to: new Set(from && MessageSender.guards.agent(from) ? [from.threadId] : []),
+        // Picking up a cut turn reports to whoever the cut one would have.
+        to: new Set(
+          from && MessageSender.guards.agent(from)
+            ? [from.threadId]
+            : from && MessageSender.guards.restart(from)
+              ? entry.report?.to
+              : [],
+        ),
       };
 
       if (entry.info.limitStop) setLimitStop(entry, null);
@@ -710,6 +783,8 @@ export const createAgents = Effect.fn("createAgents")(function* ({
 
   return {
     dropSession,
+    closeAtQuit,
+    resumeCutTurns,
     interrupt,
     runOnLiveSession,
     removeThread,

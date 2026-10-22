@@ -37,10 +37,10 @@ export const TranscriptTurn = memo(function TranscriptTurn({ hostId, threadId, t
         {turn.item.from ? (
           <Text numberOfLines={1} className="max-w-[82%] text-xs text-muted-foreground">
             {MessageSender.match(turn.item.from, {
-              agent: () => "From",
-              report: () => "Report from",
-            })}{" "}
-            {turn.item.from.title}
+              agent: ({ title }) => `From ${title}`,
+              report: ({ title }) => `Report from ${title}`,
+              restart: () => "Sent by MassCode to pick up a turn it cut short",
+            })}
           </Text>
         ) : null}
         {turn.item.attachments.length > 0 ? (
