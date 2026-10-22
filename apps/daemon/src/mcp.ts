@@ -31,8 +31,13 @@ const StartThreadInput = {
   provider: z
     .enum(ProviderKind.literals)
     .optional()
-    .describe("Which harness runs it: claude or codex. Yours when left out."),
-  model: z.string().optional().describe("The harness's default model when left out."),
+    .describe("Which harness runs it; list_harnesses says which are ready. Yours when left out."),
+  model: z
+    .string()
+    .optional()
+    .describe(
+      "A model id from list_harnesses. Yours when on your harness, else the harness's default.",
+    ),
   permission: z
     .enum(PermissionLevel.literals)
     .optional()
@@ -99,6 +104,7 @@ export type AnswerQuestionsInput = z.infer<z.ZodObject<typeof AnswerQuestionsInp
 
 /** What the orchestration tools do, for the agent of thread `caller`; failures are messages for that agent. */
 interface Orchestration {
+  readonly listHarnesses: (caller: string) => Effect.Effect<unknown, Error>;
   readonly listThreads: (caller: string) => Effect.Effect<unknown, Error>;
   readonly readThread: (
     caller: string,
@@ -140,11 +146,21 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
     { name: "masscode", version: "1.0.0" },
     {
       instructions:
-        "MassCode's threads. Start agents (Claude or Codex) in threads of their own to work on tasks in parallel, get a second opinion from the other harness, or review work; message them, wait for and read their answers. A thread you start or message reports back to you as a message when its turn ends, unless you were waiting on it, so you can carry on with other work meanwhile. Threads you start show in the user's sidebar, in your project, where the user can watch and steer them. Stopping your thread stops them too.",
+        "MassCode's threads. Start agents (Claude, Codex or Cursor; list_harnesses says which are ready, with their models) in threads of their own to work on tasks in parallel, get a second opinion from the other harness, or review work; message them, wait for and read their answers. A thread you start or message reports back to you as a message when its turn ends, unless you were waiting on it, so you can carry on with other work meanwhile. Threads you start show in the user's sidebar, in your project, where the user can watch and steer them. Stopping your thread stops them too.",
     },
   );
 
   const readOnly = { readOnlyHint: true };
+
+  server.registerTool(
+    "list_harnesses",
+    {
+      description:
+        "The harnesses you can start threads on (and why any can't run now), with their model ids, and what you run on.",
+      annotations: readOnly,
+    },
+    () => runToolEffect(orchestration.listHarnesses(caller)),
+  );
 
   server.registerTool(
     "list_threads",

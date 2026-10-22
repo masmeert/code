@@ -612,25 +612,27 @@ export const createAgents = Effect.fn("createAgents")(function* ({
     yield* deliverMessage(entry, message, run);
   });
 
-  /** Fails, saying how to fix it, unless `provider`'s CLI is installed and signed in. */
-  const ensureHarnessReady = Effect.fn("ensureHarnessReady")(function* (provider: ProviderKind) {
+  /** Why `provider`'s CLI can't run a thread now, and how to fix it; null when it can. */
+  const findHarnessProblem = Effect.fn("findHarnessProblem")(function* (provider: ProviderKind) {
     const name = getHarnessName(yield* settingsStore.get, provider);
     const status = (yield* providerRegistry.list).find((harness) => harness.kind === provider);
 
-    if (status?.checking)
-      return yield* new CommandError({
-        message: `Still checking whether ${name} is set up. Try again in a moment.`,
-      });
+    if (status?.checking) return `Still checking whether ${name} is set up. Try again in a moment.`;
 
     if (!status?.installed)
-      return yield* new CommandError({
-        message: `${name} isn't installed on this machine. Install its CLI, then try again.`,
-      });
+      return `${name} isn't installed on this machine. Install its CLI, then try again.`;
 
     if (!status.linked)
-      return yield* new CommandError({
-        message: `${name} isn't signed in. Sign in under Settings → Harnesses, then try again.`,
-      });
+      return `${name} isn't signed in. Sign in under Settings → Harnesses, then try again.`;
+
+    return null;
+  });
+
+  /** Fails, saying how to fix it, unless `provider`'s CLI is installed and signed in. */
+  const ensureHarnessReady = Effect.fn("ensureHarnessReady")(function* (provider: ProviderKind) {
+    const problem = yield* findHarnessProblem(provider);
+
+    if (problem) return yield* new CommandError({ message: problem });
   });
 
   const compact = Effect.fn("compact")(function* (threadId: string) {
@@ -792,6 +794,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
     send,
     sendQueued,
     ensureHarnessReady,
+    findHarnessProblem,
     compact,
     listCommands,
     readUsage,

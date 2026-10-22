@@ -14,7 +14,10 @@ import * as Stream from "effect/Stream";
 import { CommandError } from "../errors.ts";
 import { readBranch } from "../git.ts";
 import type { AnswerQuestionsInput, SendMessageInput, StartThreadInput } from "../mcp.ts";
+import { getHarnessName } from "../harnesses.ts";
+import type { ProviderRegistry } from "../providers/provider-registry.ts";
 import type { ProjectsStore } from "../storage/projects-store.ts";
+import type { SettingsStore } from "../storage/settings-store.ts";
 import type { ThreadStore } from "../storage/thread-store.ts";
 import type { Agents } from "./agents.ts";
 import {
@@ -33,6 +36,8 @@ const MAX_REPORT_CHARS = 8000;
 export function createOrchestration({
   store,
   projectsStore,
+  settingsStore,
+  providerRegistry,
   threads,
   getEntry,
   publish,
@@ -41,14 +46,17 @@ export function createOrchestration({
   send,
   interrupt,
   ensureHarnessReady,
+  findHarnessProblem,
   createWorktree,
   setUpWorktree,
   openThread,
 }: Pick<ThreadRegistry, "threads" | "getEntry" | "publish" | "reportErrorsIn" | "setQueue"> &
-  Pick<Agents, "send" | "interrupt" | "ensureHarnessReady"> &
+  Pick<Agents, "send" | "interrupt" | "ensureHarnessReady" | "findHarnessProblem"> &
   Pick<ThreadOpener, "createWorktree" | "setUpWorktree" | "openThread"> & {
     readonly store: typeof ThreadStore.Service;
     readonly projectsStore: typeof ProjectsStore.Service;
+    readonly settingsStore: typeof SettingsStore.Service;
+    readonly providerRegistry: typeof ProviderRegistry.Service;
   }) {
   /** Callers waiting on a thread, by `${callerId}\0${threadId}`: their wait returns what a report would say. */
   const waiting = new Map<string, number>();
@@ -330,6 +338,35 @@ export function createOrchestration({
     return summarizeThread(target);
   });
 
+  /** What the caller runs on, and each harness it can start threads on, with its models. */
+  const listHarnesses = Effect.fn("listHarnesses")(function* (callerId: string) {
+    const caller = yield* getEntry(callerId);
+    const settings = yield* settingsStore.get;
+
+    const harnesses = yield* Effect.forEach(yield* providerRegistry.list, (status) =>
+      Effect.map(findHarnessProblem(status.kind), (problem) => ({
+        provider: status.kind,
+        name: getHarnessName(settings, status.kind),
+        ...(problem ? { unavailable: problem } : { available: true }),
+        models: status.models.map(({ id, label, recommended, efforts }) => ({
+          id,
+          label,
+          ...(recommended && { recommended }),
+          ...(efforts && { efforts }),
+        })),
+      })),
+    );
+
+    return {
+      yours: {
+        provider: caller.info.provider,
+        model: caller.info.model,
+        permission: caller.turnSettings?.permission ?? "ask",
+      },
+      harnesses,
+    };
+  });
+
   const startThread = Effect.fn("startThread")(function* (
     callerId: string,
     input: StartThreadInput,
@@ -342,6 +379,15 @@ export function createOrchestration({
       const permission = yield* checkPermissionCeiling(caller, input.permission);
       const provider = input.provider ?? caller.info.provider;
       yield* ensureHarnessReady(provider);
+
+      const { models } = (yield* providerRegistry.list).find(
+        (status) => status.kind === provider,
+      ) ?? { models: [] };
+
+      if (input.model && models.length > 0 && !models.some((model) => model.id === input.model))
+        return yield* new CommandError({
+          message: `${getHarnessName(yield* settingsStore.get, provider)} has no model "${input.model}". Its models are ${models.map((model) => `"${model.id}"`).join(", ")}.`,
+        });
 
       const project = (yield* projectsStore.list).find(
         (candidate) => candidate.id === caller.info.projectId,
@@ -435,6 +481,7 @@ export function createOrchestration({
 
   return {
     followTurns,
+    listHarnesses,
     listThreads: (callerId: string) =>
       Effect.map(getEntry(callerId), (caller) => ({
         threads: [...threads.values()]
