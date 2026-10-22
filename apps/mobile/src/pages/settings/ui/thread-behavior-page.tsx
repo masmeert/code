@@ -48,6 +48,18 @@ export function ThreadBehaviorSettingsPage() {
             }
           />
           <FormChoiceSection
+            title="Compact idle Claude threads"
+            description="Just before the prompt cache expires, for threads over 100K tokens"
+            value={uniformSetting(targets, (host) =>
+              host.settings.compactIdleThreads === true ? "on" : "off",
+            )}
+            options={[
+              { value: "off", label: "Off" },
+              { value: "on", label: "On" },
+            ]}
+            onChange={(value) => updateSettings(targets, { compactIdleThreads: value === "on" })}
+          />
+          <FormChoiceSection
             title="New worktrees branch from"
             value={uniformSetting(targets, (host) =>
               host.settings.worktreeFromOrigin ? "origin" : "local",

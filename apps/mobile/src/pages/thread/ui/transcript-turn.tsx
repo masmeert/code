@@ -249,6 +249,13 @@ function BlockView({
       return block.decision === "deny" ? (
         <Text className="text-xs text-muted-foreground">Denied {block.title}</Text>
       ) : null;
+    case "compacted":
+      return (
+        <Text className="text-xs text-muted-foreground">
+          Compacted while idle, before the prompt cache expired ({Math.round(block.tokens / 1000)}K
+          tokens)
+        </Text>
+      );
     case "checkpoint":
       return (
         <View className="my-1 flex-row items-center gap-1.5 self-start rounded-lg border border-border px-2.5 py-1">

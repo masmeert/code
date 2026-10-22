@@ -205,6 +205,11 @@ export const RuntimeEvent = Schema.TaggedUnion({
     /** That thread's title then, for when it's gone. */
     byTitle: Schema.String,
   },
+  /** MassCode compacted the idle thread's conversation, of `tokens`, before its prompt cache expired. */
+  "thread.compacted": {
+    threadId: Schema.String,
+    tokens: Schema.Number,
+  },
   /** How a new worktree's setup command ended; `stopped` when the user skipped it. */
   "worktree.setup": {
     threadId: Schema.String,
@@ -314,6 +319,7 @@ const TRANSCRIPT_TAGS = [
   "thread.rewound",
   "thread.forked",
   "thread.startedBy",
+  "thread.compacted",
   "worktree.setup",
 ] as const;
 

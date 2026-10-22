@@ -39,6 +39,7 @@ import { createTerminals, type Terminals } from "./terminals.ts";
 import { createAgents, formatCommandRun } from "./threads/agents.ts";
 import { deriveTitle, isBusy } from "./threads/entry.ts";
 import { createHistory } from "./threads/history.ts";
+import { createIdleCompaction } from "./threads/idle-compaction.ts";
 import { createThreadOpener } from "./threads/opening.ts";
 import { createOrchestration } from "./threads/orchestration.ts";
 import { createThreadRegistry, type SequencedEvent, type ThreadRead } from "./threads/registry.ts";
@@ -326,6 +327,16 @@ const make = Effect.gen(function* () {
   // Subscribed before any cut turn picks up, so none ends unreported.
   yield* Effect.forkScoped(orchestration.followTurns(yield* subscribe));
   yield* Effect.forkScoped(resumeCutTurns);
+  yield* Effect.forkScoped(
+    createIdleCompaction({
+      runFork,
+      settingsStore,
+      providerRegistry,
+      threads,
+      publish,
+      compact,
+    }).follow(yield* subscribe),
+  );
 
   function dispatch(command: ClientCommand) {
     return ClientCommand.match<Effect.Effect<void, CommandError | ProviderError | ProjectNotFound>>(

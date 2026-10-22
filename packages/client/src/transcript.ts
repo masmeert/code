@@ -98,6 +98,8 @@ export type TranscriptItem =
       /** What was answered; absent until then, and when the questions were skipped. */
       readonly answers?: UserAnswers;
     }
+  /** MassCode compacted the conversation while it was idle, before its prompt cache expired. */
+  | { readonly kind: "compacted"; readonly id: string; readonly tokens: number }
   /** How the new worktree's setup command from `masscode.toml` ended. */
   | {
       readonly kind: "setup";
@@ -204,6 +206,11 @@ export function reduceItems(
           byThreadId,
           byTitle,
         })),
+      "thread.compacted": ({ tokens }) => {
+        const key = `compacted:${id ?? crypto.randomUUID()}`;
+
+        return upsert(items, key, () => ({ kind: "compacted", id: key, tokens }));
+      },
       "worktree.setup": ({ run, stopped }) =>
         upsert(items, "setup", () => ({ kind: "setup", id: "setup", run, stopped })),
       "thread.rewound": (rewound) => {

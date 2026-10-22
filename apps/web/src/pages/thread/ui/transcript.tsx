@@ -40,6 +40,7 @@ import {
   GitFork,
   ImageIcon,
   LoaderCircle,
+  Minimize2,
   RotateCcw,
   Square,
   Undo2,
@@ -852,6 +853,14 @@ export const AgentBlock = memo(
         return <div className="selectable text-xs text-destructive">{block.text}</div>;
       case "checkpoint":
         return <CheckpointChip item={block} />;
+      case "compacted":
+        return (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Minimize2 className="size-3.5 shrink-0" />
+            Compacted while idle, before the prompt cache expired ({Math.round(block.tokens / 1000)}
+            K tokens)
+          </div>
+        );
     }
   },
   // Tool groups are rebuilt by `toBlocks`; compare the calls they hold instead.

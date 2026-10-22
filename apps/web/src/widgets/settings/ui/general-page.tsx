@@ -181,6 +181,23 @@ export function GeneralPage() {
             />
           </SettingsRow>
           <SettingsRow
+            label={
+              <RowLabel
+                title="Compact idle Claude threads"
+                description="Just before the prompt cache expires, for threads over 100K tokens, so the next message costs less"
+              />
+            }
+          >
+            <Switch
+              size="sm"
+              checked={settings.compactIdleThreads === true}
+              onCheckedChange={(compactIdleThreads) =>
+                updateSettings({ ...settings, compactIdleThreads })
+              }
+              ariaLabel="Compact idle Claude threads"
+            />
+          </SettingsRow>
+          <SettingsRow
             label={<RowLabel title="Follow-up behavior" description="⌘↩ does the opposite once" />}
           >
             <SettingsSelect
