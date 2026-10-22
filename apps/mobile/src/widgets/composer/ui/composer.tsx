@@ -22,7 +22,7 @@ import { MenuView } from "@expo/ui/community/menu";
 import * as Schema from "effect/Schema";
 import * as DocumentPicker from "expo-document-picker";
 import { File, Paths } from "expo-file-system";
-import { GlassView } from "expo-glass-effect";
+import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -30,11 +30,7 @@ import type { SFSymbol } from "expo-symbols";
 import { useEffect, useState } from "react";
 import { Alert, Image, Pressable, ScrollView, View } from "react-native";
 import { useKeyboardState } from "react-native-keyboard-controller";
-import Animated, {
-  type LayoutAnimationFunction,
-  ReduceMotion,
-  withTiming,
-} from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import { withUniwind } from "uniwind";
 import {
   type ChoiceGroup,
@@ -54,6 +50,10 @@ import {
   nextPastedTextFileName,
   replaceTypedWord,
 } from "../lib/composer-mentions.ts";
+import {
+  COMPOSER_EDITOR_INSET,
+  useComposerEditorLayout,
+} from "../model/use-composer-editor-layout.ts";
 import { useVoiceInput } from "../model/use-voice-input.ts";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./composer-command-menu.tsx";
 import {
@@ -95,31 +95,7 @@ function alertTooBig(names: ReadonlyArray<string>) {
   );
 }
 
-/** Morphs the pill into the card and back: only height and vertical position animate. */
-const COMPOSER_LAYOUT_TRANSITION: LayoutAnimationFunction = (values) => {
-  "worklet";
-
-  const timing = { duration: 220, reduceMotion: ReduceMotion.System };
-
-  return {
-    initialValues: {
-      originX: values.targetOriginX,
-      originY: values.currentOriginY,
-      width: values.targetWidth,
-      height: values.currentHeight,
-    },
-    animations: {
-      originX: values.targetOriginX,
-      originY: withTiming(values.targetOriginY, timing),
-      width: values.targetWidth,
-      height: withTiming(values.targetHeight, timing),
-    },
-  };
-};
-
-const StyledGlassView = withUniwind(GlassView, {
-  tintColor: { fromClassName: "tintColorClassName", styleProperty: "accentColor" },
-});
+const StyledGlassView = withUniwind(GlassView);
 
 /** Where each harness looks for a project's skills. */
 const SKILLS_FOLDER: Record<ProviderKind, string> = {
@@ -196,7 +172,6 @@ export function Composer({
   const [remembered, setRemembered] = useState(() => prefsByThread.get(prefsKey));
   const prefs = fitTurnPrefs(settings, remembered, provider);
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
-  const [isFocused, setIsFocused] = useState(false);
   // The editor's caret, which dictation and the `@`/`$`/`/` menu insert at.
   const [selection, setSelection] = useState<ComposerEditorSelection>({ start: 0, end: 0 });
 
@@ -215,8 +190,7 @@ export function Composer({
   }
 
   const isVoiceInputPresented = voiceInput.presentation.statusLabel !== null;
-  const isExpanded = isFocused || Boolean(text) || files.length > 0;
-  const isToolbarVisible = isExpanded || isVoiceInputPresented;
+  const editorLayout = useComposerEditorLayout(text);
   const isWorking = thread !== null && isTurnActive(thread.status);
   const willQueue = isWorking && settings?.followUp !== "steer";
 
@@ -564,42 +538,6 @@ export function Composer({
     </View>
   ));
 
-  const fileStrip =
-    files.length > 0 ? (
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerClassName="gap-1.5 px-3.5 pb-2.5"
-      >
-        {files.map((file) => (
-          <View
-            key={file.uri}
-            className="h-10 max-w-52 flex-row items-center gap-2 rounded-xl bg-muted pr-1 pl-1"
-          >
-            {file.isImage ? (
-              <Image source={{ uri: file.uri }} className="size-8 rounded-lg bg-background" />
-            ) : (
-              <View className="size-8 items-center justify-center rounded-lg bg-background">
-                <Icon name="doc.text" className="size-4 text-muted-foreground" />
-              </View>
-            )}
-            <Text numberOfLines={1} className="shrink text-xs">
-              {file.name}
-            </Text>
-            <Pressable
-              accessibilityLabel={`Remove ${file.name}`}
-              hitSlop={8}
-              onPress={() => setFiles((current) => current.filter((other) => other !== file))}
-              className="size-7 items-center justify-center rounded-lg active:bg-background"
-            >
-              <Icon name="xmark" className="size-3.5 text-muted-foreground" />
-            </Pressable>
-          </View>
-        ))}
-      </ScrollView>
-    ) : null;
-
   const optionGroups: ReadonlyArray<ChoiceGroup> = [
     {
       title: "Effort",
@@ -663,28 +601,7 @@ export function Composer({
       useThreadSettings.setState({ session: settingsSession });
   });
 
-  const attachMenu = (
-    <MenuView
-      actions={[
-        { id: "photos", title: "Photo Library", image: "photo" },
-        { id: "files", title: "Choose Files", image: "folder" },
-      ]}
-      onPressAction={({ nativeEvent }) =>
-        void (nativeEvent.event === "photos" ? pickPhotos() : pickDocuments())
-      }
-    >
-      <View
-        accessible
-        accessibilityRole="button"
-        accessibilityLabel="Add attachment"
-        className="size-11 items-center justify-center"
-      >
-        <Icon name="plus" className="size-5" />
-      </View>
-    </MenuView>
-  );
-
-  // A 30-point circle in a 44-point tap target; with nothing to send it fades rather than greys.
+  // A 30-point circle in a 44-point tap target.
   const sendButton =
     thread && isWorking && !text.trim() ? (
       <Pressable
@@ -731,13 +648,16 @@ export function Composer({
           <View
             className={cn(
               "size-[30px] items-center justify-center rounded-full",
-              canSend ? "bg-primary" : "bg-primary/15",
+              canSend ? "bg-primary" : "bg-foreground/10",
             )}
           >
             <Icon
               name={isWorking ? FOLLOW_UP[willQueue ? "queue" : "steer"].icon : "arrow.up"}
               weight="semibold"
-              className="size-4 text-primary-foreground"
+              className={cn(
+                "size-4",
+                canSend ? "text-primary-foreground" : "text-muted-foreground",
+              )}
             />
           </View>
         </Pressable>
@@ -745,13 +665,7 @@ export function Composer({
     );
 
   return (
-    <View
-      className={cn(
-        "gap-2 px-3",
-        isExpanded ? "pt-2" : "pt-1.5",
-        isKeyboardVisible ? (isExpanded ? "pb-2" : "pb-1.5") : "pb-safe",
-      )}
-    >
+    <View className={cn("gap-2 px-3 pt-1.5", isKeyboardVisible ? "pb-2" : "pb-safe")}>
       {/* The transcript fades out behind the composer rather than ending at a hard edge. */}
       <View
         pointerEvents="none"
@@ -759,43 +673,127 @@ export function Composer({
       />
       {commandMenu ? <ComposerCommandMenu {...commandMenu} /> : null}
       {queuedRows}
-      {/* At rest a one-line pill; focused or holding a draft, a card with its toolbar. The field
-          keeps its place among the children either way, so it keeps focus as it grows, and every
-          part follows the card's height in one transition. */}
-      <Animated.View
-        layout={COMPOSER_LAYOUT_TRANSITION}
+      <View
         className={cn(
-          "overflow-hidden shadow-lg shadow-black/10",
-          isExpanded ? "rounded-[26px]" : "rounded-[27px]",
+          "shadow-composer-shadow overflow-hidden rounded-[27px] py-0.5 shadow-[0_6px_28px]",
+          // Without Liquid Glass (before iOS 26), a near-opaque fill keeps the transcript out.
+          !isGlassEffectAPIAvailable() && "border border-border-strong bg-muted/95",
         )}
       >
         <StyledGlassView
           pointerEvents="none"
           glassEffectStyle="regular"
-          // Tinted with the page, so the transcript scrolling under it frosts rather than reads through.
-          tintColorClassName="accent-background/70"
-          className={cn("absolute inset-0", isExpanded ? "rounded-[26px]" : "rounded-[27px]")}
+          className="absolute inset-0 rounded-[27px]"
         />
-        <ComposerDictationDraftContent
-          layout={COMPOSER_LAYOUT_TRANSITION}
-          className={isExpanded ? "pt-3.5" : "flex-row items-center py-0.5"}
-          compact={!isExpanded}
-          // Collapsed, the pill turns over to the dictation controls; a card keeps its draft in view.
-          hidden={isVoiceInputPresented && !isExpanded}
-        >
-          {isExpanded ? null : attachMenu}
-          {isExpanded ? fileStrip : null}
+        {files.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerClassName="gap-1.5 px-2 pt-1.5 pb-1"
+          >
+            {files.map((file) => (
+              <View
+                key={file.uri}
+                className="h-10 max-w-52 flex-row items-center gap-2 rounded-xl bg-foreground/5 pr-1 pl-1"
+              >
+                {file.isImage ? (
+                  <Image source={{ uri: file.uri }} className="size-8 rounded-lg bg-background" />
+                ) : (
+                  <View className="size-8 items-center justify-center rounded-lg bg-background">
+                    <Icon name="doc.text" className="size-4 text-muted-foreground" />
+                  </View>
+                )}
+                <Text numberOfLines={1} className="shrink text-xs">
+                  {file.name}
+                </Text>
+                <Pressable
+                  accessibilityLabel={`Remove ${file.name}`}
+                  hitSlop={8}
+                  onPress={() => setFiles((current) => current.filter((other) => other !== file))}
+                  className="size-7 items-center justify-center rounded-lg active:bg-background"
+                >
+                  <Icon name="xmark" className="size-3.5 text-muted-foreground" />
+                </Pressable>
+              </View>
+            ))}
+          </ScrollView>
+        ) : null}
+        <View onLayout={editorLayout.onRowLayout}>
+          <ComposerDictationDraftContent
+            className="flex-row items-end"
+            hidden={isVoiceInputPresented}
+          >
+            <MenuView
+              actions={[
+                { id: "photos", title: "Photo Library", image: "photo" },
+                { id: "files", title: "Choose Files", image: "folder" },
+              ]}
+              onPressAction={({ nativeEvent }) =>
+                void (nativeEvent.event === "photos" ? pickPhotos() : pickDocuments())
+              }
+            >
+              <View
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel="Add attachment"
+                className="size-11 items-center justify-center"
+              >
+                <Icon name="plus" className="size-5" />
+              </View>
+            </MenuView>
+            {/* Holds the field's place in the row; the field itself floats over it, so it keeps
+                focus when it moves above the controls. */}
+            <Animated.View
+              onLayout={editorLayout.onSlotLayout}
+              className={editorLayout.isExpanded ? "w-0 flex-none" : "min-w-[40%] flex-1"}
+              style={editorLayout.rowStyle}
+            />
+            <View
+              className={cn(
+                "min-w-0 shrink flex-row items-center",
+                editorLayout.isExpanded && "flex-1 justify-end",
+              )}
+            >
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Model, effort and permissions"
+                onPress={() => {
+                  useThreadSettings.setState({ session: settingsSession });
+                  router.push("/thread-settings");
+                }}
+                className="h-11 max-w-[190px] shrink flex-row items-center gap-2 rounded-xl px-2 active:bg-foreground/5"
+              >
+                <ProviderLogo provider={provider} className="size-4 text-foreground" />
+                {/* A draft on one line needs the room; the logo still says whose model it is. */}
+                {text && !editorLayout.isExpanded ? null : (
+                  <>
+                    <Text numberOfLines={1} className="shrink text-sm font-medium">
+                      {model?.label ?? PROVIDER_NAME[provider]}
+                    </Text>
+                    <Icon name="chevron.down" weight="semibold" className="size-2.5" />
+                  </>
+                )}
+              </Pressable>
+              <ComposerDictationStartAction
+                state={voiceInput.state}
+                isAvailable={voiceInput.isAvailable}
+                onStart={voiceInput.start}
+                onCancel={voiceInput.cancel}
+              />
+              {sendButton}
+            </View>
+          </ComposerDictationDraftContent>
           <Animated.View
-            layout={COMPOSER_LAYOUT_TRANSITION}
-            className={isExpanded ? "px-3.5" : "min-w-0 flex-1 px-1"}
+            className={cn(isVoiceInputPresented && !editorLayout.isExpanded && "hidden")}
+            style={editorLayout.editorStyle}
           >
             <ComposerEditor
               value={text}
               selection={selection}
               onChangeText={setText}
               onSelectionChange={setSelection}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => setIsFocused(false)}
+              onContentSizeChange={editorLayout.onContentSizeChange}
               onPasteImages={(uris) => void attachPastedImages(uris)}
               onPasteText={(paste) => void pasteText(paste)}
               onSubmit={(alternate) =>
@@ -812,68 +810,31 @@ export function Composer({
                   : "Send Message"
               }
               readOnly={voiceInput.isBusy}
-              scrollEnabled={isExpanded}
+              scrollEnabled
               placeholder={willQueue ? "Queue a follow-up" : `Ask ${PROVIDER_NAME[provider]}…`}
-              contentInsetVertical={isExpanded ? 4 : 7}
-              className={isExpanded ? "max-h-40 min-h-[72px]" : "max-h-9 min-h-9"}
+              contentInsetVertical={COMPOSER_EDITOR_INSET}
+              className="flex-1"
             />
           </Animated.View>
-          {isExpanded ? null : (
-            <View className="flex-row items-center">
-              <ComposerDictationStartAction
-                state={voiceInput.state}
-                isAvailable={voiceInput.isAvailable}
-                onStart={voiceInput.start}
-                onCancel={voiceInput.cancel}
-              />
-              {sendButton}
-            </View>
-          )}
-        </ComposerDictationDraftContent>
-        {/* The card's toolbar; collapsed, it lies over the pill and only shows while dictating. */}
-        <Animated.View
-          accessibilityElementsHidden={!isToolbarVisible}
-          collapsable={false}
-          layout={COMPOSER_LAYOUT_TRANSITION}
-          pointerEvents={isToolbarVisible ? "auto" : "none"}
-          className={isExpanded ? "px-1.5 pt-2 pb-1.5" : "absolute inset-x-0 bottom-0.5"}
+        </View>
+        {/* Dictating, the controls flip over to these. */}
+        <View
+          accessibilityElementsHidden={!isVoiceInputPresented}
+          pointerEvents={isVoiceInputPresented ? "auto" : "none"}
+          className="absolute inset-x-0 bottom-0.5"
         >
-          <ComposerDictationToolbar
-            showsDictation={isVoiceInputPresented}
-            visible={isToolbarVisible}
-          >
+          <ComposerDictationToolbar showsDictation visible={isVoiceInputPresented}>
             <ComposerDictationCancelAction
               presentation={voiceInput.presentation}
               onCancel={voiceInput.cancel}
             />
-            {isVoiceInputPresented ? (
-              <ComposerDictationStatus
-                audioLevels={voiceInput.audioLevels}
-                elapsedSeconds={voiceInput.elapsedSeconds}
-                phase={voiceInput.state.phase}
-                presentation={voiceInput.presentation}
-                onDismissError={voiceInput.cancel}
-              />
-            ) : (
-              <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
-                {attachMenu}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Model, effort and permissions"
-                  onPress={() => {
-                    useThreadSettings.setState({ session: settingsSession });
-                    router.push("/thread-settings");
-                  }}
-                  className="h-11 max-w-[190px] shrink flex-row items-center gap-2 rounded-xl px-2 active:bg-muted"
-                >
-                  <ProviderLogo provider={provider} className="size-4 text-foreground" />
-                  <Text numberOfLines={1} className="shrink text-sm font-medium">
-                    {model?.label ?? PROVIDER_NAME[provider]}
-                  </Text>
-                  <Icon name="chevron.down" weight="semibold" className="size-2.5" />
-                </Pressable>
-              </View>
-            )}
+            <ComposerDictationStatus
+              audioLevels={voiceInput.audioLevels}
+              elapsedSeconds={voiceInput.elapsedSeconds}
+              phase={voiceInput.state.phase}
+              presentation={voiceInput.presentation}
+              onDismissError={voiceInput.cancel}
+            />
             <View className="shrink-0 flex-row items-center">
               <ComposerDictationPrimaryAction
                 state={voiceInput.state}
@@ -887,8 +848,8 @@ export function Composer({
               {voiceInput.presentation.showsSend || (isWorking && !text.trim()) ? sendButton : null}
             </View>
           </ComposerDictationToolbar>
-        </Animated.View>
-      </Animated.View>
+        </View>
+      </View>
     </View>
   );
 }

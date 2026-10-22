@@ -1,7 +1,5 @@
-import { GlassView } from "expo-glass-effect";
 import type { SFSymbol } from "expo-symbols";
 import { Pressable, ScrollView, View } from "react-native";
-import { withUniwind } from "uniwind";
 import { cn } from "@/shared/lib/cn";
 import { Icon, Text } from "@/shared/ui";
 
@@ -11,10 +9,6 @@ export interface ComposerCommandItem {
   readonly description: string;
   readonly onSelect: () => void;
 }
-
-const StyledGlassView = withUniwind(GlassView, {
-  tintColor: { fromClassName: "tintColorClassName", styleProperty: "accentColor" },
-});
 
 /** Matches for the `/`, `$` or `@` word at the caret, floating above the composer; a tap inserts one. */
 export function ComposerCommandMenu({
@@ -31,11 +25,7 @@ export function ComposerCommandMenu({
 }) {
   return (
     <View className="absolute inset-x-3 bottom-full z-10 mb-2">
-      <StyledGlassView
-        glassEffectStyle="clear"
-        tintColorClassName="accent-background/70"
-        className="overflow-hidden rounded-2xl"
-      >
+      <View className="shadow-composer-shadow overflow-hidden rounded-2xl border border-border-strong bg-muted shadow-[0_6px_28px]">
         <Text className="px-3.5 pt-2.5 pb-1 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
           {title}
         </Text>
@@ -71,7 +61,7 @@ export function ComposerCommandMenu({
         ) : (
           <Text className="px-3.5 py-2.5 text-xs text-muted-foreground">{emptyText}</Text>
         )}
-      </StyledGlassView>
+      </View>
     </View>
   );
 }

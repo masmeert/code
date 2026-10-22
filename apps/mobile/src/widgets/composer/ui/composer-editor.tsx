@@ -61,8 +61,6 @@ interface NativeComposerEditorProps extends ViewProps {
   readonly onComposerContentSizeChange: (
     event: NativeSyntheticEvent<{ readonly width: number; readonly height: number }>,
   ) => void;
-  readonly onComposerFocus: () => void;
-  readonly onComposerBlur: () => void;
   readonly onComposerSubmit: (event: NativeSyntheticEvent<{ readonly alternate: boolean }>) => void;
 }
 
@@ -96,9 +94,8 @@ export function ComposerEditor({
   onSelectionChange,
   onPasteImages,
   onPasteText,
-  onFocus,
-  onBlur,
   onSubmit,
+  onContentSizeChange,
 }: {
   value: string;
   selection: ComposerEditorSelection;
@@ -111,16 +108,15 @@ export function ComposerEditor({
   submitTitle: string;
   /** What Command-Return does. */
   alternateSubmitTitle: string;
-  /** Bounds the height with `min-h-*` and `max-h-*`; within them it fits the text. */
   className: string;
   onChangeText: (value: string) => void;
   onSelectionChange: (selection: ComposerEditorSelection) => void;
   onPasteImages: (uris: ReadonlyArray<string>) => void;
   onPasteText: (paste: ComposerTextPaste) => void;
-  onFocus: () => void;
-  onBlur: () => void;
   /** A hardware keyboard's Return; `alternate` for Command-Return. */
   onSubmit: (alternate: boolean) => void;
+  /** The text's size with the vertical insets, measured natively; the caller sizes the field. */
+  onContentSizeChange: (size: { width: number; height: number }) => void;
 }) {
   const mostRecentEventCountRef = useRef(0);
   const [mostRecentEventCount, setMostRecentEventCount] = useState(0);
@@ -131,13 +127,12 @@ export function ComposerEditor({
   const nativeEventSnapshotsRef = useRef<ComposerNativeEventSnapshot[]>([]);
   const confirmedTokensRef = useRef(collectComposerInlineTokens(value));
   const { fontScale } = useWindowDimensions();
-  const [contentHeight, setContentHeight] = useState<number>();
 
   const themeJson = JSON.stringify({
     text: useClassColor("text-foreground"),
     placeholder: useClassColor("text-muted-foreground/55"),
     caret: useClassColor("text-brand"),
-    chipBackground: useClassColor("text-muted"),
+    chipBackground: useClassColor("text-foreground/5"),
     chipBorder: useClassColor("text-border-strong"),
     skillBackground: useClassColor("text-brand/12"),
     skillBorder: useClassColor("text-brand/35"),
@@ -250,8 +245,6 @@ export function ComposerEditor({
       scrollEnabled={scrollEnabled}
       textPasteThresholdBytes={PASTED_TEXT_ATTACHMENT_THRESHOLD_BYTES}
       className={className}
-      // The text's height, measured natively; `className`'s bounds clamp it.
-      style={{ height: contentHeight }}
       onComposerChange={({ nativeEvent }) => {
         if (!acceptNativeEvent(nativeEvent.eventCount, nativeEvent.value, nativeEvent.selection))
           return;
@@ -281,9 +274,7 @@ export function ComposerEditor({
         onSelectionChange(nativeEvent.selection);
         onPasteText(nativeEvent);
       }}
-      onComposerContentSizeChange={({ nativeEvent }) => setContentHeight(nativeEvent.height)}
-      onComposerFocus={onFocus}
-      onComposerBlur={onBlur}
+      onComposerContentSizeChange={({ nativeEvent }) => onContentSizeChange(nativeEvent)}
       onComposerSubmit={({ nativeEvent }) => onSubmit(nativeEvent.alternate)}
     />
   );

@@ -37,6 +37,7 @@
   --color-warning: var(--warning);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
+  --color-composer-shadow: var(--composer-shadow);
   /* 14 / 20 / 28: keys and rows, fields and icon buttons, cards. */
   --radius-lg: 0.875rem;
   --radius-xl: 1.25rem;
@@ -65,6 +66,7 @@
       --warning: oklch(60% 0.2 48);
       --success: oklch(55% 0.1 175);
       --success-foreground: oklch(99% 0 0);
+      --composer-shadow: rgb(0 0 0 / 15%);
     }
 
     @variant dark {
@@ -87,6 +89,7 @@
       --warning: #ff7300;
       --success: #99ffe4;
       --success-foreground: #101010;
+      --composer-shadow: rgb(0 0 0 / 35%);
     }
 
     /* React Native takes one font name, not a fallback list. */

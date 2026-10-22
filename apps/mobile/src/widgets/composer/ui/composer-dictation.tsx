@@ -4,7 +4,6 @@ import { ActivityIndicator, Linking, Pressable, View } from "react-native";
 import Animated, {
   Easing,
   type EntryExitAnimationFunction,
-  type LayoutAnimationFunction,
   ReduceMotion,
   type SharedValue,
   useAnimatedStyle,
@@ -92,18 +91,14 @@ const WAVEFORM_TIMING = {
   reduceMotion: ReduceMotion.System,
 };
 
-/** Rotates the compact draft away without unmounting or resizing its text field. */
+/** Rotates the draft's row away without unmounting or resizing its text field. */
 export function ComposerDictationDraftContent({
   children,
   className,
-  layout,
-  compact,
   hidden,
 }: {
   children: ReactNode;
   className?: string;
-  layout: LayoutAnimationFunction;
-  compact: boolean;
   hidden: boolean;
 }) {
   const rotation = useSharedValue(hidden ? 1 : 0);
@@ -114,14 +109,12 @@ export function ComposerDictationDraftContent({
 
   // The flip is a running animation, which classes can't drive.
   const animatedStyle = useAnimatedStyle(() => ({
-    opacity: compact ? 1 - rotation.value : 1,
-    transform: compact
-      ? [
-          { perspective: TOOLBAR_PERSPECTIVE },
-          { translateY: -TOOLBAR_HALF_HEIGHT * Math.sin((rotation.value * Math.PI) / 2) },
-          { rotateX: `${rotation.value * 90}deg` },
-        ]
-      : [],
+    opacity: 1 - rotation.value,
+    transform: [
+      { perspective: TOOLBAR_PERSPECTIVE },
+      { translateY: -TOOLBAR_HALF_HEIGHT * Math.sin((rotation.value * Math.PI) / 2) },
+      { rotateX: `${rotation.value * 90}deg` },
+    ],
   }));
 
   return (
@@ -129,7 +122,6 @@ export function ComposerDictationDraftContent({
       accessibilityElementsHidden={hidden}
       collapsable={false}
       className={className}
-      layout={layout}
       pointerEvents={hidden ? "none" : "auto"}
       style={animatedStyle}
     >
