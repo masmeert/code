@@ -96,6 +96,7 @@ export function createOrchestration({
   publish,
   reportErrorsIn,
   setQueue,
+  setTitle,
   send,
   interrupt,
   ensureHarnessReady,
@@ -104,7 +105,10 @@ export function createOrchestration({
   setUpWorktree,
   openThread,
   pullRequestWatch,
-}: Pick<ThreadRegistry, "threads" | "getEntry" | "publish" | "reportErrorsIn" | "setQueue"> &
+}: Pick<
+  ThreadRegistry,
+  "threads" | "getEntry" | "publish" | "reportErrorsIn" | "setQueue" | "setTitle"
+> &
   Pick<Agents, "send" | "interrupt" | "ensureHarnessReady" | "findHarnessProblem"> &
   Pick<ThreadOpener, "createWorktree" | "setUpWorktree" | "openThread"> & {
     readonly store: typeof ThreadStore.Service;
@@ -592,12 +596,27 @@ export function createOrchestration({
         : ceiling;
 
     const permission = yield* checkPermissionCeiling(caller, input.permission ?? fallback);
+
+    if (input.mode === "restart" && isTurnActive(target.info.status)) {
+      yield* interrupt(target);
+      const deadline = Date.now() + 30_000;
+
+      while (isTurnActive(target.info.status)) {
+        if (Date.now() >= deadline)
+          return yield* new CommandError({
+            message: `"${target.info.title}" didn't stop within 30 seconds. Try again, or send with mode "queue".`,
+          });
+
+        yield* Effect.sleep("200 millis");
+      }
+    }
+
     yield* send(
       target,
       input.text,
       { effort: null, permission, attachments: [] },
       {
-        queue: input.queue,
+        queue: input.mode === "queue",
         messageId: input.requestId ? deriveRequestUuid(callerId, input.requestId) : undefined,
         from: MessageSender.cases.agent.make({ threadId: callerId, title: caller.info.title }),
       },
@@ -609,6 +628,23 @@ export function createOrchestration({
   return {
     followTurns,
     listHarnesses,
+    /** Starts each thread in turn, so worktrees aren't made all at once; one failing doesn't stop the rest. */
+    startThreads: (callerId: string, inputs: ReadonlyArray<StartThreadInput>) =>
+      Effect.map(
+        Effect.forEach(inputs, (input) =>
+          Effect.match(startThread(callerId, { ...input, wait: false }), {
+            onSuccess: (thread) => thread,
+            onFailure: (error) => ({ prompt: clip(input.prompt, 80), error: error.message }),
+          }),
+        ),
+        (started) => ({ threads: started }),
+      ),
+    renameThread: (_callerId: string, threadId: string, title: string) =>
+      Effect.map(getTargetEntry(threadId), (entry) => {
+        setTitle(entry, deriveTitle(title, entry.info.title));
+
+        return summarizeThread(entry);
+      }),
     listThreads: (callerId: string) =>
       Effect.map(getEntry(callerId), (caller) => ({
         threads: [...threads.values()]

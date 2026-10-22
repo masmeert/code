@@ -71,11 +71,11 @@ const StartThreadInput = {
 const SendMessageInput = {
   threadId: z.string(),
   text: z.string(),
-  queue: z
-    .boolean()
+  mode: z
+    .enum(["auto", "queue", "restart"])
     .optional()
     .describe(
-      "If its agent is working: wait for its turn to end instead of joining the turn in progress.",
+      "If its agent is working: `auto` joins the turn in progress, `queue` waits for the turn to end, `restart` stops the turn (and threads it started) and starts a new one with your message. `auto` when left out.",
     ),
   permission: z.enum(PermissionLevel.literals).optional().describe("No more than yours."),
   requestId: z.string().optional().describe("Retrying with the same id doesn't send it twice."),
@@ -123,6 +123,15 @@ interface Orchestration {
     view: "messages" | "activity" | undefined,
   ) => Effect.Effect<unknown, Error>;
   readonly startThread: (caller: string, input: StartThreadInput) => Effect.Effect<unknown, Error>;
+  readonly startThreads: (
+    caller: string,
+    inputs: ReadonlyArray<StartThreadInput>,
+  ) => Effect.Effect<unknown, Error>;
+  readonly renameThread: (
+    caller: string,
+    threadId: string,
+    title: string,
+  ) => Effect.Effect<unknown, Error>;
   readonly sendMessage: (caller: string, input: SendMessageInput) => Effect.Effect<unknown, Error>;
   readonly answerQuestions: (
     caller: string,
@@ -215,6 +224,30 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
       inputSchema: StartThreadInput,
     },
     (input) => runToolEffect(orchestration.startThread(caller, input)),
+  );
+
+  server.registerTool(
+    "start_threads",
+    {
+      description:
+        "Starts several threads at once, one per task, each like start_thread without waiting. Returns each one's id, or why it couldn't start. Their answers come to you as messages.",
+      inputSchema: {
+        threads: z
+          .array(z.object(StartThreadInput).omit({ wait: true, timeoutSeconds: true }))
+          .min(1)
+          .max(10),
+      },
+    },
+    ({ threads }) => runToolEffect(orchestration.startThreads(caller, threads)),
+  );
+
+  server.registerTool(
+    "rename_thread",
+    {
+      description: "Renames a thread in the user's sidebar: yours, or another in your project.",
+      inputSchema: { threadId: z.string(), title: z.string() },
+    },
+    ({ threadId, title }) => runToolEffect(orchestration.renameThread(caller, threadId, title)),
   );
 
   server.registerTool(
