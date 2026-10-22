@@ -626,9 +626,7 @@ const AssistantTurn = memo(
   ({ items, threadId, isBusy, isLast }: AssistantTurnProps) => {
     const lastItem = items.at(-1);
     const isLive = isBusy && isLast;
-    // Until the turn ends, trailing text may be a note before the next tool call; showing it as the answer only to fold it away is noise.
-    const heldAnswerId = isLive && lastItem?.kind === "assistant" ? lastItem.id : undefined;
-    const blocks = useMemo(() => toBlocks(items, heldAnswerId), [items, heldAnswerId]);
+    const blocks = useMemo(() => toBlocks(items), [items]);
     const finalTextId = blocks.findLast((block) => block.kind === "assistant")?.id;
 
     return (
@@ -675,7 +673,7 @@ const AssistantTurn = memo(
     hasSameItems(previous.items, next.items),
 );
 
-/** The way to the answer, folded like thinking: what it's doing now while it streams, what it did once done. */
+/** The work between two messages, folded like thinking: what it's doing now while it streams, what it did once done. */
 function WorkBlock({
   items,
   threadId,

@@ -56,8 +56,8 @@ export function toTurns(items: ReadonlyArray<TranscriptItem>): Array<Turn> {
 export type ToolItem = Extract<TranscriptItem, { kind: "tool" }>;
 
 /**
- * Within a turn, consecutive tool calls collapse into one group row, and the thinking, tool
- * calls and messages on the way to the answer fold into one work row.
+ * Within a turn, consecutive tool calls collapse into one group row, and the thinking and tool
+ * calls between two messages fold into one work row. The messages themselves stay visible.
  */
 export type Block =
   | { readonly kind: "tools"; readonly id: string; readonly calls: Array<ToolItem> }
@@ -87,7 +87,6 @@ function isWork(item: TranscriptItem) {
   return (
     item.kind === "reasoning" ||
     item.kind === "tool" ||
-    item.kind === "assistant" ||
     (item.kind === "approval" &&
       item.resolved &&
       item.decision !== "deny" &&
@@ -96,19 +95,11 @@ function isWork(item: TranscriptItem) {
   );
 }
 
-export function toBlocks(
-  items: ReadonlyArray<TranscriptItem>,
-  heldAnswerId?: string,
-): Array<Block> {
-  const lastWork = items.findLast(isWork);
-
-  const answer =
-    lastWork?.kind === "assistant" && lastWork.id !== heldAnswerId ? lastWork : undefined;
-
+export function toBlocks(items: ReadonlyArray<TranscriptItem>): Array<Block> {
   const blocks: Array<Block> = [];
 
   for (const item of items) {
-    if (item.kind !== "tool" && (item === answer || !isWork(item))) {
+    if (item.kind !== "tool" && !isWork(item)) {
       blocks.push(item);
       continue;
     }
@@ -119,12 +110,12 @@ export function toBlocks(
     else blocks.push({ kind: "work", id: item.id, items: [item] });
   }
 
-  // A lone thinking block or tool group already folds to one row; lone held text still needs the work row to fold into.
+  // A lone thinking block or tool group already folds to one row.
   return blocks.flatMap((block) => {
     if (block.kind !== "work") return [block];
     const inner = toToolGroups(block.items);
 
-    return inner.length === 1 && inner[0].id !== heldAnswerId ? inner : [block];
+    return inner.length === 1 ? inner : [block];
   });
 }
 
