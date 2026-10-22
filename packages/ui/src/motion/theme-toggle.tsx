@@ -8,7 +8,7 @@ import { cn } from "@masscode/ui/lib/utils";
 
 export type ThemeVariant = "rectangle" | "circle" | "circle-blur" | "blinds";
 
-export type RectStart =
+export type RevealOrigin =
   | "top-left"
   | "top-right"
   | "bottom-left"
@@ -28,7 +28,7 @@ export interface ThemeToggleOptions {
   /** Animation variant. Default: "rectangle". */
   variant?: ThemeVariant;
   /** Origin direction for the reveal. Default: "bottom-up". */
-  start?: RectStart;
+  origin?: RevealOrigin;
 }
 
 export interface ThemeToggleProps
@@ -112,7 +112,7 @@ html[data-theme-vt="blinds"]::view-transition-new(root) {
 }
 `;
 
-const RECT_FROM: Record<RectStart, string> = {
+const RECTANGLE_CLIP_FROM: Record<RevealOrigin, string> = {
   "top-left": "inset(0 100% 100% 0)",
   "top-right": "inset(0 0 100% 100%)",
   "bottom-left": "inset(100% 100% 0 0)",
@@ -121,7 +121,7 @@ const RECT_FROM: Record<RectStart, string> = {
   "bottom-up": "inset(100% 0 0 0)",
 };
 
-const CIRCLE_ORIGIN: Record<RectStart, string> = {
+const CIRCLE_ORIGIN: Record<RevealOrigin, string> = {
   "top-left": "0% 0%",
   "top-right": "100% 0%",
   "bottom-left": "0% 100%",
@@ -134,9 +134,9 @@ export function useThemeToggle({
   dark,
   onDarkChange,
   variant = "rectangle",
-  start = "bottom-up",
+  origin = "bottom-up",
 }: ThemeToggleOptions) {
-  const reduce = useReducedMotion() ?? false;
+  const prefersReducedMotion = useReducedMotion() ?? false;
   useEffect(() => {
     if (document.getElementById(VT_STYLE_ID)) return;
     const el = document.createElement("style");
@@ -148,7 +148,7 @@ export function useThemeToggle({
   const toggle = () => {
     const next = !dark;
 
-    if (reduce || !("startViewTransition" in document)) {
+    if (prefersReducedMotion || !("startViewTransition" in document)) {
       onDarkChange(next);
       return;
     }
@@ -156,25 +156,27 @@ export function useThemeToggle({
     const root = document.documentElement;
 
     if (variant === "rectangle") {
-      root.style.setProperty("--theme-vt-from", RECT_FROM[start]);
+      root.style.setProperty("--theme-vt-from", RECTANGLE_CLIP_FROM[origin]);
       root.dataset.themeVt = "rect";
     } else if (variant === "blinds") {
       // Slats sweep the whole viewport; there is no origin point to set.
       root.dataset.themeVt = "blinds";
     } else {
-      root.style.setProperty("--theme-vt-origin", CIRCLE_ORIGIN[start]);
+      root.style.setProperty("--theme-vt-origin", CIRCLE_ORIGIN[origin]);
       root.dataset.themeVt = variant;
     }
 
-    const vt = (
+    const viewTransition = (
       document as Document & {
         startViewTransition(cb: () => void): { finished: Promise<void> };
       }
     ).startViewTransition(() => flushSync(() => onDarkChange(next)));
 
-    vt.finished.finally(() => {
-      delete root.dataset.themeVt;
-    });
+    viewTransition.finished
+      .finally(() => {
+        delete root.dataset.themeVt;
+      })
+      .catch(() => {});
   };
 
   return { toggle };
@@ -184,12 +186,12 @@ export function ThemeToggle({
   dark,
   onDarkChange,
   variant = "rectangle",
-  start = "bottom-up",
+  origin = "bottom-up",
   className,
   iconClassName,
   ...rest
 }: ThemeToggleProps) {
-  const { toggle } = useThemeToggle({ dark, onDarkChange, variant, start });
+  const { toggle } = useThemeToggle({ dark, onDarkChange, variant, origin });
 
   return (
     <button

@@ -7,7 +7,7 @@ import {
   type ReactElement,
   type ReactNode,
   useCallback,
-  useContext,
+  use,
   useEffect,
   useId,
   useMemo,
@@ -29,7 +29,7 @@ type CenterMorphModalContextValue = {
 const CenterMorphModalContext = createContext<CenterMorphModalContextValue | null>(null);
 
 function useCenterMorphModalContext(component: string) {
-  const context = useContext(CenterMorphModalContext);
+  const context = use(CenterMorphModalContext);
   if (!context) {
     throw new Error(`${component} must be used within <CenterMorphModal>`);
   }
@@ -78,9 +78,7 @@ export function CenterMorphModal({
     [id, open, setOpen],
   );
 
-  return (
-    <CenterMorphModalContext.Provider value={value}>{children}</CenterMorphModalContext.Provider>
-  );
+  return <CenterMorphModalContext value={value}>{children}</CenterMorphModalContext>;
 }
 
 export interface CenterMorphModalTriggerProps {
@@ -175,7 +173,7 @@ export function CenterMorphModalContent({
   backdropClassName,
 }: CenterMorphModalContentProps) {
   const context = useCenterMorphModalContext("CenterMorphModalContent");
-  const reduce = useReducedMotion() ?? false;
+  const prefersReducedMotion = useReducedMotion() ?? false;
   const [mounted, setMounted] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -192,7 +190,7 @@ export function CenterMorphModalContent({
       (firstFocusable ?? panelRef.current)?.focus();
     });
 
-    const onKeyDown = (event: KeyboardEvent) => {
+    function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape" && dismissible) {
         event.preventDefault();
         context.setOpen(false);
@@ -216,7 +214,7 @@ export function CenterMorphModalContent({
         event.preventDefault();
         first.focus();
       }
-    };
+    }
 
     window.addEventListener("keydown", onKeyDown);
     return () => {
@@ -245,12 +243,12 @@ export function CenterMorphModalContent({
                 exit={{ opacity: 0 }}
                 {...gate}
                 transition={{
-                  duration: reduce ? 0.1 : 0.28,
+                  duration: prefersReducedMotion ? 0.1 : 0.28,
                   ease: EASE_OUT,
                 }}
                 onClick={() => context.setOpen(false)}
                 className={cn(
-                  "pointer-events-auto fixed inset-0 z-[100] h-full w-full cursor-default bg-background/10 backdrop-blur-sm",
+                  "pointer-events-auto fixed inset-0 z-100 h-full w-full cursor-default bg-background/10 backdrop-blur-sm",
                   backdropClassName,
                 )}
               />
@@ -261,7 +259,7 @@ export function CenterMorphModalContent({
                   tests/fixed-overlay-edge-sampling.test.tsx. */}
               <div
                 inert={!isPresent}
-                className="pointer-events-none fixed inset-4 z-[100] flex items-center justify-center overflow-y-auto [filter:drop-shadow(0_1px_1px_rgb(0_0_0/0.06))_drop-shadow(0_8px_20px_rgb(0_0_0/0.12))]"
+                className="pointer-events-none fixed inset-4 z-100 flex items-center justify-center overflow-y-auto [filter:drop-shadow(0_1px_1px_rgb(0_0_0/0.06))_drop-shadow(0_8px_20px_rgb(0_0_0/0.12))]"
               >
                 {/* Drop-shadow reads the clipped child's alpha, so depth follows the
                     unfolding silhouette without introducing another panel layer. */}
@@ -275,7 +273,7 @@ export function CenterMorphModalContent({
                     aria-describedby={ariaDescribedBy}
                     tabIndex={-1}
                     initial={
-                      reduce
+                      prefersReducedMotion
                         ? { opacity: 0, clipPath: CENTER_OPEN_CLIP }
                         : { opacity: 1, clipPath: CENTER_FOLDED_CLIP }
                     }
@@ -284,7 +282,7 @@ export function CenterMorphModalContent({
                       clipPath: CENTER_OPEN_CLIP,
                     }}
                     exit={
-                      reduce
+                      prefersReducedMotion
                         ? {
                             opacity: 0,
                             clipPath: CENTER_OPEN_CLIP,
@@ -298,10 +296,12 @@ export function CenterMorphModalContent({
                     // A no-op onUpdate keeps Motion off WAAPI: a compositor clip-path animation doesn't repaint the parent's drop-shadow until it ends.
                     onUpdate={() => {}}
                     transition={
-                      reduce ? { duration: 0.14, ease: EASE_OUT } : CENTER_UNFOLD_TRANSITION
+                      prefersReducedMotion
+                        ? { duration: 0.14, ease: EASE_OUT }
+                        : CENTER_UNFOLD_TRANSITION
                     }
                     className={cn(
-                      "pointer-events-auto relative w-full max-w-[26rem] origin-center overflow-hidden rounded-[30px] border border-border bg-background will-change-[clip-path]",
+                      "pointer-events-auto relative w-full max-w-104 origin-center overflow-hidden rounded-[30px] border border-border bg-popover will-change-[clip-path]",
                       className,
                     )}
                   >
@@ -312,21 +312,21 @@ export function CenterMorphModalContent({
                         type="button"
                         aria-label={closeButtonLabel}
                         onClick={() => context.setOpen(false)}
-                        initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.8 }}
+                        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{
                           opacity: 0,
-                          scale: reduce ? 1 : 0.88,
+                          scale: prefersReducedMotion ? 1 : 0.88,
                           transition: { duration: 0.1, ease: EASE_OUT },
                         }}
                         transition={{
-                          delay: reduce ? 0 : 0.16,
-                          duration: reduce ? 0.12 : 0.2,
+                          delay: prefersReducedMotion ? 0 : 0.16,
+                          duration: prefersReducedMotion ? 0.12 : 0.2,
                           ease: EASE_OUT,
                         }}
-                        className="absolute top-4 right-4 inline-flex h-8 w-8 items-center justify-center rounded-full bg-foreground/[0.05] text-muted-foreground transition-colors hover:bg-foreground/[0.08] hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring focus-visible:outline-none"
+                        className="absolute top-4 right-4 inline-flex size-8 items-center justify-center rounded-full bg-foreground/5 text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring focus-visible:outline-none"
                       >
-                        <X className="h-4 w-4" aria-hidden="true" />
+                        <X className="size-4" aria-hidden="true" />
                       </motion.button>
                     ) : null}
                   </motion.div>

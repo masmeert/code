@@ -39,8 +39,8 @@ export interface BouncyAccordionProps {
 // their mt-3 resting point and briefly overlaps the next item.
 const ROW_TRANSITION: Transition = {
   type: "spring",
-  duration: 0.55,
-  bounce: 0.38,
+  duration: 0.5,
+  bounce: 0.18,
 };
 
 const CONTENT_OPEN_TRANSITION: Transition = {
@@ -49,10 +49,12 @@ const CONTENT_OPEN_TRANSITION: Transition = {
   bounce: 0.32,
 };
 
+// Closing animates height toward 0, so any bounce undershoots past zero and the
+// row visibly collapses through itself before settling.
 const CONTENT_CLOSE_TRANSITION: Transition = {
   type: "spring",
-  duration: 0.46,
-  bounce: 0.26,
+  duration: 0.36,
+  bounce: 0,
 };
 
 const DESCRIPTION_TRANSITION: Transition = {
@@ -101,7 +103,7 @@ function BouncyAccordionRow({
   separatedFromPrevious,
   contentId,
   triggerId,
-  reduce,
+  prefersReducedMotion,
   classNames,
   onToggle,
 }: {
@@ -112,12 +114,14 @@ function BouncyAccordionRow({
   separatedFromPrevious: boolean;
   contentId: string;
   triggerId: string;
-  reduce: boolean | null;
+  prefersReducedMotion: boolean | null;
   classNames?: BouncyAccordionClassNames;
   onToggle: () => void;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState(0);
+  const [everOpened, setEverOpened] = useState(open);
+  if (open && !everOpened) setEverOpened(true);
 
   useLayoutEffect(() => {
     const node = contentRef.current;
@@ -142,7 +146,7 @@ function BouncyAccordionRow({
       layout="position"
       initial={false}
       style={{ marginTop: separatedFromPrevious ? 12 : 0 }}
-      transition={reduce ? { duration: 0 } : ROW_TRANSITION}
+      transition={prefersReducedMotion ? { duration: 0 } : ROW_TRANSITION}
     >
       <motion.div
         data-state={open ? "open" : "closed"}
@@ -153,7 +157,7 @@ function BouncyAccordionRow({
           borderBottomLeftRadius: endsGroup ? 28 : 0,
           borderBottomRightRadius: endsGroup ? 28 : 0,
         }}
-        transition={reduce ? { duration: 0 } : ROW_TRANSITION}
+        transition={prefersReducedMotion ? { duration: 0 } : ROW_TRANSITION}
         className={cn(
           "overflow-hidden bg-card text-card-foreground",
           item.disabled && "opacity-50",
@@ -168,7 +172,7 @@ function BouncyAccordionRow({
           aria-controls={contentId}
           onClick={onToggle}
           className={cn(
-            "flex min-h-[54px] w-full items-center gap-4 px-5 text-left transition-colors outline-none",
+            "flex min-h-13.5 w-full items-center gap-4 px-5 text-left transition-colors outline-none",
             "focus-visible:bg-muted/25",
             "disabled:pointer-events-none",
             classNames?.trigger,
@@ -195,7 +199,7 @@ function BouncyAccordionRow({
           <motion.span
             aria-hidden
             animate={{ rotate: open ? 180 : 0 }}
-            transition={reduce ? { duration: 0 } : CHEVRON_TRANSITION}
+            transition={prefersReducedMotion ? { duration: 0 } : CHEVRON_TRANSITION}
             className={cn(
               "grid h-6 w-6 shrink-0 place-items-center text-muted-foreground",
               classNames?.chevron,
@@ -206,16 +210,19 @@ function BouncyAccordionRow({
         </button>
 
         <motion.div
-          layout="size"
           id={contentId}
           role="region"
           aria-labelledby={triggerId}
           aria-hidden={!open}
           inert={!open}
           initial={false}
-          style={{ height: open && item.description ? contentHeight : 0 }}
+          animate={{ height: open && item.description ? contentHeight : 0 }}
           transition={
-            reduce ? { duration: 0 } : open ? CONTENT_OPEN_TRANSITION : CONTENT_CLOSE_TRANSITION
+            prefersReducedMotion
+              ? { duration: 0 }
+              : open
+                ? CONTENT_OPEN_TRANSITION
+                : CONTENT_CLOSE_TRANSITION
           }
           className={cn("overflow-hidden", classNames?.content)}
         >
@@ -224,13 +231,13 @@ function BouncyAccordionRow({
             animate={{
               opacity: open ? 1 : 0,
             }}
-            transition={reduce ? { duration: 0 } : DESCRIPTION_TRANSITION}
+            transition={prefersReducedMotion ? { duration: 0 } : DESCRIPTION_TRANSITION}
             className="px-5 pb-5"
           >
             <div
               className={cn("text-[15px] leading-6 text-muted-foreground", classNames?.description)}
             >
-              {item.description}
+              {everOpened ? item.description : null}
             </div>
           </motion.div>
         </motion.div>
@@ -248,7 +255,7 @@ export function BouncyAccordion({
   className,
   classNames,
 }: BouncyAccordionProps) {
-  const reduce = useReducedMotion();
+  const prefersReducedMotion = useReducedMotion();
   const baseId = useId();
   const [activeValue, setActiveValue] = useControllableAccordionValue({
     value,
@@ -293,7 +300,7 @@ export function BouncyAccordion({
             separatedFromPrevious={separatedFromPrevious}
             contentId={contentId}
             triggerId={triggerId}
-            reduce={reduce}
+            prefersReducedMotion={prefersReducedMotion}
             classNames={classNames}
             onToggle={() => toggleItem(item.id)}
           />

@@ -36,8 +36,7 @@ export interface LoaderProps {
   variant?: LoaderVariant;
   /** Base square size in px. Everything scales from this. */
   size?: number;
-  /** Seconds per animation cycle. */
-  speed?: number;
+  cycleSeconds?: number;
   /** Accessible label announced to screen readers. */
   label?: string;
   className?: string;
@@ -52,11 +51,11 @@ const REDUCED = {
 export function Loader({
   variant = "spinner",
   size = 32,
-  speed = 1,
+  cycleSeconds = 1,
   label = "Loading",
   className,
 }: LoaderProps) {
-  const reduce = useReducedMotion() ?? false;
+  const prefersReducedMotion = useReducedMotion() ?? false;
 
   return (
     <span
@@ -64,21 +63,90 @@ export function Loader({
       aria-label={label}
       className={cn("inline-flex items-center justify-center text-foreground", className)}
     >
-      {variant === "spinner" && <Spinner size={size} speed={speed} reduce={reduce} />}
-      {variant === "dots" && <Dots size={size} speed={speed} reduce={reduce} />}
-      {variant === "bars" && <Bars size={size} speed={speed} reduce={reduce} />}
-      {variant === "dot-matrix" && <DotMatrix size={size} speed={speed} reduce={reduce} />}
-      {variant === "dither" && <Dither size={size} speed={speed} reduce={reduce} />}
-      {ASCII_SETS[variant] && (
-        <Ascii frames={ASCII_SETS[variant]} size={size} speed={speed} reduce={reduce} />
+      {variant === "spinner" && (
+        <Spinner
+          size={size}
+          cycleSeconds={cycleSeconds}
+          prefersReducedMotion={prefersReducedMotion}
+        />
       )}
-      {variant === "morph" && <Morph size={size} speed={speed} reduce={reduce} />}
-      {variant === "comet" && <Comet size={size} speed={speed} reduce={reduce} />}
-      {variant === "scramble" && <Scramble size={size} speed={speed} reduce={reduce} />}
-      {variant === "metaballs" && <Metaballs size={size} speed={speed} reduce={reduce} />}
-      {variant === "newton" && <Newton size={size} speed={speed} reduce={reduce} />}
-      {variant === "helix" && <Helix size={size} speed={speed} reduce={reduce} />}
-      {variant === "percent" && <Percent size={size} speed={speed} reduce={reduce} />}
+      {variant === "dots" && (
+        <Dots size={size} cycleSeconds={cycleSeconds} prefersReducedMotion={prefersReducedMotion} />
+      )}
+      {variant === "bars" && (
+        <Bars size={size} cycleSeconds={cycleSeconds} prefersReducedMotion={prefersReducedMotion} />
+      )}
+      {variant === "dot-matrix" && (
+        <DotMatrix
+          size={size}
+          cycleSeconds={cycleSeconds}
+          prefersReducedMotion={prefersReducedMotion}
+        />
+      )}
+      {variant === "dither" && (
+        <Dither
+          size={size}
+          cycleSeconds={cycleSeconds}
+          prefersReducedMotion={prefersReducedMotion}
+        />
+      )}
+      {ASCII_SETS[variant] && (
+        <Ascii
+          frames={ASCII_SETS[variant]}
+          size={size}
+          cycleSeconds={cycleSeconds}
+          prefersReducedMotion={prefersReducedMotion}
+        />
+      )}
+      {variant === "morph" && (
+        <Morph
+          size={size}
+          cycleSeconds={cycleSeconds}
+          prefersReducedMotion={prefersReducedMotion}
+        />
+      )}
+      {variant === "comet" && (
+        <Comet
+          size={size}
+          cycleSeconds={cycleSeconds}
+          prefersReducedMotion={prefersReducedMotion}
+        />
+      )}
+      {variant === "scramble" && (
+        <Scramble
+          size={size}
+          cycleSeconds={cycleSeconds}
+          prefersReducedMotion={prefersReducedMotion}
+        />
+      )}
+      {variant === "metaballs" && (
+        <Metaballs
+          size={size}
+          cycleSeconds={cycleSeconds}
+          prefersReducedMotion={prefersReducedMotion}
+        />
+      )}
+      {variant === "newton" && (
+        <Newton
+          size={size}
+          cycleSeconds={cycleSeconds}
+          prefersReducedMotion={prefersReducedMotion}
+        />
+      )}
+      {variant === "helix" && (
+        <Helix
+          size={size}
+          cycleSeconds={cycleSeconds}
+          prefersReducedMotion={prefersReducedMotion}
+        />
+      )}
+      {variant === "percent" && (
+        <Percent
+          size={size}
+          cycleSeconds={cycleSeconds}
+          prefersReducedMotion={prefersReducedMotion}
+        />
+      )}
       <span className="sr-only">{label}</span>
     </span>
   );
@@ -86,11 +154,11 @@ export function Loader({
 
 interface PartProps {
   size: number;
-  speed: number;
-  reduce: boolean;
+  cycleSeconds: number;
+  prefersReducedMotion: boolean;
 }
 
-function Spinner({ size, speed, reduce }: PartProps) {
+function Spinner({ size, cycleSeconds, prefersReducedMotion }: PartProps) {
   const stroke = Math.max(2, size * 0.09);
   const r = (size - stroke) / 2;
   return (
@@ -98,9 +166,11 @@ function Spinner({ size, speed, reduce }: PartProps) {
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
-      animate={reduce ? REDUCED.animate : { rotate: 360 }}
+      animate={prefersReducedMotion ? REDUCED.animate : { rotate: 360 }}
       transition={
-        reduce ? REDUCED.transition : { duration: speed, ease: "linear", repeat: Infinity }
+        prefersReducedMotion
+          ? REDUCED.transition
+          : { duration: cycleSeconds, ease: "linear", repeat: Infinity }
       }
     >
       <circle
@@ -123,7 +193,7 @@ function Spinner({ size, speed, reduce }: PartProps) {
   );
 }
 
-function Dots({ size, speed, reduce }: PartProps) {
+function Dots({ size, cycleSeconds, prefersReducedMotion }: PartProps) {
   const dot = size * 0.24;
   return (
     <span className="flex items-center" style={{ gap: size * 0.14 }}>
@@ -133,13 +203,15 @@ function Dots({ size, speed, reduce }: PartProps) {
           className="rounded-full bg-current"
           style={{ width: dot, height: dot }}
           animate={
-            reduce ? { opacity: [0.4, 1, 0.4] } : { y: [0, -size * 0.3, 0], opacity: [0.5, 1, 0.5] }
+            prefersReducedMotion
+              ? { opacity: [0.4, 1, 0.4] }
+              : { y: [0, -size * 0.3, 0], opacity: [0.5, 1, 0.5] }
           }
           transition={{
-            duration: speed,
+            duration: cycleSeconds,
             ease: EASE_IN_OUT,
             repeat: Infinity,
-            delay: i * speed * 0.16,
+            delay: i * cycleSeconds * 0.16,
           }}
         />
       ))}
@@ -147,15 +219,21 @@ function Dots({ size, speed, reduce }: PartProps) {
   );
 }
 
-function Ascii({ frames, size, speed, reduce }: PartProps & { frames: string[] }) {
+function Ascii({
+  frames,
+  size,
+  cycleSeconds,
+  prefersReducedMotion,
+}: PartProps & { frames: string[] }) {
   const [frame, setFrame] = useState(0);
   useEffect(() => {
     // Reduced motion slows the cycle rather than stopping it — it's a glyph
     // swap, not on-screen movement.
-    const step = ((reduce ? speed * 2.5 : speed) / frames.length) * 1000;
+    const step =
+      ((prefersReducedMotion ? cycleSeconds * 2.5 : cycleSeconds) / frames.length) * 1000;
     const id = setInterval(() => setFrame((f) => (f + 1) % frames.length), step);
     return () => clearInterval(id);
-  }, [frames.length, speed, reduce]);
+  }, [frames.length, cycleSeconds, prefersReducedMotion]);
 
   return (
     <span className="font-mono leading-none tabular-nums" style={{ fontSize: size, lineHeight: 1 }}>
@@ -205,27 +283,31 @@ const MORPH_SEQ = [...MORPH_PATHS.flatMap((p) => [p, p]), MORPH_PATHS[0]];
 const MORPH_ROT = [0, 0, 72, 72, 144, 144, 216, 216, 288, 288, 360];
 const MORPH_SCALE = [1, 1, 0.88, 0.88, 1, 1, 0.88, 0.88, 1, 1, 1];
 
-function Morph({ size, speed, reduce }: PartProps) {
+function Morph({ size, cycleSeconds, prefersReducedMotion }: PartProps) {
   return (
     <motion.svg
       width={size}
       height={size}
       viewBox="0 0 100 100"
       role="img"
-      animate={reduce ? { opacity: [1, 0.4, 1] } : { rotate: MORPH_ROT, scale: MORPH_SCALE }}
+      animate={
+        prefersReducedMotion ? { opacity: [1, 0.4, 1] } : { rotate: MORPH_ROT, scale: MORPH_SCALE }
+      }
       transition={
-        reduce
+        prefersReducedMotion
           ? { duration: 1.4, ease: EASE_IN_OUT, repeat: Infinity }
-          : { duration: speed * 5, ease: EASE_IN_OUT, repeat: Infinity }
+          : { duration: cycleSeconds * 5, ease: EASE_IN_OUT, repeat: Infinity }
       }
     >
       <title>Loading</title>
       <motion.path
         fill="currentColor"
         d={MORPH_PATHS[0]}
-        animate={reduce ? undefined : { d: MORPH_SEQ }}
+        animate={prefersReducedMotion ? undefined : { d: MORPH_SEQ }}
         transition={
-          reduce ? undefined : { duration: speed * 5, ease: EASE_IN_OUT, repeat: Infinity }
+          prefersReducedMotion
+            ? undefined
+            : { duration: cycleSeconds * 5, ease: EASE_IN_OUT, repeat: Infinity }
         }
       />
     </motion.svg>
@@ -234,16 +316,18 @@ function Morph({ size, speed, reduce }: PartProps) {
 
 const COMET_TRAIL = [0, 1, 2, 3, 4, 5];
 
-function Comet({ size, speed, reduce }: PartProps) {
+function Comet({ size, cycleSeconds, prefersReducedMotion }: PartProps) {
   const head = size * 0.2;
   const r = size / 2 - head / 2;
   return (
     <span className="relative" style={{ width: size, height: size }}>
       <motion.span
         className="absolute inset-0"
-        animate={reduce ? REDUCED.animate : { rotate: 360 }}
+        animate={prefersReducedMotion ? REDUCED.animate : { rotate: 360 }}
         transition={
-          reduce ? REDUCED.transition : { duration: speed, ease: "linear", repeat: Infinity }
+          prefersReducedMotion
+            ? REDUCED.transition
+            : { duration: cycleSeconds, ease: "linear", repeat: Infinity }
         }
       >
         {COMET_TRAIL.map((i) => {
@@ -272,10 +356,10 @@ function Comet({ size, speed, reduce }: PartProps) {
 const SCRAMBLE_TARGET = "LOADING";
 const SCRAMBLE_GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<>/*#@";
 
-function Scramble({ size, speed, reduce }: PartProps) {
+function Scramble({ size, cycleSeconds, prefersReducedMotion }: PartProps) {
   const [text, setText] = useState(SCRAMBLE_TARGET);
   useEffect(() => {
-    if (reduce) {
+    if (prefersReducedMotion) {
       setText(SCRAMBLE_TARGET);
       return;
     }
@@ -294,10 +378,10 @@ function Scramble({ size, speed, reduce }: PartProps) {
         setText(s);
         tick++;
       },
-      (speed / SCRAMBLE_TARGET.length) * 1000 * 0.55,
+      (cycleSeconds / SCRAMBLE_TARGET.length) * 1000 * 0.55,
     );
     return () => clearInterval(id);
-  }, [speed, reduce]);
+  }, [cycleSeconds, prefersReducedMotion]);
 
   return (
     <span
@@ -309,7 +393,7 @@ function Scramble({ size, speed, reduce }: PartProps) {
   );
 }
 
-function Metaballs({ size, speed, reduce }: PartProps) {
+function Metaballs({ size, cycleSeconds, prefersReducedMotion }: PartProps) {
   const id = useId().replace(/:/g, "");
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" role="img">
@@ -324,16 +408,16 @@ function Metaballs({ size, speed, reduce }: PartProps) {
         <motion.circle
           cy="50"
           r="15"
-          animate={reduce ? { opacity: [0.4, 1, 0.4] } : { cx: [30, 70, 30] }}
-          transition={{ duration: speed * 1.6, ease: EASE_IN_OUT, repeat: Infinity }}
-          cx={reduce ? 40 : 30}
+          animate={prefersReducedMotion ? { opacity: [0.4, 1, 0.4] } : { cx: [30, 70, 30] }}
+          transition={{ duration: cycleSeconds * 1.6, ease: EASE_IN_OUT, repeat: Infinity }}
+          cx={prefersReducedMotion ? 40 : 30}
         />
         <motion.circle
           cy="50"
           r="15"
-          animate={reduce ? { opacity: [0.4, 1, 0.4] } : { cx: [70, 30, 70] }}
-          transition={{ duration: speed * 1.6, ease: EASE_IN_OUT, repeat: Infinity }}
-          cx={reduce ? 60 : 70}
+          animate={prefersReducedMotion ? { opacity: [0.4, 1, 0.4] } : { cx: [70, 30, 70] }}
+          transition={{ duration: cycleSeconds * 1.6, ease: EASE_IN_OUT, repeat: Infinity }}
+          cx={prefersReducedMotion ? 60 : 70}
         />
       </g>
     </svg>
@@ -342,7 +426,7 @@ function Metaballs({ size, speed, reduce }: PartProps) {
 
 const NEWTON_BALLS = [0, 1, 2, 3, 4];
 
-function Newton({ size, speed, reduce }: PartProps) {
+function Newton({ size, cycleSeconds, prefersReducedMotion }: PartProps) {
   const d = size * 0.2;
   const out = d * 1.1;
   // Only the end balls move: the left slides out and back on the first half,
@@ -362,12 +446,12 @@ function Newton({ size, speed, reduce }: PartProps) {
             key={i}
             className="rounded-full bg-current"
             style={{ width: d, height: d }}
-            animate={reduce || !move ? undefined : { x: move.x }}
+            animate={prefersReducedMotion || !move ? undefined : { x: move.x }}
             transition={
-              reduce || !move
+              prefersReducedMotion || !move
                 ? undefined
                 : {
-                    duration: speed * 1.5,
+                    duration: cycleSeconds * 1.5,
                     ease: EASE_IN_OUT,
                     repeat: Infinity,
                     times: move.times,
@@ -380,7 +464,7 @@ function Newton({ size, speed, reduce }: PartProps) {
   );
 }
 
-function Helix({ size, speed, reduce }: PartProps) {
+function Helix({ size, cycleSeconds, prefersReducedMotion }: PartProps) {
   const rows = 7;
   const dot = size * 0.14;
   const amp = size * 0.32;
@@ -388,14 +472,14 @@ function Helix({ size, speed, reduce }: PartProps) {
     <span className="relative" style={{ width: size, height: size }}>
       {Array.from({ length: rows }, (_, r) => {
         const top = (r / (rows - 1)) * (size - dot);
-        const delay = (r / rows) * speed;
+        const delay = (r / rows) * cycleSeconds;
         return (
           <span key={`row-${top}`}>
             <motion.span
               className="absolute rounded-full bg-current"
               style={{ width: dot, height: dot, left: size / 2 - dot / 2, top }}
               animate={
-                reduce
+                prefersReducedMotion
                   ? { opacity: [0.4, 1, 0.4] }
                   : {
                       x: [amp, -amp, amp],
@@ -404,7 +488,7 @@ function Helix({ size, speed, reduce }: PartProps) {
                     }
               }
               transition={{
-                duration: speed,
+                duration: cycleSeconds,
                 ease: EASE_IN_OUT,
                 repeat: Infinity,
                 delay,
@@ -414,7 +498,7 @@ function Helix({ size, speed, reduce }: PartProps) {
               className="absolute rounded-full bg-current"
               style={{ width: dot, height: dot, left: size / 2 - dot / 2, top }}
               animate={
-                reduce
+                prefersReducedMotion
                   ? { opacity: [0.4, 1, 0.4] }
                   : {
                       x: [-amp, amp, -amp],
@@ -423,7 +507,7 @@ function Helix({ size, speed, reduce }: PartProps) {
                     }
               }
               transition={{
-                duration: speed,
+                duration: cycleSeconds,
                 ease: EASE_IN_OUT,
                 repeat: Infinity,
                 delay,
@@ -436,10 +520,10 @@ function Helix({ size, speed, reduce }: PartProps) {
   );
 }
 
-function Percent({ size, speed, reduce }: PartProps) {
+function Percent({ size, cycleSeconds, prefersReducedMotion }: PartProps) {
   const [p, setP] = useState(0);
   useEffect(() => {
-    const dur = (reduce ? speed * 2 : speed) * 1000;
+    const dur = (prefersReducedMotion ? cycleSeconds * 2 : cycleSeconds) * 1000;
     const start = { t: 0 };
     const tickMs = 40;
     const id = setInterval(() => {
@@ -449,7 +533,7 @@ function Percent({ size, speed, reduce }: PartProps) {
       if (next >= 100) start.t = 0;
     }, tickMs);
     return () => clearInterval(id);
-  }, [speed, reduce]);
+  }, [cycleSeconds, prefersReducedMotion]);
 
   return (
     <span className="flex flex-col items-center" style={{ gap: size * 0.14, width: size * 1.4 }}>
@@ -469,7 +553,7 @@ function Percent({ size, speed, reduce }: PartProps) {
   );
 }
 
-function Bars({ size, speed, reduce }: PartProps) {
+function Bars({ size, cycleSeconds, prefersReducedMotion }: PartProps) {
   const bar = size * 0.16;
   return (
     <span className="flex items-center" style={{ gap: size * 0.1, height: size }}>
@@ -478,12 +562,12 @@ function Bars({ size, speed, reduce }: PartProps) {
           key={i}
           className="rounded-full bg-current"
           style={{ width: bar, height: size, originY: 1 }}
-          animate={reduce ? { opacity: [0.4, 1, 0.4] } : { scaleY: [0.3, 1, 0.3] }}
+          animate={prefersReducedMotion ? { opacity: [0.4, 1, 0.4] } : { scaleY: [0.3, 1, 0.3] }}
           transition={{
-            duration: speed,
+            duration: cycleSeconds,
             ease: EASE_IN_OUT,
             repeat: Infinity,
-            delay: i * speed * 0.12,
+            delay: i * cycleSeconds * 0.12,
           }}
         />
       ))}
@@ -491,7 +575,7 @@ function Bars({ size, speed, reduce }: PartProps) {
   );
 }
 
-function DotMatrix({ size, speed, reduce }: PartProps) {
+function DotMatrix({ size, cycleSeconds, prefersReducedMotion }: PartProps) {
   const n = 3;
   const gap = size * 0.14;
   const dot = (size - gap * (n - 1)) / n;
@@ -508,17 +592,19 @@ function DotMatrix({ size, speed, reduce }: PartProps) {
         const x = idx % n;
         const y = Math.floor(idx / n);
         // Diagonal wave: cells light in order of their distance from the corner.
-        const delay = ((x + y) / (2 * (n - 1))) * speed;
+        const delay = ((x + y) / (2 * (n - 1))) * cycleSeconds;
         return (
           <motion.span
             key={idx}
             className="rounded-full bg-current"
             style={{ width: dot, height: dot }}
             animate={
-              reduce ? { opacity: [0.3, 1, 0.3] } : { opacity: [0.2, 1, 0.2], scale: [0.7, 1, 0.7] }
+              prefersReducedMotion
+                ? { opacity: [0.3, 1, 0.3] }
+                : { opacity: [0.2, 1, 0.2], scale: [0.7, 1, 0.7] }
             }
             transition={{
-              duration: speed,
+              duration: cycleSeconds,
               ease: EASE_IN_OUT,
               repeat: Infinity,
               delay,
@@ -534,7 +620,7 @@ function DotMatrix({ size, speed, reduce }: PartProps) {
 // light in this order, so the fill shimmers like a dissolving halftone.
 const BAYER_4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 
-function Dither({ size, speed, reduce }: PartProps) {
+function Dither({ size, cycleSeconds, prefersReducedMotion }: PartProps) {
   const n = 4;
   const gap = Math.max(1, size * 0.05);
   const cell = (size - gap * (n - 1)) / n;
@@ -546,12 +632,12 @@ function Dither({ size, speed, reduce }: PartProps) {
           key={idx}
           className="bg-current"
           style={{ width: cell, height: cell }}
-          animate={reduce ? { opacity: [0.3, 1, 0.3] } : { opacity: [0.1, 1, 0.1] }}
+          animate={prefersReducedMotion ? { opacity: [0.3, 1, 0.3] } : { opacity: [0.1, 1, 0.1] }}
           transition={{
-            duration: speed,
+            duration: cycleSeconds,
             ease: EASE_IN_OUT,
             repeat: Infinity,
-            delay: (order / BAYER_4.length) * speed,
+            delay: (order / BAYER_4.length) * cycleSeconds,
           }}
         />
       ))}

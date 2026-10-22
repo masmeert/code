@@ -13,7 +13,7 @@ export type PortalLayout = {
   };
 };
 
-function sameLayout(a: PortalLayout | null, b: PortalLayout) {
+function isSameLayout(a: PortalLayout | null, b: PortalLayout) {
   return (
     a?.trigger.left === b.trigger.left &&
     a.trigger.top === b.trigger.top &&
@@ -53,7 +53,7 @@ export function usePopoverPortalPosition<
         height: content.offsetHeight,
       },
     };
-    setLayout((current) => (sameLayout(current, next) ? current : next));
+    setLayout((current) => (isSameLayout(current, next) ? current : next));
   }, [contentRef, triggerRef]);
 
   useLayoutEffect(() => {
@@ -66,12 +66,22 @@ export function usePopoverPortalPosition<
     if (trigger) observer.observe(trigger);
     if (content) observer.observe(content);
 
-    window.addEventListener("scroll", update, true);
-    window.addEventListener("resize", update);
+    let frame = 0;
+    function schedule() {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        update();
+      });
+    }
+
+    window.addEventListener("scroll", schedule, { capture: true, passive: true });
+    window.addEventListener("resize", schedule, { passive: true });
     return () => {
+      if (frame) cancelAnimationFrame(frame);
       observer.disconnect();
-      window.removeEventListener("scroll", update, true);
-      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", schedule, true);
+      window.removeEventListener("resize", schedule);
     };
   }, [active, contentRef, triggerRef, update]);
 
