@@ -15,6 +15,7 @@ import { CommandRun, TerminalInfo } from "./terminals.ts";
 import {
   Attachment,
   LimitStop,
+  MessageSender,
   PendingRequest,
   QueuedMessage,
   ThreadActivity,
@@ -23,6 +24,7 @@ import {
   ThreadUsage,
   UserAnswers,
   UserQuestion,
+  WatchedPullRequest,
 } from "./threads.ts";
 
 /** What a harness taking over a thread is told: the `messages` it missed while `from` had it. */
@@ -74,6 +76,11 @@ export const RuntimeEvent = Schema.TaggedUnion({
     threadId: Schema.String,
     queue: Schema.Array(QueuedMessage),
   },
+  /** The pull request the thread watches; null when it stops watching one. */
+  "thread.pullRequest": {
+    threadId: Schema.String,
+    pullRequest: Schema.NullOr(WatchedPullRequest),
+  },
   /** Null once the stop is answered, or a new turn starts. */
   "thread.limitStop": {
     threadId: Schema.String,
@@ -109,6 +116,8 @@ export const RuntimeEvent = Schema.TaggedUnion({
     provider: Schema.optionalKey(ProviderKind),
     /** What the harness was told ahead of it. */
     handoff: Schema.optionalKey(Handoff),
+    /** Missing when the user wrote it. */
+    from: Schema.optionalKey(MessageSender),
   },
   "assistant.delta": {
     threadId: Schema.String,
@@ -201,6 +210,11 @@ export const RuntimeEvent = Schema.TaggedUnion({
     byThreadId: Schema.String,
     /** That thread's title then, for when it's gone. */
     byTitle: Schema.String,
+  },
+  /** MassCode compacted the idle thread's conversation, of `tokens`, before its prompt cache expired. */
+  "thread.compacted": {
+    threadId: Schema.String,
+    tokens: Schema.Number,
   },
   /** How a new worktree's setup command ended; `stopped` when the user skipped it. */
   "worktree.setup": {
@@ -311,6 +325,7 @@ const TRANSCRIPT_TAGS = [
   "thread.rewound",
   "thread.forked",
   "thread.startedBy",
+  "thread.compacted",
   "worktree.setup",
 ] as const;
 

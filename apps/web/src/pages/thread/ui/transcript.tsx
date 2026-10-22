@@ -26,6 +26,8 @@ import {
   type Attachment,
   ClientCommand,
   type CommandRun,
+  MessageSender,
+  parseThreadLink,
   type ProviderKind,
   WORKTREE_SETUP_TERMINAL_ID,
 } from "@masscode/contracts";
@@ -36,8 +38,11 @@ import {
   FileDiff,
   FileText,
   GitFork,
+  GitPullRequest,
   ImageIcon,
   LoaderCircle,
+  Minimize2,
+  RotateCcw,
   Square,
   Undo2,
   Workflow,
@@ -48,6 +53,7 @@ import {
   createContext,
   lazy,
   memo,
+  type ReactNode,
   Suspense,
   use,
   useCallback,
@@ -409,6 +415,7 @@ const UserTurn = memo(
     ) : (
       <Message from="user" animateIn={animateIn} className="group/turn">
         <MessageContent className="gap-1.5">
+          {item.from ? <SenderNote from={item.from} /> : null}
           {item.handoff && item.provider ? (
             <HandoffNote handoff={item.handoff} to={item.provider} />
           ) : null}
@@ -433,6 +440,98 @@ const UserTurn = memo(
     previous.threadId === next.threadId &&
     previous.isBusy === next.isBusy,
 );
+
+/** An agent's link to a thread, as a way to it under the thread's current title. */
+function renderThreadLink(href: string, children: ReactNode) {
+  const threadId = parseThreadLink(href);
+
+  return threadId ? <ThreadLink threadId={threadId}>{children}</ThreadLink> : null;
+}
+
+function ThreadLink({ threadId, children }: { threadId: string; children: ReactNode }) {
+  const thread = useThreadStore((state) => state.threads[threadId]);
+
+  if (!thread) return <span className="text-muted-foreground">{children} (deleted)</span>;
+
+  return (
+    <button
+      type="button"
+      onClick={() => switchToThread(threadId)}
+      className="inline-flex items-baseline gap-1 rounded font-medium text-brand underline decoration-brand/40 underline-offset-4 transition-colors outline-none hover:decoration-brand focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Workflow className="size-3.5 shrink-0 self-center" />
+      {thread.title}
+    </button>
+  );
+}
+
+/** Above a message the user didn't write: who or what sent it. */
+function SenderNote({ from }: { from: MessageSender }) {
+  return MessageSender.match(from, {
+    agent: ({ threadId, title }) => (
+      <ThreadSenderNote threadId={threadId} title={title} label="From" />
+    ),
+    report: ({ threadId, title }) => (
+      <ThreadSenderNote threadId={threadId} title={title} label="Report from" />
+    ),
+    restart: () => (
+      <div className="flex items-center justify-end gap-1.5 text-xs text-muted-foreground">
+        <RotateCcw className="size-3.5 shrink-0" />
+        Sent by MassCode to pick up a turn it cut short
+      </div>
+    ),
+    pullRequest: ({ number, url }) => (
+      <div className="flex justify-end text-xs text-muted-foreground">
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1.5 rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <GitPullRequest className="size-3.5 shrink-0" />
+          News from pull request #{number}
+        </a>
+      </div>
+    ),
+  });
+}
+
+/** The thread a message came from, to go to. */
+function ThreadSenderNote({
+  threadId,
+  title,
+  label,
+}: {
+  threadId: string;
+  title: string;
+  label: string;
+}) {
+  const source = useThreadStore((state) => state.threads[threadId]);
+
+  return (
+    <div className="flex justify-end text-xs text-muted-foreground">
+      {source ? (
+        <button
+          type="button"
+          onClick={() => switchToThread(threadId)}
+          className="flex max-w-full items-center gap-1.5 rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Workflow className="size-3.5 shrink-0" />
+          <span className="truncate">
+            {label} {source.title}
+          </span>
+        </button>
+      ) : (
+        <span className="flex max-w-full items-center gap-1.5">
+          <Workflow className="size-3.5 shrink-0" />
+          <span className="truncate">
+            {label} {title} (deleted)
+          </span>
+        </span>
+      )}
+    </div>
+  );
+}
 
 /** Above a message sent right after switching harness: what the new one was told it missed. */
 function HandoffNote({
@@ -740,7 +839,11 @@ export const AgentBlock = memo(
       case "reasoning":
         return (
           <Reasoning label={thoughtTitle(block.id)} streaming={streaming}>
-            <Markdown streaming={streaming} className="selectable leading-relaxed">
+            <Markdown
+              streaming={streaming}
+              renderLink={renderThreadLink}
+              className="selectable leading-relaxed"
+            >
               {block.text}
             </Markdown>
           </Reasoning>
@@ -764,6 +867,14 @@ export const AgentBlock = memo(
         return <div className="selectable text-xs text-destructive">{block.text}</div>;
       case "checkpoint":
         return <CheckpointChip item={block} />;
+      case "compacted":
+        return (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Minimize2 className="size-3.5 shrink-0" />
+            Compacted while idle, before the prompt cache expired ({Math.round(block.tokens / 1000)}
+            K tokens)
+          </div>
+        );
     }
   },
   // Tool groups are rebuilt by `toBlocks`; compare the calls they hold instead.
@@ -831,6 +942,7 @@ function AssistantReply({
             streaming={streaming}
             onRunCommand={runReplyCommand}
             resolveImage={resolveImage}
+            renderLink={renderThreadLink}
             className="selectable leading-relaxed"
           >
             {item.text}

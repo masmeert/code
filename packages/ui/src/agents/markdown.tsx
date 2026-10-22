@@ -3,6 +3,7 @@ import {
   isValidElement,
   memo,
   type ReactElement,
+  type ReactNode,
   use,
   useEffect,
   useState,
@@ -22,6 +23,8 @@ export interface MarkdownProps {
   onRunCommand?: (command: string) => void;
   /** Turns an image source that isn't a web URL (a file path) into one `<img>` can load; null when it can't. */
   resolveImage?: (src: string) => Promise<string | null>;
+  /** Renders links the app handles itself (MassCode's thread links); null leaves the link as a web link. */
+  renderLink?: (href: string, children: ReactNode) => ReactNode | null;
   className?: string;
 }
 
@@ -39,6 +42,8 @@ const SourceContext = createContext<{ readonly text: string; readonly streaming:
 const RunCommandContext = createContext<((command: string) => void) | undefined>(undefined);
 
 const ResolveImageContext = createContext<MarkdownProps["resolveImage"]>(undefined);
+
+const RenderLinkContext = createContext<MarkdownProps["renderLink"]>(undefined);
 
 /**
  * Module-level, so element types stay the same between renders: a new object each
@@ -79,16 +84,21 @@ const components: Components = {
       {children}
     </code>
   ),
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="font-medium text-brand underline decoration-brand/40 underline-offset-4 transition-colors hover:decoration-brand"
-    >
-      {children}
-    </a>
-  ),
+  a: function MarkdownLink({ href, children }) {
+    const renderLink = use(RenderLinkContext);
+    const rendered = href ? renderLink?.(href, children) : null;
+    if (rendered) return rendered;
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="font-medium text-brand underline decoration-brand/40 underline-offset-4 transition-colors hover:decoration-brand"
+      >
+        {children}
+      </a>
+    );
+  },
   img: function MarkdownImage({ src, alt }) {
     const resolveImage = use(ResolveImageContext);
     const local = typeof src === "string" && !/^(https?|data|blob):/i.test(src);
@@ -179,8 +189,12 @@ const components: Components = {
 const plugins = [remarkGfm];
 
 /** The default drops `file:` URLs; images keep them for `resolveImage`. */
+/** Keeps file images and MassCode's own links, which the default would strip as unsafe. */
 function keepFileImages(url: string, key: string) {
-  return key === "src" && url.startsWith("file://") ? url : defaultUrlTransform(url);
+  return (key === "src" && url.startsWith("file://")) ||
+    (key === "href" && url.startsWith("masscode://"))
+    ? url
+    : defaultUrlTransform(url);
 }
 
 const FENCE = /^(`{3,}|~{3,})/;
@@ -247,6 +261,7 @@ export const Markdown = memo(function Markdown({
   streaming = false,
   onRunCommand,
   resolveImage,
+  renderLink,
   className,
 }: MarkdownProps) {
   const cut = stableEnd(children);
@@ -254,10 +269,12 @@ export const Markdown = memo(function Markdown({
     <div className={cn("min-w-0 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}>
       <RunCommandContext value={onRunCommand}>
         <ResolveImageContext value={resolveImage}>
-          {cut > 0 ? <MarkdownPart text={children.slice(0, cut)} streaming={false} /> : null}
-          {cut < children.length ? (
-            <MarkdownPart text={children.slice(cut)} streaming={streaming} />
-          ) : null}
+          <RenderLinkContext value={renderLink}>
+            {cut > 0 ? <MarkdownPart text={children.slice(0, cut)} streaming={false} /> : null}
+            {cut < children.length ? (
+              <MarkdownPart text={children.slice(cut)} streaming={streaming} />
+            ) : null}
+          </RenderLinkContext>
         </ResolveImageContext>
       </RunCommandContext>
     </div>

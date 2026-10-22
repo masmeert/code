@@ -78,13 +78,15 @@ export const Attachment = Schema.Struct({
 export type Attachment = typeof Attachment.Type;
 
 /** How the agent works on a message, as chosen in the composer. */
-const TurnSettings = Schema.Struct({
+export const TurnSettings = Schema.Struct({
   /** Null uses the harness's default effort. */
   effort: Schema.NullOr(Effort),
   /** Faster output at a higher price, on models that offer it; absent leaves it as it was. */
   fast: Schema.optional(Schema.Boolean),
   permission: PermissionLevel,
 });
+
+export type TurnSettings = typeof TurnSettings.Type;
 
 /** Per-message settings chosen in the composer. */
 export const TurnOptions = Schema.Struct({
@@ -156,15 +158,42 @@ export const PendingRequest = Schema.Struct({
 
 export type PendingRequest = typeof PendingRequest.Type;
 
+/** Who sent a message, when it isn't the user typing it. */
+export const MessageSender = Schema.TaggedUnion({
+  /** Another thread's agent, through MassCode's thread tools. */
+  agent: { threadId: Schema.String, title: Schema.String },
+  /** MassCode, passing on what a thread this one's agent started has to say. */
+  report: { threadId: Schema.String, title: Schema.String },
+  /** MassCode, picking up a turn it cut short by quitting or crashing. */
+  restart: {},
+  /** MassCode, passing on news from the pull request the thread watches. */
+  pullRequest: { number: Schema.Number, url: Schema.String },
+});
+
+export type MessageSender = typeof MessageSender.Type;
+
 /** A message written while the agent worked, held by the daemon until the turn reaches a point it takes messages at. */
 export const QueuedMessage = Schema.Struct({
   id: Schema.String,
   text: Schema.String,
   attachments: Schema.Array(Attachment),
   ...TurnSettings.fields,
+  from: Schema.optional(MessageSender),
 });
 
 export type QueuedMessage = typeof QueuedMessage.Type;
+
+/**
+ * A GitHub pull request the thread watches: new reviews and comments from others, and failing
+ * checks, come to its agent as messages. Merging or closing it ends the watch and shelves the thread.
+ */
+export const WatchedPullRequest = Schema.Struct({
+  number: Schema.Number,
+  url: Schema.String,
+  title: Schema.String,
+});
+
+export type WatchedPullRequest = typeof WatchedPullRequest.Type;
 
 export const ThreadInfo = Schema.Struct({
   id: Schema.String,
@@ -201,9 +230,18 @@ export const ThreadInfo = Schema.Struct({
   queue: Schema.optional(Schema.Array(QueuedMessage)),
   /** Absent unless the last turn hit a usage limit nobody has answered yet. */
   limitStop: Schema.optional(LimitStop),
+  pullRequest: Schema.optional(WatchedPullRequest),
 });
 
 export type ThreadInfo = typeof ThreadInfo.Type;
+
+/** How agents link a thread in what they write: `[title](masscode://thread/<id>)`. */
+export const THREAD_LINK_PREFIX = "masscode://thread/";
+
+/** The thread a link written by an agent points to; null when it isn't a thread link. */
+export function parseThreadLink(href: string) {
+  return href.startsWith(THREAD_LINK_PREFIX) ? href.slice(THREAD_LINK_PREFIX.length) || null : null;
+}
 
 /** One message matching a search. */
 export const SearchHit = Schema.Struct({

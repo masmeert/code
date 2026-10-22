@@ -39,6 +39,8 @@ import { createTerminals, type Terminals } from "./terminals.ts";
 import { createAgents, formatCommandRun } from "./threads/agents.ts";
 import { deriveTitle, isBusy } from "./threads/entry.ts";
 import { createHistory } from "./threads/history.ts";
+import { createIdleCompaction } from "./threads/idle-compaction.ts";
+import { createPullRequestWatch, PULL_REQUEST_POLL_MS } from "./threads/pull-request-watch.ts";
 import { createThreadOpener } from "./threads/opening.ts";
 import { createOrchestration } from "./threads/orchestration.ts";
 import { createThreadRegistry, type SequencedEvent, type ThreadRead } from "./threads/registry.ts";
@@ -116,6 +118,7 @@ const make = Effect.gen(function* () {
     setCoverage,
     setQueue,
     setLimitStop,
+    setPullRequestWatch,
     saveSettings,
     subscribe,
     forgetStreaming,
@@ -183,6 +186,8 @@ const make = Effect.gen(function* () {
 
   const {
     dropSession,
+    closeAtQuit,
+    resumeCutTurns,
     interrupt,
     runOnLiveSession,
     removeThread,
@@ -190,6 +195,7 @@ const make = Effect.gen(function* () {
     send,
     sendQueued,
     ensureHarnessReady,
+    findHarnessProblem,
     compact,
     listCommands,
     readUsage,
@@ -268,19 +274,34 @@ const make = Effect.gen(function* () {
     sendQueued,
   });
 
+  const pullRequestWatch = createPullRequestWatch({
+    threads,
+    reportErrorsIn,
+    refreshShelved,
+    setShelveOverride,
+    setPullRequestWatch,
+    send,
+  });
+
   const orchestration = createOrchestration({
     store,
     projectsStore,
+    settingsStore,
+    providerRegistry,
     threads,
     getEntry,
     publish,
     reportErrorsIn,
+    setQueue,
+    setTitle,
     send,
     interrupt,
     ensureHarnessReady,
+    findHarnessProblem,
     createWorktree,
     setUpWorktree,
     openThread,
+    pullRequestWatch,
   });
 
   const mcp = createMcp(
@@ -316,6 +337,22 @@ const make = Effect.gen(function* () {
   );
 
   yield* Effect.forkScoped(Effect.schedule(reapIdleSessions, Schedule.spaced(REAP_INTERVAL_MS)));
+  // Subscribed before any cut turn picks up, so none ends unreported.
+  yield* Effect.forkScoped(orchestration.followTurns(yield* subscribe));
+  yield* Effect.forkScoped(resumeCutTurns);
+  yield* Effect.forkScoped(
+    Effect.schedule(pullRequestWatch.checkAll, Schedule.spaced(PULL_REQUEST_POLL_MS)),
+  );
+  yield* Effect.forkScoped(
+    createIdleCompaction({
+      runFork,
+      settingsStore,
+      providerRegistry,
+      threads,
+      publish,
+      compact,
+    }).follow(yield* subscribe),
+  );
 
   function dispatch(command: ClientCommand) {
     return ClientCommand.match<Effect.Effect<void, CommandError | ProviderError | ProjectNotFound>>(
@@ -467,6 +504,12 @@ const make = Effect.gen(function* () {
           Effect.map(getEntry(threadId), (entry) =>
             setTitle(entry, deriveTitle(title, entry.info.title)),
           ),
+        "thread.watchPullRequest": ({ threadId, url }) =>
+          Effect.flatMap(getEntry(threadId), (entry) =>
+            url === null
+              ? Effect.sync(() => pullRequestWatch.unwatch(entry))
+              : Effect.asVoid(pullRequestWatch.watch(entry, url)),
+          ),
         "thread.shelve": ({ threadId, shelved }) =>
           Effect.map(getEntry(threadId), (entry) => {
             setShelveOverride(entry, shelved ? "shelved" : "active");
@@ -588,13 +631,10 @@ const make = Effect.gen(function* () {
 
       yield* Effect.promise(() => devices.close());
       yield* sideChats.closeAll;
+      // A turn going now picks up when MassCode next starts.
       yield* Effect.forEach(
         [...threads.values()],
-        (entry) =>
-          dropSession(
-            entry,
-            "MassCode quit while this turn was running. Send a message to pick up where it left off.",
-          ),
+        (entry) => (isBusy(entry) ? closeAtQuit(entry) : dropSession(entry, null)),
         { discard: true },
       );
     }),

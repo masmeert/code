@@ -27,6 +27,8 @@ export function reduceThreads(threads: Threads, event: RuntimeEvent): Threads {
         update(threadId, (info) => ({ ...info, request: request ?? undefined })),
       "thread.limitStop": ({ threadId, limitStop }) =>
         update(threadId, (info) => ({ ...info, limitStop: limitStop ?? undefined })),
+      "thread.pullRequest": ({ threadId, pullRequest }) =>
+        update(threadId, (info) => ({ ...info, pullRequest: pullRequest ?? undefined })),
       "thread.queue": ({ threadId, queue }) =>
         update(threadId, (info) => ({ ...info, queue: queue.length > 0 ? queue : undefined })),
       "thread.meta": ({ threadId, title, updatedAt, branch, cwd, worktree }) =>

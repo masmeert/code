@@ -1,9 +1,46 @@
-import { useColorScheme, View } from "react-native";
-import { useMarkdown } from "react-native-marked";
+import { parseThreadLink } from "@masscode/contracts";
+import { type ReactNode, useMemo } from "react";
+import { Text, type TextStyle, useColorScheme, View } from "react-native";
+import { Renderer, useMarkdown } from "react-native-marked";
 import { useCSSVariable, useResolveClassNames } from "uniwind";
 
+/** Opens MassCode's thread links in the app; other links go to the browser as usual. */
+class ThreadLinkRenderer extends Renderer {
+  #links = 0;
+
+  constructor(private readonly openThread: (threadId: string) => void) {
+    super();
+  }
+
+  override link(children: string | ReactNode[], href: string, styles?: TextStyle, title?: string) {
+    const threadId = parseThreadLink(href);
+
+    if (!threadId) return super.link(children, href, styles, title);
+
+    return (
+      <Text
+        key={`thread-link-${this.#links++}`}
+        accessibilityRole="link"
+        onPress={() => this.openThread(threadId)}
+        style={styles}
+      >
+        {children}
+      </Text>
+    );
+  }
+}
+
 /** The agent's markdown, styled as on the desktop; the renderer only takes style objects, so they're resolved from classes. */
-export function Markdown({ text, isMuted = false }: { text: string; isMuted?: boolean }) {
+export function Markdown({
+  text,
+  isMuted = false,
+  onOpenThread,
+}: {
+  text: string;
+  isMuted?: boolean;
+  /** Where thread links go; without it they open like any link. */
+  onOpenThread?: (threadId: string) => void;
+}) {
   const colorScheme = useColorScheme();
 
   const textStyle = useResolveClassNames(
@@ -34,7 +71,13 @@ export function Markdown({ text, isMuted = false }: { text: string; isMuted?: bo
   const border = useCSSVariable("--color-border-strong");
   const muted = useCSSVariable("--color-muted");
 
+  const renderer = useMemo(
+    () => (onOpenThread ? new ThreadLinkRenderer(onOpenThread) : undefined),
+    [onOpenThread],
+  );
+
   const elements = useMarkdown(text, {
+    renderer,
     colorScheme: colorScheme ?? undefined,
     theme: {
       colors: {

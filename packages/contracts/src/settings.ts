@@ -92,6 +92,11 @@ export const Settings = Schema.Struct({
   followTemplates: Schema.optional(Schema.Boolean),
   /** System notifications when a thread finishes or needs you, while MassCode is in the background. Absent counts as on. */
   notifications: Schema.optional(Schema.Boolean),
+  /**
+   * Compacts an idle Claude thread with a large context just before its prompt cache expires, so the
+   * next message doesn't re-read it all uncached. Absent counts as off: compacting loses detail.
+   */
+  compactIdleThreads: Schema.optional(Schema.Boolean),
   /** Paired phones can reach the daemon over Tailscale. Absent counts as off. */
   remoteAccess: Schema.optional(Schema.Boolean),
 });

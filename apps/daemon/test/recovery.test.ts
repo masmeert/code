@@ -1,4 +1,4 @@
-import { RuntimeEvent } from "@masscode/contracts";
+import { MessageSender, RuntimeEvent } from "@masscode/contracts";
 import { afterEach, expect, test } from "bun:test";
 import {
   matchAwait,
@@ -12,6 +12,7 @@ import {
   startDaemon,
   matchStatus,
   takeUntil,
+  waitUntil,
   type Daemon,
 } from "./replay/daemon.ts";
 
@@ -118,7 +119,26 @@ test("codex: a turn the agent refuses to start doesn't leave the thread running"
   await daemon.waitFor(matchStatus(thread.id, "idle"));
 });
 
-test("a turn cut short by quitting the app ends in the transcript", async () => {
+/** The cut turn ended, then picked up again, or said why it couldn't (no conversation to resume yet). */
+async function expectCutTurnHandled(daemon: Daemon, threadId: string) {
+  const tags = daemon.readTranscript(threadId).map((event) => event._tag);
+  expect(tags.slice(0, 2)).toEqual(["user.message", "turn.completed"]);
+
+  await waitUntil(() =>
+    daemon
+      .readTranscript(threadId)
+      .slice(2)
+      .some(
+        (event) =>
+          RuntimeEvent.guards.error(event) ||
+          (RuntimeEvent.guards["user.message"](event) &&
+            event.from !== undefined &&
+            MessageSender.guards.restart(event.from)),
+      ),
+  );
+}
+
+test("a turn cut short by quitting the app ends in the transcript, then picks up", async () => {
   daemon = await startDaemon();
   const folder = createProject({ claude: { sessions: [claudeMidTurn] } });
   const thread = await daemon.createThread(folder, "Reply with exactly: pong");
@@ -126,14 +146,10 @@ test("a turn cut short by quitting the app ends in the transcript", async () => 
   await daemon.stop();
 
   daemon = await startDaemon();
-  const transcript = daemon.readTranscript(thread.id);
-  expect(transcript.slice(-2).map((event) => event._tag)).toEqual(["turn.completed", "error"]);
-  expect((await daemon.listThreads()).find((candidate) => candidate.id === thread.id)?.status).toBe(
-    "idle",
-  );
+  await expectCutTurnHandled(daemon, thread.id);
 });
 
-test("a turn cut short by the daemon crashing ends in the transcript on the next start", async () => {
+test("a turn cut short by the daemon crashing ends on the next start, then picks up", async () => {
   daemon = await startDaemon();
   const folder = createProject({ claude: { sessions: [claudeMidTurn] } });
   const thread = await daemon.createThread(folder, "Reply with exactly: pong");
@@ -141,6 +157,5 @@ test("a turn cut short by the daemon crashing ends in the transcript on the next
   await daemon.crash();
 
   daemon = await startDaemon();
-  const transcript = daemon.readTranscript(thread.id);
-  expect(transcript.slice(-2).map((event) => event._tag)).toEqual(["turn.completed", "error"]);
+  await expectCutTurnHandled(daemon, thread.id);
 });

@@ -2,6 +2,7 @@ import {
   type ApprovalDecision,
   type Attachment,
   type CommandRun,
+  type MessageSender,
   type PageInfo,
   type ProviderKind,
   RuntimeEvent,
@@ -40,6 +41,8 @@ export type TranscriptItem =
         readonly messages: number;
         readonly text: string;
       } | null;
+      /** Null when the user wrote it. */
+      readonly from: MessageSender | null;
     }
   /** What a turn changed on disk; `id` is `checkpoint:<messageId>` of the message that started it. */
   | {
@@ -95,6 +98,8 @@ export type TranscriptItem =
       /** What was answered; absent until then, and when the questions were skipped. */
       readonly answers?: UserAnswers;
     }
+  /** MassCode compacted the conversation while it was idle, before its prompt cache expired. */
+  | { readonly kind: "compacted"; readonly id: string; readonly tokens: number }
   /** How the new worktree's setup command from `masscode.toml` ended. */
   | {
       readonly kind: "setup";
@@ -156,6 +161,7 @@ export function reduceItems(
           run: message.run ?? null,
           provider: message.provider ?? null,
           handoff: message.handoff ?? null,
+          from: message.from ?? null,
         })),
       "turn.checkpoint": ({ messageId, files, additions, deletions }) => {
         const checkpoint: TranscriptItem = {
@@ -200,6 +206,11 @@ export function reduceItems(
           byThreadId,
           byTitle,
         })),
+      "thread.compacted": ({ tokens }) => {
+        const key = `compacted:${id ?? crypto.randomUUID()}`;
+
+        return upsert(items, key, () => ({ kind: "compacted", id: key, tokens }));
+      },
       "worktree.setup": ({ run, stopped }) =>
         upsert(items, "setup", () => ({ kind: "setup", id: "setup", run, stopped })),
       "thread.rewound": (rewound) => {

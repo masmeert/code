@@ -9,6 +9,8 @@ import {
   type StoredEvent,
   type ThreadInfo,
   ThreadUsage,
+  TurnSettings,
+  WatchedPullRequest,
 } from "@masscode/contracts";
 import { Database } from "bun:sqlite";
 import * as Context from "effect/Context";
@@ -43,6 +45,16 @@ const Coverage = Schema.Record(ProviderKind, Schema.optionalKey(Schema.Number));
 
 export type Coverage = typeof Coverage.Type;
 
+/** A pull request the thread watches, with what its agent has already heard of it. */
+export const PullRequestWatch = Schema.Struct({
+  ...WatchedPullRequest.fields,
+  /** Newest comment or review passed on, as epoch ms. */
+  seenAt: Schema.Number,
+  checks: Schema.NullOr(Schema.Literals(["pending", "passing", "failing"])),
+});
+
+export type PullRequestWatch = typeof PullRequestWatch.Type;
+
 interface StoredThread {
   readonly info: ThreadInfo;
   readonly home: ThreadHome;
@@ -50,6 +62,8 @@ interface StoredThread {
   readonly coverage: Coverage;
   readonly shelveOverride: ShelveOverride;
   readonly queue: ReadonlyArray<QueuedMessage>;
+  readonly turnSettings: TurnSettings | null;
+  readonly pullRequestWatch: PullRequestWatch | null;
 }
 
 type UserMessage = Extract<RuntimeEvent, { _tag: "user.message" }>;
@@ -80,6 +94,8 @@ interface ThreadRow {
   readonly started_by: string | null;
   readonly queue: string | null;
   readonly limit_stop: string | null;
+  readonly turn_settings: string | null;
+  readonly pull_request: string | null;
 }
 
 /** Events worth replaying after a restart: the transcript, with deltas folded into `assistant.completed`. */
@@ -168,6 +184,8 @@ export class ThreadStore extends Context.Service<
     readonly setModel: (threadId: string, model: string | null) => void;
     readonly setQueue: (threadId: string, queue: ReadonlyArray<QueuedMessage>) => void;
     readonly setLimitStop: (threadId: string, limitStop: LimitStop | null) => void;
+    readonly setTurnSettings: (threadId: string, settings: TurnSettings) => void;
+    readonly setPullRequestWatch: (threadId: string, watch: PullRequestWatch | null) => void;
     readonly setUsage: (threadId: string, usage: ThreadUsage) => void;
     readonly setArchived: (threadId: string, archivedAt: number | null) => void;
     readonly setSeenRev: (threadId: string, seenRev: number) => void;
@@ -189,6 +207,10 @@ const decodeUsage = Schema.decodeUnknownOption(Schema.fromJsonString(ThreadUsage
 const decodeQueue = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(QueuedMessage)));
 
 const decodeLimitStop = Schema.decodeUnknownOption(Schema.fromJsonString(LimitStop));
+
+const decodeTurnSettings = Schema.decodeUnknownOption(Schema.fromJsonString(TurnSettings));
+
+const decodePullRequestWatch = Schema.decodeUnknownOption(Schema.fromJsonString(PullRequestWatch));
 
 const decodeTag = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Struct({ _tag: Schema.optional(Schema.String) })),
@@ -313,6 +335,12 @@ function migrate(database: Database) {
 
   if (!columns.has("coverage")) database.run("ALTER TABLE threads ADD COLUMN coverage TEXT");
 
+  if (!columns.has("turn_settings"))
+    database.run("ALTER TABLE threads ADD COLUMN turn_settings TEXT");
+
+  if (!columns.has("pull_request"))
+    database.run("ALTER TABLE threads ADD COLUMN pull_request TEXT");
+
   if (columns.has("settle_override")) {
     // Shelving was called settling. Both columns can exist, so a newer shelve value wins.
     database.run(
@@ -368,6 +396,14 @@ const make = Effect.gen(function* () {
 
   const setLimitStop = database.prepare(
     "UPDATE threads SET limit_stop = $limitStop WHERE id = $id",
+  );
+
+  const setTurnSettings = database.prepare(
+    "UPDATE threads SET turn_settings = $settings WHERE id = $id",
+  );
+
+  const setPullRequestWatch = database.prepare(
+    "UPDATE threads SET pull_request = $watch WHERE id = $id",
   );
 
   // A turn starts at a user message not sent into a running one, and ends at turn.completed.
@@ -552,6 +588,14 @@ const make = Effect.gen(function* () {
             row.coverage === null ? {} : Option.getOrElse(decodeCoverage(row.coverage), () => ({})),
           shelveOverride: row.shelve_override,
           queue: row.queue === null ? [] : Option.getOrElse(decodeQueue(row.queue), () => []),
+          turnSettings:
+            row.turn_settings === null
+              ? null
+              : Option.getOrNull(decodeTurnSettings(row.turn_settings)),
+          pullRequestWatch:
+            row.pull_request === null
+              ? null
+              : Option.getOrNull(decodePullRequestWatch(row.pull_request)),
         })),
     ),
     listUnresolvedApprovals: () => {
@@ -643,6 +687,12 @@ const make = Effect.gen(function* () {
     },
     setLimitStop: (id, limitStop) => {
       setLimitStop.run({ id, limitStop: limitStop && JSON.stringify(limitStop) });
+    },
+    setPullRequestWatch: (id, watch) => {
+      setPullRequestWatch.run({ id, watch: watch && JSON.stringify(watch) });
+    },
+    setTurnSettings: (id, settings) => {
+      setTurnSettings.run({ id, settings: JSON.stringify(settings) });
     },
     setUsage: (id, usage) => {
       setUsage.run({ id, usage: JSON.stringify(usage) });

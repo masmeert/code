@@ -9,6 +9,7 @@ import type {
   SourceControlStatus,
 } from "@masscode/contracts";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { execFile } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
@@ -290,6 +291,150 @@ export async function readPullRequest(
     state: GITLAB_STATE.get(mergeRequest.state) ?? (mergeRequest.draft ? "draft" : "open"),
     base: mergeRequest.target_branch,
   };
+}
+
+const GitHubAuthor = Schema.NullOr(Schema.Struct({ login: Schema.String }));
+
+const GitHubActivity = Schema.Struct({
+  number: Schema.Number,
+  url: Schema.String,
+  title: Schema.String,
+  state: Schema.String,
+  comments: Schema.Array(
+    Schema.Struct({ author: GitHubAuthor, body: Schema.String, createdAt: Schema.String }),
+  ),
+  reviews: Schema.Array(
+    Schema.Struct({
+      author: GitHubAuthor,
+      body: Schema.String,
+      state: Schema.String,
+      submittedAt: Schema.NullOr(Schema.String),
+    }),
+  ),
+  statusCheckRollup: Schema.Array(
+    Schema.Struct({
+      name: Schema.optional(Schema.String),
+      context: Schema.optional(Schema.String),
+      status: Schema.optional(Schema.String),
+      conclusion: Schema.optional(Schema.NullOr(Schema.String)),
+      state: Schema.optional(Schema.String),
+    }),
+  ),
+});
+
+/** What happened on a GitHub pull request: its comments, reviews and checks. */
+export interface PullRequestActivity {
+  readonly number: number;
+  readonly url: string;
+  readonly title: string;
+  readonly state: PullRequest["state"];
+  /** Comments and reviews, oldest first; `at` is epoch ms. */
+  readonly posts: ReadonlyArray<{
+    readonly author: string;
+    readonly verb: "commented" | "approved" | "requested changes" | "reviewed";
+    readonly body: string;
+    readonly at: number;
+  }>;
+  readonly checks: "pending" | "passing" | "failing" | null;
+  readonly failingChecks: ReadonlyArray<string>;
+}
+
+const FAILED_CONCLUSIONS = new Set([
+  "FAILURE",
+  "TIMED_OUT",
+  "CANCELLED",
+  "ACTION_REQUIRED",
+  "STARTUP_FAILURE",
+  "ERROR",
+]);
+
+const REVIEW_VERBS = new Map<string, PullRequestActivity["posts"][number]["verb"]>([
+  ["APPROVED", "approved"],
+  ["CHANGES_REQUESTED", "requested changes"],
+]);
+
+/** The pull request at `target` (its URL, or number or branch in `cwd`'s repo), read through gh; fails with what went wrong. */
+export async function readPullRequestActivity(
+  target: string,
+  cwd: string,
+): Promise<Result.Result<PullRequestActivity, string>> {
+  const viewed = await runCli(
+    "github",
+    [
+      "pr",
+      "view",
+      target,
+      "--json",
+      "number,url,title,state,isDraft,comments,reviews,statusCheckRollup",
+    ],
+    cwd,
+  );
+
+  if (!viewed.ok)
+    return Result.fail(
+      viewed.code === null
+        ? `gh isn't installed. ${CLI.github.install}, then sign in with gh auth login.`
+        : getFirstLine(viewed.stderr) || "gh couldn't read the pull request.",
+    );
+
+  const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(GitHubActivity))(viewed.stdout);
+
+  if (Option.isNone(decoded)) return Result.fail("gh answered with something MassCode can't read.");
+
+  const { number, url, title, state, comments, reviews, statusCheckRollup } = decoded.value;
+
+  const checks = statusCheckRollup.map((check) => ({
+    name: check.name ?? check.context ?? "check",
+    outcome: check.conclusion ?? check.state ?? null,
+    isDone: check.status === undefined || check.status === "COMPLETED",
+  }));
+
+  const failingChecks = checks
+    .filter((check) => check.outcome !== null && FAILED_CONCLUSIONS.has(check.outcome))
+    .map((check) => check.name);
+
+  return Result.succeed({
+    number,
+    url,
+    title,
+    state: GITHUB_STATE.get(state) ?? "open",
+    posts: [
+      ...comments.map((comment) => ({
+        author: comment.author?.login ?? "someone",
+        verb: "commented" as const,
+        body: comment.body,
+        at: Date.parse(comment.createdAt),
+      })),
+      ...reviews.flatMap((review) =>
+        review.submittedAt === null
+          ? []
+          : [
+              {
+                author: review.author?.login ?? "someone",
+                verb: REVIEW_VERBS.get(review.state) ?? ("reviewed" as const),
+                body: review.body,
+                at: Date.parse(review.submittedAt),
+              },
+            ],
+      ),
+    ].sort((first, second) => first.at - second.at),
+    checks:
+      checks.length === 0
+        ? null
+        : failingChecks.length > 0
+          ? "failing"
+          : checks.some((check) => !check.isDone || check.outcome === "PENDING")
+            ? "pending"
+            : "passing",
+    failingChecks,
+  });
+}
+
+/** Who gh is signed in as on GitHub; null when it can't tell. */
+export async function readGitHubLogin() {
+  const result = await runCli("github", ["api", "user", "--jq", ".login"], undefined, 10_000);
+
+  return result.ok && result.stdout ? result.stdout : null;
 }
 
 /** Opens the pull request; resolves to an error message on failure. */

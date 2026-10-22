@@ -5,7 +5,8 @@ const MAX_CHARS = 40_000;
 
 const MAX_MESSAGE_CHARS = 6_000;
 
-function clip(text: string, maxChars: number) {
+/** `text`, cut to `maxChars` with an ellipsis when longer. */
+export function clip(text: string, maxChars: number) {
   return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
 }
 

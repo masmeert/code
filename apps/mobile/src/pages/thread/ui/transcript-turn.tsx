@@ -12,7 +12,8 @@ import {
   toToolGroups,
   type Turn,
 } from "@masscode/client";
-import { type Attachment, ClientCommand } from "@masscode/contracts";
+import { type Attachment, ClientCommand, MessageSender } from "@masscode/contracts";
+import { router } from "expo-router";
 import { memo, useEffect, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
@@ -34,6 +35,16 @@ export const TranscriptTurn = memo(function TranscriptTurn({ hostId, threadId, t
   if (turn.from === "user")
     return (
       <View className="items-end gap-1.5 px-4 py-2">
+        {turn.item.from ? (
+          <Text numberOfLines={1} className="max-w-[82%] text-xs text-muted-foreground">
+            {MessageSender.match(turn.item.from, {
+              agent: ({ title }) => `From ${title}`,
+              report: ({ title }) => `Report from ${title}`,
+              restart: () => "Sent by MassCode to pick up a turn it cut short",
+              pullRequest: ({ number }) => `News from pull request #${number}`,
+            })}
+          </Text>
+        ) : null}
         {turn.item.attachments.length > 0 ? (
           <View className="max-w-[82%] flex-row flex-wrap justify-end gap-1.5">
             {turn.item.attachments.map((attachment) =>
@@ -192,7 +203,17 @@ function BlockView({
 }) {
   switch (block.kind) {
     case "assistant":
-      return <Markdown text={block.text} />;
+      return (
+        <Markdown
+          text={block.text}
+          onOpenThread={(linked) =>
+            router.push({
+              pathname: "/thread/[hostId]/[threadId]",
+              params: { hostId, threadId: linked },
+            })
+          }
+        />
+      );
     case "reasoning":
       return (
         <Disclosure
@@ -229,6 +250,13 @@ function BlockView({
       return block.decision === "deny" ? (
         <Text className="text-xs text-muted-foreground">Denied {block.title}</Text>
       ) : null;
+    case "compacted":
+      return (
+        <Text className="text-xs text-muted-foreground">
+          Compacted while idle, before the prompt cache expired ({Math.round(block.tokens / 1000)}K
+          tokens)
+        </Text>
+      );
     case "checkpoint":
       return (
         <View className="my-1 flex-row items-center gap-1.5 self-start rounded-lg border border-border px-2.5 py-1">

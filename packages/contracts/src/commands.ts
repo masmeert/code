@@ -237,6 +237,11 @@ export const ClientCommand = Schema.TaggedUnion({
     threadId: Schema.String,
     title: Schema.String,
   },
+  /** Starts watching the GitHub pull request at `url` for the thread's agent; null stops. */
+  "thread.watchPullRequest": {
+    threadId: Schema.String,
+    url: Schema.NullOr(Schema.String),
+  },
   /** Shelve/Unshelve from the thread menu; holds until the thread's next turn starts. */
   "thread.shelve": {
     threadId: Schema.String,

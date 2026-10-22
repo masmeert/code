@@ -31,8 +31,13 @@ const StartThreadInput = {
   provider: z
     .enum(ProviderKind.literals)
     .optional()
-    .describe("Which harness runs it: claude or codex. Yours when left out."),
-  model: z.string().optional().describe("The harness's default model when left out."),
+    .describe("Which harness runs it; list_harnesses says which are ready. Yours when left out."),
+  model: z
+    .string()
+    .optional()
+    .describe(
+      "A model id from list_harnesses. Yours when on your harness, else the harness's default.",
+    ),
   permission: z
     .enum(PermissionLevel.literals)
     .optional()
@@ -43,7 +48,12 @@ const StartThreadInput = {
     .boolean()
     .optional()
     .describe("Start it in a new git worktree on a branch of its own, instead of your folder."),
-  wait: z.boolean().optional().describe("Wait for its answer before returning."),
+  wait: z
+    .boolean()
+    .optional()
+    .describe(
+      "Wait for its answer before returning. Without it, or if the wait times out, its answer comes to you as a message once its turn ends.",
+    ),
   timeoutSeconds: z
     .number()
     .int()
@@ -61,14 +71,32 @@ const StartThreadInput = {
 const SendMessageInput = {
   threadId: z.string(),
   text: z.string(),
-  queue: z
-    .boolean()
+  mode: z
+    .enum(["auto", "queue", "restart"])
     .optional()
     .describe(
-      "If its agent is working: wait for its turn to end instead of joining the turn in progress.",
+      "If its agent is working: `auto` joins the turn in progress, `queue` waits for the turn to end, `restart` stops the turn (and threads it started) and starts a new one with your message. `auto` when left out.",
     ),
   permission: z.enum(PermissionLevel.literals).optional().describe("No more than yours."),
   requestId: z.string().optional().describe("Retrying with the same id doesn't send it twice."),
+};
+
+const AnswerQuestionsInput = {
+  threadId: z.string(),
+  requestId: z.string().describe("The request the questions came with."),
+  answers: z
+    .record(z.string(), z.array(z.string()))
+    .describe(
+      "By question id, the labels of the options picked, or your own answer in their place. Questions left out go unanswered.",
+    ),
+};
+
+const WatchPullRequestInput = {
+  pullRequest: z
+    .string()
+    .optional()
+    .describe("Its URL or number. The pull request of your branch when left out."),
+  stop: z.boolean().optional().describe("Stop watching instead."),
 };
 
 const WaitInput = {
@@ -80,16 +108,39 @@ export type StartThreadInput = z.infer<z.ZodObject<typeof StartThreadInput>>;
 
 export type SendMessageInput = z.infer<z.ZodObject<typeof SendMessageInput>>;
 
+export type AnswerQuestionsInput = z.infer<z.ZodObject<typeof AnswerQuestionsInput>>;
+
+export type WatchPullRequestInput = z.infer<z.ZodObject<typeof WatchPullRequestInput>>;
+
 /** What the orchestration tools do, for the agent of thread `caller`; failures are messages for that agent. */
 interface Orchestration {
+  readonly listHarnesses: (caller: string) => Effect.Effect<unknown, Error>;
   readonly listThreads: (caller: string) => Effect.Effect<unknown, Error>;
   readonly readThread: (
     caller: string,
     threadId: string,
     after: number | undefined,
+    view: "messages" | "activity" | undefined,
   ) => Effect.Effect<unknown, Error>;
   readonly startThread: (caller: string, input: StartThreadInput) => Effect.Effect<unknown, Error>;
+  readonly startThreads: (
+    caller: string,
+    inputs: ReadonlyArray<StartThreadInput>,
+  ) => Effect.Effect<unknown, Error>;
+  readonly renameThread: (
+    caller: string,
+    threadId: string,
+    title: string,
+  ) => Effect.Effect<unknown, Error>;
   readonly sendMessage: (caller: string, input: SendMessageInput) => Effect.Effect<unknown, Error>;
+  readonly answerQuestions: (
+    caller: string,
+    input: AnswerQuestionsInput,
+  ) => Effect.Effect<unknown, Error>;
+  readonly watchPullRequest: (
+    caller: string,
+    input: WatchPullRequestInput,
+  ) => Effect.Effect<unknown, Error>;
   readonly waitForThread: (
     caller: string,
     threadId: string,
@@ -119,11 +170,21 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
     { name: "masscode", version: "1.0.0" },
     {
       instructions:
-        "MassCode's threads. Start agents (Claude or Codex) in threads of their own to work on tasks in parallel, get a second opinion from the other harness, or review work; message them, wait for and read their answers. Threads you start show in the user's sidebar, in your project, where the user can watch and steer them. Stopping your thread stops them too.",
+        "MassCode's threads. Start agents (Claude, Codex or Cursor; list_harnesses says which are ready, with their models) in threads of their own to work on tasks in parallel, get a second opinion from the other harness, or review work; message them, wait for and read their answers. A thread you start or message reports back to you as a message when its turn ends, unless you were waiting on it, so you can carry on with other work meanwhile. Threads you start show in the user's sidebar, in your project, where the user can watch and steer them. Stopping your thread stops them too. To point the user to a thread, link it as [its title](masscode://thread/<threadId>): MassCode shows that as a link to the thread.",
     },
   );
 
   const readOnly = { readOnlyHint: true };
+
+  server.registerTool(
+    "list_harnesses",
+    {
+      description:
+        "The harnesses you can start threads on (and why any can't run now), with their model ids, and what you run on.",
+      annotations: readOnly,
+    },
+    () => runToolEffect(orchestration.listHarnesses(caller)),
+  );
 
   server.registerTool(
     "list_threads",
@@ -138,11 +199,21 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
     "read_thread",
     {
       description:
-        "A thread's messages, oldest first. Pass `after` (a message's position) to read only what came since.",
-      inputSchema: { threadId: z.string(), after: z.number().int().optional() },
+        "A thread's messages, oldest first; `sentBy` marks user messages another agent or MassCode sent rather than the user. Pass `after` (an item's position) to read only what came since.",
+      inputSchema: {
+        threadId: z.string(),
+        after: z.number().int().optional(),
+        view: z
+          .enum(["messages", "activity"])
+          .optional()
+          .describe(
+            "`activity` adds its tool calls (with failures), approvals and questions, errors and file changes. `messages` when left out.",
+          ),
+      },
       annotations: readOnly,
     },
-    ({ threadId, after }) => runToolEffect(orchestration.readThread(caller, threadId, after)),
+    ({ threadId, after, view }) =>
+      runToolEffect(orchestration.readThread(caller, threadId, after, view)),
   );
 
   server.registerTool(
@@ -156,9 +227,34 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
   );
 
   server.registerTool(
+    "start_threads",
+    {
+      description:
+        "Starts several threads at once, one per task, each like start_thread without waiting. Returns each one's id, or why it couldn't start. Their answers come to you as messages.",
+      inputSchema: {
+        threads: z
+          .array(z.object(StartThreadInput).omit({ wait: true, timeoutSeconds: true }))
+          .min(1)
+          .max(10),
+      },
+    },
+    ({ threads }) => runToolEffect(orchestration.startThreads(caller, threads)),
+  );
+
+  server.registerTool(
+    "rename_thread",
+    {
+      description: "Renames a thread in the user's sidebar: yours, or another in your project.",
+      inputSchema: { threadId: z.string(), title: z.string() },
+    },
+    ({ threadId, title }) => runToolEffect(orchestration.renameThread(caller, threadId, title)),
+  );
+
+  server.registerTool(
     "send_message",
     {
-      description: "Sends a message to a thread: it starts a turn, or joins the one running.",
+      description:
+        "Sends a message to a thread: it starts a turn, or joins the one running. Its answer comes to you as a message once the turn ends.",
       inputSchema: SendMessageInput,
     },
     (input) => runToolEffect(orchestration.sendMessage(caller, input)),
@@ -168,7 +264,7 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
     "wait_for_thread",
     {
       description:
-        "Waits until a thread's agent finishes its turn, then returns its status and last answer. A timeout returns the status so far and leaves it working.",
+        "Waits until a thread's agent finishes its turn, then returns its status and last answer. Returns early with `waitingOn` when it stops for an approval or questions. A timeout returns the status so far and leaves it working.",
       inputSchema: WaitInput,
       annotations: readOnly,
     },
@@ -176,6 +272,26 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
       runToolEffect(
         orchestration.waitForThread(caller, threadId, (timeoutSeconds ?? WAIT_MS / 1000) * 1000),
       ),
+  );
+
+  server.registerTool(
+    "answer_questions",
+    {
+      description:
+        "Answers the questions a thread's agent stopped to ask, as given by wait_for_thread's `waitingOn` or the message forwarding them. Its turn then carries on.",
+      inputSchema: AnswerQuestionsInput,
+    },
+    (input) => runToolEffect(orchestration.answerQuestions(caller, input)),
+  );
+
+  server.registerTool(
+    "watch_pull_request",
+    {
+      description:
+        "Watches a GitHub pull request for your thread: new reviews and comments from others, and checks starting to fail, come to you as messages, so you can address them. Merging or closing it ends the watch and shelves your thread. Use it after opening a pull request you're responsible for.",
+      inputSchema: WatchPullRequestInput,
+    },
+    (input) => runToolEffect(orchestration.watchPullRequest(caller, input)),
   );
 
   server.registerTool(
