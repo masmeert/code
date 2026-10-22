@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     branches: [main]
+  # Rebuilds a release whose build failed or never ran.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build, like v0.1.11
+        required: true
 
 permissions:
   contents: write
@@ -21,12 +27,15 @@ jobs:
 
   build:
     needs: release-please
-    if: needs.release-please.outputs.created == 'true'
+    if: needs.release-please.outputs.created == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     env:
-      TAG: ${{ needs.release-please.outputs.tag }}
+      TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
     steps:
+      # The tag, not the pushed commit: a push queued behind the release merge would build the old version.
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
@@ -61,7 +70,7 @@ jobs:
       # Remote hosts get the daemon from here: the app downloads the one for the host and uploads it over SSH
       - run: |
           pnpm --filter @masscode/daemon build:linux
-          gh release upload "$TAG" apps/daemon/dist/masscode-daemon-linux-*.gz
+          gh release upload "$TAG" apps/daemon/dist/masscode-daemon-linux-*.gz --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # electron-builder uploads into the existing draft but never publishes it, and the updater only sees published releases
