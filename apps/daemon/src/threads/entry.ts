@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import type { ProviderSession } from "../providers/provider-adapter.ts";
 import type {
   Coverage,
+  PullRequestWatch,
   ResumeTokens,
   ShelveOverride,
   ThreadHome,
@@ -49,6 +50,8 @@ export interface ThreadEntry {
    * access is the most the thread's agent can give threads it starts.
    */
   turnSettings: TurnSettings | null;
+  /** The pull request its agent hears news of; `info.pullRequest` shows it. */
+  pullRequestWatch: PullRequestWatch | null;
   /** Its new worktree's setup command is running, and messages queue until it ends. */
   isSettingUp: boolean;
   /**
@@ -65,9 +68,19 @@ export function createEntry(
   coverage: Coverage = {},
   shelveOverride: ShelveOverride = null,
   turnSettings: TurnSettings | null = null,
+  pullRequestWatch: PullRequestWatch | null = null,
 ): ThreadEntry {
   return {
-    info,
+    info: pullRequestWatch
+      ? {
+          ...info,
+          pullRequest: {
+            number: pullRequestWatch.number,
+            url: pullRequestWatch.url,
+            title: pullRequestWatch.title,
+          },
+        }
+      : info,
     home,
     session: null,
     resumeTokens,
@@ -80,6 +93,7 @@ export function createEntry(
     isStopRequested: false,
     subagentTools: new Set(),
     turnSettings,
+    pullRequestWatch,
     isSettingUp: false,
     report: null,
   };

@@ -11,7 +11,7 @@ import { PromptInputTray } from "@masscode/ui/agents/prompt-input";
 import { categoryOf } from "@masscode/client";
 import { type ToolReveal } from "@masscode/ui/agents/tool-group";
 import { ClientCommand, isTurnActive, type QueuedMessage } from "@masscode/contracts";
-import { FileDiff, FolderTree } from "lucide-react";
+import { Eye, FileDiff, FolderTree } from "lucide-react";
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toggleBrowser, useBrowser } from "@/entities/browser";
 import { toggleSimulator, useSimulator } from "@/entities/simulator";
@@ -240,15 +240,28 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
             project={project ?? buildFallbackProject(info.projectId, info.cwd)}
             title={info.title}
             badge={
-              info.worktree ? (
-                <span
-                  title={`Worktree: ${info.cwd}`}
-                  className="flex max-w-40 min-w-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground [-webkit-app-region:no-drag]"
-                >
-                  <FolderTree className="size-3 shrink-0" />
-                  <span className="truncate">{info.branch ?? "worktree"}</span>
-                </span>
-              ) : null
+              <>
+                {info.worktree ? (
+                  <span
+                    title={`Worktree: ${info.cwd}`}
+                    className="flex max-w-40 min-w-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground [-webkit-app-region:no-drag]"
+                  >
+                    <FolderTree className="size-3 shrink-0" />
+                    <span className="truncate">{info.branch ?? "worktree"}</span>
+                  </span>
+                ) : null}
+                {info.pullRequest ? (
+                  <a
+                    href={info.pullRequest.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`Watching #${info.pullRequest.number} "${info.pullRequest.title}": new reviews, comments and failing checks wake the agent`}
+                    className="flex shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors [-webkit-app-region:no-drag] hover:text-foreground"
+                  >
+                    <Eye className="size-3 shrink-0" />#{info.pullRequest.number}
+                  </a>
+                ) : null}
+              </>
             }
             actions={
               <>

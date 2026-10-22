@@ -23,6 +23,7 @@ import type { SettingsStore } from "../storage/settings-store.ts";
 import {
   type Coverage,
   isPersisted,
+  type PullRequestWatch,
   type ResumeTokens,
   type ShelveOverride,
   type ThreadStore,
@@ -92,6 +93,7 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
     shelveOverride,
     queue,
     turnSettings,
+    pullRequestWatch,
   } of yield* store.load) {
     threads.set(
       info.id,
@@ -106,6 +108,7 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
         coverage,
         shelveOverride,
         turnSettings,
+        pullRequestWatch,
       ),
     );
   }
@@ -366,6 +369,20 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
     );
   }
 
+  /** Stores what the thread's agent has heard of its pull request; announces when it starts or stops watching one. */
+  function setPullRequestWatch(entry: ThreadEntry, watch: PullRequestWatch | null) {
+    const wasWatching = entry.pullRequestWatch?.url;
+    entry.pullRequestWatch = watch;
+    store.setPullRequestWatch(entry.info.id, watch);
+
+    if (wasWatching === watch?.url) return;
+
+    const { pullRequest: _pullRequest, ...info } = entry.info;
+    const pullRequest = watch && { number: watch.number, url: watch.url, title: watch.title };
+    entry.info = pullRequest ? { ...info, pullRequest } : info;
+    publish(RuntimeEvent.cases["thread.pullRequest"].make({ threadId: info.id, pullRequest }));
+  }
+
   function setLimitStop(entry: ThreadEntry, limitStop: LimitStop | null) {
     const { limitStop: _limitStop, ...info } = entry.info;
     entry.info = limitStop ? { ...info, limitStop } : info;
@@ -419,6 +436,7 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
     setCoverage,
     setQueue,
     setLimitStop,
+    setPullRequestWatch,
     saveSettings,
     /** Every event published from here on. */
     subscribe: Effect.map(PubSub.subscribe(pubsub), Stream.fromSubscription),

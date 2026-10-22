@@ -91,6 +91,14 @@ const AnswerQuestionsInput = {
     ),
 };
 
+const WatchPullRequestInput = {
+  pullRequest: z
+    .string()
+    .optional()
+    .describe("Its URL or number. The pull request of your branch when left out."),
+  stop: z.boolean().optional().describe("Stop watching instead."),
+};
+
 const WaitInput = {
   threadId: z.string(),
   timeoutSeconds: z.number().int().positive().optional().describe("600 when left out."),
@@ -101,6 +109,8 @@ export type StartThreadInput = z.infer<z.ZodObject<typeof StartThreadInput>>;
 export type SendMessageInput = z.infer<z.ZodObject<typeof SendMessageInput>>;
 
 export type AnswerQuestionsInput = z.infer<z.ZodObject<typeof AnswerQuestionsInput>>;
+
+export type WatchPullRequestInput = z.infer<z.ZodObject<typeof WatchPullRequestInput>>;
 
 /** What the orchestration tools do, for the agent of thread `caller`; failures are messages for that agent. */
 interface Orchestration {
@@ -117,6 +127,10 @@ interface Orchestration {
   readonly answerQuestions: (
     caller: string,
     input: AnswerQuestionsInput,
+  ) => Effect.Effect<unknown, Error>;
+  readonly watchPullRequest: (
+    caller: string,
+    input: WatchPullRequestInput,
   ) => Effect.Effect<unknown, Error>;
   readonly waitForThread: (
     caller: string,
@@ -235,6 +249,16 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
       inputSchema: AnswerQuestionsInput,
     },
     (input) => runToolEffect(orchestration.answerQuestions(caller, input)),
+  );
+
+  server.registerTool(
+    "watch_pull_request",
+    {
+      description:
+        "Watches a GitHub pull request for your thread: new reviews and comments from others, and checks starting to fail, come to you as messages, so you can address them. Merging or closing it ends the watch and shelves your thread. Use it after opening a pull request you're responsible for.",
+      inputSchema: WatchPullRequestInput,
+    },
+    (input) => runToolEffect(orchestration.watchPullRequest(caller, input)),
   );
 
   server.registerTool(

@@ -41,6 +41,7 @@ export const TranscriptTurn = memo(function TranscriptTurn({ hostId, threadId, t
               agent: ({ title }) => `From ${title}`,
               report: ({ title }) => `Report from ${title}`,
               restart: () => "Sent by MassCode to pick up a turn it cut short",
+              pullRequest: ({ number }) => `News from pull request #${number}`,
             })}
           </Text>
         ) : null}

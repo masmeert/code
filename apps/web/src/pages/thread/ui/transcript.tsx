@@ -38,6 +38,7 @@ import {
   FileDiff,
   FileText,
   GitFork,
+  GitPullRequest,
   ImageIcon,
   LoaderCircle,
   Minimize2,
@@ -477,6 +478,19 @@ function SenderNote({ from }: { from: MessageSender }) {
       <div className="flex items-center justify-end gap-1.5 text-xs text-muted-foreground">
         <RotateCcw className="size-3.5 shrink-0" />
         Sent by MassCode to pick up a turn it cut short
+      </div>
+    ),
+    pullRequest: ({ number, url }) => (
+      <div className="flex justify-end text-xs text-muted-foreground">
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1.5 rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <GitPullRequest className="size-3.5 shrink-0" />
+          News from pull request #{number}
+        </a>
       </div>
     ),
   });

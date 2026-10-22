@@ -40,6 +40,7 @@ import { createAgents, formatCommandRun } from "./threads/agents.ts";
 import { deriveTitle, isBusy } from "./threads/entry.ts";
 import { createHistory } from "./threads/history.ts";
 import { createIdleCompaction } from "./threads/idle-compaction.ts";
+import { createPullRequestWatch, PULL_REQUEST_POLL_MS } from "./threads/pull-request-watch.ts";
 import { createThreadOpener } from "./threads/opening.ts";
 import { createOrchestration } from "./threads/orchestration.ts";
 import { createThreadRegistry, type SequencedEvent, type ThreadRead } from "./threads/registry.ts";
@@ -117,6 +118,7 @@ const make = Effect.gen(function* () {
     setCoverage,
     setQueue,
     setLimitStop,
+    setPullRequestWatch,
     saveSettings,
     subscribe,
     forgetStreaming,
@@ -272,6 +274,15 @@ const make = Effect.gen(function* () {
     sendQueued,
   });
 
+  const pullRequestWatch = createPullRequestWatch({
+    threads,
+    reportErrorsIn,
+    refreshShelved,
+    setShelveOverride,
+    setPullRequestWatch,
+    send,
+  });
+
   const orchestration = createOrchestration({
     store,
     projectsStore,
@@ -289,6 +300,7 @@ const make = Effect.gen(function* () {
     createWorktree,
     setUpWorktree,
     openThread,
+    pullRequestWatch,
   });
 
   const mcp = createMcp(
@@ -327,6 +339,9 @@ const make = Effect.gen(function* () {
   // Subscribed before any cut turn picks up, so none ends unreported.
   yield* Effect.forkScoped(orchestration.followTurns(yield* subscribe));
   yield* Effect.forkScoped(resumeCutTurns);
+  yield* Effect.forkScoped(
+    Effect.schedule(pullRequestWatch.checkAll, Schedule.spaced(PULL_REQUEST_POLL_MS)),
+  );
   yield* Effect.forkScoped(
     createIdleCompaction({
       runFork,
@@ -487,6 +502,12 @@ const make = Effect.gen(function* () {
         "thread.rename": ({ threadId, title }) =>
           Effect.map(getEntry(threadId), (entry) =>
             setTitle(entry, deriveTitle(title, entry.info.title)),
+          ),
+        "thread.watchPullRequest": ({ threadId, url }) =>
+          Effect.flatMap(getEntry(threadId), (entry) =>
+            url === null
+              ? Effect.sync(() => pullRequestWatch.unwatch(entry))
+              : Effect.asVoid(pullRequestWatch.watch(entry, url)),
           ),
         "thread.shelve": ({ threadId, shelved }) =>
           Effect.map(getEntry(threadId), (entry) => {

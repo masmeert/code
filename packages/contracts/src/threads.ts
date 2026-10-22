@@ -166,6 +166,8 @@ export const MessageSender = Schema.TaggedUnion({
   report: { threadId: Schema.String, title: Schema.String },
   /** MassCode, picking up a turn it cut short by quitting or crashing. */
   restart: {},
+  /** MassCode, passing on news from the pull request the thread watches. */
+  pullRequest: { number: Schema.Number, url: Schema.String },
 });
 
 export type MessageSender = typeof MessageSender.Type;
@@ -180,6 +182,18 @@ export const QueuedMessage = Schema.Struct({
 });
 
 export type QueuedMessage = typeof QueuedMessage.Type;
+
+/**
+ * A GitHub pull request the thread watches: new reviews and comments from others, and failing
+ * checks, come to its agent as messages. Merging or closing it ends the watch and shelves the thread.
+ */
+export const WatchedPullRequest = Schema.Struct({
+  number: Schema.Number,
+  url: Schema.String,
+  title: Schema.String,
+});
+
+export type WatchedPullRequest = typeof WatchedPullRequest.Type;
 
 export const ThreadInfo = Schema.Struct({
   id: Schema.String,
@@ -216,6 +230,7 @@ export const ThreadInfo = Schema.Struct({
   queue: Schema.optional(Schema.Array(QueuedMessage)),
   /** Absent unless the last turn hit a usage limit nobody has answered yet. */
   limitStop: Schema.optional(LimitStop),
+  pullRequest: Schema.optional(WatchedPullRequest),
 });
 
 export type ThreadInfo = typeof ThreadInfo.Type;

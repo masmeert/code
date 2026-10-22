@@ -24,6 +24,7 @@ import {
   ThreadUsage,
   UserAnswers,
   UserQuestion,
+  WatchedPullRequest,
 } from "./threads.ts";
 
 /** What a harness taking over a thread is told: the `messages` it missed while `from` had it. */
@@ -74,6 +75,11 @@ export const RuntimeEvent = Schema.TaggedUnion({
   "thread.queue": {
     threadId: Schema.String,
     queue: Schema.Array(QueuedMessage),
+  },
+  /** The pull request the thread watches; null when it stops watching one. */
+  "thread.pullRequest": {
+    threadId: Schema.String,
+    pullRequest: Schema.NullOr(WatchedPullRequest),
   },
   /** Null once the stop is answered, or a new turn starts. */
   "thread.limitStop": {

@@ -12,6 +12,8 @@ import {
   ArrowUp,
   ChevronDown,
   ExternalLink,
+  Eye,
+  EyeOff,
   GitCommitHorizontal,
   GitMerge,
   GitPullRequestArrow,
@@ -20,6 +22,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useRepoStore } from "@/entities/repo";
+import { useThreadStore } from "@/entities/thread";
 import { useSetting } from "@/entities/settings";
 import { send } from "@/shared/api";
 
@@ -100,6 +103,7 @@ export function GitMenu({
   isWorktree: boolean;
 }) {
   const repo = useRepoStore((state) => state.repos[cwd]);
+  const watchedUrl = useThreadStore((state) => state.threads[threadId]?.pullRequest?.url);
   const defaultMergeMethod = useSetting((settings) => settings.mergeMethod);
   const shouldConfirmDelete = useSetting((settings) => settings.confirmDelete !== false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -530,6 +534,24 @@ export function GitMenu({
                     <GitMerge />
                     Merge {pullRequestName}…
                   </MenuItem>
+                  {status.sourceControl === "github" ? (
+                    <MenuItem
+                      onClick={() => {
+                        send(
+                          ClientCommand.cases["thread.watchPullRequest"].make({
+                            threadId,
+                            url: watchedUrl === pullRequest.url ? null : pullRequest.url,
+                          }),
+                        );
+                        openPanel(null);
+                      }}
+                    >
+                      {watchedUrl === pullRequest.url ? <EyeOff /> : <Eye />}
+                      {watchedUrl === pullRequest.url
+                        ? `Stop watching ${pullRequestName}`
+                        : "Wake agent on reviews & CI"}
+                    </MenuItem>
+                  ) : null}
                 </>
               ) : (
                 <MenuItem

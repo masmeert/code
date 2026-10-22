@@ -16,7 +16,12 @@ import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { CommandError } from "../errors.ts";
 import { readBranch } from "../git.ts";
-import type { AnswerQuestionsInput, SendMessageInput, StartThreadInput } from "../mcp.ts";
+import type {
+  AnswerQuestionsInput,
+  SendMessageInput,
+  StartThreadInput,
+  WatchPullRequestInput,
+} from "../mcp.ts";
 import { clip } from "../handoff.ts";
 import { getHarnessName } from "../harnesses.ts";
 import type { ProviderRegistry } from "../providers/provider-registry.ts";
@@ -32,6 +37,7 @@ import {
   type ThreadEntry,
 } from "./entry.ts";
 import type { ThreadOpener } from "./opening.ts";
+import type { PullRequestWatch } from "./pull-request-watch.ts";
 import type { SequencedEvent, ThreadRegistry } from "./registry.ts";
 
 /** A tool call the main agent made, as read_thread's activity view lists it. */
@@ -60,6 +66,8 @@ type TimelineItem =
         readonly kind: string;
         readonly threadId?: string;
         readonly title?: string;
+        readonly number?: number;
+        readonly url?: string;
       };
       readonly handedOverFrom?: ProviderKind;
     }
@@ -95,6 +103,7 @@ export function createOrchestration({
   createWorktree,
   setUpWorktree,
   openThread,
+  pullRequestWatch,
 }: Pick<ThreadRegistry, "threads" | "getEntry" | "publish" | "reportErrorsIn" | "setQueue"> &
   Pick<Agents, "send" | "interrupt" | "ensureHarnessReady" | "findHarnessProblem"> &
   Pick<ThreadOpener, "createWorktree" | "setUpWorktree" | "openThread"> & {
@@ -102,6 +111,7 @@ export function createOrchestration({
     readonly projectsStore: typeof ProjectsStore.Service;
     readonly settingsStore: typeof SettingsStore.Service;
     readonly providerRegistry: typeof ProviderRegistry.Service;
+    readonly pullRequestWatch: Pick<PullRequestWatch, "watch" | "unwatch">;
   }) {
   /** Callers waiting on a thread, by `${callerId}\0${threadId}`: their wait returns what a report would say. */
   const waiting = new Map<string, number>();
@@ -154,6 +164,7 @@ export function createOrchestration({
               agent: ({ threadId, title }) => ({ kind: "agent", threadId, title }),
               report: ({ threadId, title }) => ({ kind: "report", threadId, title }),
               restart: () => ({ kind: "masscode-restart" }),
+              pullRequest: ({ number, url }) => ({ kind: "pull-request", number, url }),
             }),
           }),
           ...(withActivity && handoff && { handedOverFrom: handoff.from }),
@@ -629,6 +640,25 @@ export function createOrchestration({
     startThread,
     sendMessage,
     answerQuestions,
+    watchPullRequest: Effect.fn("watchPullRequest")(function* (
+      callerId: string,
+      input: WatchPullRequestInput,
+    ) {
+      const caller = yield* getEntry(callerId);
+
+      if (input.stop) {
+        pullRequestWatch.unwatch(caller);
+
+        return { watching: null };
+      }
+
+      const { number, url, title, checks } = yield* pullRequestWatch.watch(
+        caller,
+        input.pullRequest ?? null,
+      );
+
+      return { watching: { number, url, title }, checks };
+    }),
     waitForThread: (callerId: string, threadId: string, timeoutMs: number) =>
       Effect.flatMap(getTargetEntry(threadId), (entry) => waitForTurn(callerId, entry, timeoutMs)),
     stopThread: (_callerId: string, threadId: string) =>
