@@ -2,6 +2,13 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.10](https://github.com/masmeert/code/compare/v0.1.9...v0.1.10) (2026-10-22)
+
+
+### Fixed
+
+* **desktop:** build the DMG without the removed .icns ([c83a9d6](https://github.com/masmeert/code/commit/c83a9d6db69d3fd2c9e652af1d3b62680b9e00c4))
+
 ## [0.1.9](https://github.com/masmeert/code/compare/v0.1.8...v0.1.9) (2026-10-22)
 
 
