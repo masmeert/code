@@ -42,12 +42,17 @@ function getToolDirectory(tool: Tool) {
   return join(DATA_DIR, "tools", tool, TOOLS[tool]);
 }
 
-function runCommand(command: string, args: ReadonlyArray<string>, timeoutMs: number) {
+function runCommand(
+  command: string,
+  args: ReadonlyArray<string>,
+  timeoutMs: number,
+  environment: NodeJS.ProcessEnv = process.env,
+) {
   return new Promise<string>((resolve, reject) =>
     execFile(
       command,
       args,
-      { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
+      { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, env: environment },
       (error, stdout, stderr) => {
         if (!error) return resolve(stdout);
 
@@ -174,6 +179,18 @@ async function listEmulators(): Promise<ReadonlyArray<Device>> {
 
 const AGENT_DEVICE_CLI = join(getToolDirectory("agent-device"), "node_modules/.bin/agent-device");
 
+/**
+ * The first agent-device command starts its daemon, which quits after five idle minutes by
+ * default; the next command then waits for it and the XCTest runner to start again. We stop it
+ * on quit instead, like t3code.
+ */
+function runAgentDevice(args: ReadonlyArray<string>, timeoutMs: number) {
+  return runCommand(AGENT_DEVICE_CLI, args, timeoutMs, {
+    ...process.env,
+    AGENT_DEVICE_DAEMON_IDLE_TIMEOUT_MS: "0",
+  });
+}
+
 const SESSION_PREFIX = "masscode-";
 
 /** The thread's agent-device session; agent-device lends a device to one session until it's closed. */
@@ -183,7 +200,7 @@ export function nameAgentSession(threadId: string) {
 
 /** Ending a session also quits the app it opened; agent-device has no way to keep it running. */
 function closeAgentSession(threadId: string) {
-  return runCommand(AGENT_DEVICE_CLI, ["close", "--session", nameAgentSession(threadId)], 30_000)
+  return runAgentDevice(["close", "--session", nameAgentSession(threadId)], 30_000)
     .then(() => undefined)
     .catch(() => {});
 }
@@ -191,9 +208,9 @@ function closeAgentSession(threadId: string) {
 /** Threads whose agent-device sessions hold `device`. */
 async function findSessionHolders(device: Device) {
   // SAFETY: the shape of `agent-device session list --json`, as of the pinned version.
-  const listing = JSON.parse(
-    await runCommand(AGENT_DEVICE_CLI, ["session", "list", "--json"], 30_000),
-  ) as { data?: { sessions?: ReadonlyArray<{ name: string; id?: string }> } };
+  const listing = JSON.parse(await runAgentDevice(["session", "list", "--json"], 30_000)) as {
+    data?: { sessions?: ReadonlyArray<{ name: string; id?: string }> };
+  };
 
   return (listing.data?.sessions ?? [])
     .filter(
@@ -503,15 +520,16 @@ export function createDevices({
 
       return Buffer.from(await response.arrayBuffer()).toString("base64");
     },
-    /** On quit: shut down what was booted here, and stop the hub. */
+    /** On quit: shut down what was booted here, and stop the hub and agent-device's daemon. */
     async close() {
-      await Promise.all(
-        [...bootedHere.values()].map(({ device, idle }) => {
+      await Promise.all([
+        ...[...bootedHere.values()].map(({ device, idle }) => {
           if (idle) clearTimeout(idle);
 
           return shutDown(device);
         }),
-      );
+        runAgentDevice(["daemon", "stop"], 10_000).catch(() => {}),
+      ]);
 
       hubProcess?.kill();
     },
