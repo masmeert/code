@@ -1,4 +1,4 @@
-import { isShowingWork, toTurns } from "@masscode/client";
+import { categoryOf, isShowingWork, type ToolItem, toTurns } from "@masscode/client";
 import { ClientCommand, isTurnActive } from "@masscode/contracts";
 import { KeyboardAwareLegendList, useKeyboardChatComposerInset } from "@legendapp/list/keyboard";
 import type { LegendListRef } from "@legendapp/list/react-native";
@@ -14,6 +14,7 @@ import { useHostProviders } from "@/entities/provider";
 import { loadOlder, openThread, transcriptKey, useThreadStore } from "@/entities/thread";
 import { send } from "@/shared/api";
 import { OrbFace, type OrbFaceState, Pulsing, Text } from "@/shared/ui";
+import { RunningAgents } from "./running-agents.tsx";
 import { TranscriptTurn } from "./transcript-turn.tsx";
 
 export function ThreadPage() {
@@ -59,12 +60,20 @@ export function ThreadPage() {
   const isThinking = thread.status === "running" && !isShowingWork(transcript?.items ?? []);
   const lastTurn = turns.at(-1);
   const lastItem = lastTurn?.from === "assistant" ? lastTurn.items.at(-1) : undefined;
+  const isBusy = isTurnActive(thread.status);
+
+  const runningAgents = isBusy
+    ? (transcript?.items ?? []).filter(
+        (item): item is ToolItem =>
+          item.kind === "tool" && categoryOf(item.name) === "agent" && item.output === null,
+      )
+    : [];
 
   const faceState: OrbFaceState | null = isThinking
     ? "thinking"
     : lastItem === undefined
       ? null
-      : isTurnActive(thread.status)
+      : isBusy
         ? lastItem.kind === "assistant"
           ? "streaming"
           : "thinking"
@@ -85,8 +94,16 @@ export function ThreadPage() {
         data={turns}
         keyExtractor={(turn) => turn.id}
         renderItem={({ item }) => (
-          <TranscriptTurn hostId={hostId} threadId={threadId} turn={item} />
+          <TranscriptTurn
+            hostId={hostId}
+            threadId={threadId}
+            turn={item}
+            isBusy={isBusy}
+            isLast={item === lastTurn}
+          />
         )}
+        // Turns show unfinished calls as running only while the thread works, which their items alone don't tell.
+        extraData={isBusy}
         estimatedItemSize={120}
         contentInsetAdjustmentBehavior="automatic"
         contentInsetEndAdjustment={contentInsetEndAdjustment}
@@ -114,32 +131,33 @@ export function ThreadPage() {
         // One face, at the end of the newest reply: repeated down the thread it reads as wallpaper.
         // A single element in one place, so it stays mounted and animates between states.
         ListFooterComponent={
-          faceState ? (
-            <View className="flex-row items-center gap-2 px-4 py-2">
-              <OrbFace state={faceState} size={28} />
-              {isThinking ? (
-                <Pulsing>
-                  <Text className="text-sm text-muted-foreground">Thinking…</Text>
-                </Pulsing>
-              ) : null}
-            </View>
-          ) : null
+          <>
+            {faceState ? (
+              <View className="flex-row items-center gap-2 px-4 py-2">
+                <OrbFace state={faceState} size={28} />
+                {isThinking ? (
+                  <Pulsing>
+                    <Text className="text-sm text-muted-foreground">Thinking…</Text>
+                  </Pulsing>
+                ) : null}
+              </View>
+            ) : null}
+            {runningAgents.length > 0 ? (
+              <RunningAgents
+                hostId={hostId}
+                threadId={threadId}
+                agents={runningAgents}
+                canStopOne={thread.provider === "claude"}
+              />
+            ) : null}
+          </>
         }
       />
       <View pointerEvents="box-none" className="absolute inset-x-0 bottom-0">
         <KeyboardStickyView>
-          <View
-            ref={composer}
-            onLayout={(event) => {
-              // Growing into the card would cover the transcript's end; it stays in view instead.
-              const wasAtEnd = list.current?.getState().isAtEnd;
-
-              onComposerLayout(event);
-
-              if (wasAtEnd)
-                requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
-            }}
-          >
+          {/* The list shifts its end by the composer's growth itself; scrolling here as well
+              fought that shift and jumped the transcript while typing. */}
+          <View ref={composer} onLayout={onComposerLayout}>
             {host.connection === "connected" ? null : (
               <Text className="px-4 pt-2 text-center text-xs text-warning">
                 Not connected to {host.paired.name}; showing what was last loaded.

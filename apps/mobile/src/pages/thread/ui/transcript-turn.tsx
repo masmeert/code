@@ -1,6 +1,6 @@
 import {
   type Block,
-  categoryOf,
+  hasNewestItem,
   hasSameItems,
   livePhrase,
   summarize,
@@ -12,14 +12,13 @@ import {
   toToolGroups,
   type Turn,
 } from "@masscode/client";
-import { type Attachment, ClientCommand, MessageSender } from "@masscode/contracts";
+import { type Attachment, MessageSender } from "@masscode/contracts";
 import { router } from "expo-router";
 import { memo, useEffect, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useHostStore } from "@/entities/host";
 import { fetchImageUrl } from "@/entities/thread";
-import { send } from "@/shared/api";
 import { cn } from "@/shared/lib/cn";
 import { Icon, Markdown, Pulsing, Text } from "@/shared/ui";
 import { ApprovalCard } from "./approval-card.tsx";
@@ -28,10 +27,20 @@ interface TurnProps {
   readonly hostId: string;
   readonly threadId: string;
   readonly turn: Turn;
+  /** Whether the thread is working: a call left without output after it stops never finished. */
+  readonly isBusy: boolean;
+  /** The newest turn: its last block is the one streaming. */
+  readonly isLast: boolean;
 }
 
 /** One turn: your message, or everything the agent did in answer, folded like the desktop's. */
-export const TranscriptTurn = memo(function TranscriptTurn({ hostId, threadId, turn }: TurnProps) {
+export const TranscriptTurn = memo(function TranscriptTurn({
+  hostId,
+  threadId,
+  turn,
+  isBusy,
+  isLast,
+}: TurnProps) {
   if (turn.from === "user")
     return (
       <View className="items-end gap-1.5 px-4 py-2">
@@ -94,7 +103,14 @@ export const TranscriptTurn = memo(function TranscriptTurn({ hostId, threadId, t
   return (
     <View className="gap-1.5 px-4 py-2">
       {toBlocks(turn.items).map((block) => (
-        <BlockView key={block.id} hostId={hostId} threadId={threadId} block={block} />
+        <BlockView
+          key={block.id}
+          hostId={hostId}
+          threadId={threadId}
+          block={block}
+          isLive={isBusy}
+          isStreaming={isBusy && isLast && hasNewestItem(block, turn.items.at(-1))}
+        />
       ))}
     </View>
   );
@@ -182,7 +198,13 @@ function AttachmentThumbnail({
 
 /** `toTurns` makes new turns on every change; one whose items are the same objects needn't render again. */
 function isSameTurn(previous: TurnProps, next: TurnProps) {
-  if (previous.hostId !== next.hostId || previous.threadId !== next.threadId) return false;
+  if (
+    previous.hostId !== next.hostId ||
+    previous.threadId !== next.threadId ||
+    previous.isBusy !== next.isBusy ||
+    previous.isLast !== next.isLast
+  )
+    return false;
 
   const { turn } = previous;
 
@@ -196,10 +218,15 @@ function BlockView({
   hostId,
   threadId,
   block,
+  isLive,
+  isStreaming,
 }: {
   hostId: string;
   threadId: string;
   block: Block;
+  isLive: boolean;
+  /** Holds the turn's newest item while the thread works: it says what the agent is doing now. */
+  isStreaming: boolean;
 }) {
   switch (block.kind) {
     case "assistant":
@@ -217,27 +244,53 @@ function BlockView({
     case "reasoning":
       return (
         <Disclosure
-          label={<Text className="text-sm text-muted-foreground">{thoughtTitle(block.id)}</Text>}
+          label={
+            isStreaming ? (
+              <Pulsing>
+                <Text className="text-sm text-foreground">Thinking…</Text>
+              </Pulsing>
+            ) : (
+              <Text className="text-sm text-muted-foreground">{thoughtTitle(block.id)}</Text>
+            )
+          }
         >
           <Markdown text={block.text} isMuted />
         </Disclosure>
       );
     case "tools":
-      return <ToolGroup hostId={hostId} threadId={threadId} calls={block.calls} />;
+      return <ToolGroup calls={block.calls} isLive={isLive} />;
     case "work": {
       const calls = block.items.filter((item): item is ToolItem => item.kind === "tool");
+      const newest = block.items.at(-1);
 
       return (
         <Disclosure
           label={
-            <Text numberOfLines={1} className="shrink text-sm text-muted-foreground">
-              {calls.length > 0 ? summarize(calls) : thoughtTitle(block.items[0]?.id ?? "")}
-            </Text>
+            isStreaming ? (
+              <Pulsing className="shrink">
+                <Text numberOfLines={1} className="text-sm text-foreground">
+                  {newest?.kind === "tool" && newest.output === null
+                    ? livePhrase(newest)
+                    : "Thinking…"}
+                </Text>
+              </Pulsing>
+            ) : (
+              <Text numberOfLines={1} className="shrink text-sm text-muted-foreground">
+                {calls.length > 0 ? summarize(calls) : thoughtTitle(block.items[0]?.id ?? "")}
+              </Text>
+            )
           }
         >
           <View className="gap-1">
             {toToolGroups(block.items).map((inner) => (
-              <BlockView key={inner.id} hostId={hostId} threadId={threadId} block={inner} />
+              <BlockView
+                key={inner.id}
+                hostId={hostId}
+                threadId={threadId}
+                block={inner}
+                isLive={isLive}
+                isStreaming={isStreaming && hasNewestItem(inner, newest)}
+              />
             ))}
           </View>
         </Disclosure>
@@ -280,20 +333,11 @@ function BlockView({
 }
 
 /** Consecutive calls, one summary line; a lone call is its own row. */
-function ToolGroup({
-  hostId,
-  threadId,
-  calls,
-}: {
-  hostId: string;
-  threadId: string;
-  calls: ReadonlyArray<ToolItem>;
-}) {
-  const running = calls.find((call) => call.output === null);
+function ToolGroup({ calls, isLive }: { calls: ReadonlyArray<ToolItem>; isLive: boolean }) {
+  const running = isLive ? calls.find((call) => call.output === null) : undefined;
   const failed = calls.filter((call) => call.isError).length;
 
-  if (calls.length === 1)
-    return <ToolCallRow hostId={hostId} threadId={threadId} call={calls[0]!} />;
+  if (calls.length === 1) return <ToolCallRow call={calls[0]!} isLive={isLive} />;
 
   return (
     <Disclosure
@@ -312,30 +356,22 @@ function ToolGroup({
       }
     >
       {calls.map((call) => (
-        <ToolCallRow key={call.id} hostId={hostId} threadId={threadId} call={call} />
+        <ToolCallRow key={call.id} call={call} isLive={isLive} />
       ))}
     </Disclosure>
   );
 }
 
-function ToolCallRow({
-  hostId,
-  threadId,
-  call,
-}: {
-  hostId: string;
-  threadId: string;
-  call: ToolCall & { readonly progress?: string };
-}) {
+/** A subagent's progress and stop button live in its row at the transcript's end, not here. */
+export function ToolCallRow({ call, isLive }: { call: ToolCall; isLive: boolean }) {
   const children = call.children ?? [];
-  const isRunningAgent = categoryOf(call.name) === "agent" && call.output === null;
 
   const label = (
     <>
       <Text className={cn("text-sm", call.isError ? "text-destructive" : "text-muted-foreground")}>
         {toolVerb(call.name)}
       </Text>
-      <Pulsing isLive={call.output === null} className="shrink">
+      <Pulsing isLive={isLive && call.output === null} className="shrink">
         <Text numberOfLines={1} className="font-mono text-xs text-muted-foreground/70">
           {call.summary}
         </Text>
@@ -348,63 +384,42 @@ function ToolCallRow({
     </>
   );
 
-  return (
-    <View>
-      {call.output || children.length > 0 ? (
-        <Disclosure label={label} isNested>
-          {children.length > 0 ? (
-            <View className="mb-1.5 ml-1.5 border-l border-border pl-3">
-              {children.map((child) => (
-                <ToolCallRow key={child.id} hostId={hostId} threadId={threadId} call={child} />
-              ))}
-            </View>
-          ) : null}
-          {call.output ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              className="mb-1.5 rounded-lg bg-muted/80"
-              contentContainerClassName="p-3"
-            >
-              <Text
-                selectable
-                numberOfLines={16}
-                className={cn(
-                  "font-mono text-xs leading-5",
-                  call.isError ? "text-destructive" : "text-foreground/85",
-                )}
-              >
-                {call.output}
-              </Text>
-            </ScrollView>
-          ) : null}
-        </Disclosure>
-      ) : (
-        <View className="min-h-8 flex-row items-center gap-2">{label}</View>
-      )}
-      {call.progress && call.output === null ? (
-        <Text className="mb-1 text-xs text-muted-foreground">{call.progress}</Text>
+  return call.output || children.length > 0 ? (
+    <Disclosure label={label} isNested>
+      {children.length > 0 ? (
+        <View className="mb-1.5 ml-1.5 border-l border-border pl-3">
+          {children.map((child) => (
+            <ToolCallRow key={child.id} call={child} isLive={isLive} />
+          ))}
+        </View>
       ) : null}
-      {isRunningAgent ? (
-        <Pressable
-          hitSlop={8}
-          onPress={() =>
-            send(
-              hostId,
-              ClientCommand.cases["thread.stopAgent"].make({ threadId, toolId: call.id }),
-            )
-          }
-          className="mb-1 self-start rounded-lg px-2 py-1 active:bg-destructive/10"
+      {call.output ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          className="mb-1.5 rounded-lg bg-muted/80"
+          contentContainerClassName="p-3"
         >
-          <Text className="text-xs text-destructive">Stop agent</Text>
-        </Pressable>
+          <Text
+            selectable
+            numberOfLines={16}
+            className={cn(
+              "font-mono text-xs leading-5",
+              call.isError ? "text-destructive" : "text-foreground/85",
+            )}
+          >
+            {call.output}
+          </Text>
+        </ScrollView>
       ) : null}
-    </View>
+    </Disclosure>
+  ) : (
+    <View className="min-h-8 flex-row items-center gap-2">{label}</View>
   );
 }
 
 /** A row that folds what the agent did on the way to its answer. */
-function Disclosure({
+export function Disclosure({
   label,
   isNested = false,
   children,
