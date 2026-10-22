@@ -12,6 +12,7 @@ import remarkGfm from "remark-gfm";
 import { CodeBlock } from "@masscode/ui/agents/code-block";
 import { CommandBlock } from "@masscode/ui/agents/command-block";
 import { cn } from "@masscode/ui/lib/utils";
+import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
 
 export interface MarkdownProps {
   children: string;
@@ -95,6 +96,7 @@ const components: Components = {
     const [resolved, setResolved] = useState<string | null | undefined>(
       local ? undefined : (src ?? null),
     );
+    const [isOpen, setIsOpen] = useState(false);
     useEffect(() => {
       if (!local || !src) return;
       if (!resolveImage) return setResolved(null);
@@ -113,12 +115,38 @@ const components: Components = {
         </span>
       );
     return (
-      <img
-        src={resolved}
-        alt={alt ?? ""}
-        onError={() => setResolved(null)}
-        className="my-3 block max-h-96 max-w-full rounded-xl border border-border"
-      />
+      <>
+        <button
+          type="button"
+          title={src}
+          onClick={() => setIsOpen(true)}
+          className="my-3 block max-w-full cursor-zoom-in overflow-hidden rounded-xl border border-border transition-opacity outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <img
+            src={resolved}
+            alt={alt ?? ""}
+            onError={() => setResolved(null)}
+            className="block max-h-96 max-w-full"
+          />
+        </button>
+        <MorphingModal
+          viewId={isOpen ? resolved : null}
+          onClose={() => setIsOpen(false)}
+          placement="center"
+          className="w-auto max-w-[90vw]"
+        >
+          <img
+            src={resolved}
+            alt={alt ?? ""}
+            className="max-h-[80vh] max-w-full rounded-lg object-contain"
+          />
+          {alt ? (
+            <p className="mt-3 truncate text-xs text-muted-foreground" title={src}>
+              {alt}
+            </p>
+          ) : null}
+        </MorphingModal>
+      </>
     );
   },
   h1: ({ children }) => <h1 className="mt-5 mb-2 text-lg font-semibold first:mt-0">{children}</h1>,
