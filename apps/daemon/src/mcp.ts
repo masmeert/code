@@ -76,6 +76,16 @@ const SendMessageInput = {
   requestId: z.string().optional().describe("Retrying with the same id doesn't send it twice."),
 };
 
+const AnswerQuestionsInput = {
+  threadId: z.string(),
+  requestId: z.string().describe("The request the questions came with."),
+  answers: z
+    .record(z.string(), z.array(z.string()))
+    .describe(
+      "By question id, the labels of the options picked, or your own answer in their place. Questions left out go unanswered.",
+    ),
+};
+
 const WaitInput = {
   threadId: z.string(),
   timeoutSeconds: z.number().int().positive().optional().describe("600 when left out."),
@@ -84,6 +94,8 @@ const WaitInput = {
 export type StartThreadInput = z.infer<z.ZodObject<typeof StartThreadInput>>;
 
 export type SendMessageInput = z.infer<z.ZodObject<typeof SendMessageInput>>;
+
+export type AnswerQuestionsInput = z.infer<z.ZodObject<typeof AnswerQuestionsInput>>;
 
 /** What the orchestration tools do, for the agent of thread `caller`; failures are messages for that agent. */
 interface Orchestration {
@@ -95,6 +107,10 @@ interface Orchestration {
   ) => Effect.Effect<unknown, Error>;
   readonly startThread: (caller: string, input: StartThreadInput) => Effect.Effect<unknown, Error>;
   readonly sendMessage: (caller: string, input: SendMessageInput) => Effect.Effect<unknown, Error>;
+  readonly answerQuestions: (
+    caller: string,
+    input: AnswerQuestionsInput,
+  ) => Effect.Effect<unknown, Error>;
   readonly waitForThread: (
     caller: string,
     threadId: string,
@@ -174,7 +190,7 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
     "wait_for_thread",
     {
       description:
-        "Waits until a thread's agent finishes its turn, then returns its status and last answer. A timeout returns the status so far and leaves it working.",
+        "Waits until a thread's agent finishes its turn, then returns its status and last answer. Returns early with `waitingOn` when it stops for an approval or questions. A timeout returns the status so far and leaves it working.",
       inputSchema: WaitInput,
       annotations: readOnly,
     },
@@ -182,6 +198,16 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
       runToolEffect(
         orchestration.waitForThread(caller, threadId, (timeoutSeconds ?? WAIT_MS / 1000) * 1000),
       ),
+  );
+
+  server.registerTool(
+    "answer_questions",
+    {
+      description:
+        "Answers the questions a thread's agent stopped to ask, as given by wait_for_thread's `waitingOn` or the message forwarding them. Its turn then carries on.",
+      inputSchema: AnswerQuestionsInput,
+    },
+    (input) => runToolEffect(orchestration.answerQuestions(caller, input)),
   );
 
   server.registerTool(

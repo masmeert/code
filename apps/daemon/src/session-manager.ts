@@ -276,6 +276,7 @@ const make = Effect.gen(function* () {
     publish,
     subscribe,
     reportErrorsIn,
+    setQueue,
     send,
     interrupt,
     ensureHarnessReady,

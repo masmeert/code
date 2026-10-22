@@ -3,6 +3,7 @@
  * them. A thread an agent sent work to reports back to it as a message once its turn ends.
  */
 import {
+  isAwaitingUser,
   isTurnActive,
   MessageSender,
   type PermissionLevel,
@@ -12,7 +13,7 @@ import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { CommandError } from "../errors.ts";
 import { readBranch } from "../git.ts";
-import type { SendMessageInput, StartThreadInput } from "../mcp.ts";
+import type { AnswerQuestionsInput, SendMessageInput, StartThreadInput } from "../mcp.ts";
 import type { ProjectsStore } from "../storage/projects-store.ts";
 import type { ThreadStore } from "../storage/thread-store.ts";
 import type { Agents } from "./agents.ts";
@@ -37,13 +38,17 @@ export function createOrchestration({
   publish,
   subscribe,
   reportErrorsIn,
+  setQueue,
   send,
   interrupt,
   ensureHarnessReady,
   createWorktree,
   setUpWorktree,
   openThread,
-}: Pick<ThreadRegistry, "threads" | "getEntry" | "publish" | "subscribe" | "reportErrorsIn"> &
+}: Pick<
+  ThreadRegistry,
+  "threads" | "getEntry" | "publish" | "subscribe" | "reportErrorsIn" | "setQueue"
+> &
   Pick<Agents, "send" | "interrupt" | "ensureHarnessReady"> &
   Pick<ThreadOpener, "createWorktree" | "setUpWorktree" | "openThread"> & {
     readonly store: typeof ThreadStore.Service;
@@ -78,6 +83,46 @@ export function createOrchestration({
     return { answer, ...(error && { error }) };
   }
 
+  /** What the thread waits on the user for, with the questions when it asks some; null when nothing. */
+  function readPendingRequest({ info }: ThreadEntry) {
+    const { request } = info;
+
+    if (!request || !isAwaitingUser(info.status)) return null;
+
+    const asked = store
+      .readTurns(info.id, 1)
+      .events.map(({ event }) => event)
+      .findLast(
+        (event) =>
+          RuntimeEvent.guards["approval.requested"](event) && event.requestId === request.requestId,
+      );
+
+    const questions =
+      asked && RuntimeEvent.guards["approval.requested"](asked) ? asked.questions : undefined;
+
+    if (!questions)
+      return {
+        requestId: request.requestId,
+        title: request.title,
+        detail: request.detail,
+        howToAnswer:
+          "Only the user can approve or deny this, in the thread. Tell them, or stop it with stop_thread.",
+      };
+
+    return {
+      requestId: request.requestId,
+      title: request.title,
+      questions: questions.map(({ id, header, question, options, multiSelect }) => ({
+        id,
+        header,
+        question,
+        options: options.map(({ label, description }) => ({ label, description })),
+        multiSelect,
+      })),
+      howToAnswer: "Answer with answer_questions, or ask the user.",
+    };
+  }
+
   /** The most `caller`'s agent can give another: its own access. */
   function checkPermissionCeiling(caller: ThreadEntry, wanted: PermissionLevel | null | undefined) {
     const ceiling = caller.permission ?? "ask";
@@ -102,7 +147,10 @@ export function createOrchestration({
     );
   }
 
-  /** Waits for the thread's turn to end, up to `timeoutMs`; the caller then gets no report of it. */
+  /**
+   * Waits for the thread's turn to end, or to stop on the user, up to `timeoutMs`. The caller gets
+   * no report of a turn it saw end.
+   */
   const waitForTurn = Effect.fn("waitForTurn")(function* (
     callerId: string,
     entry: ThreadEntry,
@@ -115,6 +163,10 @@ export function createOrchestration({
     return yield* Effect.gen(function* () {
       // ponytail: polls the thread's status; a per-thread signal if many agents wait at once.
       while (entry.isSettingUp || isTurnActive(entry.info.status)) {
+        const waitingOn = readPendingRequest(entry);
+
+        if (waitingOn) return { ...summarizeThread(entry), waitingOn };
+
         if (Date.now() >= deadline) return { ...summarizeThread(entry), timedOut: true };
         yield* Effect.sleep("200 millis");
       }
@@ -137,6 +189,7 @@ export function createOrchestration({
   /** Tells the threads that sent work into `entry`'s turn, now ended, how it went. */
   function reportTurn(entry: ThreadEntry) {
     const { report } = entry;
+    const recipients = listRecipients(entry);
     entry.report = null;
 
     if (!report) return Effect.void;
@@ -154,18 +207,9 @@ export function createOrchestration({
     ].join("\n\n");
 
     return Effect.forEach(
-      [...report.to],
-      (recipientId) => {
-        const recipient = threads.get(recipientId);
-
-        if (
-          !recipient ||
-          recipient.info.archivedAt !== null ||
-          waiting.has(`${recipientId}\0${threadId}`)
-        )
-          return Effect.void;
-
-        return send(
+      recipients,
+      (recipient) =>
+        send(
           recipient,
           text,
           { effort: null, permission: recipient.permission ?? "ask", attachments: [] },
@@ -174,23 +218,113 @@ export function createOrchestration({
             messageId: deriveRequestUuid(threadId, `report:${report.turn}`),
             from: MessageSender.cases.report.make({ threadId, title }),
           },
-        ).pipe(reportErrorsIn(recipientId), Effect.ignore);
-      },
+        ).pipe(reportErrorsIn(recipient.info.id), Effect.ignore),
       { discard: true },
     );
   }
 
-  /** Reports each turn that ends, for as long as the daemon runs. */
+  /** Threads that sent work into `entry`'s turn and aren't waiting on it, so need telling. */
+  function listRecipients(entry: ThreadEntry) {
+    return [...(entry.report?.to ?? [])].flatMap((recipientId) => {
+      const recipient = threads.get(recipientId);
+
+      return recipient &&
+        recipient.info.archivedAt === null &&
+        !waiting.has(`${recipientId}\0${entry.info.id}`)
+        ? [recipient]
+        : [];
+    });
+  }
+
+  /** Users rarely watch threads agents started, so a question goes to the agents that sent the work. */
+  function forwardQuestions(entry: ThreadEntry) {
+    const pending = readPendingRequest(entry);
+
+    if (!pending?.questions) return Effect.void;
+
+    const { id: threadId, title } = entry.info;
+
+    const questions = pending.questions.map(
+      ({ id, header, question, options, multiSelect }) =>
+        `- ${header} (id "${id}", ${multiSelect ? "any number" : "one"}): ${question}\n${options.map(({ label, description }) => `  - ${label}${description ? `: ${description}` : ""}`).join("\n")}`,
+    );
+
+    const text = `"${title}" (thread ${threadId}) stopped to ask you:\n\n${questions.join("\n")}\n\nAnswer with answer_questions (request ${pending.requestId}), or ask the user.`;
+
+    return Effect.forEach(
+      listRecipients(entry),
+      (recipient) =>
+        send(
+          recipient,
+          text,
+          { effort: null, permission: recipient.permission ?? "ask", attachments: [] },
+          {
+            queue: true,
+            messageId: deriveRequestUuid(threadId, `question:${pending.requestId}`),
+            from: MessageSender.cases.report.make({ threadId, title }),
+          },
+        ).pipe(reportErrorsIn(recipient.info.id), Effect.ignore),
+      { discard: true },
+    );
+  }
+
+  /** Questions answered before the agents they went to got them don't need asking any more. */
+  function withdrawQuestions(entry: ThreadEntry, requestId: string) {
+    const messageId = deriveRequestUuid(entry.info.id, `question:${requestId}`);
+
+    for (const recipient of listRecipients(entry)) {
+      const queue = recipient.info.queue ?? [];
+
+      if (queue.some((queued) => queued.id === messageId))
+        setQueue(
+          recipient,
+          queue.filter((queued) => queued.id !== messageId),
+        );
+    }
+  }
+
+  /** Reports each turn that ends, and each question asked, for as long as the daemon runs. */
   const followTurns = Effect.flatMap(subscribe, (events) =>
     Stream.runForEach(events, ({ event }) => {
-      if (!RuntimeEvent.guards["thread.status"](event) || isTurnActive(event.status))
-        return Effect.void;
+      const entry = "threadId" in event && event.threadId ? threads.get(event.threadId) : undefined;
 
-      const entry = threads.get(event.threadId);
+      if (!entry) return Effect.void;
 
-      return entry && !entry.isSettingUp ? reportTurn(entry) : Effect.void;
+      if (RuntimeEvent.guards["approval.resolved"](event))
+        return Effect.sync(() => withdrawQuestions(entry, event.requestId));
+
+      if (!RuntimeEvent.guards["thread.status"](event)) return Effect.void;
+
+      if (event.status === "awaiting-answer") return forwardQuestions(entry);
+
+      return isTurnActive(event.status) || entry.isSettingUp ? Effect.void : reportTurn(entry);
     }),
   );
+
+  const answerQuestions = Effect.fn("answerQuestions")(function* (
+    _callerId: string,
+    input: AnswerQuestionsInput,
+  ) {
+    const target = yield* getTargetEntry(input.threadId);
+    const pending = readPendingRequest(target);
+
+    if (!pending?.questions || pending.requestId !== input.requestId || !target.session)
+      return yield* new CommandError({
+        message: `"${target.info.title}" isn't waiting on those questions any more. read_thread shows where it is.`,
+      });
+
+    const known = new Set(pending.questions.map((question) => question.id));
+    const unknown = Object.keys(input.answers).filter((id) => !known.has(id));
+
+    if (unknown.length > 0)
+      return yield* new CommandError({
+        message: `No question has the id ${unknown.map((id) => `"${id}"`).join(", ")}. The ids are ${[...known].map((id) => `"${id}"`).join(", ")}.`,
+      });
+
+    yield* target.session.respondApproval(input.requestId, "allow", { answers: input.answers });
+
+    return summarizeThread(target);
+  });
 
   const startThread = Effect.fn("startThread")(function* (
     callerId: string,
@@ -331,6 +465,7 @@ export function createOrchestration({
       }),
     startThread,
     sendMessage,
+    answerQuestions,
     waitForThread: (callerId: string, threadId: string, timeoutMs: number) =>
       Effect.flatMap(getTargetEntry(threadId), (entry) => waitForTurn(callerId, entry, timeoutMs)),
     stopThread: (_callerId: string, threadId: string) =>
