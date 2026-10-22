@@ -2,6 +2,31 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.9](https://github.com/masmeert/code/compare/v0.1.8...v0.1.9) (2026-10-22)
+
+
+### Added
+
+* compact idle Claude threads before their prompt cache expires ([7daf0ac](https://github.com/masmeert/code/commit/7daf0ac51398efba0344667584c059fc39e8f67a))
+* **daemon:** let agents see which harnesses and models they can start threads on ([f1076db](https://github.com/masmeert/code/commit/f1076dbff69e38ca5cbc8247d40fe0ff6d076743))
+* **daemon:** pick up turns cut short by quitting or crashing ([8748b02](https://github.com/masmeert/code/commit/8748b024fa17157c92bcdf55fc1a7162fc9496dc))
+* **daemon:** report a thread's answer back to the agent that sent it work ([02fb1b3](https://github.com/masmeert/code/commit/02fb1b3447535e91d4b3f6739ce44398b7b17906))
+* **daemon:** restart, batch start and rename for the thread tools ([a39f296](https://github.com/masmeert/code/commit/a39f296b40147db858ff6b9a33fb62695a34e6ef))
+* **daemon:** show who sent each message, and a thread's activity, in read_thread ([95b5b09](https://github.com/masmeert/code/commit/95b5b093cba3b0b3458aab56368cef87a761d858))
+* **daemon:** stop waiting when a thread asks, and pass its questions on ([eaa338f](https://github.com/masmeert/code/commit/eaa338f1bac9290fac0fb55b43aefb2a252ec635))
+* keep agent messages visible between collapsed work rows ([a79ef4d](https://github.com/masmeert/code/commit/a79ef4d8b190683124b77fbcc405b99ee9d11830))
+* link threads from agent replies ([75c4fb1](https://github.com/masmeert/code/commit/75c4fb1491a5a6e8d250383205f8d0b68e6e55e2))
+* **ui:** open images in agent replies full size on click ([0e11116](https://github.com/masmeert/code/commit/0e11116ee78d647b85090bf85c3d187c65e6fa70))
+* wake a thread's agent on news from its pull request ([9a63d83](https://github.com/masmeert/code/commit/9a63d83b892f0ff0e949c23fb8663156cf91a5e8))
+
+
+### Fixed
+
+* **daemon:** keep agent-device's daemon running between commands ([438f3ba](https://github.com/masmeert/code/commit/438f3baa72a2014fd3bb5b7c3919c00238018d43))
+* less lag in the Simulator panel and agent device commands ([069ee23](https://github.com/masmeert/code/commit/069ee23c45291e38325e22499dd0e41accd65290))
+* patch vulnerable dependencies ([39863d8](https://github.com/masmeert/code/commit/39863d8674e9a1bcb9e60e4243c87695190c2abd))
+* **web:** stop the iOS simulator stream lagging behind ([9aa41a9](https://github.com/masmeert/code/commit/9aa41a94e0161843cb97be4b30c5f6652c0de0b5))
+
 ## [0.1.8](https://github.com/masmeert/code/compare/v0.1.7...v0.1.8) (2026-10-13)
 
 
