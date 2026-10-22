@@ -220,6 +220,14 @@ export const ThreadInfo = Schema.Struct({
 
 export type ThreadInfo = typeof ThreadInfo.Type;
 
+/** How agents link a thread in what they write: `[title](masscode://thread/<id>)`. */
+export const THREAD_LINK_PREFIX = "masscode://thread/";
+
+/** The thread a link written by an agent points to; null when it isn't a thread link. */
+export function parseThreadLink(href: string) {
+  return href.startsWith(THREAD_LINK_PREFIX) ? href.slice(THREAD_LINK_PREFIX.length) || null : null;
+}
+
 /** One message matching a search. */
 export const SearchHit = Schema.Struct({
   threadId: Schema.String,

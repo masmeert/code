@@ -27,6 +27,7 @@ import {
   ClientCommand,
   type CommandRun,
   MessageSender,
+  parseThreadLink,
   type ProviderKind,
   WORKTREE_SETUP_TERMINAL_ID,
 } from "@masscode/contracts";
@@ -50,6 +51,7 @@ import {
   createContext,
   lazy,
   memo,
+  type ReactNode,
   Suspense,
   use,
   useCallback,
@@ -437,6 +439,30 @@ const UserTurn = memo(
     previous.isBusy === next.isBusy,
 );
 
+/** An agent's link to a thread, as a way to it under the thread's current title. */
+function renderThreadLink(href: string, children: ReactNode) {
+  const threadId = parseThreadLink(href);
+
+  return threadId ? <ThreadLink threadId={threadId}>{children}</ThreadLink> : null;
+}
+
+function ThreadLink({ threadId, children }: { threadId: string; children: ReactNode }) {
+  const thread = useThreadStore((state) => state.threads[threadId]);
+
+  if (!thread) return <span className="text-muted-foreground">{children} (deleted)</span>;
+
+  return (
+    <button
+      type="button"
+      onClick={() => switchToThread(threadId)}
+      className="inline-flex items-baseline gap-1 rounded font-medium text-brand underline decoration-brand/40 underline-offset-4 transition-colors outline-none hover:decoration-brand focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Workflow className="size-3.5 shrink-0 self-center" />
+      {thread.title}
+    </button>
+  );
+}
+
 /** Above a message the user didn't write: who or what sent it. */
 function SenderNote({ from }: { from: MessageSender }) {
   return MessageSender.match(from, {
@@ -798,7 +824,11 @@ export const AgentBlock = memo(
       case "reasoning":
         return (
           <Reasoning label={thoughtTitle(block.id)} streaming={streaming}>
-            <Markdown streaming={streaming} className="selectable leading-relaxed">
+            <Markdown
+              streaming={streaming}
+              renderLink={renderThreadLink}
+              className="selectable leading-relaxed"
+            >
               {block.text}
             </Markdown>
           </Reasoning>
@@ -889,6 +919,7 @@ function AssistantReply({
             streaming={streaming}
             onRunCommand={runReplyCommand}
             resolveImage={resolveImage}
+            renderLink={renderThreadLink}
             className="selectable leading-relaxed"
           >
             {item.text}

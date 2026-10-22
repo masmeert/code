@@ -147,7 +147,7 @@ function createOrchestrationServer(caller: string, orchestration: Orchestration)
     { name: "masscode", version: "1.0.0" },
     {
       instructions:
-        "MassCode's threads. Start agents (Claude, Codex or Cursor; list_harnesses says which are ready, with their models) in threads of their own to work on tasks in parallel, get a second opinion from the other harness, or review work; message them, wait for and read their answers. A thread you start or message reports back to you as a message when its turn ends, unless you were waiting on it, so you can carry on with other work meanwhile. Threads you start show in the user's sidebar, in your project, where the user can watch and steer them. Stopping your thread stops them too.",
+        "MassCode's threads. Start agents (Claude, Codex or Cursor; list_harnesses says which are ready, with their models) in threads of their own to work on tasks in parallel, get a second opinion from the other harness, or review work; message them, wait for and read their answers. A thread you start or message reports back to you as a message when its turn ends, unless you were waiting on it, so you can carry on with other work meanwhile. Threads you start show in the user's sidebar, in your project, where the user can watch and steer them. Stopping your thread stops them too. To point the user to a thread, link it as [its title](masscode://thread/<threadId>): MassCode shows that as a link to the thread.",
     },
   );
 

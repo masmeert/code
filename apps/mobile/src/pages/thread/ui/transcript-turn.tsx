@@ -13,6 +13,7 @@ import {
   type Turn,
 } from "@masscode/client";
 import { type Attachment, ClientCommand, MessageSender } from "@masscode/contracts";
+import { router } from "expo-router";
 import { memo, useEffect, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
@@ -201,7 +202,17 @@ function BlockView({
 }) {
   switch (block.kind) {
     case "assistant":
-      return <Markdown text={block.text} />;
+      return (
+        <Markdown
+          text={block.text}
+          onOpenThread={(linked) =>
+            router.push({
+              pathname: "/thread/[hostId]/[threadId]",
+              params: { hostId, threadId: linked },
+            })
+          }
+        />
+      );
     case "reasoning":
       return (
         <Disclosure
