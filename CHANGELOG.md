@@ -2,6 +2,19 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.11](https://github.com/masmeert/code/compare/v0.1.10...v0.1.11) (2026-10-22)
+
+
+### Added
+
+* **keep-awake:** keep the Mac awake for agents, lid closed included ([0171e2f](https://github.com/masmeert/code/commit/0171e2f2984914bf19c8cc9b4d40beeb52ed4b82))
+* **mobile:** show running subagents, and stop the transcript jumping ([a1c91cb](https://github.com/masmeert/code/commit/a1c91cbcc2291315387644ef090bc4c16c4cf9bd))
+
+
+### Fixed
+
+* **mobile:** t3code-style composer that stays put and stands off the page ([6bd4d2f](https://github.com/masmeert/code/commit/6bd4d2faf635a8a8e3aed3d26a2075d4bbddd94c))
+
 ## [0.1.10](https://github.com/masmeert/code/compare/v0.1.9...v0.1.10) (2026-10-22)
 
 
