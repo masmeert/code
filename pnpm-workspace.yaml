@@ -20,6 +20,8 @@ minimumReleaseAgeExclude:
   - "@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.281"
   - "@anthropic-ai/claude-agent-sdk-win32-x64@0.3.281"
   - "@anthropic-ai/claude-agent-sdk@0.3.281"
+  - "@expo/env@2.5.3"
+  - expo-updates@58.0.18
 
 patchedDependencies:
   "@react-native-ai/apple@0.12.0": patches/@react-native-ai__apple@0.12.0.patch

@@ -1,0 +1,21 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "production": {
+      "channel": "production",
+      "autoIncrement": true,
+      "node": "24.19.0",
+      "pnpm": "11.22.0"
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6822212738"
+      }
+    }
+  }
+}

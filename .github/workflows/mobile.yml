@@ -1,0 +1,54 @@
+name: Mobile
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/mobile/**
+      - packages/client/**
+      - packages/contracts/**
+      - patches/**
+      - pnpm-lock.yaml
+      - .github/workflows/mobile.yml
+
+# Two pushes racing could both find no build for a new fingerprint and build it twice.
+concurrency:
+  group: mobile
+  cancel-in-progress: false
+
+jobs:
+  # Ships JavaScript-only changes over the air, and a new TestFlight build when the native side changed.
+  ship:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Find a build for this fingerprint
+        id: build
+        working-directory: apps/mobile
+        run: |
+          runtime=$(npx expo-updates runtimeversion:resolve --platform ios | jq -r .runtimeVersion)
+          builds=$(eas build:list --platform ios --channel production --runtime-version "$runtime" \
+            --limit 10 --json --non-interactive \
+            | jq '[.[] | select(.status != "ERRORED" and .status != "CANCELED")] | length')
+          echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
+          echo "exists=$([ "$builds" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Build and submit to TestFlight
+        if: steps.build.outputs.exists == 'false'
+        working-directory: apps/mobile
+        run: eas build --platform ios --profile production --auto-submit --non-interactive --no-wait
+      - name: Publish an update
+        if: steps.build.outputs.exists == 'true'
+        working-directory: apps/mobile
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: eas update --channel production --platform ios --message "${MESSAGE%%$'\n'*}" --non-interactive

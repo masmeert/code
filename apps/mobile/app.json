@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "com.apkiosk.masscode.mobile",
+      "bundleIdentifier": "com.masmeert.masscode",
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -55,6 +55,18 @@
     "experiments": {
       "typedRoutes": true
     },
-    "platforms": ["ios"]
+    "platforms": ["ios"],
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2ff0b89c-f031-4592-a311-d5c3a7236cc3"
+      }
+    },
+    "owner": "massimomeert",
+    "updates": {
+      "url": "https://u.expo.dev/2ff0b89c-f031-4592-a311-d5c3a7236cc3"
+    }
   }
 }
