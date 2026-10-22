@@ -11,6 +11,7 @@ import {
 } from "@/entities/host";
 import { ProviderLogo, useHostProviders } from "@/entities/provider";
 import { FormButtonRow, FormInfoRow, FormList, FormSection, FormSwitchRow } from "@/shared/ui";
+import { KeepAwakeSection } from "./keep-awake-section.tsx";
 
 export function ComputerPage() {
   const { hostId } = useLocalSearchParams<{ hostId: string }>();
@@ -43,6 +44,7 @@ export function ComputerPage() {
             value={CONNECTION_STATUS[connection]}
           />
         </FormSection>
+        <KeepAwakeSection host={host} />
         <FormSection
           footer={`Forgetting stops this phone reaching ${paired.name}. To unpair it on the computer too, use Settings → Phone there.`}
         >

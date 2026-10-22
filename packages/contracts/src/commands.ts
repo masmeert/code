@@ -261,6 +261,16 @@ export const ClientCommand = Schema.TaggedUnion({
   /** Revokes the phone's token and closes its connections. Desktop only. */
   "phone.unpair": { phoneId: Schema.String },
   "settings.update": { settings: Settings },
+  /** Keeps the Mac awake for `minutes`, the lid closed included, whatever the agents do. */
+  "keepAwake.start": { minutes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1440 })) },
+  /** Ends the session; one agents started stays off until they next go idle. */
+  "keepAwake.stop": {},
+  /** Asks for the administrator password once, to let MassCode keep the Mac awake with the lid closed. Desktop only. */
+  "keepAwake.setUp": {},
+  /** Undoes `keepAwake.setUp`, asking for the password again. Desktop only. */
+  "keepAwake.remove": {},
+  /** Answered with `keepAwake.apps`. */
+  "keepAwake.listApps": { requestId: Schema.String },
   "project.remove": { projectId: Schema.String },
   "providers.refresh": {},
   "provider.link": { provider: ProviderKind },

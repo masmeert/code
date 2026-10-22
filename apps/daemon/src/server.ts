@@ -89,6 +89,8 @@ const DESKTOP_ONLY_COMMANDS = new Set<ClientCommand["_tag"]>([
   "phone.unpair",
   "browser.host",
   "browser.respond",
+  "keepAwake.setUp",
+  "keepAwake.remove",
 ]);
 
 interface ConnectionData {
@@ -128,8 +130,17 @@ export function serve(port: number) {
     function streamToClient(socket: ServerWebSocket<ConnectionData>) {
       return Effect.scoped(
         Effect.gen(function* () {
-          const { dataId, settings, projects, providers, threads, terminals, phones, live } =
-            yield* manager.subscribe;
+          const {
+            dataId,
+            settings,
+            projects,
+            providers,
+            threads,
+            terminals,
+            phones,
+            keepAwake,
+            live,
+          } = yield* manager.subscribe;
 
           send(
             socket,
@@ -141,6 +152,7 @@ export function serve(port: number) {
               threads,
               terminals,
               phones,
+              keepAwake,
               root: process.getuid?.() === 0,
               protocol: PROTOCOL_VERSION,
             }),
@@ -384,6 +396,19 @@ export function serve(port: number) {
                   ),
                 ),
               ),
+            "keepAwake.listApps": ({ requestId }) =>
+              Effect.promise(async () => {
+                const apps = await manager.keepAwake.listApps();
+
+                send(
+                  socket,
+                  ServerFrame.cases["keepAwake.apps"].make({
+                    requestId,
+                    apps: apps ?? [],
+                    error: apps ? null : "MassCode couldn't list this Mac's apps. Try again.",
+                  }),
+                );
+              }),
             "settings.update": (command) =>
               manager.dispatch(command).pipe(Effect.ensuring(Effect.ignore(syncPhoneListener))),
             "browser.respond": (command) => {

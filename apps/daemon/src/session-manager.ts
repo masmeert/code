@@ -24,6 +24,7 @@ import { expandHome, listFolders } from "./folders.ts";
 import { checkoutBranch, createBranch, listFiles, readCheckpointDiff } from "./git.ts";
 import { ADAPTERS } from "./harnesses.ts";
 import { createMcp, type Mcp } from "./mcp.ts";
+import { createKeepAwake, type KeepAwake } from "./keep-awake/keep-awake.ts";
 import { createPhones, type Phones } from "./phones.ts";
 import { ProviderError } from "./providers/provider-adapter.ts";
 import { ProviderRegistry } from "./providers/provider-registry.ts";
@@ -69,6 +70,7 @@ export class SessionManager extends Context.Service<
     readonly browsers: Browsers;
     readonly devices: Devices;
     readonly phones: Phones;
+    readonly keepAwake: KeepAwake;
     readonly mcp: Mcp;
     /**
      * A thread's transcript: what was missed since `after`, or the latest `turnLimit` turns.
@@ -167,6 +169,16 @@ const make = Effect.gen(function* () {
     onChanged: (paired) =>
       publish(RuntimeEvent.cases["phones.updated"].make({ phones: [...paired] })),
   });
+
+  const keepAwake = createKeepAwake({
+    readSettings: () =>
+      Effect.runPromise(Effect.map(settingsStore.get, (settings) => settings.keepAwake)),
+    hasActiveTurns: () => [...threads.values()].some(isBusy),
+    onStatus: (status) => publish(RuntimeEvent.cases["keepAwake.updated"].make({ status })),
+  });
+
+  // Paused apps and sleep go back to what they were when the daemon stops.
+  yield* Effect.addFinalizer(() => Effect.promise(() => keepAwake.close()));
 
   const skills = yield* createSkillCatalog({
     readSkills: (provider, cwd) =>
@@ -572,6 +584,11 @@ const make = Effect.gen(function* () {
         "device.attach": () => Effect.void,
         "pairing.start": () => Effect.void,
         "phone.unpair": ({ phoneId }) => phones.unpair(phoneId),
+        "keepAwake.start": ({ minutes }) => Effect.promise(() => keepAwake.start(minutes)),
+        "keepAwake.stop": () => Effect.promise(() => keepAwake.stop()),
+        "keepAwake.setUp": () => Effect.promise(() => keepAwake.setUp()),
+        "keepAwake.remove": () => Effect.promise(() => keepAwake.remove()),
+        "keepAwake.listApps": () => Effect.void,
         "settings.update": (command) =>
           Effect.gen(function* () {
             // A different binary, config dir or env can mean another version or account.
@@ -613,6 +630,7 @@ const make = Effect.gen(function* () {
         threads: [...threads.values()].map((entry) => entry.info),
         terminals: terminals.list(),
         phones: yield* phones.list,
+        keepAwake: keepAwake.readStatus(),
         live,
       };
     }),
@@ -620,6 +638,7 @@ const make = Effect.gen(function* () {
     browsers,
     devices,
     phones,
+    keepAwake,
     mcp,
     readThread,
     readOlder,

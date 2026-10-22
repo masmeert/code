@@ -5,6 +5,7 @@ import { cn } from "@masscode/ui/lib/utils";
 import { ClientCommand } from "@masscode/contracts";
 import {
   Bot,
+  Coffee,
   FolderGit2,
   GitCommitHorizontal,
   Palette,
@@ -13,11 +14,13 @@ import {
   Smartphone,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useKeepAwake } from "@/entities/keep-awake";
 import { send } from "@/shared/api";
 import { AppearancePage } from "./appearance-page.tsx";
 import { ConnectionsPage } from "./connections-page.tsx";
 import { GeneralPage } from "./general-page.tsx";
 import { GitPage } from "./git-page.tsx";
+import { KeepAwakePage } from "./keep-awake-page.tsx";
 import { HarnessesPage } from "./harnesses-page.tsx";
 import { PhonesPage } from "./phones-page.tsx";
 import { ProjectsPage } from "./projects-page.tsx";
@@ -28,6 +31,7 @@ const PAGES = [
   { page: "appearance", title: "Appearance", icon: Palette, Content: AppearancePage },
   { page: "harnesses", title: "Harnesses", icon: Bot, Content: HarnessesPage },
   { page: "git", title: "Git", icon: GitCommitHorizontal, Content: GitPage },
+  { page: "keepAwake", title: "Keep awake", icon: Coffee, Content: KeepAwakePage },
   { page: "connections", title: "Connections", icon: Server, Content: ConnectionsPage },
   { page: "phone", title: "Phone", icon: Smartphone, Content: PhonesPage },
 ] as const;
@@ -49,8 +53,14 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
 function SettingsView() {
   const [page, setPage] = useState<(typeof PAGES)[number]>(PAGES[0]);
 
+  const isKeepAwakeAvailable = useKeepAwake()?.available === true;
+
   // Hosts are reached over SSH by the desktop app.
-  const pages = PAGES.filter((entry) => entry.page !== "connections" || window.desktop);
+  const pages = PAGES.filter(
+    (entry) =>
+      (entry.page !== "connections" || window.desktop) &&
+      (entry.page !== "keepAwake" || isKeepAwakeAvailable),
+  );
 
   // Sign-in state can change outside the app (e.g. `claude auth logout` in a terminal).
   useEffect(() => send(ClientCommand.cases["providers.refresh"].make({})), []);

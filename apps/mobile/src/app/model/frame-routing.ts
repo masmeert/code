@@ -71,6 +71,7 @@ routeFramesTo((hostId, frame) =>
     "browser.request": () => {},
     "device.listed": () => {},
     "device.attached": () => {},
+    "keepAwake.apps": () => {},
   }),
 );
 

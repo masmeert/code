@@ -1,4 +1,9 @@
-import { RuntimeEvent, type ServerFrame, type Settings } from "@masscode/contracts";
+import {
+  type KeepAwakeStatus,
+  RuntimeEvent,
+  type ServerFrame,
+  type Settings,
+} from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
@@ -26,6 +31,8 @@ export interface HostState {
   /** The host's database its threads and projects come from. */
   readonly dataId: string | null;
   readonly settings: Settings | null;
+  /** Null until it connects, and from a daemon too old to keep its machine awake. */
+  readonly keepAwake: KeepAwakeStatus | null;
 }
 
 interface State {
@@ -42,6 +49,7 @@ function createHost(paired: PairedHost): HostState {
     connection: paired.enabled === false ? "off" : "connecting",
     dataId: null,
     settings: null,
+    keepAwake: null,
   };
 }
 
@@ -97,6 +105,7 @@ export function applyHostShell(hostId: string, shell: Extract<ServerFrame, { _ta
     connection: "connected",
     dataId: shell.dataId,
     settings: shell.settings,
+    keepAwake: shell.keepAwake ?? null,
   }));
 }
 
@@ -104,7 +113,10 @@ export function applyHostEvent(hostId: string, event: RuntimeEvent) {
   updateHost(hostId, (host) =>
     RuntimeEvent.matchOrElse<HostState>(
       event,
-      { "settings.updated": ({ settings }) => ({ ...host, settings }) },
+      {
+        "settings.updated": ({ settings }) => ({ ...host, settings }),
+        "keepAwake.updated": ({ status }) => ({ ...host, keepAwake: status }),
+      },
       () => host,
     ),
   );
