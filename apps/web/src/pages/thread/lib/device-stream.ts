@@ -1,5 +1,7 @@
 import type { DeviceHub, DevicePlatform } from "@masscode/contracts";
 
+import { addSimulatorReorderLimits } from "./simulator-avc-config";
+
 /**
  * A live simulator or emulator screen from the device hub, with touches and keys sent back.
  * Ported from t3code's device stream client (MIT), without its Duo and remote-access parts.
@@ -393,7 +395,12 @@ export function connectDeviceStream(
           if (tag === 1) {
             isAwaitingKeyframe = true;
 
-            if (!(await configureDecoder({ codec: getAvcCodec(payload), description: payload })))
+            if (
+              !(await configureDecoder({
+                codec: getAvcCodec(payload),
+                description: addSimulatorReorderLimits(payload),
+              }))
+            )
               return showMjpeg();
           } else if (tag === 2 || tag === 3) decode(tag === 2, payload);
           else if (tag === 4)
