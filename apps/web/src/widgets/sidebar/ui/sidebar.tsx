@@ -46,6 +46,7 @@ import {
   MoreHorizontal,
   PanelLeft,
   Pencil,
+  RotateCw,
   Search,
   Settings,
   SquarePen,
@@ -72,6 +73,7 @@ import { getUpdateAction, useUpdateStatus } from "@/features/update-app";
 import { getStatusDotStyle, NEEDS_YOU, PLAN_APPROVAL_TITLE } from "@masscode/client";
 import { usePersistedFlag } from "@/shared/lib/storage";
 import { hasTrafficLights } from "@/shared/config";
+import { IconButton } from "@/shared/ui";
 import { KeepAwakeIndicator } from "./keep-awake-indicator.tsx";
 import { ServicesIndicator } from "./services-indicator.tsx";
 import { ThreadListMenu } from "./thread-list-menu.tsx";
@@ -510,31 +512,30 @@ export function Sidebar(props: {
         />
       </div>
 
-      <div className="flex shrink-0 flex-col gap-1 px-3 pt-1 pb-3">
+      <div className="flex shrink-0 items-center gap-0.5 px-3 pt-1 pb-3">
+        <IconButton label="Settings" onClick={props.onOpenSettings}>
+          <Settings className="size-4" />
+        </IconButton>
+        <ServicesIndicator onOpen={props.onOpenServices} />
+        <KeepAwakeIndicator />
         {updateStatus &&
         updateAction &&
         UpdateStatus.isAnyOf(["available", "downloading", "ready"])(updateStatus) ? (
-          <Button
-            variant="ghost"
+          <IconButton
+            label={`${updateAction.label} (v${updateStatus.version})`}
             disabled={updateAction.isBusy}
             onClick={updateAction.run}
-            className="h-8 w-full justify-start gap-2 rounded-lg bg-brand/10 px-2 text-sm font-normal text-brand hover:bg-brand/15 hover:text-brand disabled:opacity-100"
+            className="ml-auto w-auto min-w-7 rounded-full bg-brand/10 px-1.5 text-brand hover:bg-brand/15 hover:text-brand disabled:opacity-100"
           >
-            <ArrowDownToLine className="size-4" />
-            {updateAction.label}
-            <span className="ml-auto text-xs tabular-nums opacity-70">v{updateStatus.version}</span>
-          </Button>
+            {UpdateStatus.guards.downloading(updateStatus) ? (
+              <span className="text-[10px] tabular-nums">{Math.round(updateStatus.percent)}%</span>
+            ) : UpdateStatus.guards.ready(updateStatus) ? (
+              <RotateCw className="size-4" />
+            ) : (
+              <ArrowDownToLine className="size-4" />
+            )}
+          </IconButton>
         ) : null}
-        <KeepAwakeIndicator />
-        <ServicesIndicator onOpen={props.onOpenServices} />
-        <Button
-          variant="ghost"
-          onClick={props.onOpenSettings}
-          className="h-8 w-full justify-start gap-2 rounded-lg px-2 text-sm font-normal text-muted-foreground hover:text-foreground"
-        >
-          <Settings className="size-4" />
-          Settings
-        </Button>
       </div>
       <SidebarRail />
     </AnimatedSidebar>
