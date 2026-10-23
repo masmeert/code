@@ -1,9 +1,9 @@
-import { ScrollArea } from "@masscode/ui/components/scroll-area";
+import { ScrollArea } from "@masmeert/ui/scroll-area";
 import { cn } from "@masscode/ui/lib/utils";
-import { Button } from "@masscode/ui/motion/button/base";
-import { Input } from "@masscode/ui/motion/input";
+import { Button } from "@masmeert/ui/button";
+import { Input } from "@masmeert/ui/input";
 import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
-import { Tabs, TabsList, TabsTrigger } from "@masscode/ui/motion/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@masmeert/ui/tabs";
 import { ArrowUp, Folder, FolderOpen, LoaderCircle, Monitor, Server } from "lucide-react";
 import { useEffect, useState } from "react";
 import { finishAddProject, pickLocalProject, useAddProjectOpen } from "../model/add-project.ts";

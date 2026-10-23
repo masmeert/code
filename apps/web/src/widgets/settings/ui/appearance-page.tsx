@@ -1,4 +1,4 @@
-import { Tabs, TabsList, TabsTrigger } from "@masscode/ui/motion/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@masmeert/ui/tabs";
 import { Theme } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import { Monitor, Moon, Sun } from "lucide-react";

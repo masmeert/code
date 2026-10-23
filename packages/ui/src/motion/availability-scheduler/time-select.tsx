@@ -1,10 +1,4 @@
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@masscode/ui/motion/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@masmeert/ui/select";
 import type { TimeOption } from "./types";
 
 // Time field: the library Select, with the option list capped so the panel

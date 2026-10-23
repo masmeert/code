@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { TextShimmer } from "@masscode/ui/motion/text-shimmer";
+import { TextShimmer } from "@masmeert/ui/text-shimmer";
 import { cn } from "@masscode/ui/lib/utils";
 
 export interface ThinkingShimmerProps {

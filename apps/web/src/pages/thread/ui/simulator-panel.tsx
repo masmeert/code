@@ -5,9 +5,9 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@masscode/ui/components/dropdown-menu";
-import { ResizeHandle } from "@masscode/ui/components/resize-handle";
-import { useResizable } from "@masscode/ui/hooks/use-resizable";
+} from "@masmeert/ui/dropdown-menu";
+import { ResizeHandle } from "@masmeert/ui/resize-handle";
+import { useResizable } from "@masmeert/ui/hooks/use-resizable";
 import { cn } from "@masscode/ui/lib/utils";
 import { ArrowLeft, ChevronDown, House, LoaderCircle, RotateCw, Unplug, X } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
@@ -227,17 +227,13 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
             {device ? <span className="text-muted-foreground">{device.version}</span> : null}
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            collisionPadding={8}
-            className="max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto"
-          >
+          <DropdownMenuContent align="start" collisionPadding={8}>
             <DropdownMenuRadioGroup
               value={deviceId ?? ""}
               onValueChange={(id) => void bootDevice(id)}
             >
               {devices.map((candidate) => (
-                <DropdownMenuRadioItem key={candidate.id} value={candidate.id}>
+                <DropdownMenuRadioItem key={candidate.id} value={candidate.id} closeOnClick>
                   <span className="truncate">{candidate.name}</span>
                   <span className="ml-auto pl-4 text-muted-foreground">
                     {candidate.version}

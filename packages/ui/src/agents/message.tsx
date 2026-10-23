@@ -6,7 +6,7 @@ import {
   useContext,
   useState,
 } from "react";
-import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { EASE_OUT } from "@masmeert/ui/lib/ease";
 import { cn } from "@masscode/ui/lib/utils";
 import { MessageSideContext } from "@masscode/ui/agents/message-context";
 

@@ -1,4 +1,4 @@
-import { Fold } from "@masscode/ui/motion/fold";
+import { Collapsible } from "@masmeert/ui/collapsible";
 import { livePhrase, summarize } from "@masscode/client";
 import { ToolCallRow } from "@masscode/ui/agents/tool-group";
 import { cn } from "@masscode/ui/lib/utils";
@@ -8,7 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@masscode/ui/components/dropdown-menu";
+} from "@masmeert/ui/dropdown-menu";
 import {
   ClientCommand,
   type LimitStop,
@@ -187,16 +187,13 @@ export function LimitStopNotice({
         ) : null}
         {others.length > 0 ? (
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                title="Move the thread to another harness and continue there; it's told what happened so far"
-                className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-muted/60 data-[state=open]:text-foreground"
-              >
-                <ArrowLeftRight className="size-3.5" />
-                Hand off
-                <ChevronDown className="size-3.5" />
-              </button>
+            <DropdownMenuTrigger
+              title="Move the thread to another harness and continue there; it's told what happened so far"
+              className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted/60 data-popup-open:text-foreground"
+            >
+              <ArrowLeftRight className="size-3.5" />
+              Hand off
+              <ChevronDown className="size-3.5" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" sideOffset={4} collisionPadding={8}>
               {others.map((other) => {
@@ -205,7 +202,7 @@ export function LimitStopNotice({
                 return (
                   <DropdownMenuItem
                     key={other.kind}
-                    onSelect={() =>
+                    onClick={() =>
                       send(
                         ClientCommand.cases["thread.resumeAfterLimit"].make({
                           threadId,
@@ -343,7 +340,7 @@ export function RunningAgents({
           />
         </button>
       ) : null}
-      <Fold open={!isGrouped || isOpen}>
+      <Collapsible open={!isGrouped || isOpen}>
         <ul id={listId}>
           {agents.map((agent) => {
             const calls = agent.children ?? [];
@@ -411,7 +408,7 @@ export function RunningAgents({
                     </button>
                   ) : null}
                 </div>
-                <Fold open={isUnfolded}>
+                <Collapsible open={isUnfolded}>
                   <div className="mr-2 mb-1 ml-[13px] border-l border-border pl-3 text-sm">
                     {earlier > 0 ? (
                       <button
@@ -430,12 +427,12 @@ export function RunningAgents({
                       <p className="py-1 text-xs text-muted-foreground">No calls yet</p>
                     )}
                   </div>
-                </Fold>
+                </Collapsible>
               </li>
             );
           })}
         </ul>
-      </Fold>
+      </Collapsible>
     </div>
   );
 }

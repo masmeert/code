@@ -1,5 +1,9 @@
 @import "tailwindcss";
+@import "@masmeert/ui/styles.css";
 @import "@masscode/ui/globals.css";
+
+/* The kit ships compiled components, so Tailwind has to scan its build for their classes. */
+@source "../../../node_modules/@masmeert/ui/dist";
 
 /* Shared classes live in the client package too, like the project tints. */
 @source "../../../../../packages/client/src";

@@ -1,5 +1,5 @@
 import { ClientCommand } from "@masscode/contracts";
-import { ResizeHandle } from "@masscode/ui/components/resize-handle";
+import { ResizeHandle } from "@masmeert/ui/resize-handle";
 import { cn } from "@masscode/ui/lib/utils";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -23,7 +23,7 @@ import {
   useTerminalStore,
 } from "@/entities/terminal";
 import { sendIfConnected } from "@/shared/api";
-import { useResizableSize } from "@masscode/ui/hooks/use-resizable";
+import { useResizableSize } from "@masmeert/ui/hooks/use-resizable";
 
 const symbolsFont = new FontFace("Symbols Nerd Font Mono", `url(${symbolsFontUrl})`);
 

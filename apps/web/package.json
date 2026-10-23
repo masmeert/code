@@ -8,6 +8,7 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@masmeert/ui": "^0.1.1",
     "@masscode/client": "workspace:*",
     "@masscode/contracts": "workspace:*",
     "@masscode/ui": "workspace:*",

@@ -13,7 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { EASE_OUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { EASE_OUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
 import { Liquid, LiquidItem, type LiquidTransition } from "@masscode/ui/motion/liquid";
 import { cn } from "@masscode/ui/lib/utils";
 

@@ -10,8 +10,8 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@masscode/ui/components/dropdown-menu";
-import { Button } from "@masscode/ui/motion/button";
+} from "@masmeert/ui/dropdown-menu";
+import { Button } from "@masmeert/ui/button";
 import { cn } from "@masscode/ui/lib/utils";
 import { formatProjectLabel } from "@masscode/client";
 import { ProjectBadge, useProjectStore } from "@/entities/project";
@@ -31,10 +31,7 @@ function OptionMenu(props: { label: string; value: ReactNode; children: ReactNod
           {props.value}
         </span>
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent
-        collisionPadding={8}
-        className="max-h-(--radix-dropdown-menu-content-available-height) max-w-64 overflow-y-auto"
-      >
+      <DropdownMenuSubContent collisionPadding={8} className="max-w-64">
         {props.children}
       </DropdownMenuSubContent>
     </DropdownMenuSub>
@@ -55,7 +52,7 @@ function ChoiceMenu<Value extends string>(props: {
         onValueChange={(value) => props.onChange(value as Value)}
       >
         {Object.entries<string>(props.labels).map(([value, label]) => (
-          <DropdownMenuRadioItem key={value} value={value}>
+          <DropdownMenuRadioItem key={value} value={value} closeOnClick>
             {label}
           </DropdownMenuRadioItem>
         ))}
@@ -81,15 +78,17 @@ export function ThreadListMenu(props: {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="View options"
-          className={cn("size-7", isFiltered && "bg-muted/60 text-foreground")}
-        >
-          <SlidersHorizontal className="size-4" />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="View options"
+            className={cn("size-7", isFiltered && "bg-muted/60 text-foreground")}
+          />
+        }
+      >
+        <SlidersHorizontal className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={8} collisionPadding={8} className="w-60">
         <ChoiceMenu
@@ -111,7 +110,6 @@ export function ThreadListMenu(props: {
           <DropdownMenuCheckboxItem
             checked={view.projects.length === 0}
             onCheckedChange={() => props.onChange({ projects: [] })}
-            onSelect={(event) => event.preventDefault()}
           >
             All projects
           </DropdownMenuCheckboxItem>
@@ -127,7 +125,6 @@ export function ThreadListMenu(props: {
                     : view.projects.filter((id) => id !== project.id),
                 })
               }
-              onSelect={(event) => event.preventDefault()}
             >
               <ProjectBadge project={project} />
               <span className="min-w-0 truncate">
@@ -170,7 +167,7 @@ export function ThreadListMenu(props: {
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onSelect={() =>
+              onClick={() =>
                 props.onChange({
                   ...DEFAULT_THREAD_LIST_VIEW,
                   groupBy: view.groupBy,

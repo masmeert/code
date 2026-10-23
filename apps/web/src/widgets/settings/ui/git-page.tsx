@@ -1,7 +1,7 @@
-import { Button } from "@masscode/ui/motion/button/base";
-import { Switch } from "@masscode/ui/motion/switch";
-import { Skeleton } from "@masscode/ui/components/skeleton";
-import { Textarea } from "@masscode/ui/components/textarea";
+import { Button } from "@masmeert/ui/button";
+import { Switch } from "@masmeert/ui/switch";
+import { Skeleton } from "@masmeert/ui/skeleton";
+import { Textarea } from "@masmeert/ui/textarea";
 import { SOURCE_CONTROL_LABEL, SOURCE_CONTROL_LOGO } from "@/shared/ui";
 import { cn } from "@masscode/ui/lib/utils";
 import {

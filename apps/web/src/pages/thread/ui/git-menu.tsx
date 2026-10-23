@@ -1,10 +1,10 @@
 import {
-  MorphPopover,
-  MorphPopoverContent,
-  MorphPopoverMenu,
-} from "@masscode/ui/motion/popover-morph";
+  MorphingPopover,
+  MorphingPopoverContent,
+  MorphingPopoverMenu,
+} from "@masmeert/ui/morphing-popover";
 import { cn } from "@masscode/ui/lib/utils";
-import { Button } from "@masscode/ui/motion/button/base";
+import { Button } from "@masmeert/ui/button";
 import { SOURCE_CONTROL_LABEL } from "@/shared/ui";
 import { ClientCommand, MergeMethod, type GitAction } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
@@ -277,7 +277,7 @@ export function GitMenu({
   ) : null;
 
   return (
-    <MorphPopover open={panel !== null} onOpenChange={(isOpen) => !isOpen && openPanel(null)}>
+    <MorphingPopover open={panel !== null} onOpenChange={(isOpen) => !isOpen && openPanel(null)}>
       <div className="flex h-7 items-stretch overflow-hidden rounded-lg border border-border text-muted-foreground">
         <button
           type="button"
@@ -312,7 +312,7 @@ export function GitMenu({
         </button>
       </div>
 
-      <MorphPopoverContent
+      <MorphingPopoverContent
         side="bottom"
         align="end"
         sideOffset={6}
@@ -459,7 +459,7 @@ export function GitMenu({
             </div>
           </form>
         ) : (
-          <MorphPopoverMenu>
+          <MorphingPopoverMenu>
             <MenuItem
               onClick={() => openPanel("commit")}
               disabled={!canCommit}
@@ -592,9 +592,9 @@ export function GitMenu({
               </p>
             ) : null}
             {errorNote}
-          </MorphPopoverMenu>
+          </MorphingPopoverMenu>
         )}
-      </MorphPopoverContent>
-    </MorphPopover>
+      </MorphingPopoverContent>
+    </MorphingPopover>
   );
 }

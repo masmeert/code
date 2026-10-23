@@ -1,5 +1,5 @@
 import { OrbFace } from "@masscode/ui/agents/orb-face";
-import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
+import { useRowCursor } from "@masmeert/ui/hooks/use-row-cursor";
 import {
   buildFallbackProject,
   cloneProject,
@@ -9,7 +9,7 @@ import {
 } from "@/entities/project";
 import { getProjectKey } from "@masscode/client";
 import { addProject } from "@/features/add-project";
-import { Button } from "@masscode/ui/motion/button/base";
+import { Button } from "@masmeert/ui/button";
 import { cn } from "@masscode/ui/lib/utils";
 import { type Project, parseRepository } from "@masscode/contracts";
 import { Check, FolderPlus, LoaderCircle, Monitor, Server } from "lucide-react";

@@ -2,7 +2,7 @@ import { AlertCircle, Bell, Check, Info, LoaderCircle, X, type LucideIcon } from
 import { AnimatePresence, motion, useReducedMotion, type Transition } from "motion/react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { EASE_OUT } from "@masmeert/ui/lib/ease";
 import { cn } from "@masscode/ui/lib/utils";
 
 export type ToastStatus = "neutral" | "info" | "loading" | "success" | "error";

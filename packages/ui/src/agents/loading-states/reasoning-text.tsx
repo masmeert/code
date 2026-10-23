@@ -1,12 +1,12 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { TextScramble } from "@masscode/ui/motion/text-scramble";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@masscode/ui/lib/ease";
+import { TextScramble } from "@masmeert/ui/text-scramble";
+import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@masmeert/ui/lib/ease";
 import {
   TEXT_SHIMMER_CLASS_NAME,
   TEXT_SHIMMER_KEYFRAMES,
   textShimmerStyle,
-} from "@masscode/ui/lib/text-shimmer";
+} from "@masmeert/ui/lib/text-shimmer";
 import { cn } from "@masscode/ui/lib/utils";
 
 const DEFAULT_PHRASES = [

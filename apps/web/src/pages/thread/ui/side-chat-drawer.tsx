@@ -7,9 +7,9 @@ import {
   MessageScroller,
 } from "@masscode/ui/agents/message";
 import { ReasoningText } from "@masscode/ui/agents/loading-states/reasoning-text";
-import { Button } from "@masscode/ui/motion/button/base";
-import { Drawer } from "@masscode/ui/motion/drawer";
-import { Textarea } from "@masscode/ui/components/textarea";
+import { Button } from "@masmeert/ui/button";
+import { Sheet } from "@masmeert/ui/sheet";
+import { Textarea } from "@masmeert/ui/textarea";
 import { type ProviderKind } from "@masscode/contracts";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -48,7 +48,7 @@ export function SideChatDrawer({
   }
 
   return (
-    <Drawer
+    <Sheet
       open={sideChat !== null}
       onOpenChange={(isOpen) => isOpen || closeSideChat(threadId)}
       ariaLabel="Side question"
@@ -139,6 +139,6 @@ export function SideChatDrawer({
           </Button>
         </div>
       </form>
-    </Drawer>
+    </Sheet>
   );
 }

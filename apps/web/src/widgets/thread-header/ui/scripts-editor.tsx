@@ -1,7 +1,7 @@
-import { Textarea } from "@masscode/ui/components/textarea";
-import { matches } from "@masscode/ui/lib/keys";
-import { Button } from "@masscode/ui/motion/button/base";
-import { Input } from "@masscode/ui/motion/input";
+import { Textarea } from "@masmeert/ui/textarea";
+import { matches } from "@masmeert/ui/lib/keys";
+import { Button } from "@masmeert/ui/button";
+import { Input } from "@masmeert/ui/input";
 import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
 import { LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";

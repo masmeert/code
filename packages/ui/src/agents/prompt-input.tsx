@@ -29,17 +29,17 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button } from "@masscode/ui/motion/button";
-import { Fold } from "@masscode/ui/motion/fold";
+import { Button } from "@masmeert/ui/button";
+import { Collapsible } from "@masmeert/ui/collapsible";
 import {
-  MorphPopover,
-  MorphPopoverContent,
-  MorphPopoverMenu,
-  MorphPopoverTrigger,
-} from "@masscode/ui/motion/popover-morph";
-import { Switch } from "@masscode/ui/motion/switch";
-import { SPRING_SWAP } from "@masscode/ui/lib/ease";
-import { formatBinding, matches } from "@masscode/ui/lib/keys";
+  MorphingPopover,
+  MorphingPopoverContent,
+  MorphingPopoverMenu,
+  MorphingPopoverTrigger,
+} from "@masmeert/ui/morphing-popover";
+import { Switch } from "@masmeert/ui/switch";
+import { SPRING_SWAP } from "@masmeert/ui/lib/ease";
+import { formatBinding, matches } from "@masmeert/ui/lib/keys";
 import { cn } from "@masscode/ui/lib/utils";
 
 /** One row in a composer picker (model, effort, permissions, branch…). */
@@ -283,8 +283,8 @@ export function PromptInput({
 
         <div className="flex min-h-8 items-center gap-1.5 px-0.5 pt-1.5">
           {actions.length ? (
-            <MorphPopover open={actionsOpen} onOpenChange={setActionsOpen}>
-              <MorphPopoverTrigger>
+            <MorphingPopover open={actionsOpen} onOpenChange={setActionsOpen}>
+              <MorphingPopoverTrigger>
                 <Button
                   type="button"
                   variant="ghost"
@@ -301,16 +301,16 @@ export function PromptInput({
                     <Plus className="size-4" />
                   </motion.span>
                 </Button>
-              </MorphPopoverTrigger>
+              </MorphingPopoverTrigger>
 
-              <MorphPopoverContent
+              <MorphingPopoverContent
                 side="top"
                 align="start"
                 sideOffset={8}
                 radius={12}
                 className="w-56 p-1.5"
               >
-                <MorphPopoverMenu>
+                <MorphingPopoverMenu>
                   {actions.map((action) => (
                     <button
                       key={action.value}
@@ -337,9 +337,9 @@ export function PromptInput({
                       </span>
                     </button>
                   ))}
-                </MorphPopoverMenu>
-              </MorphPopoverContent>
-            </MorphPopover>
+                </MorphingPopoverMenu>
+              </MorphingPopoverContent>
+            </MorphingPopover>
           ) : null}
           {leadingAction}
           <div className="flex min-w-0 items-center gap-1.5">{controls}</div>
@@ -425,7 +425,7 @@ export function PromptInputTray({
   children: ReactNode;
 }) {
   return (
-    <Fold open={open}>
+    <Collapsible open={open}>
       <div
         className={cn(
           "relative mx-3 max-h-80 overflow-y-auto overscroll-contain border border-border bg-background px-1.5 text-xs text-muted-foreground",
@@ -434,7 +434,7 @@ export function PromptInputTray({
       >
         {children}
       </div>
-    </Fold>
+    </Collapsible>
   );
 }
 
@@ -496,7 +496,7 @@ function usePickerOpener(
 }
 
 /**
- * The compact footer button every composer picker opens from. MorphPopoverTrigger
+ * The compact footer button every composer picker opens from. MorphingPopoverTrigger
  * clones in its ref, click handler and aria props, so those pass through to the button.
  */
 function PickerTrigger({
@@ -631,8 +631,8 @@ export function PromptSelect({
   const triggerIcon = icon ?? (showOptionIcon ? (current?.groupIcon ?? current?.icon) : undefined);
 
   return (
-    <MorphPopover open={open} onOpenChange={setOpen} className="min-w-0">
-      <MorphPopoverTrigger>
+    <MorphingPopover open={open} onOpenChange={setOpen} className="min-w-0">
+      <MorphingPopoverTrigger>
         <PickerTrigger
           open={open}
           disabled={disabled}
@@ -642,8 +642,8 @@ export function PromptSelect({
         >
           {multi.length ? `${multi.length + 1} models` : (current?.label ?? placeholder)}
         </PickerTrigger>
-      </MorphPopoverTrigger>
-      <MorphPopoverContent
+      </MorphingPopoverTrigger>
+      <MorphingPopoverContent
         side={side}
         align={align}
         sideOffset={6}
@@ -667,8 +667,8 @@ export function PromptSelect({
           onToggle={onToggle}
           numbered={numbered}
         />
-      </MorphPopoverContent>
-    </MorphPopover>
+      </MorphingPopoverContent>
+    </MorphingPopover>
   );
 }
 
@@ -1009,8 +1009,8 @@ export function PromptModelMenu({
   });
 
   return (
-    <MorphPopover open={open} onOpenChange={setOpen} className="min-w-0">
-      <MorphPopoverTrigger>
+    <MorphingPopover open={open} onOpenChange={setOpen} className="min-w-0">
+      <MorphingPopoverTrigger>
         <PickerTrigger
           open={open}
           disabled={disabled}
@@ -1028,8 +1028,8 @@ export function PromptModelMenu({
             <Zap aria-label="Fast" className="ml-1 inline size-3 fill-current align-[-1px]" />
           ) : null}
         </PickerTrigger>
-      </MorphPopoverTrigger>
-      <MorphPopoverContent
+      </MorphingPopoverTrigger>
+      <MorphingPopoverContent
         side="top"
         align="start"
         sideOffset={6}
@@ -1037,7 +1037,7 @@ export function PromptModelMenu({
         instant={instant}
         className="w-56 p-1"
       >
-        <MorphPopoverMenu>
+        <MorphingPopoverMenu>
           {fast ? (
             <div
               onPointerEnter={() => setFlyout(null)}
@@ -1093,9 +1093,9 @@ export function PromptModelMenu({
               onToggleFavorite={onToggleFavorite}
             />
           </FlyoutRow>
-        </MorphPopoverMenu>
-      </MorphPopoverContent>
-    </MorphPopover>
+        </MorphingPopoverMenu>
+      </MorphingPopoverContent>
+    </MorphingPopover>
   );
 }
 
@@ -1117,7 +1117,7 @@ function FlyoutRow({
   children: ReactNode;
 }) {
   return (
-    <MorphPopover open={open} onOpenChange={onOpenChange} className="flex w-full">
+    <MorphingPopover open={open} onOpenChange={onOpenChange} className="flex w-full">
       <button
         type="button"
         role="menuitem"
@@ -1141,10 +1141,10 @@ function FlyoutRow({
         </span>
         <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
       </button>
-      <MorphPopoverContent side="right" sideOffset={8} radius={12} className={className}>
+      <MorphingPopoverContent side="right" sideOffset={8} radius={12} className={className}>
         {children}
-      </MorphPopoverContent>
-    </MorphPopover>
+      </MorphingPopoverContent>
+    </MorphingPopover>
   );
 }
 

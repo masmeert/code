@@ -1,9 +1,5 @@
 import { useEffect, useRef } from "react";
-import {
-  AnimatedSidebarProvider,
-  type AnimatedSidebarProviderProps,
-  useAnimatedSidebar,
-} from "@masscode/ui/motion/animated-sidebar";
+import { SidebarProvider, type SidebarProviderProps, useSidebar } from "@masmeert/ui/sidebar";
 import { cn } from "@masscode/ui/lib/utils";
 
 /**
@@ -18,7 +14,7 @@ import { cn } from "@masscode/ui/lib/utils";
  */
 const MIN_DOCKED_WIDTH = 600;
 
-export interface ChatAppProps extends AnimatedSidebarProviderProps {
+export interface ChatAppProps extends SidebarProviderProps {
   /** Docked sidebar width as a CSS length. Default `17rem`. */
   sidebarWidth?: string;
   /**
@@ -39,7 +35,7 @@ export interface ChatAppProps extends AnimatedSidebarProviderProps {
  * fold condition itself, so that half applies immediately.
  */
 function ShellFit({ minWidth }: { minWidth: number }) {
-  const { open, setOpen } = useAnimatedSidebar();
+  const { open, setOpen } = useSidebar();
   const markerRef = useRef<HTMLDivElement>(null);
   const narrowRef = useRef<boolean | null>(null);
   const openRef = useRef(open);
@@ -76,7 +72,7 @@ export function ChatApp({
   ...props
 }: ChatAppProps) {
   return (
-    <AnimatedSidebarProvider
+    <SidebarProvider
       {...props}
       style={{ ...style, "--sidebar-width": sidebarWidth }}
       className={cn(
@@ -88,6 +84,6 @@ export function ChatApp({
           would fire an onOpenChange they never asked for. */}
       {props.open === undefined ? <ShellFit minWidth={collapseSidebarBelow} /> : null}
       {children}
-    </AnimatedSidebarProvider>
+    </SidebarProvider>
   );
 }

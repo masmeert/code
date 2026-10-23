@@ -1,5 +1,5 @@
-import { Button } from "@masscode/ui/motion/button/base";
-import { Skeleton } from "@masscode/ui/components/skeleton";
+import { Button } from "@masmeert/ui/button";
+import { Skeleton } from "@masmeert/ui/skeleton";
 import {
   formatHarnessLabel,
   getHarnessTint,

@@ -1,16 +1,14 @@
 /*
- * Theme, tokens and shared utilities for @masscode/ui. Import it right after Tailwind:
+ * MassCode's token values and fonts. The theme mapping, variants and utilities come from the kit,
+ * so import it first:
  *
  *   @import "tailwindcss";
+ *   @import "@masmeert/ui/styles.css";
  *   @import "@masscode/ui/globals.css";
  */
-@import "tw-animate-css";
 
 /* The package lives outside the app, so Tailwind has to be told to scan it. */
 @source "../";
-
-/* Theme is a class on <html> (set from Settings), not the OS media query. */
-@custom-variant dark (&:where(.dark, .dark *));
 
 @font-face {
   font-family: "Figtree";
@@ -144,140 +142,4 @@
 @theme inline {
   --font-sans: "Figtree", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-muted: var(--muted);
-  --color-sunken: var(--sunken);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-border: var(--border);
-  --color-border-strong: var(--border-strong);
-  --color-input: var(--input);
-  --color-rule: var(--rule);
-  --color-spine: var(--spine);
-  --color-ring: var(--ring);
-  --color-brand: var(--brand);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-warning: var(--warning);
-  --color-success: var(--success);
-  --color-success-foreground: var(--success-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-
-  /* 14 / 20 / 28: keys and rows, fields and icon buttons, cards. */
-  --radius-lg: 0.875rem;
-  --radius-xl: 1.25rem;
-  --radius-2xl: 1.75rem;
-
-  /* The one cast, for surfaces that leave the document flow (popovers, menus, tooltips, modals). */
-  --shadow-panel: 0 1px 1px rgb(0 0 0 / 0.06), 0 8px 20px rgb(0 0 0 / 0.12);
-
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@layer base {
-  *,
-  ::before,
-  ::after {
-    border-color: var(--border);
-  }
-
-  ::selection {
-    background: var(--selection);
-  }
-
-  :root {
-    accent-color: var(--brand);
-    caret-color: var(--brand);
-  }
-
-  /* Tailwind v4 dropped the pointer from buttons; one rule here beats a class on every clickable. */
-  :is(
-    button,
-    a[href],
-    summary,
-    select,
-    label[for],
-    label:has(input[type="checkbox"], input[type="radio"]),
-    input:is(
-      [type="checkbox"],
-      [type="radio"],
-      [type="button"],
-      [type="submit"],
-      [type="reset"],
-      [type="file"],
-      [type="color"],
-      [type="range"]
-    ),
-    [role="button"],
-    [role="link"],
-    [role="tab"],
-    [role="menuitem"],
-    [role="menuitemcheckbox"],
-    [role="menuitemradio"],
-    [role="option"],
-    [role="checkbox"],
-    [role="radio"],
-    [role="switch"],
-    [role="treeitem"]
-  ):not(:disabled, [aria-disabled="true"], [data-disabled]) {
-    cursor: pointer;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    ::before,
-    ::after {
-      animation-duration: 1ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 1ms !important;
-      scroll-behavior: auto !important;
-    }
-  }
-}
-
-@layer components {
-  /* The pressable key: a lit rim over a short cast. Keys only, never cards or chips. */
-  .sheen {
-    border: 1px solid var(--primary);
-    box-shadow: var(--sheen);
-  }
-
-  .sheen:hover {
-    box-shadow: var(--sheen-hover);
-  }
-
-  .sheen:active {
-    box-shadow: var(--sheen-active);
-  }
-}
-
-/* For scroll areas whose position is shown some other way (fades, rails, pagers). */
-@utility scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-  &::-webkit-scrollbar {
-    display: none;
-  }
 }

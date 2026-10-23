@@ -1,9 +1,9 @@
-import { Button } from "@masscode/ui/motion/button/base";
-import { Switch } from "@masscode/ui/motion/switch";
+import { Button } from "@masmeert/ui/button";
+import { Switch } from "@masmeert/ui/switch";
 import { cn } from "@masscode/ui/lib/utils";
-import { EASE_OUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { EASE_OUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
 import { ClientCommand, type PairedPhone, type PairingOffer } from "@masscode/contracts";
-import { Fold } from "@masscode/ui/motion/fold";
+import { Collapsible } from "@masmeert/ui/collapsible";
 import { ActionSwapRollText } from "@masscode/ui/motion/action-swap-roll";
 import { LoaderCircle, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
@@ -109,12 +109,12 @@ export function PhonesPage() {
               </Button>
             </SettingsRow>
           ) : null}
-          <Fold open={error !== null}>
+          <Collapsible open={error !== null}>
             <p className="px-3 py-2.5 text-xs text-destructive">{error}</p>
-          </Fold>
-          <Fold open={offer !== null}>
+          </Collapsible>
+          <Collapsible open={offer !== null}>
             {shownOffer ? <PairingCode offer={shownOffer} onClose={() => setOffer(null)} /> : null}
-          </Fold>
+          </Collapsible>
         </SettingsGroup>
       </SettingsSection>
       {phones.length > 0 ? (

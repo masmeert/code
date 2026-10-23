@@ -1,7 +1,7 @@
-import { ResizeHandle } from "@masscode/ui/components/resize-handle";
-import { useResizable } from "@masscode/ui/hooks/use-resizable";
+import { ResizeHandle } from "@masmeert/ui/resize-handle";
+import { useResizable } from "@masmeert/ui/hooks/use-resizable";
 import { cn } from "@masscode/ui/lib/utils";
-import { Input } from "@masscode/ui/motion/input";
+import { Input } from "@masmeert/ui/input";
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, Plus, RotateCw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconButton } from "@/shared/ui";

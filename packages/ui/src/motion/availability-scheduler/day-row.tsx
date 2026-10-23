@@ -1,9 +1,9 @@
 import { Plus, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState } from "react";
-import { Switch } from "@masscode/ui/motion/switch";
-import { Tooltip } from "@masscode/ui/motion/tooltip";
-import { SPRING_LAYOUT } from "@masscode/ui/lib/ease";
+import { Switch } from "@masmeert/ui/switch";
+import { Tooltip } from "@masmeert/ui/tooltip";
+import { SPRING_LAYOUT } from "@masmeert/ui/lib/ease";
 import { CopyMenu } from "./copy-menu";
 import { IconButton } from "./icon-button";
 import { TimeSelect } from "./time-select";

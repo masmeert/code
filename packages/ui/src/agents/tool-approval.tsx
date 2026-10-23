@@ -16,8 +16,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@masscode/ui/components/dropdown-menu";
-import { SPRING_PRESS } from "@masscode/ui/lib/ease";
+} from "@masmeert/ui/dropdown-menu";
+import { SPRING_PRESS } from "@masmeert/ui/lib/ease";
 import { cn } from "@masscode/ui/lib/utils";
 
 export type ToolApprovalStatus =
@@ -255,18 +255,15 @@ export function ToolApproval({
             </motion.button>
             {approveOptions ? (
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="More ways to approve"
-                    className="grid place-items-center rounded-r-xl border-l border-primary-foreground/20 bg-primary px-1.5 text-primary-foreground outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  >
-                    <ChevronDown className="size-3.5" />
-                  </button>
+                <DropdownMenuTrigger
+                  aria-label="More ways to approve"
+                  className="grid place-items-center rounded-r-xl border-l border-primary-foreground/20 bg-primary px-1.5 text-primary-foreground outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <ChevronDown className="size-3.5" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" sideOffset={6} collisionPadding={8}>
                   {approveOptions.map((option) => (
-                    <DropdownMenuItem key={option.id} onSelect={option.onSelect}>
+                    <DropdownMenuItem key={option.id} onClick={option.onSelect}>
                       {option.label}
                     </DropdownMenuItem>
                   ))}

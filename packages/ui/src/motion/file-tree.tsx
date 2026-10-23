@@ -11,8 +11,8 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { SharedLayoutBg } from "@masscode/ui/motion/shared-layout-bg";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@masscode/ui/lib/ease";
+import { SharedLayoutBg } from "@masmeert/ui/shared-layout-bg";
+import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@masmeert/ui/lib/ease";
 import { cn } from "@masscode/ui/lib/utils";
 
 type FileTreeItem = {

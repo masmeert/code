@@ -1,4 +1,4 @@
-import { MorphPopover, MorphPopoverContent } from "@masscode/ui/motion/popover-morph";
+import { MorphingPopover, MorphingPopoverContent } from "@masmeert/ui/morphing-popover";
 import { cn } from "@masscode/ui/lib/utils";
 import { ClientCommand, type ContextUsage, type ProviderKind } from "@masscode/contracts";
 import { ChevronRight, LoaderCircle, Minimize2, RefreshCw } from "lucide-react";
@@ -81,7 +81,7 @@ export function UsageMeter({
   const circumference = 2 * Math.PI * 6;
 
   return (
-    <MorphPopover open={isOpen} onOpenChange={setIsOpen}>
+    <MorphingPopover open={isOpen} onOpenChange={setIsOpen}>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
@@ -113,7 +113,13 @@ export function UsageMeter({
         </svg>
         {context ? <span className="@max-md:hidden">{percent}%</span> : null}
       </button>
-      <MorphPopoverContent side="top" align="end" sideOffset={6} radius={12} className="w-80 p-3">
+      <MorphingPopoverContent
+        side="top"
+        align="end"
+        sideOffset={6}
+        radius={12}
+        className="w-80 p-3"
+      >
         <ContextSection
           threadId={threadId}
           context={context}
@@ -122,8 +128,8 @@ export function UsageMeter({
           isBusy={isBusy}
         />
         <LimitsSection provider={provider} host={host} />
-      </MorphPopoverContent>
-    </MorphPopover>
+      </MorphingPopoverContent>
+    </MorphingPopover>
   );
 }
 

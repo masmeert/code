@@ -8,8 +8,8 @@ import {
   useTransform,
 } from "motion/react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { DigitSwap } from "@masscode/ui/motion/digit-swap";
-import { EASE_IN_OUT, EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { DigitSwap } from "@masmeert/ui/digit-swap";
+import { EASE_IN_OUT, EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
 import { cn } from "@masscode/ui/lib/utils";
 
 // The two purse layers collapse as one material surface after the card starts

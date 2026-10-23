@@ -23,13 +23,13 @@ import {
   useState,
 } from "react";
 import {
-  MorphPopover,
-  MorphPopoverContent,
-  MorphPopoverMenu,
-  MorphPopoverTrigger,
-} from "@masscode/ui/motion/popover-morph";
-import { EASE_OUT, SPRING_LAYOUT } from "@masscode/ui/lib/ease";
-import { useTouchCapable } from "@masscode/ui/hooks/use-touch-capable";
+  MorphingPopover,
+  MorphingPopoverContent,
+  MorphingPopoverMenu,
+  MorphingPopoverTrigger,
+} from "@masmeert/ui/morphing-popover";
+import { EASE_OUT, SPRING_LAYOUT } from "@masmeert/ui/lib/ease";
+import { useTouchCapable } from "@masmeert/ui/hooks/use-touch-capable";
 import { cn } from "@masscode/ui/lib/utils";
 
 export type SidebarResourceKind = "folder" | "project" | "file" | "bookmark";
@@ -500,8 +500,8 @@ function ResourceRow({
       )}
 
       {!renaming && !row.item.disabled ? (
-        <MorphPopover open={menuOpen} onOpenChange={onMenuOpenChange}>
-          <MorphPopoverTrigger>
+        <MorphingPopover open={menuOpen} onOpenChange={onMenuOpenChange}>
+          <MorphingPopoverTrigger>
             <button
               type="button"
               draggable={false}
@@ -517,17 +517,19 @@ function ResourceRow({
             >
               <MoreHorizontal aria-hidden="true" className="size-4" />
             </button>
-          </MorphPopoverTrigger>
-          <MorphPopoverContent
+          </MorphingPopoverTrigger>
+          <MorphingPopoverContent
             side="bottom"
             align="end"
             sideOffset={8}
             radius={12}
             className="w-40 p-1.5"
           >
-            <MorphPopoverMenu data-sidebar-resource-menu={row.item.id}>{menu}</MorphPopoverMenu>
-          </MorphPopoverContent>
-        </MorphPopover>
+            <MorphingPopoverMenu data-sidebar-resource-menu={row.item.id}>
+              {menu}
+            </MorphingPopoverMenu>
+          </MorphingPopoverContent>
+        </MorphingPopover>
       ) : null}
     </motion.div>
   );

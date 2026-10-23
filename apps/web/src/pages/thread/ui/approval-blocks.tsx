@@ -1,7 +1,7 @@
 import { ApprovalCard } from "@masscode/ui/agents/approval-card";
 import { Markdown } from "@masscode/ui/agents/markdown";
 import { ToolApproval, ToolApprovalCode } from "@masscode/ui/agents/tool-approval";
-import { ScrollArea } from "@masscode/ui/components/scroll-area";
+import { ScrollArea } from "@masmeert/ui/scroll-area";
 import type { UserQuestion } from "@masscode/contracts";
 import { useState } from "react";
 import { PERMISSIONS } from "@masscode/client";
@@ -56,8 +56,7 @@ export function PlanApproval({ threadId, item }: { threadId: string; item: Appro
         onApprove={() => approvePlan(threadId, item.id, "auto-edit")}
         onDeny={() => respondApproval(threadId, item.id, "deny")}
       >
-        {/* Radix wraps content in display:table, which lets wide code blocks stretch past the card. */}
-        <ScrollArea className="[&>[data-slot=scroll-area-viewport]]:max-h-96 [&>[data-slot=scroll-area-viewport]>div]:!block">
+        <ScrollArea className="[&>[data-slot=scroll-area-viewport]]:max-h-96">
           <Markdown className="selectable pr-3 leading-relaxed">{item.detail}</Markdown>
         </ScrollArea>
       </ToolApproval>

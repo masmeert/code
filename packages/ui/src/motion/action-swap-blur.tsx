@@ -5,9 +5,13 @@ import {
   type ActionSwapButtonProps,
   type ActionSwapIconProps,
   type ActionSwapTextProps,
-} from "./action-swap";
+} from "@masmeert/ui/action-swap";
 
-export type { ActionSwapButtonSize, ActionSwapButtonVariant, ActionSwapItem } from "./action-swap";
+export type {
+  ActionSwapButtonSize,
+  ActionSwapButtonVariant,
+  ActionSwapItem,
+} from "@masmeert/ui/action-swap";
 
 export type ActionSwapBlurButtonProps = Omit<ActionSwapButtonProps, "animation">;
 export type ActionSwapBlurTextProps = Omit<ActionSwapTextProps, "animation">;
