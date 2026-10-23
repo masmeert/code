@@ -5,6 +5,7 @@ import { DEFAULT_KEEP_AWAKE_MANUAL_MINUTES } from "@masscode/contracts";
 import {
   AppWindow,
   Coffee,
+  EthernetPort,
   Globe,
   Settings as SettingsIcon,
   Smartphone,
@@ -27,6 +28,7 @@ import { focusComposer } from "@/widgets/composer";
 import { useTheme } from "./use-theme.ts";
 import { openWindow } from "./windows.ts";
 import { AddProjectDialog } from "@/features/add-project";
+import { ServicesModal } from "@/widgets/services";
 import { SettingsModal } from "@/widgets/settings";
 import { BrowserHost } from "@/widgets/browser-host";
 import { CommandPalette } from "@/widgets/command-palette";
@@ -80,6 +82,7 @@ export function App() {
   const switchTo = useThreadStore((state) => state.switchTo);
   const [chosen, setView] = useState<View | null>(readInitialView);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isServicesOpen, setIsServicesOpen] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   useKeybinding("palette.open", () => setIsPaletteOpen((isOpen) => !isOpen));
   const keepAwakeStatus = useKeepAwake();
@@ -93,6 +96,7 @@ export function App() {
   }
 
   useKeybinding(canKeepAwake ? "keepAwake.toggle" : undefined, toggleKeepAwake);
+  useKeybinding("services.open", () => setIsServicesOpen((isOpen) => !isOpen));
   useTheme(theme);
 
   // Stable, so sidebar rows (memoized) don't all redraw on every render.
@@ -171,6 +175,7 @@ export function App() {
             currentPath={currentPath}
             onSelect={selectThread}
             onOpenSettings={() => setIsSettingsOpen(true)}
+            onOpenServices={() => setIsServicesOpen(true)}
             onDraft={openDraft}
           />
           <SidebarInset className="relative min-h-0 bg-background">
@@ -198,6 +203,11 @@ export function App() {
             ) : null}
           </SidebarInset>
           <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+          <ServicesModal
+            isOpen={isServicesOpen}
+            onClose={() => setIsServicesOpen(false)}
+            onSelectThread={selectThread}
+          />
           <AddProjectDialog />
           <BrowserHost />
           <CommandPalette
@@ -265,6 +275,13 @@ export function App() {
                     },
                   ]
                 : []),
+              {
+                id: "services.open",
+                label: "Services",
+                hint: formatKeybinding("services.open"),
+                icon: <EthernetPort />,
+                run: () => setIsServicesOpen(true),
+              },
               {
                 id: "settings.open",
                 label: "Settings",

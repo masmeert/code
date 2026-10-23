@@ -11,6 +11,7 @@ import {
   UsageLimit,
 } from "./providers.ts";
 import { KeepAwakeStatus } from "./keep-awake.ts";
+import { Service } from "./services.ts";
 import { Settings } from "./settings.ts";
 import { CommandRun, TerminalInfo } from "./terminals.ts";
 import {
@@ -249,6 +250,7 @@ export const RuntimeEvent = Schema.TaggedUnion({
   },
   "settings.updated": { settings: Settings },
   "keepAwake.updated": { status: KeepAwakeStatus },
+  "services.updated": { services: Schema.Array(Service) },
   "project.added": { project: Project },
   "project.removed": { projectId: Schema.String },
   "providers.updated": { providers: Schema.Array(ProviderStatus) },

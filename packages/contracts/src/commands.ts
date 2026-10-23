@@ -271,6 +271,12 @@ export const ClientCommand = Schema.TaggedUnion({
   "keepAwake.remove": {},
   /** Answered with `keepAwake.apps`. */
   "keepAwake.listApps": { requestId: Schema.String },
+  /** Stops the service's process and the ones it started; answered with `service.killed`. */
+  "service.kill": {
+    requestId: Schema.String,
+    threadId: Schema.String,
+    pid: Schema.Number,
+  },
   "project.remove": { projectId: Schema.String },
   "providers.refresh": {},
   "provider.link": { provider: ProviderKind },

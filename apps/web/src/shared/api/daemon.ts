@@ -43,6 +43,7 @@ const REPLY_TAGS = new Set<ServerFrame["_tag"]>([
   "device.listed",
   "device.attached",
   "keepAwake.apps",
+  "service.killed",
   "pairing.started",
   "thread.createFailed",
 ]);

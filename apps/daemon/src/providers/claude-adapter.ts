@@ -25,6 +25,7 @@ import {
   type UserQuestion,
 } from "@masscode/contracts";
 import * as Effect from "effect/Effect";
+import { spawn } from "node:child_process";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
@@ -230,6 +231,7 @@ function openSession(
     permission: initialPermission,
     onResumeToken,
     onCwd,
+    onProcess,
     emit,
     mcpServer,
   }: StartSessionInput,
@@ -275,12 +277,33 @@ function openSession(
       });
     });
 
+  let stderrTail = "";
+
   const options: Options = {
     cwd,
     permissionMode: PERMISSION_MODE[initialPermission],
     // Only lets the composer switch to "Full access" later; the mode above still applies.
     allowDangerouslySkipPermissions: true,
     pathToClaudeCodeExecutable: launch.bin,
+    // Spawned here, not by the SDK, to learn the pid: what the agent starts is the thread's.
+    spawnClaudeCodeProcess: ({ command, args, cwd: folder, env, signal }) => {
+      const child = spawn(command, args, {
+        cwd: folder,
+        env,
+        signal,
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+      });
+
+      // The SDK only reads stderr from processes it spawns, so a crash would no longer say why.
+      child.stderr.on(
+        "data",
+        (chunk: Buffer) => (stderrTail = (stderrTail + chunk.toString()).slice(-1000)),
+      );
+      onProcess(child.pid);
+
+      return child;
+    },
     // Thinking streams empty unless shown summarized; launch arguments can still say otherwise.
     extraArgs: { "thinking-display": "summarized", ...toClaudeExtraArgs(launch.args) },
     settingSources: ["user", "project", "local"],
@@ -619,7 +642,9 @@ function openSession(
       emit(
         RuntimeEvent.cases.error.make({
           threadId,
-          message: getErrorMessage(error),
+          message: stderrTail.trim()
+            ? `${getErrorMessage(error)}. stderr: ${stderrTail.trim()}`
+            : getErrorMessage(error),
         }),
       );
       emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "error" }));

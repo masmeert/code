@@ -194,6 +194,7 @@ function start({
   effort: initialEffort,
   permission: initialPermission,
   onResumeToken,
+  onProcess,
   emit,
   mcpServer,
 }: StartSessionInput) {
@@ -581,6 +582,8 @@ function start({
         { onNotification, onServerRequest, onExit: handleHarnessExit("Codex", threadId, emit) },
       ),
     );
+
+    onProcess(rpc.pid);
 
     function sendRequest<A>(method: string, params: Schema.Json, response: Schema.Decoder<A>) {
       return tryProviderPromise("codex", () => rpc.request(method, params, response)).pipe(

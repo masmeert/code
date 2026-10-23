@@ -61,6 +61,7 @@ export interface JsonRpc {
   readonly notify: (method: string, params?: Schema.Json) => void;
   readonly respond: (id: RpcId, result: Schema.Json) => void;
   readonly close: () => void;
+  readonly pid: number | undefined;
 }
 
 /**
@@ -171,5 +172,6 @@ export function connectJsonRpc(
       child.stdin.end();
       child.kill();
     },
+    pid: child.pid,
   };
 }

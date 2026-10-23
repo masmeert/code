@@ -8,6 +8,8 @@ export * from "./settings.ts";
 
 export * from "./keep-awake.ts";
 
+export * from "./services.ts";
+
 export * from "./git.ts";
 
 export * from "./projects.ts";

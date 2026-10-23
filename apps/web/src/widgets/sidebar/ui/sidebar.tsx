@@ -73,6 +73,7 @@ import { getStatusDotStyle, NEEDS_YOU, PLAN_APPROVAL_TITLE } from "@masscode/cli
 import { usePersistedFlag } from "@/shared/lib/storage";
 import { hasTrafficLights } from "@/shared/config";
 import { KeepAwakeIndicator } from "./keep-awake-indicator.tsx";
+import { ServicesIndicator } from "./services-indicator.tsx";
 import { ThreadListMenu } from "./thread-list-menu.tsx";
 
 /** Waiting on you: an approval, an answer, or a look at what went wrong. */
@@ -86,6 +87,7 @@ export function Sidebar(props: {
   currentPath: string | null;
   onSelect: (id: string) => void;
   onOpenSettings: () => void;
+  onOpenServices: () => void;
   /** Opens a new-thread draft; null leaves the project to pick. */
   onDraft: (path: string | null) => void;
 }) {
@@ -524,6 +526,7 @@ export function Sidebar(props: {
           </Button>
         ) : null}
         <KeepAwakeIndicator />
+        <ServicesIndicator onOpen={props.onOpenServices} />
         <Button
           variant="ghost"
           onClick={props.onOpenSettings}

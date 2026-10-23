@@ -38,6 +38,7 @@ import type { createSkillCatalog } from "../skills.ts";
 import { DATA_DIR } from "../storage/toml-file.ts";
 import type { SettingsStore } from "../storage/settings-store.ts";
 import type { ThreadStore } from "../storage/thread-store.ts";
+import type { Services } from "../services.ts";
 import type { Terminals } from "../terminals.ts";
 import { deriveRequestUuid, isBusy, type ThreadEntry } from "./entry.ts";
 import type { ThreadRegistry } from "./registry.ts";
@@ -112,6 +113,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
   providerRegistry,
   skills,
   terminals,
+  services,
   devices,
   mcp,
   threads,
@@ -143,6 +145,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
   readonly providerRegistry: typeof ProviderRegistry.Service;
   readonly skills: Effect.Success<ReturnType<typeof createSkillCatalog>>;
   readonly terminals: Terminals;
+  readonly services: Pick<Services, "track" | "killThread">;
   readonly devices: Devices;
   readonly mcp: Pick<Mcp, "issue" | "revoke">;
 }) {
@@ -199,6 +202,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
       onResumeToken: (token) =>
         setResumeTokens(entry, { ...entry.resumeTokens, [entry.info.provider]: token }),
       onCwd: (cwd) => void followAgentCwd(entry, cwd),
+      onProcess: (pid) => services.track(threadId, pid),
       emit: (event) => receiveAgentEvent(entry, generation, event),
       mcpServer: mcp.issue(threadId),
     });
@@ -424,6 +428,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
 
     if (!entry) return;
 
+    services.killThread(threadId);
     threads.delete(threadId);
     terminals.closeThread(threadId);
     devices.release(threadId);
@@ -462,6 +467,7 @@ export const createAgents = Effect.fn("createAgents")(function* ({
 
     if (!isArchived) return;
 
+    services.killThread(entry.info.id);
     terminals.closeThread(entry.info.id);
     devices.release(entry.info.id);
     mcp.revoke(entry.info.id);

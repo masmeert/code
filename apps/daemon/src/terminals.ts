@@ -50,6 +50,7 @@ export function createTerminals(options: {
   findFolder(threadId: string): string | null;
   onOpened(terminal: TerminalInfo): void;
   onClosed(terminal: TerminalInfo): void;
+  onSpawned(threadId: string, pid: number): void;
 }) {
   const sessions = new Map<string, TerminalSession>();
 
@@ -159,6 +160,7 @@ export function createTerminals(options: {
       };
 
       sessions.set(getTerminalKey(threadId, terminalId), session);
+      options.onSpawned(threadId, session.shell.pid);
 
       if (run) runs.add(getTerminalKey(threadId, terminalId));
       void session.shell.exited.then((exitCode) => handleShellExit(session, exitCode));

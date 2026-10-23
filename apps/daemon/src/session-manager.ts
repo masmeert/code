@@ -25,6 +25,7 @@ import { checkoutBranch, createBranch, listFiles, readCheckpointDiff } from "./g
 import { ADAPTERS } from "./harnesses.ts";
 import { createMcp, type Mcp } from "./mcp.ts";
 import { createKeepAwake, type KeepAwake } from "./keep-awake/keep-awake.ts";
+import { createServices, type Services } from "./services.ts";
 import { createPhones, type Phones } from "./phones.ts";
 import { ProviderError } from "./providers/provider-adapter.ts";
 import { ProviderRegistry } from "./providers/provider-registry.ts";
@@ -71,6 +72,7 @@ export class SessionManager extends Context.Service<
     readonly devices: Devices;
     readonly phones: Phones;
     readonly keepAwake: KeepAwake;
+    readonly services: Services;
     readonly mcp: Mcp;
     /**
      * A thread's transcript: what was missed since `after`, or the latest `turnLimit` turns.
@@ -149,7 +151,16 @@ const make = Effect.gen(function* () {
     findFolder: (threadId) => threads.get(threadId)?.info.cwd ?? null,
     onOpened: (terminal) => publish(RuntimeEvent.cases["terminal.opened"].make(terminal)),
     onClosed: (terminal) => publish(RuntimeEvent.cases["terminal.closed"].make(terminal)),
+    onSpawned: (threadId, pid) => services.track(threadId, pid),
   });
+
+  const services = createServices({
+    listThreads: () => [...threads.values()].map((entry) => entry.info),
+    onChanged: (list) =>
+      publish(RuntimeEvent.cases["services.updated"].make({ services: [...list] })),
+  });
+
+  yield* Effect.addFinalizer(() => Effect.sync(() => services.close()));
 
   const browsers = createBrowsers();
 
@@ -221,6 +232,7 @@ const make = Effect.gen(function* () {
     providerRegistry,
     skills,
     terminals,
+    services,
     devices,
     // The agents' MCP servers serve the orchestration tools, which need the agents: bound late.
     mcp: {
@@ -589,6 +601,7 @@ const make = Effect.gen(function* () {
         "keepAwake.setUp": () => Effect.promise(() => keepAwake.setUp()),
         "keepAwake.remove": () => Effect.promise(() => keepAwake.remove()),
         "keepAwake.listApps": () => Effect.void,
+        "service.kill": () => Effect.void,
         "settings.update": (command) =>
           Effect.gen(function* () {
             // A different binary, config dir or env can mean another version or account.
@@ -631,6 +644,7 @@ const make = Effect.gen(function* () {
         terminals: terminals.list(),
         phones: yield* phones.list,
         keepAwake: keepAwake.readStatus(),
+        services: [...services.list()],
         live,
       };
     }),
@@ -639,6 +653,7 @@ const make = Effect.gen(function* () {
     devices,
     phones,
     keepAwake,
+    services,
     mcp,
     readThread,
     readOlder,

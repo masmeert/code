@@ -64,6 +64,8 @@ export interface StartSessionInput {
   readonly onResumeToken: (token: string) => void;
   /** Called with the folder the agent works in when it starts and whenever it moves (Claude switching worktrees). */
   readonly onCwd: (cwd: string) => void;
+  /** Called with the pid of each agent process the session spawns, so what it starts is known as the thread's. */
+  readonly onProcess: (pid: number | undefined) => void;
   /** Adapters push normalized events for `threadId` here. */
   readonly emit: (event: RuntimeEvent) => void;
   /** Null leaves out MassCode's browser and thread tools. */

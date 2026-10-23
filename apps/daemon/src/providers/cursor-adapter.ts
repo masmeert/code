@@ -212,6 +212,7 @@ function start({
   resumeToken,
   permission: initialPermission,
   onResumeToken,
+  onProcess,
   emit,
   mcpServer,
 }: StartSessionInput) {
@@ -471,6 +472,7 @@ function start({
             handleHarnessExit("Cursor", threadId, emit)(code, stderrTail);
         },
       });
+      onProcess(rpc.pid);
 
       const resumed = sessionId
         ? await (async () => {

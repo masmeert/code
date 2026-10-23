@@ -92,6 +92,7 @@ export function createSideChats({
       permission: "plan",
       onResumeToken: () => {},
       onCwd: () => {},
+      onProcess: () => {},
       emit: (event) => {
         if (sideChats.get(sideChatId) !== chat) return;
 

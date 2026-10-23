@@ -17,6 +17,7 @@ import {
   setRemoteHosts as setHosts,
 } from "@/entities/host";
 import { applyKeepAwakeEvent, receiveKeepAwake } from "@/entities/keep-awake";
+import { applyServiceEvent, forgetServices, receiveServices } from "@/entities/service";
 import {
   applyProjectEvent,
   forgetHostProjects,
@@ -94,6 +95,7 @@ function receiveHostShell(host: string | null, shell: Extract<ServerFrame, { _ta
   receiveProjects(host, shell.projects);
   receiveProviders(host, shell.providers);
   receiveKeepAwake(host, shell.keepAwake);
+  receiveServices(host, shell.services);
   receiveShell(host, shell);
 
   resubscribeHost(host, isSameData);
@@ -115,6 +117,7 @@ function applyShellEvent(host: string | null, event: RuntimeEvent) {
 
   applySettingsEvent(host, event);
   applyKeepAwakeEvent(host, event);
+  applyServiceEvent(host, event);
   applyProviderEvent(host, event);
   applyRepoEvent(host, event);
   applyProjectEvent(host, event);
@@ -204,6 +207,7 @@ onIncompatible(markIncompatible);
 onDisconnect((host) => {
   showHostTranscriptsCached(host);
   markDisconnected(host);
+  forgetServices(host);
 });
 
 connectTo(null);

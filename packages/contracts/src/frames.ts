@@ -6,6 +6,7 @@ import { AppChoice, KeepAwakeStatus } from "./keep-awake.ts";
 import { PairedPhone, PairingOffer } from "./phones.ts";
 import { Project, ProjectConfig } from "./projects.ts";
 import { ProviderStatus } from "./providers.ts";
+import { Service } from "./services.ts";
 import { Settings } from "./settings.ts";
 import { TerminalInfo } from "./terminals.ts";
 import { SearchHit, ThreadInfo } from "./threads.ts";
@@ -38,6 +39,8 @@ export const ServerFrame = Schema.TaggedUnion({
     protocol: Schema.optional(Schema.Number),
     /** Missing from daemons older than keeping the Mac awake. */
     keepAwake: Schema.optional(KeepAwakeStatus),
+    /** Missing from daemons older than services. */
+    services: Schema.optional(Schema.Array(Service)),
   },
   /** A transcript from scratch: the latest turns, plus the text of any message still streaming. */
   "thread.snapshot": {
@@ -147,6 +150,11 @@ export const ServerFrame = Schema.TaggedUnion({
     error: Schema.NullOr(Schema.String),
   },
   "device.attached": {
+    requestId: Schema.String,
+    error: Schema.NullOr(Schema.String),
+  },
+  /** Answers `service.kill`; the service is gone from the list once `error` is null. */
+  "service.killed": {
     requestId: Schema.String,
     error: Schema.NullOr(Schema.String),
   },

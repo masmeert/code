@@ -139,6 +139,7 @@ export function serve(port: number) {
             terminals,
             phones,
             keepAwake,
+            services,
             live,
           } = yield* manager.subscribe;
 
@@ -153,6 +154,7 @@ export function serve(port: number) {
               terminals,
               phones,
               keepAwake,
+              services,
               root: process.getuid?.() === 0,
               protocol: PROTOCOL_VERSION,
             }),
@@ -409,6 +411,16 @@ export function serve(port: number) {
                   }),
                 );
               }),
+            "service.kill": ({ requestId, threadId, pid }) =>
+              Effect.promise(async () =>
+                send(
+                  socket,
+                  ServerFrame.cases["service.killed"].make({
+                    requestId,
+                    error: await manager.services.kill(threadId, pid),
+                  }),
+                ),
+              ),
             "settings.update": (command) =>
               manager.dispatch(command).pipe(Effect.ensuring(Effect.ignore(syncPhoneListener))),
             "browser.respond": (command) => {
