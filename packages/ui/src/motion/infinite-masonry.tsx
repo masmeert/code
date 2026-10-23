@@ -2,7 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { AlertCircle, Inbox } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
-import { EASE_OUT, SPRING_PANEL } from "@masscode/ui/lib/ease";
+import { EASE_OUT, SPRING_PANEL } from "@masmeert/ui/lib/ease";
 import { cn } from "@masscode/ui/lib/utils";
 
 export type InfiniteMasonryKey = string | number | bigint;

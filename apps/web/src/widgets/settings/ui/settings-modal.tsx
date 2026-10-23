@@ -1,6 +1,6 @@
 import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
-import { SharedLayoutBg } from "@masscode/ui/motion/shared-layout-bg";
-import { ScrollArea } from "@masscode/ui/components/scroll-area";
+import { SharedLayoutBg } from "@masmeert/ui/shared-layout-bg";
+import { ScrollArea } from "@masmeert/ui/scroll-area";
 import { cn } from "@masscode/ui/lib/utils";
 import { ClientCommand } from "@masscode/contracts";
 import {

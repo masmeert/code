@@ -1,6 +1,6 @@
-import { matches } from "@masscode/ui/lib/keys";
-import { Button } from "@masscode/ui/motion/button/base";
-import { Textarea } from "@masscode/ui/components/textarea";
+import { matches } from "@masmeert/ui/lib/keys";
+import { Button } from "@masmeert/ui/button";
+import { Textarea } from "@masmeert/ui/textarea";
 import { MessageSquare, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { formatKeybinding, KEYBINDINGS } from "@/shared/lib/keybindings";

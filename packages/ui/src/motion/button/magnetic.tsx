@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import { Magnetic } from "../magnetic";
-import { Button, type ButtonProps } from "./base";
+import { Button, type ButtonProps } from "@masmeert/ui/button";
 
 export interface MagneticButtonProps extends ButtonProps {
   /** Magnetic pull strength. Default 0.25. */

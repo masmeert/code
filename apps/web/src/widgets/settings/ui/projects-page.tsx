@@ -1,6 +1,6 @@
-import { Switch } from "@masscode/ui/motion/switch";
-import { Skeleton } from "@masscode/ui/components/skeleton";
-import { Textarea } from "@masscode/ui/components/textarea";
+import { Switch } from "@masmeert/ui/switch";
+import { Skeleton } from "@masmeert/ui/skeleton";
+import { Textarea } from "@masmeert/ui/textarea";
 import { cn } from "@masscode/ui/lib/utils";
 import { type ProjectConfig } from "@masscode/contracts";
 import { useEffect, useRef, useState } from "react";

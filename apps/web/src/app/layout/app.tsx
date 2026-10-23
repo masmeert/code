@@ -1,6 +1,6 @@
 import { formatTimeLeft } from "@masscode/client";
 import { ChatApp } from "@masscode/ui/agents/chat-app";
-import { AnimatedSidebarInset } from "@masscode/ui/motion/animated-sidebar";
+import { SidebarInset } from "@masmeert/ui/sidebar";
 import { DEFAULT_KEEP_AWAKE_MANUAL_MINUTES } from "@masscode/contracts";
 import {
   AppWindow,
@@ -173,7 +173,7 @@ export function App() {
             onOpenSettings={() => setIsSettingsOpen(true)}
             onDraft={openDraft}
           />
-          <AnimatedSidebarInset className="relative min-h-0 bg-background">
+          <SidebarInset className="relative min-h-0 bg-background">
             {incompatible ? (
               <div className="absolute top-16 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1 text-[11px] text-destructive shadow-panel">
                 {incompatible}
@@ -196,7 +196,7 @@ export function App() {
               // One key for every draft, so text typed before picking a project survives the pick.
               <DraftPage key="draft" path={view.path} onPickProject={openDraft} />
             ) : null}
-          </AnimatedSidebarInset>
+          </SidebarInset>
           <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
           <AddProjectDialog />
           <BrowserHost />

@@ -1,16 +1,10 @@
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@masmeert/ui/select";
+import { Input } from "@masmeert/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@masscode/ui/motion/select";
-import { Input } from "@masscode/ui/motion/input";
-import {
-  MorphPopover,
-  MorphPopoverContent,
-  MorphPopoverTrigger,
-} from "@masscode/ui/motion/popover-morph";
+  MorphingPopover,
+  MorphingPopoverContent,
+  MorphingPopoverTrigger,
+} from "@masmeert/ui/morphing-popover";
 import { ModelList } from "@masscode/ui/agents/prompt-input";
 import { cn } from "@masscode/ui/lib/utils";
 import { Check, ChevronDown } from "lucide-react";
@@ -108,8 +102,8 @@ export function SettingsModelSelect(props: {
   const current = models.find((option) => option.value === props.value);
 
   return (
-    <MorphPopover open={isOpen} onOpenChange={setIsOpen} className={props.className}>
-      <MorphPopoverTrigger>
+    <MorphingPopover open={isOpen} onOpenChange={setIsOpen} className={props.className}>
+      <MorphingPopoverTrigger>
         <button
           type="button"
           className="flex w-full items-center gap-2 rounded-[12px] border border-border bg-background px-3 py-1.5 text-[13px] whitespace-nowrap text-foreground transition-colors outline-none hover:border-border-strong focus-visible:ring-4 focus-visible:ring-ring"
@@ -130,8 +124,8 @@ export function SettingsModelSelect(props: {
             )}
           />
         </button>
-      </MorphPopoverTrigger>
-      <MorphPopoverContent side="bottom" align="start" sideOffset={6} radius={12}>
+      </MorphingPopoverTrigger>
+      <MorphingPopoverContent side="bottom" align="start" sideOffset={6} radius={12}>
         <div className="border-b border-border p-1">
           <button
             type="button"
@@ -156,8 +150,8 @@ export function SettingsModelSelect(props: {
           favorites={getFavoriteChoices(settings)}
           onToggleFavorite={toggleFavoriteModel}
         />
-      </MorphPopoverContent>
-    </MorphPopover>
+      </MorphingPopoverContent>
+    </MorphingPopover>
   );
 }
 

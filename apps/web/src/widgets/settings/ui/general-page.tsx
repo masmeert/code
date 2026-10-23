@@ -1,6 +1,6 @@
-import { Button } from "@masscode/ui/motion/button/base";
-import { Switch } from "@masscode/ui/motion/switch";
-import { Tabs, TabsList, TabsTrigger } from "@masscode/ui/motion/tabs";
+import { Button } from "@masmeert/ui/button";
+import { Switch } from "@masmeert/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@masmeert/ui/tabs";
 import { DEFAULT_AUTO_SHELVE_DAYS, PermissionLevel, UpdateStatus } from "@masscode/contracts";
 import { Columns2, Rows2 } from "lucide-react";
 import { useEffect, useState } from "react";

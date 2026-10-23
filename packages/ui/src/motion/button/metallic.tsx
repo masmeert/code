@@ -1,8 +1,8 @@
 import { motion, useReducedMotion } from "motion/react";
 import { forwardRef, useState } from "react";
-import { EASE_IN_OUT } from "@masscode/ui/lib/ease";
+import { EASE_IN_OUT } from "@masmeert/ui/lib/ease";
 import { cn } from "@masscode/ui/lib/utils";
-import { Button, type ButtonProps } from "./base";
+import { Button, type ButtonProps } from "@masmeert/ui/button";
 
 export interface MetallicButtonProps extends Omit<ButtonProps, "variant"> {
   /** Stops the traveling reflection while preserving the chrome rim. */

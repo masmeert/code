@@ -53,7 +53,7 @@ import {
 } from "@/entities/thread";
 import { askSideChat, openSideChat } from "@/features/side-chat";
 import { send } from "@/shared/api";
-import { readWidth } from "@masscode/ui/hooks/use-resizable";
+import { readWidth } from "@masmeert/ui/hooks/use-resizable";
 import { DIFF_PANEL_WIDTH_KEY, getDefaultDiffPanelWidth } from "../lib/diff-panel-width.ts";
 import { BrowserPanel } from "./browser-panel.tsx";
 import { SimulatorPanel } from "./simulator-panel.tsx";

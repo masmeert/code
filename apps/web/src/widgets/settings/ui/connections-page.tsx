@@ -1,5 +1,5 @@
-import { Button } from "@masscode/ui/motion/button/base";
-import { Input } from "@masscode/ui/motion/input";
+import { Button } from "@masmeert/ui/button";
+import { Input } from "@masmeert/ui/input";
 import { cn } from "@masscode/ui/lib/utils";
 import { HostStatus } from "@masscode/contracts";
 import { Search } from "lucide-react";

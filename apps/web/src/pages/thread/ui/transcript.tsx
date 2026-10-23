@@ -18,7 +18,7 @@ import {
   AlertDialogContent,
   AlertDialogFooter,
   AlertDialogTitle,
-} from "@masscode/ui/components/alert-dialog";
+} from "@masmeert/ui/alert-dialog";
 import { ToolGroup, type ToolReveal } from "@masscode/ui/agents/tool-group";
 import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
 import { cn } from "@masscode/ui/lib/utils";
@@ -643,11 +643,7 @@ function ForkDialog({
     >
       <AlertDialogContent
         className="gap-4 bg-popover p-4 data-[size=default]:sm:max-w-xs"
-        aria-describedby={undefined}
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          forkButton.current?.focus();
-        }}
+        initialFocus={forkButton}
       >
         <div className="flex items-center gap-3">
           <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
@@ -673,7 +669,7 @@ function ForkDialog({
             disabled={isPending}
             onClick={(event) => {
               // Stays open until the fork opens, which replaces this view.
-              event.preventDefault();
+              event.preventBaseUIHandler();
               forkThread(threadId, item.id);
             }}
           >

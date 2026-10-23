@@ -1,10 +1,10 @@
 import { Check, Copy } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
-import { Checkbox } from "@masscode/ui/motion/checkbox";
-import { MorphPopover, MorphPopoverContent } from "@masscode/ui/motion/popover-morph";
-import { Tooltip } from "@masscode/ui/motion/tooltip";
-import { SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { Checkbox } from "@masmeert/ui/checkbox";
+import { MorphingPopover, MorphingPopoverContent } from "@masmeert/ui/morphing-popover";
+import { Tooltip } from "@masmeert/ui/tooltip";
+import { SPRING_PRESS } from "@masmeert/ui/lib/ease";
 import { IconButton } from "./icon-button";
 import { type DayKey, WEEKDAYS } from "./types";
 
@@ -41,7 +41,7 @@ export function CopyMenu({
   };
 
   return (
-    <MorphPopover open={open} onOpenChange={setOpen}>
+    <MorphingPopover open={open} onOpenChange={setOpen}>
       <Tooltip content="Copy times">
         <IconButton
           label={`Copy ${fromLabel} hours to other days`}
@@ -76,7 +76,7 @@ export function CopyMenu({
         </IconButton>
       </Tooltip>
 
-      <MorphPopoverContent align="end" className="w-52 p-2">
+      <MorphingPopoverContent align="end" className="w-52 p-2">
         <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Copy times to</p>
         <div className="flex flex-col">
           {others.map((d) => (
@@ -106,7 +106,7 @@ export function CopyMenu({
             Apply
           </button>
         </div>
-      </MorphPopoverContent>
-    </MorphPopover>
+      </MorphingPopoverContent>
+    </MorphingPopover>
   );
 }

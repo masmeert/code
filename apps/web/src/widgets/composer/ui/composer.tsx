@@ -4,7 +4,7 @@ import {
   type PromptOption,
   PromptSelect,
 } from "@masscode/ui/agents/prompt-input";
-import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
+import { useRowCursor } from "@masmeert/ui/hooks/use-row-cursor";
 import { cn } from "@masscode/ui/lib/utils";
 import {
   AlertDialog,
@@ -14,7 +14,7 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogTitle,
-} from "@masscode/ui/components/alert-dialog";
+} from "@masmeert/ui/alert-dialog";
 import {
   ClientCommand,
   Effort,

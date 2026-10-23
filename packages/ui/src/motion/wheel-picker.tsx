@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { createTickPlayer } from "@masscode/ui/lib/tick-sound";
-import { capturePointer, releasePointer, TOUCH_GESTURE_CLASS } from "@masscode/ui/lib/touch";
+import { capturePointer, releasePointer, TOUCH_GESTURE_CLASS } from "@masmeert/ui/lib/touch";
 import { cn } from "@masscode/ui/lib/utils";
 
 export type WheelPickerOption = string | { label: string; value: string };

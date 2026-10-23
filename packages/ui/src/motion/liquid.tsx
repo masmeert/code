@@ -13,7 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { EASE_OUT } from "@masscode/ui/lib/ease";
+import { EASE_OUT } from "@masmeert/ui/lib/ease";
 import { cn } from "@masscode/ui/lib/utils";
 
 type LiquidContextValue = {

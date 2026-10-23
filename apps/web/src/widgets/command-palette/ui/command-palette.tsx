@@ -1,7 +1,7 @@
 import { formatProjectLabel } from "@masscode/client";
 import { ProjectBadge, useProjectStore } from "@/entities/project";
-import { searchCommands } from "@masscode/ui/lib/command-search";
-import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
+import { searchCommands } from "@masmeert/ui/lib/command-search";
+import { useRowCursor } from "@masmeert/ui/hooks/use-row-cursor";
 import { cn } from "@masscode/ui/lib/utils";
 import type { SearchHit } from "@masscode/contracts";
 import { MessageSquare, Search } from "lucide-react";

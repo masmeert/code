@@ -9,11 +9,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { ActionSwapText } from "@masscode/ui/motion/action-swap";
-import { EASE_OUT, SPRING_LAYOUT } from "@masscode/ui/lib/ease";
-import { useDismiss } from "@masscode/ui/hooks/use-dismiss";
-import { useHoverGesture } from "@masscode/ui/hooks/use-hover-gesture";
-import { useTapGesture } from "@masscode/ui/hooks/use-tap-gesture";
+import { ActionSwapText } from "@masmeert/ui/action-swap";
+import { EASE_OUT, SPRING_LAYOUT } from "@masmeert/ui/lib/ease";
+import { useDismiss } from "@masmeert/ui/hooks/use-dismiss";
+import { useHoverGesture } from "@masmeert/ui/hooks/use-hover-gesture";
+import { useTapGesture } from "@masmeert/ui/hooks/use-tap-gesture";
 import { cn } from "@masscode/ui/lib/utils";
 
 export type NotificationStackItem = {

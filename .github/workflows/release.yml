@@ -29,6 +29,11 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.created == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
+    # Job-level permissions replace the workflow's, so its scopes are repeated here.
+    permissions:
+      contents: write
+      pull-requests: write
+      packages: read
     env:
       TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
     steps:
@@ -41,10 +46,15 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          # pnpm only expands NODE_AUTH_TOKEN in a user-level npmrc, which this writes.
+          registry-url: https://npm.pkg.github.com
+          scope: "@masmeert"
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
       - run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # electron-builder's own CSC_LINK import unlocks its keychain with the .p12 password, which macOS rejects
       - name: Import signing certificate
         env:

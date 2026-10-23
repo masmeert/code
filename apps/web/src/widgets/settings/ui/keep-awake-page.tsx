@@ -1,13 +1,13 @@
-import { Button } from "@masscode/ui/motion/button/base";
-import { Switch } from "@masscode/ui/motion/switch";
-import { Fold } from "@masscode/ui/motion/fold";
-import { Input } from "@masscode/ui/motion/input";
+import { Button } from "@masmeert/ui/button";
+import { Switch } from "@masmeert/ui/switch";
+import { Collapsible } from "@masmeert/ui/collapsible";
+import { Input } from "@masmeert/ui/input";
 import {
-  MorphPopover,
-  MorphPopoverContent,
-  MorphPopoverTrigger,
-} from "@masscode/ui/motion/popover-morph";
-import { useRowCursor } from "@masscode/ui/hooks/use-row-cursor";
+  MorphingPopover,
+  MorphingPopoverContent,
+  MorphingPopoverTrigger,
+} from "@masmeert/ui/morphing-popover";
+import { useRowCursor } from "@masmeert/ui/hooks/use-row-cursor";
 import { cn } from "@masscode/ui/lib/utils";
 import {
   type AppChoice,
@@ -112,13 +112,13 @@ export function KeepAwakePage() {
             keepAwake={keepAwake}
             onPickMinutes={(manualMinutes) => update({ manualMinutes })}
           />
-          <Fold open={status.notice !== null}>
+          <Collapsible open={status.notice !== null}>
             <p className="px-3 py-2.5 text-xs text-muted-foreground">{status.notice}</p>
-          </Fold>
+          </Collapsible>
         </SettingsGroup>
       </SettingsSection>
       <AccessSection status={status} />
-      <Fold open={keepAwake.enabled}>
+      <Collapsible open={keepAwake.enabled}>
         <SettingsSection title="When">
           <SettingsGroup>
             <SettingsRow
@@ -270,7 +270,7 @@ export function KeepAwakePage() {
             </div>
           </SettingsGroup>
         </SettingsSection>
-      </Fold>
+      </Collapsible>
     </>
   );
 }
@@ -412,11 +412,11 @@ function AccessSection({ status }: { status: KeepAwakeStatus }) {
             </Button>
           )}
         </SettingsRow>
-        <Fold open={isConfirming}>
+        <Collapsible open={isConfirming}>
           <p className="px-3 py-2.5 text-xs text-muted-foreground">
             Asks for your password again. The Mac goes back to sleeping when the lid closes.
           </p>
-        </Fold>
+        </Collapsible>
       </SettingsGroup>
     </SettingsSection>
   );
@@ -536,7 +536,7 @@ function AppPicker(props: {
   }
 
   return (
-    <MorphPopover
+    <MorphingPopover
       open={isOpen}
       onOpenChange={(open) => {
         setIsOpen(open);
@@ -544,7 +544,7 @@ function AppPicker(props: {
         if (!open) setQuery("");
       }}
     >
-      <MorphPopoverTrigger>
+      <MorphingPopoverTrigger>
         <Button
           size="sm"
           variant="ghost"
@@ -555,8 +555,8 @@ function AppPicker(props: {
           <Plus className="size-3.5" />
           Add
         </Button>
-      </MorphPopoverTrigger>
-      <MorphPopoverContent side="bottom" align="end" sideOffset={6} radius={12} className="w-72">
+      </MorphingPopoverTrigger>
+      <MorphingPopoverContent side="bottom" align="end" sideOffset={6} radius={12} className="w-72">
         <div className="border-b border-border p-1">
           <Input
             ref={input}
@@ -614,7 +614,7 @@ function AppPicker(props: {
             ))
           )}
         </div>
-      </MorphPopoverContent>
-    </MorphPopover>
+      </MorphingPopoverContent>
+    </MorphingPopover>
   );
 }

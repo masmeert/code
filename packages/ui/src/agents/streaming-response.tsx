@@ -13,7 +13,7 @@ import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 
 import { type CitationItem, CitationList, CitationStack } from "@masscode/ui/agents/citations";
 import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
 import { ActionSwapRollIcon } from "@masscode/ui/motion/action-swap-roll";
-import { EASE_OUT, SPRING_PRESS } from "@masscode/ui/lib/ease";
+import { EASE_OUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
 import { cn } from "@masscode/ui/lib/utils";
 
 export type StreamingResponseStatus = "streaming" | "complete" | "error";

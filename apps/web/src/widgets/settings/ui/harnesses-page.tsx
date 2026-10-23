@@ -1,13 +1,7 @@
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@masscode/ui/motion/select";
-import { Switch } from "@masscode/ui/motion/switch";
-import { Textarea } from "@masscode/ui/components/textarea";
-import { Tabs, TabsList, TabsTrigger } from "@masscode/ui/motion/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@masmeert/ui/select";
+import { Switch } from "@masmeert/ui/switch";
+import { Textarea } from "@masmeert/ui/textarea";
+import { Tabs, TabsList, TabsTrigger } from "@masmeert/ui/tabs";
 import { IconButton } from "@/shared/ui";
 import {
   formatHarnessLabel,

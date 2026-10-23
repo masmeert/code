@@ -17,7 +17,7 @@ import {
   useState,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import { capturePointer, releasePointer, TOUCH_GESTURE_CLASS } from "@masscode/ui/lib/touch";
+import { capturePointer, releasePointer, TOUCH_GESTURE_CLASS } from "@masmeert/ui/lib/touch";
 import { cn } from "@masscode/ui/lib/utils";
 
 // Carousel-specific: a soft spring that receives the release velocity, so a

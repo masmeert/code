@@ -14,7 +14,7 @@ import {
   useId,
   useState,
 } from "react";
-import { EASE_OUT, SPRING_LAYOUT } from "@masscode/ui/lib/ease";
+import { EASE_OUT, SPRING_LAYOUT } from "@masmeert/ui/lib/ease";
 import { cn } from "@masscode/ui/lib/utils";
 import { MessageSideContext } from "@masscode/ui/agents/message-context";
 

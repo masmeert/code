@@ -1,26 +1,22 @@
-import {
-  AnimatedSidebar,
-  AnimatedSidebarRail,
-  AnimatedSidebarTrigger,
-} from "@masscode/ui/motion/animated-sidebar";
-import { Button } from "@masscode/ui/motion/button";
+import { Sidebar as AnimatedSidebar, SidebarRail, SidebarTrigger } from "@masmeert/ui/sidebar";
+import { Button } from "@masmeert/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
-} from "@masscode/ui/motion/context-menu";
-import { Input } from "@masscode/ui/motion/input";
-import { Tooltip } from "@masscode/ui/motion/tooltip";
+} from "@masmeert/ui/context-menu";
+import { Input } from "@masmeert/ui/input";
+import { Tooltip } from "@masmeert/ui/tooltip";
 import {
-  MorphPopover,
-  MorphPopoverContent,
-  MorphPopoverMenu,
-  MorphPopoverTrigger,
-} from "@masscode/ui/motion/popover-morph";
-import { SPRING_LAYOUT, SPRING_SWAP } from "@masscode/ui/lib/ease";
-import { NumberTicker } from "@masscode/ui/motion/number-ticker";
-import { SharedLayoutBg } from "@masscode/ui/motion/shared-layout-bg";
+  MorphingPopover,
+  MorphingPopoverContent,
+  MorphingPopoverMenu,
+  MorphingPopoverTrigger,
+} from "@masmeert/ui/morphing-popover";
+import { SPRING_LAYOUT, SPRING_SWAP } from "@masmeert/ui/lib/ease";
+import { NumberTicker } from "@masmeert/ui/number-ticker";
+import { SharedLayoutBg } from "@masmeert/ui/shared-layout-bg";
 import { formatProjectLabel, getProjectKey } from "@masscode/client";
 import {
   buildFallbackProject,
@@ -30,7 +26,7 @@ import {
 } from "@/entities/project";
 import { getHarnessTint, PROVIDER_LOGO } from "@/entities/provider";
 import { cn } from "@masscode/ui/lib/utils";
-import { formatBinding, isMac } from "@masscode/ui/lib/keys";
+import { formatBinding, isMac } from "@masmeert/ui/lib/keys";
 import {
   ClientCommand,
   isAwaitingUser,
@@ -39,7 +35,7 @@ import {
   UpdateStatus,
 } from "@masscode/contracts";
 import { categoryOf, describeActivity } from "@masscode/client";
-import { TextShimmer } from "@masscode/ui/motion/text-shimmer";
+import { TextShimmer } from "@masmeert/ui/text-shimmer";
 import {
   Archive,
   ArchiveRestore,
@@ -462,9 +458,9 @@ export function Sidebar(props: {
           hasTrafficLights ? "pl-[86px]" : "pl-3",
         )}
       >
-        <AnimatedSidebarTrigger className="size-7 rounded-lg text-muted-foreground [-webkit-app-region:no-drag] hover:bg-muted/60 hover:text-foreground">
+        <SidebarTrigger className="size-7 rounded-lg text-muted-foreground [-webkit-app-region:no-drag] hover:bg-muted/60 hover:text-foreground">
           <PanelLeft className="size-4" />
-        </AnimatedSidebarTrigger>
+        </SidebarTrigger>
         <div className="ml-auto [-webkit-app-region:no-drag]">
           <Tooltip content={`New thread ${formatKeybinding("thread.new")}`} side="bottom">
             <Button
@@ -537,7 +533,7 @@ export function Sidebar(props: {
           Settings
         </Button>
       </div>
-      <AnimatedSidebarRail />
+      <SidebarRail />
     </AnimatedSidebar>
   );
 }
@@ -795,8 +791,8 @@ const ThreadCard = memo(function ThreadCard(props: {
             </button>
           </Tooltip>
         ) : null}
-        <MorphPopover open={isMenuOpen} onOpenChange={setIsMenuOpen}>
-          <MorphPopoverTrigger>
+        <MorphingPopover open={isMenuOpen} onOpenChange={setIsMenuOpen}>
+          <MorphingPopoverTrigger>
             <button
               type="button"
               tabIndex={-1}
@@ -806,21 +802,21 @@ const ThreadCard = memo(function ThreadCard(props: {
             >
               <MoreHorizontal className="size-4" />
             </button>
-          </MorphPopoverTrigger>
-          <MorphPopoverContent
+          </MorphingPopoverTrigger>
+          <MorphingPopoverContent
             side="bottom"
             align="end"
             sideOffset={8}
             radius={12}
             className="w-48 p-1.5"
           >
-            <MorphPopoverMenu onClick={(event) => event.stopPropagation()}>
+            <MorphingPopoverMenu onClick={(event) => event.stopPropagation()}>
               {actions.map((action) => (
                 <MenuRow key={action.key} action={action} onDone={() => setIsMenuOpen(false)} />
               ))}
-            </MorphPopoverMenu>
-          </MorphPopoverContent>
-        </MorphPopover>
+            </MorphingPopoverMenu>
+          </MorphingPopoverContent>
+        </MorphingPopover>
       </span>
     </>
   );

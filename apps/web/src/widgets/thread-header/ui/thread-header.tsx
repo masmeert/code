@@ -1,7 +1,7 @@
 import { formatProjectLabel } from "@masscode/client";
 import { ProjectBadge, useProjectConfig, useProjectHost } from "@/entities/project";
 import { type Project } from "@masscode/contracts";
-import { AnimatedSidebarTrigger, useAnimatedSidebar } from "@masscode/ui/motion/animated-sidebar";
+import { SidebarTrigger, useSidebar } from "@masmeert/ui/sidebar";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
-} from "@masscode/ui/components/dropdown-menu";
+} from "@masmeert/ui/dropdown-menu";
 import {
   EllipsisVertical,
   Globe,
@@ -41,7 +41,7 @@ export function ThreadHeader({
   badge?: ReactNode;
   actions?: ReactNode;
 }) {
-  const { open: isSidebarOpen } = useAnimatedSidebar();
+  const { open: isSidebarOpen } = useSidebar();
   const host = useProjectHost(project?.id ?? "");
 
   return (
@@ -50,9 +50,9 @@ export function ThreadHeader({
       className={`@container flex h-10 shrink-0 items-center gap-2 pr-4 pb-[3px] [-webkit-app-region:drag] ${isSidebarOpen ? "pl-5" : hasTrafficLights ? "pl-[86px]" : "pl-3"}`}
     >
       {isSidebarOpen ? null : (
-        <AnimatedSidebarTrigger className="mr-1 size-7 rounded-lg text-muted-foreground [-webkit-app-region:no-drag] hover:bg-muted/60 hover:text-foreground">
+        <SidebarTrigger className="mr-1 size-7 rounded-lg text-muted-foreground [-webkit-app-region:no-drag] hover:bg-muted/60 hover:text-foreground">
           <PanelLeft className="size-4" />
-        </AnimatedSidebarTrigger>
+        </SidebarTrigger>
       )}
       {project ? (
         <>
@@ -107,7 +107,7 @@ export function ScriptsMenu({
         <DropdownMenuTrigger
           title="Scripts"
           aria-label="Scripts"
-          className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-muted/60 data-[state=open]:text-foreground"
+          className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted/60 data-popup-open:text-foreground"
         >
           <Play className="size-4" />
         </DropdownMenuTrigger>
@@ -119,7 +119,7 @@ export function ScriptsMenu({
             <DropdownMenuItem
               key={script.name}
               title={script.command}
-              onSelect={() => runScript(threadId, script)}
+              onClick={() => runScript(threadId, script)}
             >
               <Play />
               <span className="min-w-0 flex-1 truncate">{script.name}</span>
@@ -129,7 +129,7 @@ export function ScriptsMenu({
             </DropdownMenuItem>
           ))}
           {scripts.length > 0 || projectConfig?.error ? <DropdownMenuSeparator /> : null}
-          <DropdownMenuItem onSelect={() => setIsEditingScripts(true)}>
+          <DropdownMenuItem onClick={() => setIsEditingScripts(true)}>
             <Pencil />
             {scripts.length > 0 ? "Edit scripts…" : "Add a script…"}
           </DropdownMenuItem>
@@ -156,7 +156,7 @@ export function PanelsMenu({
       <DropdownMenuTrigger
         title="More panels"
         aria-label="More panels"
-        className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-muted/60 data-[state=open]:text-foreground"
+        className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted/60 data-popup-open:text-foreground"
       >
         <EllipsisVertical className="size-4" />
       </DropdownMenuTrigger>
@@ -164,6 +164,7 @@ export function PanelsMenu({
         <DropdownMenuCheckboxItem
           checked={activeTerminal !== undefined}
           onCheckedChange={() => toggleTerminalPanel(threadId)}
+          closeOnClick
         >
           <SquareTerminal />
           Terminal
@@ -173,6 +174,7 @@ export function PanelsMenu({
           <DropdownMenuCheckboxItem
             checked={isBrowserOpen}
             onCheckedChange={() => toggleBrowser(threadId)}
+            closeOnClick
           >
             <Globe />
             Browser
@@ -183,6 +185,7 @@ export function PanelsMenu({
           <DropdownMenuCheckboxItem
             checked={isSimulatorOpen}
             onCheckedChange={() => toggleSimulator(threadId)}
+            closeOnClick
           >
             <Smartphone />
             Simulator

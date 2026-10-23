@@ -7,9 +7,9 @@ import {
 import { CodeView, type CodeViewHandle, type CodeViewItem } from "@pierre/diffs/react";
 import { ChevronLeft, Columns2, ListTree, RefreshCw, Rows2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ResizeHandle } from "@masscode/ui/components/resize-handle";
+import { ResizeHandle } from "@masmeert/ui/resize-handle";
 import { cn } from "@masscode/ui/lib/utils";
-import { useResizable } from "@masscode/ui/hooks/use-resizable";
+import { useResizable } from "@masmeert/ui/hooks/use-resizable";
 import { DIFF_PANEL_WIDTH_KEY, getDefaultDiffPanelWidth } from "../lib/diff-panel-width.ts";
 import { IconButton } from "@/shared/ui";
 import { ClientCommand } from "@masscode/contracts";

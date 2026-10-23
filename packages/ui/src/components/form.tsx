@@ -1,6 +1,5 @@
 import * as React from "react";
 import { cn } from "@masscode/ui/lib/utils";
-import type { Label as LabelPrimitive } from "radix-ui";
 import { Slot } from "radix-ui";
 import {
   Controller,
@@ -12,7 +11,7 @@ import {
   type FieldValues,
 } from "react-hook-form";
 
-import { Label } from "@masscode/ui/components/label";
+import { Label } from "@masmeert/ui/label";
 
 const Form = FormProvider;
 
@@ -77,7 +76,7 @@ function FormItem({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-function FormLabel({ className, ...props }: React.ComponentProps<typeof LabelPrimitive.Root>) {
+function FormLabel({ className, ...props }: React.ComponentProps<typeof Label>) {
   const { error, formItemId } = useFormField();
 
   return (

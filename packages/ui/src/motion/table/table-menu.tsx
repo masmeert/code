@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { SPRING_PANEL } from "@masscode/ui/lib/ease";
+import { SPRING_PANEL } from "@masmeert/ui/lib/ease";
 import { cn } from "@masscode/ui/lib/utils";
 
 export type TableMenuItem = {
