@@ -10,18 +10,21 @@ export function KeepAwakeIndicator() {
 
   if (!session) return null;
 
+  const until = `Until ${formatClockTime(session.endsAt)} at the latest`;
+  const manual = session.reason === "manual";
+
   return (
     <div className="flex h-8 items-center gap-2 rounded-lg bg-muted/50 pr-0.5 pl-2 text-sm">
       <Coffee className="size-4 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate">
-        {session.reason === "manual" ? "Kept awake" : "Awake for agents"}
+      {/* An agents session ends when the agents do; its endsAt is only the safety cap, not a countdown. */}
+      <span title={manual ? undefined : until} className="min-w-0 flex-1 truncate">
+        {manual ? "Kept awake" : "Awake for agents"}
       </span>
-      <span
-        title={`Until ${formatClockTime(session.endsAt)} at the latest`}
-        className="shrink-0 text-xs text-muted-foreground tabular-nums"
-      >
-        {formatTimeLeft(session.endsAt - now)}
-      </span>
+      {manual && (
+        <span title={until} className="shrink-0 text-xs text-muted-foreground tabular-nums">
+          {formatTimeLeft(session.endsAt - now)}
+        </span>
+      )}
       <IconButton label="Stop keeping this Mac awake" onClick={stopKeepAwake} className="size-6">
         <X className="size-3.5" />
       </IconButton>
