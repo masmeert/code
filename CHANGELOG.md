@@ -2,6 +2,18 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.12](https://github.com/masmeert/code/compare/v0.1.11...v0.1.12) (2026-10-23)
+
+
+### Added
+
+* list and kill the services threads leave listening ([4002ebc](https://github.com/masmeert/code/commit/4002ebcee648036284f6ea778e73ffa9cd91e8df))
+
+
+### Fixed
+
+* **web:** hide the countdown on an agents keep-awake session ([fa70ddc](https://github.com/masmeert/code/commit/fa70ddc3d9b008457021103e89c5dbf6901d6782))
+
 ## [0.1.11](https://github.com/masmeert/code/compare/v0.1.10...v0.1.11) (2026-10-22)
 
 
