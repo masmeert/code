@@ -5,7 +5,8 @@
   "scripts": {
     "start": "expo start",
     "ios": "expo run:ios",
-    "typecheck": "uniwind generate-artifacts --css ./global.css && tsc -p ."
+    "typecheck": "uniwind generate-artifacts --css ./global.css && tsc -p .",
+    "eas-build-pre-install": "echo \"//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\" >> ~/.npmrc"
   },
   "dependencies": {
     "@expo/ui": "58.0.14",
