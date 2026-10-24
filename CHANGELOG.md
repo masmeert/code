@@ -2,6 +2,22 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.14](https://github.com/masmeert/code/compare/v0.1.13...v0.1.14) (2026-10-24)
+
+
+### Added
+
+* **sidebar:** keep-awake indicator opens a menu instead of stopping on click ([6cb8c72](https://github.com/masmeert/code/commit/6cb8c72888c69197d2d73544b52534e9bc78b45d))
+
+
+### Fixed
+
+* **sidebar:** same-size footer buttons and a broadcast icon for services ([4a41a4b](https://github.com/masmeert/code/commit/4a41a4b998711fb4fbbf9f65f36f24221851b290))
+* **ui:** bump @masmeert/ui to 0.3.1 ([736d99d](https://github.com/masmeert/code/commit/736d99d6bfc53eef39a0c4b4065b1868070cd2ac))
+* **ui:** even, unclipped hover on question choices ([cc876bf](https://github.com/masmeert/code/commit/cc876bfb39c19a6705e92436c9e6cd80c6cb8b82))
+* **ui:** let the kit's hover highlight own menu row hover ([a0ae9dd](https://github.com/masmeert/code/commit/a0ae9dd32b6379bcf1dafb6b984b1949fe0bd216))
+* **ui:** one hover and selected look across menus, lists and tabs ([83d13b3](https://github.com/masmeert/code/commit/83d13b30a35784d6881fea8a20828fa8ec9be2e8))
+
 ## [0.1.13](https://github.com/masmeert/code/compare/v0.1.12...v0.1.13) (2026-10-24)
 
 
