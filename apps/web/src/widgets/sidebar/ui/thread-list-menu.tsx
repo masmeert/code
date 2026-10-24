@@ -16,7 +16,7 @@ import { cn } from "@masscode/ui/lib/utils";
 import { formatProjectLabel } from "@masscode/client";
 import { ProjectBadge, useProjectStore } from "@/entities/project";
 import type { Project } from "@masscode/contracts";
-import { SlidersHorizontal } from "lucide-react";
+import { IconAdjustmentsHorizontal } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import { formatHarnessLabel } from "@/entities/provider";
 import { useSettings } from "@/entities/settings";
@@ -88,7 +88,7 @@ export function ThreadListMenu(props: {
           />
         }
       >
-        <SlidersHorizontal className="size-4" />
+        <IconAdjustmentsHorizontal className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={8} collisionPadding={8} className="w-60">
         <ChoiceMenu

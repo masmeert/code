@@ -1,7 +1,9 @@
-import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
+import { IconChevronDown, IconChevronUp, IconSearch, IconX } from "@tabler/icons-react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { focusComposer } from "@/widgets/composer";
 import { formatKeybinding, useKeybinding } from "@/shared/lib/keybindings";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { cn } from "@masscode/ui/lib/utils";
 
 /**
  * ⌘F in the transcript. Matches are painted with the CSS Highlight API (`find` and `find-active`,
@@ -111,9 +113,12 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
     <div
       role="search"
       aria-label="Find in thread"
-      className="absolute top-11 right-4 z-20 flex w-80 max-w-[calc(100%-2rem)] items-center gap-1 rounded-lg border border-border bg-popover p-1 text-xs text-foreground shadow-panel"
+      className={cn(
+        typeClass("caption"),
+        "absolute top-11 right-4 z-20 flex w-80 max-w-[calc(100%-2rem)] items-center gap-1 rounded-lg border border-border bg-popover p-1 text-foreground shadow-surface-3",
+      )}
     >
-      <Search className="ml-1 size-3.5 shrink-0 text-muted-foreground" />
+      <IconSearch className="ml-1 size-3.5 shrink-0 text-muted-foreground" />
       <input
         ref={input}
         autoFocus
@@ -145,13 +150,13 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
       </span>
       {(
         [
-          ["Previous match (⇧↩)", ChevronUp, () => moveToMatch(-1)],
+          ["Previous match (⇧↩)", IconChevronUp, () => moveToMatch(-1)],
           [
             `Next match (↩ or ${formatKeybinding("thread.findNext")})`,
-            ChevronDown,
+            IconChevronDown,
             () => moveToMatch(1),
           ],
-          ["Close (Esc)", X, closeFind],
+          ["Close (Esc)", IconX, closeFind],
         ] as const
       ).map(([label, Icon, onClick]) => (
         <button
@@ -159,9 +164,9 @@ export function TranscriptFind({ scope }: { scope: RefObject<HTMLElement | null>
           type="button"
           title={label}
           aria-label={label}
-          disabled={Icon !== X && !matches.length}
+          disabled={Icon !== IconX && !matches.length}
           onClick={onClick}
-          className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+          className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
         >
           <Icon className="size-3.5" />
         </button>

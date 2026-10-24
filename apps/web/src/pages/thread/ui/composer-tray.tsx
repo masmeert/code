@@ -19,18 +19,18 @@ import {
   type TurnOptions,
 } from "@masscode/contracts";
 import {
-  ArrowLeftRight,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  CornerDownRight,
-  Gauge,
-  MessageSquare,
-  Play,
-  Pencil,
-  Square,
-  X,
-} from "lucide-react";
+  IconArrowsLeftRight,
+  IconChevronDown,
+  IconChevronRight,
+  IconClock,
+  IconCornerDownRight,
+  IconGauge,
+  IconMessage,
+  IconPencil,
+  IconPlayerPlay,
+  IconPlayerStop,
+  IconX,
+} from "@tabler/icons-react";
 import { type ReactNode, useId, useState } from "react";
 import { appendToDraft, focusComposer, formatResetLabel, tokenFormat } from "@/widgets/composer";
 import { formatKeybinding } from "@/shared/lib/keybindings";
@@ -43,6 +43,7 @@ import { useNow } from "@masscode/client";
 import { sendQueuedNow, takeQueued } from "@/entities/thread";
 import { send } from "@/shared/api";
 import { type ToolItem } from "@masscode/client";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 /** Held messages go back into the composer, after whatever is there. */
 export function returnToComposer(threadId: string, queued: ReadonlyArray<QueuedMessage>) {
@@ -71,10 +72,8 @@ export function QueuedFollowUp({
           : "Sends after the messages above it"
       }
     >
-      <CornerDownRight className="size-3.5 shrink-0" />
-      <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/80">
-        {followUp.text}
-      </span>
+      <IconCornerDownRight className="size-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">{followUp.text}</span>
       {followUp.attachments.length ? (
         <span className="shrink-0">
           {followUp.attachments.length} file
@@ -85,16 +84,16 @@ export function QueuedFollowUp({
         type="button"
         title={`Send now, into the running turn${isNext ? ` (${formatKeybinding("composer.steerQueued")})` : ""}`}
         onClick={() => sendQueuedNow(threadId, followUp.id)}
-        className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <CornerDownRight className="size-3.5" />
+        <IconCornerDownRight className="size-3.5" />
         Steer
       </button>
       <IconAction
         label="Edit in the composer"
         onClick={() => returnToComposer(threadId, takeQueued(threadId, followUp.id))}
       >
-        <Pencil className="size-3.5" />
+        <IconPencil className="size-3.5" />
       </IconAction>
     </div>
   );
@@ -127,8 +126,8 @@ export function LimitStopNotice({
   return (
     <div role="status" className="pb-1.5">
       <div className="flex h-8 items-center gap-2 pl-1.5">
-        <Gauge className="size-3.5 shrink-0 text-amber-500" />
-        <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/80">
+        <IconGauge className="size-3.5 shrink-0 text-amber-500" />
+        <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
           {formatHarnessLabel(settings, stop.provider)} hit its usage limit
           {stop.resetsAt === null ? null : (
             <span className="ml-1 text-muted-foreground">
@@ -144,7 +143,7 @@ export function LimitStopNotice({
             returnToComposer(threadId, takeQueued(threadId));
           }}
         >
-          <X className="size-3.5" />
+          <IconX className="size-3.5" />
         </IconAction>
       </div>
       <div className="flex items-center gap-1 pl-5">
@@ -154,9 +153,9 @@ export function LimitStopNotice({
           onClick={() =>
             send(ClientCommand.cases["thread.resumeAfterLimit"].make({ threadId, options }))
           }
-          className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Play className="size-3.5" />
+          <IconPlayerPlay className="size-3.5" />
           Resume
         </button>
         {isWaitingForReset ? (
@@ -177,11 +176,11 @@ export function LimitStopNotice({
               )
             }
             className={cn(
-              "flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+              "flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
               stop.resumeAtReset && "text-amber-500",
             )}
           >
-            <Clock className="size-3.5" />
+            <IconClock className="size-3.5" />
             {stop.resumeAtReset ? "Resuming at reset" : "Resume at reset"}
           </button>
         ) : null}
@@ -189,11 +188,11 @@ export function LimitStopNotice({
           <DropdownMenu>
             <DropdownMenuTrigger
               title="Move the thread to another harness and continue there; it's told what happened so far"
-              className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted/60 data-popup-open:text-foreground"
+              className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted/60 data-popup-open:text-foreground"
             >
-              <ArrowLeftRight className="size-3.5" />
+              <IconArrowsLeftRight className="size-3.5" />
               Hand off
-              <ChevronDown className="size-3.5" />
+              <IconChevronDown className="size-3.5" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" sideOffset={4} collisionPadding={8}>
               {others.map((other) => {
@@ -238,7 +237,7 @@ export function ReviewCommentRow({
 }) {
   return (
     <div className="flex h-8 items-center gap-2 pl-1.5">
-      <MessageSquare className="size-3.5 shrink-0" />
+      <IconMessage className="size-3.5 shrink-0" />
       <button
         type="button"
         title={`Show in the diff: ${comment.path}, ${describeRange(comment.range)}`}
@@ -248,10 +247,10 @@ export function ReviewCommentRow({
         <span className="shrink-0 font-mono text-[11px]">
           {comment.path.slice(comment.path.lastIndexOf("/") + 1)}, {describeRange(comment.range)}
         </span>
-        <span className="min-w-0 truncate text-[13px] text-foreground/80">{comment.text}</span>
+        <span className="min-w-0 truncate text-[13px] text-foreground">{comment.text}</span>
       </button>
       <IconAction label="Delete comment" onClick={() => removeReviewComment(threadId, comment.id)}>
-        <X className="size-3.5" />
+        <IconX className="size-3.5" />
       </IconAction>
     </div>
   );
@@ -272,7 +271,7 @@ function IconAction({
       title={label}
       aria-label={label}
       onClick={onClick}
-      className="grid size-6 place-items-center rounded-md transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      className="grid size-6 place-items-center rounded-md transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
     >
       {children}
     </button>
@@ -332,11 +331,14 @@ export function RunningAgents({
           <span className="grid size-3.5 shrink-0 place-items-center">
             <span className="size-1.5 animate-pulse rounded-full bg-success" />
           </span>
-          <span className="flex-1 text-[13px] text-foreground/80">
+          <span className="flex-1 text-[13px] text-foreground">
             {agents.length} subagents running
           </span>
-          <ChevronRight
-            className={cn("mr-2 size-3.5 transition-transform duration-200", isOpen && "rotate-90")}
+          <IconChevronRight
+            className={cn(
+              "mr-2 size-3.5 transition-transform duration-(--duration-moderate)",
+              isOpen && "rotate-90",
+            )}
           />
         </button>
       ) : null}
@@ -360,11 +362,11 @@ export function RunningAgents({
                     onClick={() => onReveal(agent.id)}
                     className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <span className="truncate text-[13px] text-foreground/80">{name}</span>
+                    <span className="truncate text-[13px] text-foreground">{name}</span>
                     <span className="truncate">{describeAgentActivity(agent)}</span>
                   </button>
                   {agent.tokens === undefined ? null : (
-                    <span className="shrink-0 text-muted-foreground/70 tabular-nums">
+                    <span className="shrink-0 text-muted-foreground tabular-nums">
                       {tokenFormat.format(agent.tokens)} tokens
                       {agent.startedAt === undefined
                         ? null
@@ -380,9 +382,9 @@ export function RunningAgents({
                       setUnfolded(next);
                     }}
                   >
-                    <ChevronRight
+                    <IconChevronRight
                       className={cn(
-                        "size-3.5 transition-transform duration-200",
+                        "size-3.5 transition-transform duration-(--duration-moderate)",
                         isUnfolded && "rotate-90",
                       )}
                     />
@@ -402,19 +404,27 @@ export function RunningAgents({
                           }),
                         );
                       }}
-                      className="grid size-6 shrink-0 place-items-center rounded-md transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                      className="grid size-6 shrink-0 place-items-center rounded-md transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                     >
-                      <Square className="size-2.5 fill-current" />
+                      <IconPlayerStop className="size-2.5 fill-current" />
                     </button>
                   ) : null}
                 </div>
                 <Collapsible open={isUnfolded}>
-                  <div className="mr-2 mb-1 ml-[13px] border-l border-border pl-3 text-sm">
+                  <div
+                    className={cn(
+                      typeClass("body"),
+                      "mr-2 mb-1 ml-[13px] border-l border-border pl-3",
+                    )}
+                  >
                     {earlier > 0 ? (
                       <button
                         type="button"
                         onClick={() => onReveal(agent.id)}
-                        className="h-7 rounded-md text-xs text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                        className={cn(
+                          typeClass("caption"),
+                          "h-7 rounded-md text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                        )}
                       >
                         {earlier} earlier {earlier === 1 ? "call" : "calls"} in the chat
                       </button>
@@ -424,7 +434,9 @@ export function RunningAgents({
                         .slice(-RECENT_AGENT_CALLS)
                         .map((call) => <ToolCallRow key={call.id} call={call} live reveal={null} />)
                     ) : (
-                      <p className="py-1 text-xs text-muted-foreground">No calls yet</p>
+                      <p className={cn(typeClass("caption"), "py-1 text-muted-foreground")}>
+                        No calls yet
+                      </p>
                     )}
                   </div>
                 </Collapsible>

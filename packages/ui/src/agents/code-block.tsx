@@ -1,4 +1,4 @@
-import { Check, Copy, FileCode2, LoaderCircle } from "lucide-react";
+import { IconCheck, IconCopy, IconFileCode, IconLoader2 } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import {
   type ReactNode,
@@ -15,8 +15,9 @@ import {
   useAgentCodeTokens,
 } from "@masscode/ui/agents/agent-code";
 import { ActionSwapRollIcon } from "@masscode/ui/motion/action-swap-roll";
-import { SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type CodeBlockStatus = "streaming" | "complete";
 
@@ -94,23 +95,25 @@ export function CodeBlock({
     <div
       data-state={status}
       aria-busy={streaming}
-      className={cn("w-full overflow-hidden rounded-2xl bg-muted/80 text-sm", className)}
+      className={cn(typeClass("body"), "w-full overflow-hidden rounded-2xl bg-muted/80", className)}
     >
       <div className="flex h-10 items-center gap-2.5 px-3">
-        <FileCode2 aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground/70" />
+        <IconFileCode aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
         {filename ? (
-          <span className="min-w-0 truncate font-mono text-xs text-foreground/80">{filename}</span>
+          <span className={cn(typeClass("caption"), "min-w-0 truncate font-mono text-foreground")}>
+            {filename}
+          </span>
         ) : null}
-        <span className="text-[10px] font-medium tracking-wide text-muted-foreground/55 uppercase">
+        <span className={cn(typeClass("micro"), "font-medium text-muted-foreground")}>
           {language}
         </span>
         <span className="ml-auto" />
         {showStatus ? (
           <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-medium text-success">
             {streaming ? (
-              <LoaderCircle className={cn("size-3", !reduce && "animate-spin")} />
+              <IconLoader2 className={cn("size-3", !reduce && "animate-spin")} />
             ) : (
-              <Check className="size-3" />
+              <IconCheck className="size-3" />
             )}
             {streaming ? "Writing" : "Ready"}
           </span>
@@ -122,11 +125,11 @@ export function CodeBlock({
             title={copied ? "Copied" : "Copy code"}
             onClick={handleCopy}
             whileTap={reduce ? undefined : { scale: 0.95 }}
-            transition={SPRING_PRESS}
+            transition={spring.fast}
             className="grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-background/70 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
           >
             <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">
-              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+              {copied ? <IconCheck className="size-3.5" /> : <IconCopy className="size-3.5" />}
             </ActionSwapRollIcon>
           </motion.button>
         ) : null}
@@ -139,7 +142,9 @@ export function CodeBlock({
         className="scrollbar-hide overflow-auto border-t border-foreground/[0.06] py-2"
         style={{ maxHeight }}
       >
-        <pre className="m-0 min-w-max font-mono text-xs leading-5 text-foreground/85">
+        <pre
+          className={cn(typeClass("caption"), "m-0 min-w-max font-mono leading-5 text-foreground")}
+        >
           <code>
             {lines.map((line, index) => {
               const lineNumber = index + 1;
@@ -153,7 +158,7 @@ export function CodeBlock({
                   )}
                 >
                   {showLineNumbers ? (
-                    <span className="pr-3 text-right text-muted-foreground/35 tabular-nums select-none">
+                    <span className="pr-3 text-right text-muted-foreground tabular-nums select-none">
                       {lineNumber}
                     </span>
                   ) : null}

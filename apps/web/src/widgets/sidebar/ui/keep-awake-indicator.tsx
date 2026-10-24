@@ -1,7 +1,9 @@
 import { formatClockTime, formatTimeLeft, useNow } from "@masscode/client";
-import { Coffee } from "lucide-react";
+import { IconCoffee } from "@tabler/icons-react";
 import { stopKeepAwake, useKeepAwake } from "@/entities/keep-awake";
 import { IconButton } from "@/shared/ui";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { cn } from "@masscode/ui/lib/utils";
 
 /** Shown while this Mac is kept awake, so it's never kept awake unnoticed. */
 export function KeepAwakeIndicator() {
@@ -18,10 +20,12 @@ export function KeepAwakeIndicator() {
       onClick={stopKeepAwake}
       className="w-auto grid-flow-col gap-1 px-1.5 text-foreground"
     >
-      <Coffee className="size-4" />
+      <IconCoffee className="size-4" />
       {/* An agents session ends when the agents do; its endsAt is only the safety cap, not a countdown. */}
       {manual && (
-        <span className="text-xs tabular-nums">{formatTimeLeft(session.endsAt - now)}</span>
+        <span className={cn(typeClass("caption"), "tabular-nums")}>
+          {formatTimeLeft(session.endsAt - now)}
+        </span>
       )}
     </IconButton>
   );

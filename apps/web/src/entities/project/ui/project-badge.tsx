@@ -14,7 +14,7 @@ export function ProjectBadge({
     <span
       aria-hidden="true"
       className={cn(
-        "grid size-4 shrink-0 place-items-center rounded-[4px] text-[8.5px] leading-none font-semibold tracking-tight",
+        "grid size-4 shrink-0 place-items-center rounded-[4px] text-[8.5px] leading-none font-semibold",
         getProjectTint(project).background,
         getProjectTint(project).text,
         className,

@@ -13,6 +13,7 @@ import { useColumnResize } from "./table/use-column-resize";
 import { useColumnSort } from "./table/use-column-sort";
 import { useRowSelection } from "./table/use-row-selection";
 import { alignText, CHECKBOX_PX, CHECKBOX_WIDTH, readCell } from "./table/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type { SortDirection, SortState, TableColumn, TableProps } from "./table/types";
 
@@ -218,7 +219,11 @@ export function Table<T>({
 
   return (
     <div
-      className={cn("w-full overflow-hidden border border-border bg-background text-sm", className)}
+      className={cn(
+        typeClass("body"),
+        "w-full overflow-hidden border border-border bg-background",
+        className,
+      )}
     >
       <div ref={scrollRef} onScroll={handleScroll} className="overflow-auto" style={{ height }}>
         <table
@@ -309,7 +314,7 @@ export function Table<T>({
                       className={cn(
                         "border-b border-border/60 transition-colors",
                         "data-[selected=true]:bg-muted/60",
-                        "hover:bg-muted/50",
+                        "hover:bg-hover",
                       )}
                     >
                       {selectable ? (

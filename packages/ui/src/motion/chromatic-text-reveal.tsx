@@ -6,7 +6,8 @@ import {
   useReducedMotion,
 } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { EASE_IN_OUT, EASE_OUT } from "@masmeert/ui/lib/ease";
+import { EASE_IN_OUT } from "@masmeert/ui/lib/ease";
+import { spring, tierTween } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
 
 const CHROMATIC_PALETTE = ["#60a5fa", "#818cf8", "#c084fc", "#fb7185", "#fbbf24"];
@@ -156,9 +157,9 @@ export function ChromaticTextReveal({
               "--chromatic-sweep": reduceMotion
                 ? { duration: 0 }
                 : { duration, delay, ease: EASE_IN_OUT },
-              opacity: reduceMotion ? { duration: 0 } : { duration: 0.28, ease: EASE_OUT },
-              filter: reduceMotion ? { duration: 0 } : { duration: 0.36, ease: EASE_OUT },
-              transform: reduceMotion ? { duration: 0 } : { duration: 0.36, ease: EASE_OUT },
+              opacity: reduceMotion ? { duration: 0 } : spring.fast,
+              filter: reduceMotion ? { duration: 0 } : tierTween.slow,
+              transform: reduceMotion ? { duration: 0 } : spring.moderate,
             }}
             onAnimationComplete={scheduleNextWord}
             className="absolute start-0 top-0 [background-image:var(--chromatic-gradient)] bg-clip-text whitespace-nowrap text-transparent [contain:paint]"

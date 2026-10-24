@@ -1,13 +1,19 @@
 import { MorphingPopover, MorphingPopoverContent } from "@masmeert/ui/morphing-popover";
 import { cn } from "@masscode/ui/lib/utils";
 import { ClientCommand, type ContextUsage, type ProviderKind } from "@masscode/contracts";
-import { ChevronRight, LoaderCircle, Minimize2, RefreshCw } from "lucide-react";
+import {
+  IconArrowsMinimize,
+  IconChevronRight,
+  IconLoader2,
+  IconRefresh,
+} from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { formatKeybinding, useKeybinding } from "@/shared/lib/keybindings";
 import { readLimits, useLimits, useProviders } from "@/entities/provider";
 import { readUsage, useThreadHost, useThreadStore } from "@/entities/thread";
 import { send } from "@/shared/api";
 import { useNow } from "@masscode/client";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export const tokenFormat = new Intl.NumberFormat("en", {
   notation: "compact",
@@ -88,11 +94,12 @@ export function UsageMeter({
         title={`${context ? `Context ${percent}% full` : "Context and usage"} (${formatKeybinding("usage.toggle")})`}
         aria-label={context ? `Context ${percent}% full` : "Context and usage"}
         className={cn(
-          "flex h-8 items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring @max-md:w-8 @max-md:justify-center @max-md:px-0",
+          typeClass("caption"),
+          "flex h-8 items-center gap-1.5 rounded-full border border-border bg-background px-3 text-muted-foreground tabular-nums outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring @max-md:w-8 @max-md:justify-center @max-md:px-0",
           percent >= 90 && "text-destructive hover:text-destructive",
         )}
       >
-        {isReading ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+        {isReading ? <IconLoader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
         <svg
           viewBox="0 0 16 16"
           className={cn("size-3.5 -rotate-90", isReading && "hidden")}
@@ -148,10 +155,10 @@ function ContextSection({
 }) {
   if (!context) {
     return (
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <p className={cn(typeClass("caption"), "flex items-center gap-1.5 text-muted-foreground")}>
         {isReading ? (
           <>
-            <LoaderCircle className="size-3.5 animate-spin" />
+            <IconLoader2 className="size-3.5 animate-spin" />
             Reading context usage…
           </>
         ) : (
@@ -167,15 +174,15 @@ function ContextSection({
     : [{ name: "Used", tokens: context.usedTokens, kind: "used" as const }];
 
   return (
-    <div className="text-xs">
+    <div className={typeClass("caption")}>
       <details className="group">
-        <summary className="-m-1 cursor-pointer list-none rounded-md p-1 outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <summary className="-m-1 cursor-pointer list-none rounded-md p-1 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
           <div className="flex items-center justify-between gap-2">
             <span className="text-muted-foreground">Context window</span>
             <span className="flex items-center gap-1 tabular-nums">
               {tokenFormat.format(context.usedTokens)} / {tokenFormat.format(context.maxTokens)} (
               {getPercent(context.usedTokens, context.maxTokens)}%)
-              <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
+              <IconChevronRight className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
             </span>
           </div>
           <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-muted">
@@ -230,9 +237,9 @@ function ContextSection({
           disabled={isBusy}
           onClick={() => send(ClientCommand.cases["thread.compact"].make({ threadId }))}
           title="Summarize the conversation so far to free up context"
-          className="flex h-6 items-center gap-1 rounded-md px-1.5 text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
+          className="flex h-6 items-center gap-1 rounded-md px-1.5 text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
         >
-          <Minimize2 className="size-3.5" />
+          <IconArrowsMinimize className="size-3.5" />
           Compact
         </button>
       </div>
@@ -247,7 +254,7 @@ function LimitsSection({ provider, host }: { provider: ProviderKind; host: strin
   const now = useNow(60_000);
 
   return (
-    <div className="mt-3 border-t border-border pt-3 text-xs">
+    <div className={cn(typeClass("caption"), "mt-3 border-t border-border pt-3")}>
       <div className="flex items-center justify-between">
         <span className="text-muted-foreground">
           Usage limits{plan ? ` (${plan.charAt(0).toUpperCase()}${plan.slice(1)})` : ""}
@@ -261,9 +268,9 @@ function LimitsSection({ provider, host }: { provider: ProviderKind; host: strin
           className="grid size-5 place-items-center rounded text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
         >
           {limits?.loading ? (
-            <LoaderCircle className="size-3.5 animate-spin" />
+            <IconLoader2 className="size-3.5 animate-spin" />
           ) : (
-            <RefreshCw className="size-3.5" />
+            <IconRefresh className="size-3.5" />
           )}
         </button>
       </div>

@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { EASE_OUT, SPRING_PANEL } from "@masmeert/ui/lib/ease";
+import { spring, springExit, tierTween } from "@masmeert/ui/lib/springs";
 import { PresenceGate } from "@masmeert/ui/presence-gate";
 import { cn } from "@masscode/ui/lib/utils";
 
@@ -73,7 +73,7 @@ export function MorphingModal({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.2, ease: EASE_OUT }}
+              transition={spring.fast}
               {...gate}
               onClick={onClose}
               // Electron hit-tests `app-region: drag` regardless of stacking, so a drag
@@ -107,12 +107,12 @@ export function MorphingModal({
                   opacity: 0,
                   y: enterY,
                   scale: reduce ? 1 : 0.98,
-                  transition: { duration: 0.18, ease: EASE_OUT },
+                  transition: springExit.slow,
                 }}
-                transition={SPRING_PANEL}
+                transition={spring.slow}
                 {...gate}
                 className={cn(
-                  "pointer-events-auto relative w-full max-w-sm overflow-hidden rounded-2xl border border-border bg-background shadow-panel will-change-transform outline-none",
+                  "pointer-events-auto relative w-full max-w-sm overflow-hidden rounded-2xl border border-border bg-background shadow-surface-3 will-change-transform outline-none",
                   className,
                 )}
               >
@@ -125,38 +125,26 @@ export function MorphingModal({
                         reduce
                           ? {
                               opacity: 1,
-                              transition: {
-                                duration: 0.18,
-                                ease: EASE_OUT,
-                              },
+                              transition: spring.fast,
                             }
                           : {
                               opacity: 1,
                               y: 0,
                               filter: "blur(0px)",
-                              transition: {
-                                duration: 0.24,
-                                ease: EASE_OUT,
-                              },
+                              transition: tierTween.slow,
                             }
                       }
                       exit={
                         reduce
                           ? {
                               opacity: 0,
-                              transition: {
-                                duration: 0.14,
-                                ease: EASE_OUT,
-                              },
+                              transition: springExit.fast,
                             }
                           : {
                               opacity: 0,
                               y: -8,
                               filter: "blur(4px)",
-                              transition: {
-                                duration: 0.16,
-                                ease: EASE_OUT,
-                              },
+                              transition: springExit.moderate,
                             }
                       }
                     >

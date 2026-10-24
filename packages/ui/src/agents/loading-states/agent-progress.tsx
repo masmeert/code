@@ -2,6 +2,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
 import { EASE_IN_OUT } from "@masmeert/ui/lib/ease";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 const GRID_CELLS = [
   { id: "top-left", delay: 0 },
@@ -62,7 +63,8 @@ export function AgentProgress({
       role="status"
       aria-label={`${label}, in progress`}
       className={cn(
-        "inline-flex items-center gap-3 font-mono text-sm text-muted-foreground",
+        typeClass("body"),
+        "inline-flex items-center gap-3 font-mono text-muted-foreground",
         className,
       )}
     >
@@ -89,7 +91,7 @@ export function AgentProgress({
         ))}
       </span>
       <span className="font-sans font-medium">{label}</span>
-      <span aria-hidden="true" className="text-muted-foreground/70 tabular-nums">
+      <span aria-hidden="true" className="text-muted-foreground tabular-nums">
         {formatElapsed(elapsed)}
       </span>
     </span>

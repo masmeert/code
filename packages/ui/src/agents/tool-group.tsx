@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { IconChevronRight } from "@tabler/icons-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
 import { ThinkingShimmer } from "@masscode/ui/agents/loading-states/thinking-shimmer";
@@ -6,16 +6,17 @@ import { ToolResultOutput } from "@masscode/ui/agents/tool-result";
 import type { AgentCodeLanguage } from "@masscode/ui/agents/agent-code";
 import { cn } from "@masscode/ui/lib/utils";
 import { categoryOf, livePhrase, summarize, type ToolCall, toolVerb } from "@masscode/client";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 const outputLanguage = (call: ToolCall): AgentCodeLanguage =>
   call.name === "edit" ? "diff" : categoryOf(call.name) === "run" ? "bash" : "text";
 
 export function Chevron({ open }: { open: boolean }) {
   return (
-    <ChevronRight
+    <IconChevronRight
       aria-hidden="true"
       className={cn(
-        "size-3.5 shrink-0 text-muted-foreground/50 transition duration-200 ease-out group-hover:text-muted-foreground",
+        "size-3.5 shrink-0 text-muted-foreground transition duration-(--duration-moderate) ease-out group-hover:text-muted-foreground",
         open && "rotate-90",
       )}
     />
@@ -75,15 +76,16 @@ export function ToolCallRow({
         </span>
         <span
           className={cn(
-            "min-w-0 truncate font-mono text-xs text-muted-foreground/70 transition-colors",
-            expandable && "group-hover:text-foreground/80",
+            typeClass("caption"),
+            "min-w-0 truncate font-mono text-muted-foreground transition-colors",
+            expandable && "group-hover:text-foreground",
             running && "animate-pulse",
           )}
         >
           {call.summary}
         </span>
         {children.length ? (
-          <span className="shrink-0 text-xs text-muted-foreground/50">
+          <span className={cn(typeClass("caption"), "shrink-0 text-muted-foreground")}>
             {children.length} {children.length === 1 ? "call" : "calls"}
           </span>
         ) : null}
@@ -100,7 +102,7 @@ export function ToolCallRow({
           ) : null}
           {call.output ? (
             <div className="mb-1.5 scrollbar-hide max-h-72 overflow-y-auto rounded-lg bg-muted/80 p-3">
-              <ToolResultOutput language={outputLanguage(call)} className="text-xs">
+              <ToolResultOutput language={outputLanguage(call)} className={typeClass("caption")}>
                 {call.output}
               </ToolResultOutput>
             </div>
@@ -133,13 +135,13 @@ export function ToolGroup({
 
   if (calls.length === 1)
     return (
-      <div className="w-full text-sm">
+      <div className={cn(typeClass("body"), "w-full")}>
         <ToolCallRow call={calls[0]!} live={live} reveal={revealHere} />
       </div>
     );
 
   return (
-    <div className="w-full text-sm">
+    <div className={cn(typeClass("body"), "w-full")}>
       <button
         type="button"
         aria-expanded={open}

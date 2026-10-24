@@ -8,11 +8,13 @@ import {
   useRef,
   useState,
 } from "react";
-import { EASE_OUT, SPRING_LAYOUT } from "@masmeert/ui/lib/ease";
+import { EASE_OUT } from "@masmeert/ui/lib/ease";
+import { spring, springExit } from "@masmeert/ui/lib/springs";
 import { useDismiss } from "@masmeert/ui/hooks/use-dismiss";
 import { useHoverGesture } from "@masmeert/ui/hooks/use-hover-gesture";
 import { useTapGesture } from "@masmeert/ui/hooks/use-tap-gesture";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export interface PreviewRailItem {
   id: string;
@@ -56,7 +58,7 @@ function DefaultPreview({ item }: { item: PreviewRailItem }) {
       {item.description ? (
         <div
           data-slot="preview-rail-description"
-          className="mt-1 text-sm leading-6 text-muted-foreground"
+          className={cn(typeClass("body"), "mt-1 leading-6 text-muted-foreground")}
         >
           {item.description}
         </div>
@@ -167,7 +169,7 @@ export function PreviewRail({
                 data-slot="preview-rail-tick"
                 aria-hidden="true"
                 animate={{ transform: isHorizontal ? `scaleY(${scale})` : `scaleX(${scale})` }}
-                transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
+                transition={reduce ? { duration: 0 } : spring.moderate}
                 className={cn(
                   "block bg-current",
                   isHorizontal ? "h-12 w-0.5 origin-bottom" : "h-0.5 w-12 origin-left",
@@ -296,7 +298,7 @@ export function PreviewRail({
                 >
                   <motion.div
                     layoutId={`preview-rail-card-${uid}`}
-                    transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
+                    transition={reduce ? { duration: 0 } : spring.moderate}
                   >
                     <AnimatePresence mode="wait" initial={false}>
                       <motion.div
@@ -314,10 +316,7 @@ export function PreviewRail({
                                 opacity: 0,
                                 y: -2,
                                 filter: "blur(4px)",
-                                transition: {
-                                  duration: 0.12,
-                                  ease: EASE_OUT,
-                                },
+                                transition: springExit.fast,
                               }
                         }
                         transition={{

@@ -12,6 +12,7 @@ import { useState } from "react";
 import { useSettings } from "@/entities/settings";
 import { send } from "@/shared/api";
 import { SettingsGroup, SettingsRow } from "./settings-controls.tsx";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 /** CLIs report versions as e.g. "2.1.281 (Claude Code)" or "codex-cli 0.154.0"; keep just the number. */
 function formatShortVersion(raw: string) {
@@ -58,7 +59,7 @@ export function ProviderCard({
     if (isSigningIn)
       return (
         <Button
-          size="sm"
+          size="compact"
           variant="ghost"
           className="h-7 rounded-lg"
           onClick={() =>
@@ -73,7 +74,7 @@ export function ProviderCard({
       return (
         <div className="flex items-center gap-1">
           <Button
-            size="sm"
+            size="compact"
             variant="ghost"
             className="h-7 rounded-lg"
             onClick={() => setIsConfirmingUnlink(false)}
@@ -81,7 +82,7 @@ export function ProviderCard({
             Keep
           </Button>
           <Button
-            size="sm"
+            size="compact"
             variant="ghost"
             className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
             onClick={() => {
@@ -97,7 +98,7 @@ export function ProviderCard({
     if (status.linked)
       return (
         <Button
-          size="sm"
+          size="compact"
           variant="secondary"
           className="h-7 rounded-lg"
           onClick={() => setIsConfirmingUnlink(true)}
@@ -110,7 +111,7 @@ export function ProviderCard({
 
     return (
       <Button
-        size="sm"
+        size="compact"
         className="h-7 rounded-lg"
         onClick={() => send(ClientCommand.cases["provider.link"].make({ provider: kind }), host)}
       >
@@ -136,7 +137,7 @@ export function ProviderCard({
               <div className="flex items-baseline gap-1.5">
                 <span className="font-medium">{formatHarnessLabel(settings, kind)}</span>
                 {status?.version ? (
-                  <span className="text-xs text-muted-foreground tabular-nums">
+                  <span className={cn(typeClass("caption"), "text-muted-foreground tabular-nums")}>
                     v{formatShortVersion(status.version)}
                   </span>
                 ) : null}
@@ -149,7 +150,12 @@ export function ProviderCard({
               {isChecking ? (
                 <Skeleton aria-label="Checking…" className="mt-1 h-3 w-36" />
               ) : (
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <div
+                  className={cn(
+                    typeClass("caption"),
+                    "flex items-center gap-1.5 text-muted-foreground",
+                  )}
+                >
                   <span
                     className={cn(
                       "size-1.5 shrink-0 rounded-full",
@@ -171,7 +177,7 @@ export function ProviderCard({
       </SettingsRow>
 
       {isConfirmingUnlink ? (
-        <p className="px-3 py-2.5 text-xs text-muted-foreground">
+        <p className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
           This signs {formatHarnessLabel(settings, kind)} out on {host ?? "this Mac"}, including in
           your terminal.
         </p>
@@ -179,14 +185,14 @@ export function ProviderCard({
 
       {host !== null && kind === "codex" && status?.installed && !status.linked && !isChecking ? (
         // Codex's sign-in page calls back to a server on the host, which this Mac's browser can't reach.
-        <p className="px-3 py-2.5 text-xs text-muted-foreground">
+        <p className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
           To link it, run <code className="selectable font-mono">codex login --device-auth</code> in
           a terminal on {host}, for example one opened from a thread there.
         </p>
       ) : null}
 
       {isSigningIn ? (
-        <div className="px-3 py-2.5 text-xs text-muted-foreground">
+        <div className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
           {flow.stage === "awaiting-code" ? (
             <>
               <p className="mb-2">Sign in in your browser, then paste the code it shows.</p>
@@ -206,10 +212,13 @@ export function ProviderCard({
                       );
                   }}
                   placeholder="Paste code"
-                  className="selectable h-7 min-w-0 flex-1 rounded-lg border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-ring"
+                  className={cn(
+                    typeClass("caption"),
+                    "selectable h-7 min-w-0 flex-1 rounded-lg border border-border bg-background px-2 font-mono text-foreground outline-none focus:border-ring",
+                  )}
                 />
                 <Button
-                  size="sm"
+                  size="compact"
                   className="h-7 rounded-lg"
                   disabled={!code.trim()}
                   onClick={() =>
@@ -245,7 +254,9 @@ export function ProviderCard({
           ) : null}
         </div>
       ) : flow?.stage === "failed" ? (
-        <p className="px-3 py-2.5 text-xs text-destructive">{flow.message ?? "Sign-in failed"}</p>
+        <p className={cn(typeClass("caption"), "px-3 py-2.5 text-destructive")}>
+          {flow.message ?? "Sign-in failed"}
+        </p>
       ) : null}
     </SettingsGroup>
   );

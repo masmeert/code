@@ -1,18 +1,28 @@
-import { Bell, FileText, FolderClosed, LayoutGrid, Link, Plus, Table, X } from "lucide-react";
+import {
+  IconBell,
+  IconFileText,
+  IconFolder,
+  IconLayoutGrid,
+  IconLink,
+  IconPlus,
+  IconTable,
+  IconX,
+} from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ComponentType, useEffect, useId, useRef, useState } from "react";
-import { EASE_OUT } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring, tierTween } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 type MenuItem = { label: string; icon: ComponentType<{ className?: string }> };
 
 const ITEMS: MenuItem[] = [
-  { label: "Doc", icon: FileText },
-  { label: "Board", icon: LayoutGrid },
-  { label: "Table", icon: Table },
-  { label: "Folder", icon: FolderClosed },
-  { label: "Reminder", icon: Bell },
-  { label: "Link", icon: Link },
+  { label: "Doc", icon: IconFileText },
+  { label: "Board", icon: IconLayoutGrid },
+  { label: "Table", icon: IconTable },
+  { label: "Folder", icon: IconFolder },
+  { label: "Reminder", icon: IconBell },
+  { label: "Link", icon: IconLink },
 ];
 
 // Folder-open feel: a touch of overshoot as the panel expands, kept subtle.
@@ -51,7 +61,7 @@ export function BloomMenu({ items = ITEMS, onSelect, className }: BloomMenuProps
     };
   }, [open]);
 
-  const morph = reduce ? { duration: 0.15 } : SPRING_FOLDER;
+  const morph = reducedTransition(SPRING_FOLDER, reduce);
 
   return (
     <div ref={ref} className={cn("relative inline-flex", className)}>
@@ -83,18 +93,20 @@ export function BloomMenu({ items = ITEMS, onSelect, className }: BloomMenuProps
                 layout
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: reduce ? 0 : 0.12, duration: 0.2 }}
+                transition={{ ...spring.fast, delay: reduce ? 0 : 0.12 }}
               >
                 {/* header */}
                 <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                  <span className="text-sm font-medium text-muted-foreground">Create</span>
+                  <span className={cn(typeClass("body"), "font-medium text-muted-foreground")}>
+                    Create
+                  </span>
                   <button
                     type="button"
                     onClick={() => setOpen(false)}
                     aria-label="Close menu"
                     className="text-muted-foreground transition-colors hover:text-foreground"
                   >
-                    <X className="h-4 w-4" />
+                    <IconX className="h-4 w-4" />
                   </button>
                 </div>
 
@@ -105,11 +117,7 @@ export function BloomMenu({ items = ITEMS, onSelect, className }: BloomMenuProps
                   // in every direction instead of wiping top-down.
                   initial={reduce ? false : { clipPath: "inset(45% 34% 45% 34%)" }}
                   animate={{ clipPath: "inset(0% 0% 0% 0%)" }}
-                  transition={{
-                    delay: reduce ? 0 : 0.08,
-                    duration: 0.45,
-                    ease: EASE_OUT,
-                  }}
+                  transition={{ ...tierTween.slow, delay: reduce ? 0 : 0.08 }}
                   className="grid grid-cols-3"
                 >
                   {items.map((item, i) => {
@@ -154,7 +162,7 @@ export function BloomMenu({ items = ITEMS, onSelect, className }: BloomMenuProps
                           className="flex flex-col items-center gap-2"
                         >
                           <item.icon className="h-5 w-5" />
-                          <span className="text-sm font-medium">{item.label}</span>
+                          <span className={cn(typeClass("body"), "font-medium")}>{item.label}</span>
                         </motion.span>
                       </button>
                     );
@@ -173,13 +181,16 @@ export function BloomMenu({ items = ITEMS, onSelect, className }: BloomMenuProps
               aria-haspopup="menu"
               aria-expanded={open}
               whileTap={reduce ? undefined : { scale: 0.97 }}
-              className="inline-flex h-11 w-36 items-center justify-center border border-border bg-card text-sm font-medium text-foreground"
+              className={cn(
+                typeClass("body"),
+                "inline-flex h-11 w-36 items-center justify-center border border-border bg-card font-medium text-foreground",
+              )}
             >
               {/* own `layout` counter-scales the label so it stays crisp while the
                   button box morphs, instead of stretching with it */}
               <motion.span layout className="inline-flex items-center gap-2 whitespace-nowrap">
                 Create
-                <Plus className="h-4 w-4" />
+                <IconPlus className="h-4 w-4" />
               </motion.span>
             </motion.button>
           )}

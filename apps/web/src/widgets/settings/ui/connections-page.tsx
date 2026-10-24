@@ -2,7 +2,7 @@ import { Button } from "@masmeert/ui/button";
 import { Input } from "@masmeert/ui/input";
 import { cn } from "@masscode/ui/lib/utils";
 import { HostStatus } from "@masscode/contracts";
-import { Search } from "lucide-react";
+import { IconSearch } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { forgetFullAccessAsRoot, getHostState, useHostStore } from "@/entities/host";
 import { scanProjects } from "@/entities/project";
@@ -14,6 +14,7 @@ import {
   RowLabel,
   SettingsTextField,
 } from "./settings-controls.tsx";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export function ConnectionsPage() {
   const hosts = useHostStore((state) => state.hosts);
@@ -57,7 +58,7 @@ export function ConnectionsPage() {
         placeholder="Search or add an SSH host, like devbox or me@server"
         spellCheck={false}
         autoComplete="off"
-        leftIcon={<Search />}
+        leftIcon={<IconSearch />}
         onKeyDown={(event) => {
           if (event.key === "Enter" && addable.length === 1) addHost(addable[0]);
 
@@ -81,7 +82,7 @@ export function ConnectionsPage() {
             ))}
           </SettingsGroup>
         ) : (
-          <p className="px-1 text-xs text-muted-foreground">
+          <p className={cn(typeClass("caption"), "px-1 text-muted-foreground")}>
             {Object.keys(hosts).length
               ? "No host matches."
               : "None yet. A Linux host runs agents over SSH while this Mac sleeps."}
@@ -102,7 +103,7 @@ export function ConnectionsPage() {
                 }
               >
                 <Button
-                  size="sm"
+                  size="compact"
                   variant="secondary"
                   className="h-7 rounded-lg"
                   onClick={() => addHost(alias)}
@@ -129,7 +130,9 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
         label={
           <div className="min-w-0">
             <p className="font-mono text-[13px]">{alias}</p>
-            <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+            <div
+              className={cn(typeClass("caption"), "flex items-start gap-1.5 text-muted-foreground")}
+            >
               <span
                 className={cn(
                   "mt-1.5 size-1.5 shrink-0 rounded-full",
@@ -158,7 +161,7 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
         {isConfirming ? (
           <div className="flex items-center gap-1">
             <Button
-              size="sm"
+              size="compact"
               variant="ghost"
               className="h-7 rounded-lg"
               onClick={() => setConfirmingAction(null)}
@@ -166,7 +169,7 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
               Cancel
             </Button>
             <Button
-              size="sm"
+              size="compact"
               variant="ghost"
               className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
               onClick={() => {
@@ -185,7 +188,7 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
           <div className="flex items-center gap-1">
             {HostStatus.guards.failed(status) ? (
               <Button
-                size="sm"
+                size="compact"
                 variant="secondary"
                 className="h-7 rounded-lg"
                 onClick={() => void window.desktop?.hostDaemon(alias)}
@@ -195,7 +198,7 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
             ) : null}
             {HostStatus.guards.updating(status) ? (
               <Button
-                size="sm"
+                size="compact"
                 variant="secondary"
                 className="h-7 rounded-lg"
                 onClick={() => setConfirmingAction("restart")}
@@ -204,7 +207,7 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
               </Button>
             ) : null}
             <Button
-              size="sm"
+              size="compact"
               variant="ghost"
               className="h-7 rounded-lg"
               onClick={() => setConfirmingAction("remove")}
@@ -215,7 +218,7 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
         )}
       </SettingsRow>
       {isConfirming ? (
-        <p className="px-3 py-2.5 text-xs text-muted-foreground">
+        <p className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
           {confirmingAction === "remove"
             ? `This stops MassCode on ${alias}, and any agents working there. Its threads stay on ${alias} for when you add it again.`
             : `This stops the turns running on ${alias} and restarts it on this version.`}

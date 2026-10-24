@@ -5,7 +5,14 @@ import {
   type SelectedLineRange,
 } from "@pierre/diffs";
 import { CodeView, type CodeViewHandle, type CodeViewItem } from "@pierre/diffs/react";
-import { ChevronLeft, Columns2, ListTree, RefreshCw, Rows2, X } from "lucide-react";
+import {
+  IconChevronLeft,
+  IconColumns2,
+  IconLayoutRows,
+  IconListTree,
+  IconRefresh,
+  IconX,
+} from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ResizeHandle } from "@masmeert/ui/resize-handle";
 import { cn } from "@masscode/ui/lib/utils";
@@ -27,6 +34,7 @@ import { send } from "@/shared/api";
 import { ChangedFilesTree } from "./changed-files-tree.tsx";
 import { DiffComment, DiffCommentForm } from "./diff-comment.tsx";
 import { HIGHLIGHT, useDiffWorkersReady } from "./diff-workers.tsx";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 /** The chat keeps at least this much room next to the panel. */
 const MIN_CHAT = 380;
@@ -355,7 +363,7 @@ export function DiffPanel({
   const renderFooter = useCallback(
     () =>
       isTruncated ? (
-        <p className="p-3 text-center text-xs text-muted-foreground">
+        <p className={cn(typeClass("caption"), "p-3 text-center text-muted-foreground")}>
           Some files were left out to keep the diff small.
         </p>
       ) : null,
@@ -449,14 +457,19 @@ export function DiffPanel({
       >
         {turn ? (
           <IconButton label="All uncommitted changes" onClick={onShowAll}>
-            <ChevronLeft className="size-3.5" />
+            <IconChevronLeft className="size-3.5" />
           </IconButton>
         ) : null}
-        <span className="text-sm font-medium text-foreground">
+        <span className={cn(typeClass("body"), "font-medium text-foreground")}>
           {turn ? "Turn changes" : "Changes"}
         </span>
         {files.length ? (
-          <span className="flex items-center gap-2 font-mono text-xs tabular-nums @max-[400px]:hidden">
+          <span
+            className={cn(
+              typeClass("caption"),
+              "flex items-center gap-2 font-mono tabular-nums @max-[400px]:hidden",
+            )}
+          >
             <span className="text-muted-foreground">
               {files.length} {files.length === 1 ? "file" : "files"}
             </span>
@@ -471,14 +484,14 @@ export function DiffPanel({
             onClick={toggleTree}
             className="@max-[480px]:hidden"
           >
-            <ListTree className="size-3.5" />
+            <IconListTree className="size-3.5" />
           </IconButton>
           <IconButton
             label="Stacked"
             isActive={style === "unified"}
             onClick={() => updateSettings({ ...getSettings(), diffLayout: "unified" })}
           >
-            <Rows2 className="size-3.5" />
+            <IconLayoutRows className="size-3.5" />
           </IconButton>
           <IconButton
             label={canSplit ? "Split" : "Split (widen the panel to use it)"}
@@ -486,13 +499,13 @@ export function DiffPanel({
             disabled={!canSplit}
             onClick={() => updateSettings({ ...getSettings(), diffLayout: "split" })}
           >
-            <Columns2 className="size-3.5" />
+            <IconColumns2 className="size-3.5" />
           </IconButton>
           <IconButton label="Refresh" onClick={refreshDiff}>
-            <RefreshCw className="size-3.5" />
+            <IconRefresh className="size-3.5" />
           </IconButton>
           <IconButton label="Close changes" onClick={onClose}>
-            <X className="size-3.5" />
+            <IconX className="size-3.5" />
           </IconButton>
         </span>
       </div>
@@ -504,7 +517,12 @@ export function DiffPanel({
 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full w-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+    <div
+      className={cn(
+        typeClass("body"),
+        "flex h-full w-full items-center justify-center px-6 text-center text-muted-foreground",
+      )}
+    >
       {children}
     </div>
   );

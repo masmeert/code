@@ -24,16 +24,16 @@ import {
 } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import {
-  Archive,
-  FilePen,
-  Folder,
-  FolderTree,
-  GitBranch,
-  ListChecks,
-  LockOpen,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
+  IconArchive,
+  IconBinaryTree,
+  IconFilePencil,
+  IconFolder,
+  IconGitBranch,
+  IconListCheck,
+  IconLockOpen,
+  IconShieldCheck,
+  IconSparkles,
+} from "@tabler/icons-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -80,13 +80,14 @@ import { send } from "@/shared/api";
 import { formatAge } from "@masscode/client";
 import { useNow } from "@masscode/client";
 import { UsageMeter } from "./usage-meter.tsx";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
-const PERMISSION_ICON: Record<PermissionLevel, typeof ShieldCheck> = {
-  plan: ListChecks,
-  ask: ShieldCheck,
-  "auto-edit": FilePen,
-  auto: Sparkles,
-  "full-access": LockOpen,
+const PERMISSION_ICON: Record<PermissionLevel, typeof IconShieldCheck> = {
+  plan: IconListCheck,
+  ask: IconShieldCheck,
+  "auto-edit": IconFilePencil,
+  auto: IconSparkles,
+  "full-access": IconLockOpen,
 };
 
 function buildPermissionOption(level: PermissionLevel) {
@@ -613,9 +614,9 @@ export function Composer(props: ComposerProps) {
                 ) : isWorktree === undefined ? null : (
                   <span className="flex min-w-0 items-center gap-1.5 px-2 text-[11px]">
                     {isWorktree ? (
-                      <FolderTree className="size-3.5 shrink-0" />
+                      <IconBinaryTree className="size-3.5 shrink-0" />
                     ) : (
-                      <Folder className="size-3.5 shrink-0" />
+                      <IconFolder className="size-3.5 shrink-0" />
                     )}
                     {isWorktree ? "Worktree" : "Local checkout"}
                   </span>
@@ -666,23 +667,25 @@ export function RootFullAccessDialog({
       <AlertDialogContent className="gap-4 bg-popover p-4 data-[size=default]:sm:max-w-sm">
         <div className="flex items-center gap-3">
           <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-warning/10 text-warning">
-            <LockOpen className="size-4" />
+            <IconLockOpen className="size-4" />
           </span>
-          <AlertDialogTitle className="text-sm">Allow Full access on {host}?</AlertDialogTitle>
+          <AlertDialogTitle className={typeClass("body")}>
+            Allow Full access on {host}?
+          </AlertDialogTitle>
         </div>
-        <AlertDialogDescription className="text-xs">
+        <AlertDialogDescription className={typeClass("caption")}>
           MassCode signs in to {host} as root, so agents with Full access can run anything on that
           machine without asking. To limit what they can reach, connect as a normal user instead.
         </AlertDialogDescription>
         <AlertDialogFooter className="flex-row justify-end">
-          <AlertDialogCancel size="sm">
+          <AlertDialogCancel size="compact">
             Cancel
             <kbd aria-hidden className="font-sans text-[10px] text-muted-foreground">
               esc
             </kbd>
           </AlertDialogCancel>
           <AlertDialogAction
-            size="sm"
+            size="compact"
             onClick={() => {
               allowFullAccessAsRoot(host);
               onAllow();
@@ -724,10 +727,12 @@ function SuggestionMenu({
       role="listbox"
       aria-label={label}
       layoutScroll
-      className="absolute inset-x-0 bottom-full isolate z-20 mb-2 max-h-72 overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-1.5 shadow-panel"
+      className="absolute inset-x-0 bottom-full isolate z-20 mb-2 max-h-72 overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-1.5 shadow-surface-3"
     >
       {items.length ? null : (
-        <div className="px-2.5 py-1.5 text-xs text-muted-foreground">{empty}</div>
+        <div className={cn(typeClass("caption"), "px-2.5 py-1.5 text-muted-foreground")}>
+          {empty}
+        </div>
       )}
       {items.map((item, index) => (
         <button
@@ -760,11 +765,11 @@ function SuggestionMenu({
           ) : null}
           <span className="shrink-0 font-mono text-foreground">{item.name}</span>
           {item.hint ? (
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
               {item.hint}
             </span>
           ) : null}
-          <span className="min-w-0 truncate text-xs">{item.description}</span>
+          <span className={cn(typeClass("caption"), "min-w-0 truncate")}>{item.description}</span>
         </button>
       ))}
     </motion.div>
@@ -778,7 +783,7 @@ function StashSelect({ prefsKey, openSignal }: { prefsKey: string; openSignal: n
   return (
     <PromptSelect
       title={`Stashed prompts (${formatKeybinding("composer.stash")} stashes the current one)`}
-      icon={<Archive />}
+      icon={<IconArchive />}
       options={stashes.map((stash) => ({
         value: stash.id,
         label: stash.text.split("\n")[0] || `${stash.attachments.length} files`,
@@ -800,13 +805,13 @@ const WORKSPACE_OPTIONS = [
     value: "local",
     label: "Local checkout",
     description: "Work in the project folder",
-    icon: <Folder />,
+    icon: <IconFolder />,
   },
   {
     value: "worktree",
     label: "New worktree",
     description: "A git worktree on its own branch, for parallel work",
-    icon: <FolderTree />,
+    icon: <IconBinaryTree />,
   },
 ];
 
@@ -853,12 +858,12 @@ function BranchPicker({
   if (!list) return null;
 
   if (!list.current && !list.branches.length)
-    return <span className="px-1.5 text-muted-foreground/70">Not a git repo</span>;
+    return <span className="px-1.5 text-muted-foreground">Not a git repo</span>;
 
   return (
     <PromptSelect
       title={isWorktree ? "Start the worktree from" : "Switch branch"}
-      icon={<GitBranch />}
+      icon={<IconGitBranch />}
       searchPlaceholder="Find or create a branch…"
       onCreate={(branch) =>
         send(ClientCommand.cases["git.createBranch"].make({ path: cwd, branch }))

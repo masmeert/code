@@ -1,6 +1,6 @@
 import { motion, useReducedMotion } from "motion/react";
 import { createContext, useContext, useId, useMemo, type ReactNode } from "react";
-import { SPRING_LAYOUT } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
 
 type DockContextValue = {
@@ -25,7 +25,7 @@ export function Dock({ children, size = 44, className }: DockProps) {
     <DockContext.Provider value={ctx}>
       <div
         className={cn(
-          "inline-flex h-auto items-end gap-1.5 rounded-2xl border border-border bg-popover/80 px-2 py-1 shadow-panel backdrop-blur-xl",
+          "inline-flex h-auto items-end gap-1.5 rounded-2xl border border-border bg-popover/80 px-2 py-1 shadow-surface-3 backdrop-blur-xl",
           className,
         )}
       >
@@ -53,7 +53,7 @@ export function DockItem({ children, className, onClick, active, ...rest }: Dock
   const pill = active ? (
     <motion.span
       layoutId={pillLayoutId}
-      transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
+      transition={reduce ? { duration: 0 } : spring.moderate}
       className="absolute inset-0.5 -z-10 rounded-xl bg-muted/60"
     />
   ) : null;

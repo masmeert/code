@@ -14,6 +14,7 @@ import { CodeBlock } from "@masscode/ui/agents/code-block";
 import { CommandBlock } from "@masscode/ui/agents/command-block";
 import { cn } from "@masscode/ui/lib/utils";
 import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export interface MarkdownProps {
   children: string;
@@ -151,7 +152,10 @@ const components: Components = {
             className="max-h-[80vh] max-w-full rounded-lg object-contain"
           />
           {alt ? (
-            <p className="mt-3 truncate text-xs text-muted-foreground" title={src}>
+            <p
+              className={cn(typeClass("caption"), "mt-3 truncate text-muted-foreground")}
+              title={src}
+            >
               {alt}
             </p>
           ) : null}
@@ -159,9 +163,11 @@ const components: Components = {
       </>
     );
   },
-  h1: ({ children }) => <h1 className="mt-5 mb-2 text-lg font-semibold first:mt-0">{children}</h1>,
+  h1: ({ children }) => (
+    <h1 className={cn(typeClass("title"), "mt-5 mb-2 font-semibold first:mt-0")}>{children}</h1>
+  ),
   h2: ({ children }) => (
-    <h2 className="mt-5 mb-2 text-base font-semibold first:mt-0">{children}</h2>
+    <h2 className={cn(typeClass("subtitle"), "mt-5 mb-2 font-semibold first:mt-0")}>{children}</h2>
   ),
   h3: ({ children }) => <h3 className="mt-4 mb-1.5 font-semibold first:mt-0">{children}</h3>,
   p: ({ children }) => <p className="[&+*]:mt-3">{children}</p>,

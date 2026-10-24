@@ -1,9 +1,9 @@
-import { Plus, X } from "lucide-react";
+import { IconPlus, IconX } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState } from "react";
 import { Switch } from "@masmeert/ui/switch";
 import { Tooltip } from "@masmeert/ui/tooltip";
-import { SPRING_LAYOUT } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { CopyMenu } from "./copy-menu";
 import { IconButton } from "./icon-button";
 import { TimeSelect } from "./time-select";
@@ -19,6 +19,8 @@ import {
   toMinutes,
   toValue,
 } from "./types";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { cn } from "@masscode/ui/lib/utils";
 
 export function DayRow({
   day,
@@ -103,7 +105,7 @@ export function DayRow({
     <>
       <Tooltip content="Add time">
         <IconButton label={`Add time range to ${label}`} reduce={reduce} onClick={addRange}>
-          <Plus className="h-4 w-4" />
+          <IconPlus className="h-4 w-4" />
         </IconButton>
       </Tooltip>
       <CopyMenu fromLabel={label} reduce={reduce} onApply={onCopy} />
@@ -113,7 +115,7 @@ export function DayRow({
   return (
     <motion.div
       layout={reduce ? false : "position"}
-      transition={SPRING_LAYOUT}
+      transition={spring.moderate}
       style={{ zIndex: elevated ? 1 : undefined }}
       className="relative flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:gap-4"
     >
@@ -126,7 +128,7 @@ export function DayRow({
             ariaLabel={`Toggle ${label} availability`}
             className="scale-90"
           />
-          <span className="text-sm font-medium text-foreground">{label}</span>
+          <span className={cn(typeClass("body"), "font-medium text-foreground")}>{label}</span>
         </div>
         <div className="flex items-center gap-1 sm:hidden">{actions}</div>
       </div>
@@ -143,7 +145,7 @@ export function DayRow({
                 initial={reduce ? { opacity: 0 } : { opacity: 0, y: -6, filter: "blur(4px)" }}
                 animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: "blur(0px)" }}
                 exit={reduce ? { opacity: 0 } : { opacity: 0, y: -4, filter: "blur(4px)" }}
-                transition={SPRING_LAYOUT}
+                transition={spring.moderate}
                 className="relative flex items-center gap-2"
               >
                 <div className="min-w-0 flex-1 sm:max-w-[132px]">
@@ -175,7 +177,7 @@ export function DayRow({
                     reduce={reduce}
                     onClick={() => removeRange(r.id)}
                   >
-                    <X className="h-4 w-4" />
+                    <IconX className="h-4 w-4" />
                   </IconButton>
                 </Tooltip>
               </motion.div>
@@ -187,8 +189,8 @@ export function DayRow({
               initial={reduce ? { opacity: 0 } : { opacity: 0, y: -4 }}
               animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0 }}
               exit={reduce ? { opacity: 0 } : { opacity: 0, y: -4 }}
-              transition={SPRING_LAYOUT}
-              className="py-1 text-sm text-muted-foreground sm:py-2"
+              transition={spring.moderate}
+              className={cn(typeClass("body"), "py-1 text-muted-foreground sm:py-2")}
             >
               Unavailable
             </motion.span>

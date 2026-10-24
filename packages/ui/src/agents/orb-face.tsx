@@ -1,5 +1,6 @@
 import { motion, useAnimationControls, useReducedMotion, useSpring } from "motion/react";
 import { useCallback, useEffect, useRef } from "react";
+import { reducedTransition, spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
 import { Orb } from "@masscode/ui/motion/orb";
 
@@ -102,6 +103,7 @@ export function OrbFace({
   // Snap shut, ease back open: an even-timed blink reads as a machine.
   const blink = useCallback(
     async function blink(double: boolean): Promise<void> {
+      // eslint-disable-next-line masmeert-ui/no-raw-motion -- choreographed blink: snap shut
       const close = { duration: 0.07, ease: EASE_IN };
       if (!mountedRef.current) return;
       await Promise.all([
@@ -109,6 +111,7 @@ export function OrbFace({
         rightLid.start({ scaleY: 0.08 }, close),
       ]);
       if (!mountedRef.current) return;
+      // eslint-disable-next-line masmeert-ui/no-raw-motion -- choreographed blink: ease back open
       const open = double ? close : { duration: 0.16, ease: EASE_OUT };
       await Promise.all([leftLid.start({ scaleY: 1 }, open), rightLid.start({ scaleY: 1 }, open)]);
       if (double) await blink(false);
@@ -178,6 +181,7 @@ export function OrbFace({
     if (reducedMotion) return;
     void body.start(
       { rotate: [0, -11, 9, -7, 5, -3, 0], x: [0, -5, 4, -3, 2, -1, 0] },
+      // eslint-disable-next-line masmeert-ui/no-raw-motion -- keyframed dizzy wobble
       { duration: 1.05, ease: [0.45, 0, 0.55, 1] },
     );
   }, [body, gazeX, gazeY, broken, reducedMotion]);
@@ -195,6 +199,7 @@ export function OrbFace({
         scaleY: [1, 0.9, 1.08, 0.95, 1.02, 1],
         y: [0, 3, -9, 0, -3, 0],
       },
+      // eslint-disable-next-line masmeert-ui/no-raw-motion -- keyframed squash-and-stretch hop with times
       { duration: 0.85, ease: EASE_OUT, times: [0, 0.12, 0.4, 0.62, 0.82, 1] },
     );
   }, [body, state, reducedMotion]);
@@ -222,9 +227,7 @@ export function OrbFace({
           x: gazeX,
           y: gazeY,
         }}
-        transition={
-          reducedMotion ? { duration: 0 } : { type: "spring", bounce: 0.1, duration: 0.25 }
-        }
+        transition={reducedTransition(spring.slow, reducedMotion)}
       />
     );
   }

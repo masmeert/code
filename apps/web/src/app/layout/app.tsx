@@ -3,15 +3,15 @@ import { ChatApp } from "@masscode/ui/agents/chat-app";
 import { SidebarInset } from "@masmeert/ui/sidebar";
 import { DEFAULT_KEEP_AWAKE_MANUAL_MINUTES } from "@masscode/contracts";
 import {
-  AppWindow,
-  Coffee,
-  EthernetPort,
-  Globe,
-  Settings as SettingsIcon,
-  Smartphone,
-  SquarePen,
-  SquareTerminal,
-} from "lucide-react";
+  IconAppWindow,
+  IconCoffee,
+  IconDeviceMobile,
+  IconEdit,
+  IconNetwork,
+  IconSettings,
+  IconTerminal2,
+  IconWorld,
+} from "@tabler/icons-react";
 import { MotionConfig } from "motion/react";
 import { Activity, useCallback, useEffect, useState } from "react";
 import { toggleBrowser } from "@/entities/browser";
@@ -180,11 +180,11 @@ export function App() {
           />
           <SidebarInset className="relative min-h-0 bg-background">
             {incompatible ? (
-              <div className="absolute top-16 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1 text-[11px] text-destructive shadow-panel">
+              <div className="absolute top-16 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1 text-[11px] text-destructive shadow-surface-3">
                 {incompatible}
               </div>
             ) : isConnected || (source !== "daemon" && !isSlowStart) ? null : (
-              <div className="absolute top-16 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1 text-[11px] text-muted-foreground shadow-panel">
+              <div className="absolute top-16 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-border bg-popover px-3 py-1 text-[11px] text-muted-foreground shadow-surface-3">
                 {source === "daemon" ? "Reconnecting to daemon…" : "Starting daemon…"}
               </div>
             )}
@@ -220,7 +220,7 @@ export function App() {
                 id: "thread.new",
                 label: "New thread",
                 hint: formatKeybinding("thread.new"),
-                icon: <SquarePen />,
+                icon: <IconEdit />,
                 run: () => openDraft(currentPath),
               },
               ...(view.kind === "thread"
@@ -229,7 +229,7 @@ export function App() {
                       id: "terminal.toggle",
                       label: "Toggle terminal",
                       hint: formatKeybinding("terminal.toggle"),
-                      icon: <SquareTerminal />,
+                      icon: <IconTerminal2 />,
                       run: () => toggleTerminalPanel(view.id),
                     },
                   ]
@@ -240,7 +240,7 @@ export function App() {
                       id: "browser.toggle",
                       label: "Toggle browser",
                       hint: formatKeybinding("browser.toggle"),
-                      icon: <Globe />,
+                      icon: <IconWorld />,
                       run: () => toggleBrowser(view.id),
                     },
                   ]
@@ -251,7 +251,7 @@ export function App() {
                       id: "simulator.toggle",
                       label: "Toggle simulator",
                       hint: formatKeybinding("simulator.toggle"),
-                      icon: <Smartphone />,
+                      icon: <IconDeviceMobile />,
                       run: () => toggleSimulator(view.id),
                     },
                   ]
@@ -259,7 +259,7 @@ export function App() {
               {
                 id: "window.new",
                 label: "New window",
-                icon: <AppWindow />,
+                icon: <IconAppWindow />,
                 run: () => openWindow(currentPath),
               },
               ...(canKeepAwake
@@ -270,7 +270,7 @@ export function App() {
                         ? "Stop keeping this Mac awake"
                         : `Keep this Mac awake for ${formatTimeLeft(keepAwakeMinutes * 60_000)}`,
                       hint: formatKeybinding("keepAwake.toggle"),
-                      icon: <Coffee />,
+                      icon: <IconCoffee />,
                       run: toggleKeepAwake,
                     },
                   ]
@@ -279,14 +279,14 @@ export function App() {
                 id: "services.open",
                 label: "Services",
                 hint: formatKeybinding("services.open"),
-                icon: <EthernetPort />,
+                icon: <IconNetwork />,
                 run: () => setIsServicesOpen(true),
               },
               {
                 id: "settings.open",
                 label: "Settings",
                 hint: formatKeybinding("settings.open"),
-                icon: <SettingsIcon />,
+                icon: <IconSettings />,
                 run: () => setIsSettingsOpen(true),
               },
             ]}

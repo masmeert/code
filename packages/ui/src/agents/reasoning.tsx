@@ -2,6 +2,8 @@ import { useId, type ReactNode } from "react";
 import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
 import { ReasoningText } from "@masscode/ui/agents/loading-states/reasoning-text";
 import { Chevron, useRevealOpen, type ToolReveal } from "@masscode/ui/agents/tool-group";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { cn } from "@masscode/ui/lib/utils";
 
 /**
  * The agent's thinking, folded to one line so a long think doesn't read as a stall: what it's doing
@@ -26,7 +28,7 @@ export function Reasoning({
   const contentId = useId();
 
   return (
-    <div className="w-full text-sm">
+    <div className={cn(typeClass("body"), "w-full")}>
       <button
         type="button"
         aria-expanded={open}

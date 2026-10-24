@@ -1,4 +1,9 @@
-import { ArrowDownToLine, ArrowUpToLine, MoreVertical, Trash2 } from "lucide-react";
+import {
+  IconArrowBarToDown,
+  IconArrowBarToUp,
+  IconDotsVertical,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { TableMenu } from "./table-menu";
@@ -45,18 +50,18 @@ export function RowHandle({
       <TableMenu
         ariaLabel={`Row ${index + 1} options`}
         triggerClassName="flex h-6 w-2 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-        trigger={<MoreVertical className="h-3 w-3" />}
+        trigger={<IconDotsVertical className="h-3 w-3" />}
         items={[
           ...(onInsertRow
             ? [
                 {
                   label: "Insert before",
-                  icon: <ArrowUpToLine />,
+                  icon: <IconArrowBarToUp />,
                   onSelect: () => onInsertRow(index, "before"),
                 },
                 {
                   label: "Insert after",
-                  icon: <ArrowDownToLine />,
+                  icon: <IconArrowBarToDown />,
                   onSelect: () => onInsertRow(index, "after"),
                 },
               ]
@@ -65,7 +70,7 @@ export function RowHandle({
             ? [
                 {
                   label: "Delete row",
-                  icon: <Trash2 />,
+                  icon: <IconTrash />,
                   destructive: true,
                   onSelect: () => onDeleteRow(id, index),
                 },

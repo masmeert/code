@@ -1,7 +1,7 @@
 import { matches } from "@masmeert/ui/lib/keys";
 import { Button } from "@masmeert/ui/button";
 import { Textarea } from "@masmeert/ui/textarea";
-import { MessageSquare, Trash2 } from "lucide-react";
+import { IconMessage, IconTrash } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 import { formatKeybinding, KEYBINDINGS } from "@/shared/lib/keybindings";
 import { describeRange, type ReviewComment } from "../model/review-comments.ts";
@@ -22,7 +22,7 @@ export function DiffComment({
       onPointerDown={(event) => event.stopPropagation()}
       className="group/comment flex items-start gap-2.5 border-l-2 border-brand/60 bg-brand/5 py-2 pr-2 pl-3 font-sans text-foreground"
     >
-      <MessageSquare className="mt-0.5 size-3.5 shrink-0 text-brand/70" />
+      <IconMessage className="mt-0.5 size-3.5 shrink-0 text-brand" />
       <button
         type="button"
         title="Edit comment"
@@ -36,9 +36,9 @@ export function DiffComment({
         title="Delete comment"
         aria-label="Delete comment"
         onClick={onRemove}
-        className="-my-1 grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-[color,background-color,opacity] outline-none group-hover/comment:opacity-100 hover:bg-muted/60 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+        className="-my-1 grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-[color,background-color,opacity] outline-none group-hover/comment:opacity-100 hover:bg-hover hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Trash2 className="size-3.5" />
+        <IconTrash className="size-3.5" />
       </button>
     </div>
   );
@@ -91,13 +91,13 @@ export function DiffCommentForm({
         className="min-h-16 bg-background text-[13px] dark:bg-background"
       />
       <div className="mt-2 flex items-center justify-end gap-1.5">
-        <Button size="sm" variant="ghost" onClick={onCancel}>
+        <Button size="compact" variant="ghost" onClick={onCancel}>
           Cancel
           <kbd aria-hidden className="font-sans text-[10px] text-muted-foreground">
             esc
           </kbd>
         </Button>
-        <Button size="sm" disabled={!trimmed} onClick={() => onSave(trimmed)}>
+        <Button size="compact" disabled={!trimmed} onClick={() => onSave(trimmed)}>
           {comment.text ? "Save" : "Comment"}
           <kbd aria-hidden className="font-sans text-[10px] opacity-70">
             {formatKeybinding("diff.saveComment")}

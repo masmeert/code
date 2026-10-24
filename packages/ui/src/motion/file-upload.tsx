@@ -1,23 +1,24 @@
 import {
-  AlertCircle,
-  CheckCircle2,
-  FileArchive,
-  FileAudio,
-  FileCode2,
-  FileIcon,
-  FileImage,
-  FileSpreadsheet,
-  FileText,
-  FileVideo,
-  Loader2,
-  RotateCcw,
-  UploadCloud,
-  X,
-} from "lucide-react";
+  IconAlertCircle,
+  IconCircleCheck,
+  IconCloudUpload,
+  IconFile,
+  IconFileCode,
+  IconFileMusic,
+  IconFileSpreadsheet,
+  IconFileText,
+  IconFileZip,
+  IconLoader2,
+  IconMovie,
+  IconPhoto,
+  IconRotate,
+  IconX,
+} from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useId, useRef, useState } from "react";
-import { EASE_OUT } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type FileUploadStatus = "queued" | "uploading" | "success" | "error";
 export type FileUploadVariant = "default" | "centered";
@@ -65,8 +66,8 @@ export interface FileUploadProps {
   classNames?: FileUploadClassNames;
 }
 
-const ROW_TRANSITION = { duration: 0.22, ease: EASE_OUT } as const;
-const FAST_TRANSITION = { duration: 0.16, ease: EASE_OUT } as const;
+const ROW_TRANSITION = spring.moderate;
+const FAST_TRANSITION = spring.fast;
 
 const STATUS_LABEL: Record<FileUploadStatus, string> = {
   queued: "Queued",
@@ -139,39 +140,39 @@ function FileTypeIcon({ item, className }: { item: FileUploadItem; className: st
   const extension = item.name.includes(".") ? item.name.split(".").pop()?.toLowerCase() : undefined;
   const type = item.type ?? "";
 
-  if (type.startsWith("image/")) return <FileImage className={className} />;
-  if (type.startsWith("video/")) return <FileVideo className={className} />;
-  if (type.startsWith("audio/")) return <FileAudio className={className} />;
+  if (type.startsWith("image/")) return <IconPhoto className={className} />;
+  if (type.startsWith("video/")) return <IconMovie className={className} />;
+  if (type.startsWith("audio/")) return <IconFileMusic className={className} />;
   if (
     type.includes("zip") ||
     type.includes("compressed") ||
     ["zip", "rar", "7z", "tar", "gz"].includes(extension ?? "")
   ) {
-    return <FileArchive className={className} />;
+    return <IconFileZip className={className} />;
   }
   if (
     type.includes("spreadsheet") ||
     type.includes("excel") ||
     ["csv", "xls", "xlsx"].includes(extension ?? "")
   ) {
-    return <FileSpreadsheet className={className} />;
+    return <IconFileSpreadsheet className={className} />;
   }
   if (
     type.includes("pdf") ||
     type.startsWith("text/") ||
     ["pdf", "doc", "docx", "md", "txt"].includes(extension ?? "")
   ) {
-    return <FileText className={className} />;
+    return <IconFileText className={className} />;
   }
   if (
     ["css", "html", "js", "jsx", "json", "mdx", "ts", "tsx", "xml", "yaml", "yml"].includes(
       extension ?? "",
     )
   ) {
-    return <FileCode2 className={className} />;
+    return <IconFileCode className={className} />;
   }
 
-  return <FileIcon className={className} />;
+  return <IconFile className={className} />;
 }
 
 export function createFileUploadItem(file: File, index = 0): FileUploadItem {
@@ -200,13 +201,13 @@ function StatusIcon({ status, reduce }: { status: FileUploadStatus; reduce: bool
         className={cn("grid h-6 w-6 place-items-center", STATUS_TONE[status])}
       >
         {status === "success" ? (
-          <CheckCircle2 className={iconClassName} />
+          <IconCircleCheck className={iconClassName} />
         ) : status === "error" ? (
-          <AlertCircle className={iconClassName} />
+          <IconAlertCircle className={iconClassName} />
         ) : status === "uploading" ? (
-          <Loader2 className={cn(iconClassName, "animate-spin", reduce && "animate-none")} />
+          <IconLoader2 className={cn(iconClassName, "animate-spin", reduce && "animate-none")} />
         ) : (
-          <FileIcon className={iconClassName} />
+          <IconFile className={iconClassName} />
         )}
         <span className="sr-only">{STATUS_LABEL[status]}</span>
       </motion.span>
@@ -256,10 +257,22 @@ function FileUploadRow({
         <div className={cn("min-w-0 flex-1", classNames?.content)}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className={cn("truncate text-sm font-medium text-foreground", classNames?.name)}>
+              <p
+                className={cn(
+                  typeClass("body"),
+                  "truncate font-medium text-foreground",
+                  classNames?.name,
+                )}
+              >
                 {item.name}
               </p>
-              <p className={cn("mt-0.5 text-xs text-muted-foreground", classNames?.meta)}>
+              <p
+                className={cn(
+                  typeClass("caption"),
+                  "mt-0.5 text-muted-foreground",
+                  classNames?.meta,
+                )}
+              >
                 {fileKind(item)}, {formatBytes(item.size)}
                 {status === "error" && item.error ? `, ${item.error}` : null}
               </p>
@@ -273,11 +286,11 @@ function FileUploadRow({
                   onClick={() => onRetry(item)}
                   aria-label={`Retry ${item.name}`}
                   className={cn(
-                    "grid h-7 w-7 place-items-center rounded-full text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground active:scale-95",
+                    "grid h-7 w-7 place-items-center rounded-full text-muted-foreground transition-colors duration-(--duration-moderate) hover:bg-hover hover:text-foreground active:scale-95",
                     classNames?.action,
                   )}
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  <IconRotate className="h-3.5 w-3.5" />
                 </button>
               ) : null}
               <button
@@ -285,11 +298,11 @@ function FileUploadRow({
                 onClick={() => onRemove(item)}
                 aria-label={`Remove ${item.name}`}
                 className={cn(
-                  "grid h-7 w-7 place-items-center rounded-full text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground active:scale-95",
+                  "grid h-7 w-7 place-items-center rounded-full text-muted-foreground transition-colors duration-(--duration-moderate) hover:bg-hover hover:text-foreground active:scale-95",
                   classNames?.action,
                 )}
               >
-                <X className="h-3.5 w-3.5" />
+                <IconX className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
@@ -317,7 +330,7 @@ function FileUploadRow({
                 }}
                 initial={false}
                 animate={reduce ? undefined : { transform: `scaleX(${progressRatio})` }}
-                transition={{ duration: 0.28, ease: EASE_OUT }}
+                transition={spring.moderate}
               />
             </div>
           ) : null}
@@ -462,7 +475,7 @@ export function FileUpload({
         }}
         className={cn(
           "group relative flex w-full overflow-hidden rounded-2xl border border-dashed border-border bg-background outline-none",
-          "transition-[border-color,transform] duration-200 active:scale-[0.99]",
+          "transition-[border-color,transform] duration-(--duration-moderate) active:scale-[0.99]",
           "hover:border-foreground/40 focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           "data-[dragging=true]:border-foreground",
           "disabled:pointer-events-none disabled:opacity-55",
@@ -489,21 +502,22 @@ export function FileUpload({
           }
           transition={FAST_TRANSITION}
         >
-          <UploadCloud className={centered ? "h-7 w-7" : "h-6 w-6"} />
+          <IconCloudUpload className={centered ? "h-7 w-7" : "h-6 w-6"} />
         </motion.span>
 
         <span className={cn("min-w-0", centered ? "max-w-xs" : "flex-1")}>
           <span
             className={cn(
               "block font-semibold text-foreground",
-              centered ? "text-base" : "text-sm",
+              centered ? typeClass("subtitle") : typeClass("body"),
             )}
           >
             {maxReached ? "Upload limit reached" : title}
           </span>
           <span
             className={cn(
-              "block text-xs text-muted-foreground",
+              typeClass("caption"),
+              "block text-muted-foreground",
               centered ? "mt-1 leading-5" : "mt-0.5",
             )}
           >
@@ -513,7 +527,8 @@ export function FileUpload({
 
         <span
           className={cn(
-            "shrink-0 rounded-full border border-border text-xs font-medium text-foreground transition-colors duration-150 group-hover:bg-muted",
+            typeClass("caption"),
+            "shrink-0 rounded-full border border-border font-medium text-foreground transition-colors duration-(--duration-moderate) group-hover:bg-hover",
             centered ? "mt-1 px-4 py-2" : "px-3.5 py-2",
           )}
         >

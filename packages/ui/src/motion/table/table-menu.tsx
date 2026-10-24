@@ -1,8 +1,9 @@
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { SPRING_PANEL } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type TableMenuItem = {
   label: string;
@@ -82,11 +83,11 @@ export function TableMenu({
               <div className="fixed inset-0 z-40" onPointerDown={() => setCoords(null)} />
               <motion.div
                 role="menu"
-                className="fixed z-50 overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-panel"
+                className="fixed z-50 overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-surface-3"
                 style={{ top: coords.top, left: coords.left, width: MENU_WIDTH }}
                 initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: -4 }}
                 animate={reduce ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
-                transition={reduce ? { duration: 0 } : SPRING_PANEL}
+                transition={reduce ? { duration: 0 } : spring.slow}
               >
                 {items.map((item) => (
                   <button
@@ -98,10 +99,11 @@ export function TableMenu({
                       item.onSelect();
                     }}
                     className={cn(
-                      "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors [&_svg]:h-4 [&_svg]:w-4",
+                      typeClass("body"),
+                      "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors [&_svg]:h-4 [&_svg]:w-4",
                       item.destructive
                         ? "text-destructive hover:bg-destructive/10"
-                        : "text-foreground hover:bg-muted",
+                        : "text-foreground hover:bg-hover",
                     )}
                   >
                     {item.icon}

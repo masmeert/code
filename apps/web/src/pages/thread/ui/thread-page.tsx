@@ -11,7 +11,7 @@ import { PromptInputTray } from "@masscode/ui/agents/prompt-input";
 import { categoryOf } from "@masscode/client";
 import { type ToolReveal } from "@masscode/ui/agents/tool-group";
 import { ClientCommand, isTurnActive, type QueuedMessage } from "@masscode/contracts";
-import { Eye, FileDiff, FolderTree } from "lucide-react";
+import { IconBinaryTree, IconEye, IconFileDiff } from "@tabler/icons-react";
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toggleBrowser, useBrowser } from "@/entities/browser";
 import { toggleSimulator, useSimulator } from "@/entities/simulator";
@@ -77,6 +77,8 @@ import {
 import { SideChatDrawer } from "./side-chat-drawer.tsx";
 import { QuoteSelection } from "./quote-selection.tsx";
 import { ErrorBoundary, IconButton } from "@/shared/ui";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { cn } from "@masscode/ui/lib/utils";
 
 // Loaded on first open, keeping the diff renderer out of startup.
 const DiffPanel = lazy(() =>
@@ -246,7 +248,7 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
                     title={`Worktree: ${info.cwd}`}
                     className="flex max-w-40 min-w-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground [-webkit-app-region:no-drag]"
                   >
-                    <FolderTree className="size-3 shrink-0" />
+                    <IconBinaryTree className="size-3 shrink-0" />
                     <span className="truncate">{info.branch ?? "worktree"}</span>
                   </span>
                 ) : null}
@@ -258,7 +260,7 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
                     title={`Watching #${info.pullRequest.number} "${info.pullRequest.title}": new reviews, comments and failing checks wake the agent`}
                     className="flex shrink-0 items-center gap-1 rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors [-webkit-app-region:no-drag] hover:text-foreground"
                   >
-                    <Eye className="size-3 shrink-0" />#{info.pullRequest.number}
+                    <IconEye className="size-3 shrink-0" />#{info.pullRequest.number}
                   </a>
                 ) : null}
               </>
@@ -283,7 +285,7 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
                       setDiffTurn(null);
                     }}
                   >
-                    <FileDiff className="size-4" />
+                    <IconFileDiff className="size-4" />
                   </IconButton>
                   <PanelsMenu threadId={threadId} isSimulatorAvailable={isSimulatorAvailable} />
                 </span>
@@ -307,7 +309,10 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
                   type="button"
                   onClick={() => loadOlder(threadId)}
                   disabled={transcript.loadingOlder}
-                  className="mx-auto rounded-lg px-3 py-1 text-xs text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                  className={cn(
+                    typeClass("caption"),
+                    "mx-auto rounded-lg px-3 py-1 text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
+                  )}
                 >
                   {transcript.loadingOlder ? "Loading…" : "Load earlier messages"}
                 </button>
@@ -340,7 +345,7 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
                   )}
                   <MessageContent>
                     {/* Styled like a streaming work row, which takes its place once the agent's first output arrives. */}
-                    <div className="flex h-7 items-center text-sm">
+                    <div className={cn(typeClass("body"), "flex h-7 items-center")}>
                       <ReasoningText variant="scramble" className="min-w-0 font-mono font-normal" />
                     </div>
                   </MessageContent>
@@ -460,21 +465,30 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
               <aside
                 aria-label="Changes"
                 style={{ width: readWidth(DIFF_PANEL_WIDTH_KEY, getDefaultDiffPanelWidth()) }}
-                className="flex shrink-0 flex-col items-center justify-center gap-3 border-l border-border px-6 text-center text-sm text-muted-foreground"
+                className={cn(
+                  typeClass("body"),
+                  "flex shrink-0 flex-col items-center justify-center gap-3 border-l border-border px-6 text-center text-muted-foreground",
+                )}
               >
                 <p>Couldn't show the changes: {error.message}</p>
                 <span className="flex gap-2">
                   <button
                     type="button"
                     onClick={retry}
-                    className="rounded-lg border border-border px-2.5 py-1 text-xs transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    className={cn(
+                      typeClass("caption"),
+                      "rounded-lg border border-border px-2.5 py-1 transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                    )}
                   >
                     Try again
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsDiffOpen(false)}
-                    className="rounded-lg border border-border px-2.5 py-1 text-xs transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    className={cn(
+                      typeClass("caption"),
+                      "rounded-lg border border-border px-2.5 py-1 transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                    )}
                   >
                     Close
                   </button>

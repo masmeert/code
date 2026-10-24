@@ -4,12 +4,20 @@ import { Button } from "@masmeert/ui/button";
 import { Input } from "@masmeert/ui/input";
 import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
 import { Tabs, TabsList, TabsTrigger } from "@masmeert/ui/tabs";
-import { ArrowUp, Folder, FolderOpen, LoaderCircle, Monitor, Server } from "lucide-react";
+import {
+  IconArrowUp,
+  IconDeviceDesktop,
+  IconFolder,
+  IconFolderOpen,
+  IconLoader2,
+  IconServer,
+} from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { finishAddProject, pickLocalProject, useAddProjectOpen } from "../model/add-project.ts";
 import { buildMachineOptions, THIS_MAC, toMachine, useHostStore } from "@/entities/host";
 import { addProjectOn, cloneProject, listFolders } from "@/entities/project";
 import { useSetting } from "@/entities/settings";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 /** Where a new project lives once there are remote hosts: this Mac, or a folder on one of them. */
 export function AddProjectDialog() {
@@ -36,7 +44,7 @@ function AddProject() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="text-sm font-medium">Add project</h2>
+      <h2 className={cn(typeClass("body"), "font-medium")}>Add project</h2>
       <Tabs
         value={host ?? THIS_MAC}
         onValueChange={(value) => {
@@ -49,9 +57,9 @@ function AddProject() {
             <TabsTrigger key={option.value} value={option.value}>
               <span className="flex items-center gap-1.5">
                 {option.machine ? (
-                  <Server className="size-3.5" />
+                  <IconServer className="size-3.5" />
                 ) : (
-                  <Monitor className="size-3.5" />
+                  <IconDeviceDesktop className="size-3.5" />
                 )}
                 {option.label}
               </span>
@@ -69,7 +77,7 @@ function AddProject() {
             })
           }
         >
-          <FolderOpen className="size-4" />
+          <IconFolderOpen className="size-4" />
           Choose folder…
         </Button>
       ) : (
@@ -137,7 +145,7 @@ function RemoteFolders({
 
   if (!isConnected) {
     return (
-      <p className="text-xs text-muted-foreground">
+      <p className={cn(typeClass("caption"), "text-muted-foreground")}>
         {host} isn't isConnected yet. Its status is in Settings → Connections.
       </p>
     );
@@ -154,7 +162,7 @@ function RemoteFolders({
           disabled={!listing || listing.path === "/"}
           onClick={() => listing && setPath(getParentPath(listing.path))}
         >
-          <ArrowUp className="size-4" />
+          <IconArrowUp className="size-4" />
         </Button>
         <Input
           aria-label={`Folder on ${host}`}
@@ -166,7 +174,10 @@ function RemoteFolders({
             if (event.key === "Enter" && typed.trim()) setPath(typed.trim());
           }}
           className="min-w-0 flex-1"
-          classNames={{ field: "h-8 rounded-lg bg-background", input: "pl-2.5 font-mono text-xs" }}
+          classNames={{
+            field: "h-8 rounded-lg bg-background",
+            input: cn(typeClass("caption"), "pl-2.5 font-mono"),
+          }}
         />
       </div>
       <ScrollArea className="h-56 rounded-xl border border-border bg-card">
@@ -196,17 +207,20 @@ function FolderListing({
 }) {
   if (!listing) {
     return (
-      <p className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
-        <LoaderCircle className="size-3.5 animate-spin" />
+      <p className={cn(typeClass("caption"), "flex items-center gap-2 p-3 text-muted-foreground")}>
+        <IconLoader2 className="size-3.5 animate-spin" />
         Reading folders…
       </p>
     );
   }
 
-  if (listing.error) return <p className="p-3 text-xs text-destructive">{listing.error}</p>;
+  if (listing.error)
+    return <p className={cn(typeClass("caption"), "p-3 text-destructive")}>{listing.error}</p>;
 
   if (listing.folders.length === 0) {
-    return <p className="p-3 text-xs text-muted-foreground">No folders in here.</p>;
+    return (
+      <p className={cn(typeClass("caption"), "p-3 text-muted-foreground")}>No folders in here.</p>
+    );
   }
 
   return (
@@ -216,9 +230,9 @@ function FolderListing({
           key={name}
           type="button"
           onClick={() => onOpen(`${listing.path.replace(/\/$/, "")}/${name}`)}
-          className="flex h-8 items-center gap-2 rounded-lg px-2 text-left text-[13px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex h-8 items-center gap-2 rounded-lg px-2 text-left text-[13px] outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Folder className="size-4 shrink-0 text-muted-foreground" />
+          <IconFolder className="size-4 shrink-0 text-muted-foreground" />
           <span className="truncate">{name}</span>
         </button>
       ))}
@@ -245,7 +259,7 @@ function CloneRepository({ host, parent }: { host: string | null; parent: string
 
   return (
     <div className="flex flex-col gap-2 border-t border-border pt-4">
-      <p className="text-xs text-muted-foreground">
+      <p className={cn(typeClass("caption"), "text-muted-foreground")}>
         Or clone a repository into{" "}
         {parent ? <span className="font-mono">{parent}</span> : "the folder above"}
         {host ? ` on ${host}` : ""}
@@ -263,7 +277,10 @@ function CloneRepository({ host, parent }: { host: string | null; parent: string
             if (event.key === "Enter") void cloneRepository();
           }}
           className="min-w-0 flex-1"
-          classNames={{ field: "h-8 rounded-lg bg-background", input: "pl-2.5 font-mono text-xs" }}
+          classNames={{
+            field: "h-8 rounded-lg bg-background",
+            input: cn(typeClass("caption"), "pl-2.5 font-mono"),
+          }}
         />
         <Button
           variant="secondary"
@@ -271,11 +288,11 @@ function CloneRepository({ host, parent }: { host: string | null; parent: string
           disabled={!parent || !url.trim() || isCloning}
           onClick={() => void cloneRepository()}
         >
-          {isCloning ? <LoaderCircle className="size-4 animate-spin" /> : null}
+          {isCloning ? <IconLoader2 className="size-4 animate-spin" /> : null}
           {isCloning ? "Cloning…" : "Clone"}
         </Button>
       </div>
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? <p className={cn(typeClass("caption"), "text-destructive")}>{error}</p> : null}
     </div>
   );
 }

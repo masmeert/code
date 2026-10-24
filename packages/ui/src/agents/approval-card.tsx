@@ -1,12 +1,12 @@
 import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  CircleHelp,
-  LoaderCircle,
-  MessageSquareText,
-  X,
-} from "lucide-react";
+  IconArrowLeft,
+  IconArrowRight,
+  IconCheck,
+  IconHelpCircle,
+  IconLoader2,
+  IconMessage2,
+  IconX,
+} from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
@@ -15,7 +15,8 @@ import { Button } from "@masmeert/ui/button";
 import { Checkbox } from "@masmeert/ui/checkbox";
 import { Input } from "@masmeert/ui/input";
 import { RadioGroup, RadioGroupItem } from "@masmeert/ui/radio-group";
-import { EASE_OUT, SPRING_SWAP } from "@masmeert/ui/lib/ease";
+import { EASE_OUT } from "@masmeert/ui/lib/ease";
+import { spring, springExit } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
 import type {
   ApprovalCardAnswer,
@@ -24,6 +25,7 @@ import type {
   ApprovalCardQuestion,
   ApprovalCardStatus,
 } from "./approval-card/types";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type {
   ApprovalCardAnswer,
@@ -159,7 +161,7 @@ function QuestionOptions({
           className={cn("p-0.5", question.options?.length && "mt-1.5")}
           classNames={{
             field: "h-10 rounded-xl border-0 bg-background/70 focus-within:bg-background",
-            input: "px-3 text-sm",
+            input: cn(typeClass("body"), "px-3"),
           }}
         />
       ) : null}
@@ -185,7 +187,7 @@ function ProgressDots({ current, ids }: { current: number; ids: string[] }) {
             scale: index === current ? 1 : 0.75,
             opacity: index <= current ? 1 : 0.35,
           }}
-          transition={SPRING_SWAP}
+          transition={spring.fast}
           className="size-1.5 rounded-full bg-foreground"
         />
       ))}
@@ -357,7 +359,8 @@ export function ApprovalCard({
       tabIndex={questionMode && pending ? -1 : undefined}
       onKeyDown={answerWithKeys}
       className={cn(
-        "group/approval w-full overflow-hidden rounded-2xl bg-muted p-4 text-sm outline-none",
+        typeClass("body"),
+        "group/approval w-full overflow-hidden rounded-2xl bg-muted p-4 outline-none",
         className,
       )}
     >
@@ -370,28 +373,38 @@ export function ApprovalCard({
           )}
         >
           {busy ? (
-            <LoaderCircle className={cn("size-4", !reduce && "animate-spin")} />
+            <IconLoader2 className={cn("size-4", !reduce && "animate-spin")} />
           ) : interactive ? (
             questionMode ? (
-              <CircleHelp className="size-4" />
+              <IconHelpCircle className="size-4" />
             ) : (
-              <MessageSquareText className="size-4" />
+              <IconMessage2 className="size-4" />
             )
           ) : status === "rejected" || status === "skipped" ? (
-            <X className="size-4" />
+            <IconX className="size-4" />
           ) : (
-            <Check className="size-4" />
+            <IconCheck className="size-4" />
           )}
         </span>
 
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-start gap-3">
-            <h3 className="min-w-0 flex-1 text-base leading-5 font-medium text-foreground">
+            <h3
+              className={cn(
+                typeClass("subtitle"),
+                "min-w-0 flex-1 leading-5 font-medium text-foreground",
+              )}
+            >
               <ActionSwapRollText value={titleKey}>{displayTitle}</ActionSwapRollText>
             </h3>
             {questionMode && interactive ? (
               multipleQuestions ? (
-                <span className="shrink-0 text-xs text-muted-foreground/65 tabular-nums">
+                <span
+                  className={cn(
+                    typeClass("caption"),
+                    "shrink-0 text-muted-foreground tabular-nums",
+                  )}
+                >
                   {currentStep + 1}/{questions.length}
                 </span>
               ) : null
@@ -412,7 +425,7 @@ export function ApprovalCard({
                 onClick={onDismiss}
                 className="grid size-5 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
               >
-                <X className="size-4" />
+                <IconX className="size-4" />
               </button>
             ) : null}
           </div>
@@ -425,9 +438,7 @@ export function ApprovalCard({
                   initial={reduce ? { opacity: 1 } : { opacity: 0, x: 8 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={
-                    reduce
-                      ? { opacity: 0 }
-                      : { opacity: 0, x: -6, transition: { duration: 0.12, ease: EASE_OUT } }
+                    reduce ? { opacity: 0 } : { opacity: 0, x: -6, transition: springExit.moderate }
                   }
                   transition={{ duration: reduce ? 0 : 0.2, ease: EASE_OUT }}
                 >
@@ -464,13 +475,18 @@ export function ApprovalCard({
                       onClick={() => setStep(currentStep - 1)}
                       className="rounded-full"
                     >
-                      <ArrowLeft className="size-4" />
+                      <IconArrowLeft className="size-4" />
                     </Button>
                     <ProgressDots current={currentStep} ids={questions.map((item) => item.id)} />
                   </>
                 ) : null}
                 {pending ? (
-                  <span className="hidden min-w-0 truncate text-xs text-muted-foreground/65 group-focus-within/approval:inline">
+                  <span
+                    className={cn(
+                      typeClass("caption"),
+                      "hidden min-w-0 truncate text-muted-foreground group-focus-within/approval:inline",
+                    )}
+                  >
                     {question?.options?.length
                       ? `1–${Math.min(question.options.length, 9)} to pick, `
                       : ""}
@@ -478,7 +494,7 @@ export function ApprovalCard({
                   </span>
                 ) : null}
                 <Button
-                  size={currentStep === questions.length - 1 ? "sm" : "icon"}
+                  size={currentStep === questions.length - 1 ? "compact" : "icon"}
                   aria-label={
                     currentStep === questions.length - 1 ? "Submit response" : "Next question"
                   }
@@ -487,26 +503,26 @@ export function ApprovalCard({
                   className="ml-auto shrink-0 rounded-full"
                 >
                   {busy ? (
-                    <LoaderCircle className={cn("size-4", !reduce && "animate-spin")} />
+                    <IconLoader2 className={cn("size-4", !reduce && "animate-spin")} />
                   ) : currentStep === questions.length - 1 ? (
                     <>
                       {submitLabel}
-                      <ArrowRight className="size-3.5" />
+                      <IconArrowRight className="size-3.5" />
                     </>
                   ) : (
-                    <ArrowRight className="size-4" />
+                    <IconArrowRight className="size-4" />
                   )}
                 </Button>
               </div>
             ) : (
               <div className="mt-4 flex flex-wrap items-center gap-2">
-                <Button size="sm" disabled={busy} onClick={onApprove} className="rounded-full">
+                <Button size="compact" disabled={busy} onClick={onApprove} className="rounded-full">
                   {approveLabel}
                 </Button>
                 {onRequestChanges ? (
                   <Button
                     variant="secondary"
-                    size="sm"
+                    size="compact"
                     disabled={busy}
                     onClick={onRequestChanges}
                     className="rounded-full"
@@ -517,7 +533,7 @@ export function ApprovalCard({
                 {onReject ? (
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="compact"
                     disabled={busy}
                     onClick={onReject}
                     className="rounded-full text-muted-foreground hover:text-destructive"
@@ -530,7 +546,9 @@ export function ApprovalCard({
           </AgentDisclosure>
 
           {!interactive ? (
-            <p className="mt-1 text-sm text-muted-foreground">{result ?? statusLabel}</p>
+            <p className={cn(typeClass("body"), "mt-1 text-muted-foreground")}>
+              {result ?? statusLabel}
+            </p>
           ) : null}
         </div>
       </div>

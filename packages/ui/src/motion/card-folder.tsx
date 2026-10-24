@@ -1,4 +1,4 @@
-import { EllipsisVertical, Eye, EyeOff } from "lucide-react";
+import { IconDotsVertical, IconEye, IconEyeOff } from "@tabler/icons-react";
 import {
   AnimatePresence,
   animate,
@@ -9,19 +9,14 @@ import {
 } from "motion/react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { DigitSwap } from "@masmeert/ui/digit-swap";
-import { EASE_IN_OUT, EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring, tierTween } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 // The two purse layers collapse as one material surface after the card starts
 // moving, then reverse immediately so closing feels like the card is caught.
-const PURSE_MORPH_TRANSITION = {
-  duration: 0.28,
-  ease: EASE_IN_OUT,
-} as const;
-const PURSE_REDUCED_TRANSITION = {
-  duration: 0.16,
-  ease: EASE_OUT,
-} as const;
+const PURSE_MORPH_TRANSITION = spring.slow;
+const PURSE_REDUCED_TRANSITION = spring.fast;
 
 export interface CardFolderProps {
   title: string;
@@ -76,7 +71,7 @@ export function CardFolder({
   const detailsControlled = detailsVisible !== undefined;
   const isOpen = open ?? internalOpen;
   const areDetailsVisible = detailsVisible ?? internalDetailsVisible;
-  const transition = reduce ? { duration: 0 } : SPRING_LAYOUT;
+  const transition = reducedTransition(spring.moderate, reduce);
   const normalizedCardNumber = cardNumber.replace(/\D/g, "");
   const visibleLastFour = normalizedCardNumber.slice(-4).padStart(4, "•");
   const revealedCardNumber = normalizedCardNumber.match(/.{1,4}/g)?.join(" ") ?? visibleLastFour;
@@ -146,7 +141,7 @@ export function CardFolder({
         aria-expanded={isOpen}
         onClick={handleClick}
         whileTap={reduce || disabled ? undefined : { scale: 0.96 }}
-        transition={reduce ? { duration: 0 } : SPRING_PRESS}
+        transition={reducedTransition(spring.fast, reduce)}
         className="absolute inset-0 block rounded-2xl text-left outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
       >
         <motion.span
@@ -217,7 +212,7 @@ export function CardFolder({
               aria-pressed={areDetailsVisible}
               onClick={toggleDetails}
               whileTap={reduce || disabled ? undefined : { scale: 0.96 }}
-              transition={reduce ? { duration: 0.12 } : SPRING_PRESS}
+              transition={reducedTransition(spring.fast, reduce)}
               className={cn(
                 "z-30 flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-50",
                 isOpen ? "pointer-events-none" : "pointer-events-auto",
@@ -231,15 +226,16 @@ export function CardFolder({
                   }
                   animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
                   exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.25, filter: "blur(4px)" }}
-                  transition={
-                    reduce ? { duration: 0.12 } : { type: "spring", duration: 0.3, bounce: 0 }
-                  }
+                  transition={reducedTransition(
+                    { ...spring.moderate, filter: tierTween.moderate },
+                    reduce,
+                  )}
                   className="flex items-center justify-center"
                 >
                   {areDetailsVisible ? (
-                    <EyeOff className="size-4" aria-hidden="true" />
+                    <IconEyeOff className="size-4" aria-hidden="true" />
                   ) : (
-                    <Eye className="size-4" aria-hidden="true" />
+                    <IconEye className="size-4" aria-hidden="true" />
                   )}
                 </motion.span>
               </AnimatePresence>
@@ -247,26 +243,35 @@ export function CardFolder({
 
             <span className="flex shrink-0 items-end gap-3.5 pt-2">
               <span className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-medium tracking-[0.12em] text-muted-foreground/65 uppercase">
+                <span className={cn(typeClass("micro"), "font-medium text-muted-foreground")}>
                   Expiry
                 </span>
-                <span className="text-xs font-medium text-foreground tabular-nums">{expiry}</span>
+                <span
+                  className={cn(typeClass("caption"), "font-medium text-foreground tabular-nums")}
+                >
+                  {expiry}
+                </span>
               </span>
               <span className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-medium tracking-[0.12em] text-muted-foreground/65 uppercase">
+                <span className={cn(typeClass("micro"), "font-medium text-muted-foreground")}>
                   CVV
                 </span>
                 <DigitSwap
                   value={areDetailsVisible ? cvv : maskedCvv}
                   animationKey={areDetailsVisible ? "revealed" : "masked"}
                   direction={areDetailsVisible ? "up" : "down"}
-                  className="text-xs font-medium text-foreground tabular-nums"
+                  className={cn(typeClass("caption"), "font-medium text-foreground tabular-nums")}
                 />
               </span>
             </span>
           </span>
           <span className="flex min-w-0 items-baseline justify-between gap-4">
-            <span className="truncate text-lg leading-tight font-medium text-foreground">
+            <span
+              className={cn(
+                typeClass("title"),
+                "truncate leading-tight font-medium text-foreground",
+              )}
+            >
               {title}
             </span>
             <DigitSwap
@@ -276,7 +281,7 @@ export function CardFolder({
               suffixLength={4}
               glyphClassName={areDetailsVisible ? "text-foreground" : "text-muted-foreground"}
               suffixClassName="text-foreground"
-              className="truncate font-mono text-xs tracking-[0.08em] tabular-nums"
+              className={cn(typeClass("caption"), "truncate font-mono tabular-nums")}
             />
           </span>
         </span>
@@ -291,9 +296,9 @@ export function CardFolder({
           animate={{ y: isOpen && !reduce ? -14 : 0 }}
           whileTap={reduce || disabled ? undefined : { scale: 0.96 }}
           transition={transition}
-          className="absolute top-[10%] right-[2.6%] z-10 flex size-10 -translate-y-1/2 items-center justify-center rounded-full text-white/65 transition-colors outline-none hover:bg-white/10 hover:text-white focus-visible:ring-4 focus-visible:ring-white disabled:cursor-not-allowed disabled:opacity-50"
+          className="absolute top-[10%] right-[2.6%] z-10 flex size-10 -translate-y-1/2 items-center justify-center rounded-full text-white transition-colors outline-none hover:bg-white/10 focus-visible:ring-4 focus-visible:ring-white disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <EllipsisVertical className="size-4" aria-hidden="true" />
+          <IconDotsVertical className="size-4" aria-hidden="true" />
         </motion.button>
       ) : null}
     </div>

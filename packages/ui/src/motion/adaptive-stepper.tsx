@@ -1,4 +1,4 @@
-import { Minus, Plus } from "lucide-react";
+import { IconMinus, IconPlus } from "@tabler/icons-react";
 import { AnimatePresence, type HTMLMotionProps, motion, useReducedMotion } from "motion/react";
 import {
   createContext,
@@ -13,9 +13,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { EASE_OUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { EASE_OUT } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { Liquid, LiquidItem, type LiquidTransition } from "@masscode/ui/motion/liquid";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 // The deliberately elastic separation curve from the liquid email reference.
 const STEPPER_LIQUID_TRANSITION = {
@@ -251,10 +253,10 @@ function StepperAction({
         tabIndex={hidden ? -1 : tabIndex}
         disabled={context.disabled || hidden}
         whileTap={context.reduce || context.disabled || hidden ? undefined : { scale: 0.94 }}
-        transition={context.reduce ? { duration: 0 } : SPRING_PRESS}
+        transition={context.reduce ? { duration: 0 } : spring.fast}
         style={style}
         className={cn(
-          "grid size-full place-items-center rounded-full border border-transparent bg-transparent bg-clip-padding text-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none",
+          "grid size-full place-items-center rounded-full border border-transparent bg-transparent bg-clip-padding text-foreground transition-colors outline-none hover:bg-hover focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none",
           hidden && "hover:bg-transparent",
           context.disabled && "opacity-50",
           className,
@@ -278,9 +280,9 @@ function StepperAction({
         >
           {children ??
             (direction === -1 ? (
-              <Minus className="size-5" strokeWidth={2.5} />
+              <IconMinus className="size-5" stroke={2.5} />
             ) : (
-              <Plus className="size-5" strokeWidth={2.5} />
+              <IconPlus className="size-5" stroke={2.5} />
             ))}
         </motion.span>
       </motion.button>
@@ -333,7 +335,8 @@ export function AdaptiveStepperValue({
         aria-atomic="true"
         style={style}
         className={cn(
-          "flex size-full min-w-0 items-center justify-center overflow-hidden rounded-full border border-transparent bg-transparent bg-clip-padding px-4 text-lg font-semibold text-foreground tabular-nums",
+          typeClass("title"),
+          "flex size-full min-w-0 items-center justify-center overflow-hidden rounded-full border border-transparent bg-transparent bg-clip-padding px-4 font-semibold text-foreground tabular-nums",
           className,
         )}
       >

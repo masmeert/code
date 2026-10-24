@@ -1,12 +1,14 @@
-import { Check, Copy } from "lucide-react";
+import { IconCheck, IconCopy } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { Checkbox } from "@masmeert/ui/checkbox";
 import { MorphingPopover, MorphingPopoverContent } from "@masmeert/ui/morphing-popover";
 import { Tooltip } from "@masmeert/ui/tooltip";
-import { SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { IconButton } from "./icon-button";
 import { type DayKey, WEEKDAYS } from "./types";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { cn } from "@masscode/ui/lib/utils";
 
 // Copy this day's hours to other days: a morph popover with a day picker.
 export function CopyMenu({
@@ -56,10 +58,10 @@ export function CopyMenu({
                 initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.5 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.5 }}
-                transition={SPRING_PRESS}
+                transition={spring.fast}
                 className="text-foreground"
               >
-                <Check className="h-4 w-4" />
+                <IconCheck className="h-4 w-4" />
               </motion.span>
             ) : (
               <motion.span
@@ -67,9 +69,9 @@ export function CopyMenu({
                 initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.5 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.5 }}
-                transition={SPRING_PRESS}
+                transition={spring.fast}
               >
-                <Copy className="h-4 w-4" />
+                <IconCopy className="h-4 w-4" />
               </motion.span>
             )}
           </AnimatePresence>
@@ -77,7 +79,9 @@ export function CopyMenu({
       </Tooltip>
 
       <MorphingPopoverContent align="end" className="w-52 p-2">
-        <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Copy times to</p>
+        <p className={cn(typeClass("caption"), "px-2 py-1.5 font-medium text-muted-foreground")}>
+          Copy times to
+        </p>
         <div className="flex flex-col">
           {others.map((d) => (
             <Checkbox
@@ -85,7 +89,7 @@ export function CopyMenu({
               checked={picked.has(d.key)}
               onCheckedChange={() => toggle(d.key)}
               label={d.label}
-              className="w-full flex-row-reverse justify-between rounded-lg px-2 py-1.5 transition-colors hover:bg-muted [&_button]:size-4 [&_button]:rounded-[5px] [&_button]:border [&_button[data-state=unchecked]]:border-border-strong"
+              className="w-full flex-row-reverse justify-between rounded-lg px-2 py-1.5 transition-colors hover:bg-hover [&_button]:size-4 [&_button]:rounded-[5px] [&_button]:border [&_button[data-state=unchecked]]:border-border-strong"
             />
           ))}
         </div>
@@ -93,7 +97,10 @@ export function CopyMenu({
           <button
             type="button"
             onClick={() => apply(others.map((d) => d.key))}
-            className="flex-1 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted"
+            className={cn(
+              typeClass("caption"),
+              "flex-1 rounded-lg px-2 py-1.5 font-medium text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:bg-muted",
+            )}
           >
             Every day
           </button>
@@ -101,7 +108,10 @@ export function CopyMenu({
             type="button"
             onClick={() => apply([...picked])}
             disabled={picked.size === 0}
-            className="sheen flex-1 rounded-lg bg-primary px-2 py-1.5 text-xs font-semibold text-primary-foreground transition-shadow outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:opacity-40"
+            className={cn(
+              typeClass("caption"),
+              "sheen flex-1 rounded-lg bg-primary px-2 py-1.5 font-semibold text-primary-foreground transition-shadow outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:opacity-40",
+            )}
           >
             Apply
           </button>

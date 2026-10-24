@@ -1,4 +1,4 @@
-import { ArrowUpRight, BellOff } from "lucide-react";
+import { IconArrowUpRight, IconBellOff } from "@tabler/icons-react";
 import { motion, type Transition, useReducedMotion } from "motion/react";
 import {
   type FocusEvent,
@@ -10,11 +10,12 @@ import {
   useState,
 } from "react";
 import { ActionSwapText } from "@masmeert/ui/action-swap";
-import { EASE_OUT, SPRING_LAYOUT } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring, tierTween } from "@masmeert/ui/lib/springs";
 import { useDismiss } from "@masmeert/ui/hooks/use-dismiss";
 import { useHoverGesture } from "@masmeert/ui/hooks/use-hover-gesture";
 import { useTapGesture } from "@masmeert/ui/hooks/use-tap-gesture";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type NotificationStackItem = {
   id: string;
@@ -85,16 +86,24 @@ function NotificationCardContent({
   return (
     <span className={cn("flex min-w-0 flex-col gap-1.5 py-4", classNames?.content)}>
       <span className="flex min-w-0 items-start justify-between gap-3">
-        <span className={cn("min-w-0 text-sm leading-snug font-medium", classNames?.title)}>
+        <span
+          className={cn(typeClass("body"), "min-w-0 leading-snug font-medium", classNames?.title)}
+        >
           {item.title}
         </span>
         {item.trailing ? (
-          <span className={cn("shrink-0 text-xs", classNames?.trailing)}>{item.trailing}</span>
+          <span className={cn(typeClass("caption"), "shrink-0", classNames?.trailing)}>
+            {item.trailing}
+          </span>
         ) : null}
       </span>
       {item.description ? (
         <span
-          className={cn("text-xs leading-relaxed text-muted-foreground", classNames?.description)}
+          className={cn(
+            typeClass("caption"),
+            "leading-relaxed text-muted-foreground",
+            classNames?.description,
+          )}
         >
           {item.description}
         </span>
@@ -149,21 +158,20 @@ export function NotificationStack({
 
   const visibleItems = items.slice(0, Math.max(1, maxVisible));
   const primaryItem = visibleItems[0];
-  const transition: Transition = reduce ? { duration: 0 } : SPRING_LAYOUT;
-  const cardTransition: Transition = reduce ? { duration: 0 } : { duration: 0.32, ease: EASE_OUT };
-  const backgroundTransition: Transition = reduce
-    ? { duration: 0 }
-    : { duration: 0.26, ease: EASE_OUT };
+  const transition: Transition = reduce ? { duration: 0 } : spring.moderate;
+  const cardTransition: Transition = reducedTransition(tierTween.slow, reduce);
+  const backgroundTransition: Transition = reducedTransition(spring.slow, reduce);
 
   if (!primaryItem) {
     return (
       <div
         className={cn(
-          "flex w-full max-w-[22rem] items-center justify-center gap-2 rounded-2xl bg-muted/70 px-5 py-8 text-sm font-medium text-muted-foreground",
+          typeClass("body"),
+          "flex w-full max-w-[22rem] items-center justify-center gap-2 rounded-2xl bg-muted/70 px-5 py-8 font-medium text-muted-foreground",
           className,
         )}
       >
-        <BellOff className="h-4 w-4" aria-hidden="true" />
+        <IconBellOff className="h-4 w-4" aria-hidden="true" />
         {emptyLabel}
       </div>
     );
@@ -311,18 +319,19 @@ export function NotificationStack({
         >
           <span
             className={cn(
-              "grid size-7 shrink-0 place-items-center rounded-full bg-muted text-xs font-medium text-foreground",
+              typeClass("caption"),
+              "grid size-7 shrink-0 place-items-center rounded-full bg-muted font-medium text-foreground",
               classNames?.count,
             )}
           >
             {items.length}
           </span>
-          <span className="flex items-center text-sm font-medium">
+          <span className={cn(typeClass("body"), "flex items-center font-medium")}>
             <ActionSwapText value={isExpanded ? "expanded" : "collapsed"} animation="roll">
               {isExpanded ? (
                 <span className="inline-flex items-center gap-1">
                   {expandedLabel}
-                  <ArrowUpRight className="size-4" aria-hidden="true" />
+                  <IconArrowUpRight className="size-4" aria-hidden="true" />
                 </span>
               ) : (
                 collapsedLabel

@@ -1,8 +1,10 @@
 import { motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
 import { forwardRef, useState, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { EASE_OUT } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { useHoverCapable } from "@masmeert/ui/hooks/use-hover-capable";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export interface ExpandingArrowButtonProps extends Omit<HTMLMotionProps<"button">, "children"> {
   children: ReactNode;
@@ -45,7 +47,7 @@ export const ExpandingArrowButton = forwardRef<HTMLButtonElement, ExpandingArrow
     const [hovered, setHovered] = useState(false);
     const [focused, setFocused] = useState(false);
     const active = !disabled && ((canHover && hovered) || focused);
-    const layoutTransition = reduce ? { duration: 0 } : SPRING_LAYOUT;
+    const layoutTransition = reduce ? { duration: 0 } : spring.moderate;
 
     const handleMouseEnter = (event: MouseEvent<HTMLButtonElement>) => {
       setHovered(true);
@@ -77,7 +79,7 @@ export const ExpandingArrowButton = forwardRef<HTMLButtonElement, ExpandingArrow
         onFocus={handleFocus}
         onBlur={handleBlur}
         whileTap={reduce || disabled ? undefined : { scale: 0.97 }}
-        transition={SPRING_PRESS}
+        transition={spring.fast}
         className={cn(
           "sheen relative inline-flex h-16 min-w-72 items-center overflow-hidden rounded-[22px] bg-primary p-1.5 text-primary-foreground select-none",
           "outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
@@ -136,7 +138,8 @@ export const ExpandingArrowButton = forwardRef<HTMLButtonElement, ExpandingArrow
           }}
           transition={{ duration: reduce ? 0 : 0.12, ease: EASE_OUT }}
           className={cn(
-            "relative z-0 mr-5 ml-[76px] text-lg font-medium tracking-[-0.02em] whitespace-nowrap",
+            typeClass("title"),
+            "relative z-0 mr-5 ml-[76px] font-medium whitespace-nowrap",
             labelClassName,
           )}
         >

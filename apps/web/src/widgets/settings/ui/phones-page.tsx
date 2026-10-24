@@ -1,11 +1,11 @@
 import { Button } from "@masmeert/ui/button";
 import { Switch } from "@masmeert/ui/switch";
 import { cn } from "@masscode/ui/lib/utils";
-import { EASE_OUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { ClientCommand, type PairedPhone, type PairingOffer } from "@masscode/contracts";
 import { Collapsible } from "@masmeert/ui/collapsible";
 import { ActionSwapRollText } from "@masscode/ui/motion/action-swap-roll";
-import { LoaderCircle, X } from "lucide-react";
+import { IconLoader2, IconX } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { encode } from "uqr";
@@ -15,6 +15,7 @@ import { send } from "@/shared/api";
 import { formatAge } from "@masscode/client";
 import { useNow } from "@masscode/client";
 import { RowLabel, SettingsGroup, SettingsRow, SettingsSection } from "./settings-controls.tsx";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export function PhonesPage() {
   const settings = useSettings();
@@ -58,7 +59,7 @@ export function PhonesPage() {
             }
           >
             <Switch
-              size="sm"
+              size="compact"
               checked={settings.remoteAccess === true}
               onCheckedChange={(remoteAccess) => {
                 setOffer(null);
@@ -78,7 +79,7 @@ export function PhonesPage() {
               }
             >
               <Button
-                size="sm"
+                size="compact"
                 variant="secondary"
                 className="h-7 rounded-lg"
                 disabled={isStarting}
@@ -103,14 +104,14 @@ export function PhonesPage() {
                     New code
                   </span>
                   {isStarting ? (
-                    <LoaderCircle className="col-start-1 row-start-1 size-3.5 animate-spin" />
+                    <IconLoader2 className="col-start-1 row-start-1 size-3.5 animate-spin" />
                   ) : null}
                 </span>
               </Button>
             </SettingsRow>
           ) : null}
           <Collapsible open={error !== null}>
-            <p className="px-3 py-2.5 text-xs text-destructive">{error}</p>
+            <p className={cn(typeClass("caption"), "px-3 py-2.5 text-destructive")}>{error}</p>
           </Collapsible>
           <Collapsible open={offer !== null}>
             {shownOffer ? <PairingCode offer={shownOffer} onClose={() => setOffer(null)} /> : null}
@@ -169,7 +170,7 @@ function PairingCode({ offer, onClose }: { offer: PairingOffer; onClose: () => v
         key={offer.code}
         initial={reduce ? false : { opacity: 0, scale: 0.97 }}
         animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.2, ease: EASE_OUT }}
+        transition={spring.moderate}
         className="flex items-center gap-6"
       >
         <div
@@ -196,10 +197,12 @@ function PairingCode({ offer, onClose }: { offer: PairingOffer; onClose: () => v
         </div>
         <div className="min-w-0">
           {secondsLeft === 0 ? (
-            <p className="text-sm text-destructive">This code expired. Get a new one.</p>
+            <p className={cn(typeClass("body"), "text-destructive")}>
+              This code expired. Get a new one.
+            </p>
           ) : (
             <>
-              <p className="text-xs text-muted-foreground">
+              <p className={cn(typeClass("caption"), "text-muted-foreground")}>
                 <ActionSwapRollText value={copied ?? "idle"}>
                   {copied ? `${copied === "code" ? "Code" : "Address"} copied` : "Pairing code"}
                 </ActionSwapRollText>
@@ -209,27 +212,30 @@ function PairingCode({ offer, onClose }: { offer: PairingOffer; onClose: () => v
                 title="Copy code"
                 onClick={() => copy(offer.code, "code")}
                 whileTap={reduce ? undefined : { scale: 0.97 }}
-                transition={SPRING_PRESS}
-                className="-mx-1.5 mt-0.5 block rounded-lg px-1.5 font-mono text-3xl tracking-[0.12em] tabular-nums transition-colors outline-none hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
+                transition={spring.fast}
+                className={cn(
+                  typeClass("display"),
+                  "-mx-1.5 mt-0.5 block rounded-lg px-1.5 font-mono tabular-nums transition-colors outline-none hover:bg-hover focus-visible:ring-4 focus-visible:ring-ring",
+                )}
               >
                 {offer.code.slice(0, 3)}
                 <span className="ml-1">{offer.code.slice(3)}</span>
               </motion.button>
-              <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+              <p className={cn(typeClass("caption"), "mt-1 text-muted-foreground tabular-nums")}>
                 Expires in {Math.floor(secondsLeft / 60)}:
                 {String(secondsLeft % 60).padStart(2, "0")}
               </p>
             </>
           )}
-          <p className="mt-4 max-w-72 text-xs leading-5 text-muted-foreground">
+          <p className={cn(typeClass("caption"), "mt-4 max-w-72 leading-5 text-muted-foreground")}>
             Can't scan? On the phone, enter{" "}
             <motion.button
               type="button"
               title="Copy address"
               onClick={() => copy(offer.host, "address")}
               whileTap={reduce ? undefined : { scale: 0.97 }}
-              transition={SPRING_PRESS}
-              className="inline-block rounded-md px-1 font-mono text-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
+              transition={spring.fast}
+              className="inline-block rounded-md px-1 font-mono text-foreground transition-colors outline-none hover:bg-hover focus-visible:ring-4 focus-visible:ring-ring"
             >
               {offer.host}
             </motion.button>{" "}
@@ -241,9 +247,9 @@ function PairingCode({ offer, onClose }: { offer: PairingOffer; onClose: () => v
         type="button"
         aria-label="Close pairing code"
         onClick={onClose}
-        className="absolute top-2.5 right-2.5 grid size-7 place-items-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+        className="absolute top-2.5 right-2.5 grid size-7 place-items-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
       >
-        <X className="size-4" />
+        <IconX className="size-4" />
       </button>
     </div>
   );
@@ -270,7 +276,7 @@ function PhoneRow({ phone }: { phone: PairedPhone }) {
         {isConfirming ? (
           <div className="flex items-center gap-1">
             <Button
-              size="sm"
+              size="compact"
               variant="ghost"
               className="h-7 rounded-lg"
               onClick={() => setIsConfirming(false)}
@@ -278,7 +284,7 @@ function PhoneRow({ phone }: { phone: PairedPhone }) {
               Cancel
             </Button>
             <Button
-              size="sm"
+              size="compact"
               variant="ghost"
               className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
               onClick={() => send(ClientCommand.cases["phone.unpair"].make({ phoneId: phone.id }))}
@@ -288,7 +294,7 @@ function PhoneRow({ phone }: { phone: PairedPhone }) {
           </div>
         ) : (
           <Button
-            size="sm"
+            size="compact"
             variant="ghost"
             className="h-7 rounded-lg"
             onClick={() => setIsConfirming(true)}
@@ -298,7 +304,7 @@ function PhoneRow({ phone }: { phone: PairedPhone }) {
         )}
       </SettingsRow>
       {isConfirming ? (
-        <p className="px-3 py-2.5 text-xs text-muted-foreground">
+        <p className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
           {phone.name} is disconnected at once and has to be paired again to reach this Mac.
         </p>
       ) : null}

@@ -2,7 +2,7 @@ import { Button } from "@masmeert/ui/button";
 import { Switch } from "@masmeert/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@masmeert/ui/tabs";
 import { DEFAULT_AUTO_SHELVE_DAYS, PermissionLevel, UpdateStatus } from "@masscode/contracts";
-import { Columns2, Rows2 } from "lucide-react";
+import { IconColumns2, IconLayoutRows } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { EFFORT_LABEL, EFFORTS, PERMISSION_LABEL } from "@masscode/client";
 import { buildModelChoices, decodeChoice, useProviderStore } from "@/entities/provider";
@@ -17,6 +17,8 @@ import {
   RowLabel,
   SettingsTextField,
 } from "./settings-controls.tsx";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { cn } from "@masscode/ui/lib/utils";
 
 const AUTO_SHELVE_DAYS = [1, 3, 7, 14, 30];
 
@@ -70,7 +72,9 @@ export function GeneralPage() {
                 />
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">Link a harness to pick one</p>
+              <p className={cn(typeClass("caption"), "text-muted-foreground")}>
+                Link a harness to pick one
+              </p>
             )}
           </SettingsRow>
           <SettingsRow
@@ -152,13 +156,13 @@ export function GeneralPage() {
               <TabsList>
                 <TabsTrigger value="unified">
                   <span className="flex items-center gap-1.5">
-                    <Rows2 className="size-3.5" />
+                    <IconLayoutRows className="size-3.5" />
                     Stacked
                   </span>
                 </TabsTrigger>
                 <TabsTrigger value="split">
                   <span className="flex items-center gap-1.5">
-                    <Columns2 className="size-3.5" />
+                    <IconColumns2 className="size-3.5" />
                     Split
                   </span>
                 </TabsTrigger>
@@ -174,7 +178,7 @@ export function GeneralPage() {
             }
           >
             <Switch
-              size="sm"
+              size="compact"
               checked={settings.notifications !== false}
               onCheckedChange={(notifications) => updateSettings({ ...settings, notifications })}
               ariaLabel="Notifications"
@@ -189,7 +193,7 @@ export function GeneralPage() {
             }
           >
             <Switch
-              size="sm"
+              size="compact"
               checked={settings.compactIdleThreads === true}
               onCheckedChange={(compactIdleThreads) =>
                 updateSettings({ ...settings, compactIdleThreads })
@@ -227,7 +231,7 @@ export function GeneralPage() {
               onCheckedChange={(checked) =>
                 updateSettings({ ...settings, worktreeFromOrigin: checked })
               }
-              size="sm"
+              size="compact"
             />
           </SettingsRow>
           <SettingsRow
@@ -261,7 +265,7 @@ export function GeneralPage() {
               onCheckedChange={(checked) =>
                 updateSettings({ ...settings, confirmArchive: checked })
               }
-              size="sm"
+              size="compact"
             />
           </SettingsRow>
           <SettingsRow
@@ -271,7 +275,7 @@ export function GeneralPage() {
               checked={settings.confirmDelete !== false}
               ariaLabel="Delete confirmation"
               onCheckedChange={(checked) => updateSettings({ ...settings, confirmDelete: checked })}
-              size="sm"
+              size="compact"
             />
           </SettingsRow>
         </SettingsGroup>
@@ -302,13 +306,15 @@ function UpdatesSection() {
               <p className="flex items-baseline gap-1.5">
                 Version
                 {version ? (
-                  <span className="font-mono text-xs text-muted-foreground">{version}</span>
+                  <span className={cn(typeClass("caption"), "font-mono text-muted-foreground")}>
+                    {version}
+                  </span>
                 ) : null}
               </p>
               {UpdateStatus.guards.failed(status) ? (
-                <p className="text-xs text-destructive">{status.message}</p>
+                <p className={cn(typeClass("caption"), "text-destructive")}>{status.message}</p>
               ) : (
-                <p className="text-xs text-muted-foreground">
+                <p className={cn(typeClass("caption"), "text-muted-foreground")}>
                   {isReady
                     ? `Version ${status.version} is downloaded and installs when MassCode restarts.`
                     : isAvailable
@@ -320,7 +326,7 @@ function UpdatesSection() {
           }
         >
           <Button
-            size="sm"
+            size="compact"
             variant={isReady || isAvailable ? "primary" : "secondary"}
             disabled={updateAction.isBusy}
             className="h-7 rounded-lg tabular-nums disabled:opacity-100"

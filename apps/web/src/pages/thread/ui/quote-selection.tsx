@@ -1,6 +1,8 @@
-import { Quote } from "lucide-react";
+import { IconQuote } from "@tabler/icons-react";
 import { type RefObject, useEffect, useState } from "react";
 import { appendToDraft, focusComposer } from "@/widgets/composer";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { cn } from "@masscode/ui/lib/utils";
 
 /**
  * Selecting text in an agent reply offers to quote it in the composer, where you can
@@ -84,9 +86,12 @@ export function QuoteSelection({
         setQuote(null);
         focusComposer();
       }}
-      className="absolute z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-lg border border-border bg-popover px-2 py-1 text-xs text-foreground shadow-panel"
+      className={cn(
+        typeClass("caption"),
+        "absolute z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-lg border border-border bg-popover px-2 py-1 text-foreground shadow-surface-3",
+      )}
     >
-      <Quote className="size-3" />
+      <IconQuote className="size-3" />
       Quote in composer
     </button>
   );

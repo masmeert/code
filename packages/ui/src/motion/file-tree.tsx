@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ChevronRight, File, Folder, FolderOpen } from "lucide-react";
+import { IconChevronRight, IconFile, IconFolder, IconFolderOpen } from "@tabler/icons-react";
 import {
   Children,
   Fragment,
@@ -12,8 +12,9 @@ import {
   type ReactNode,
 } from "react";
 import { SharedLayoutBg } from "@masmeert/ui/shared-layout-bg";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 type FileTreeItem = {
   value: string;
@@ -81,8 +82,8 @@ export function FileTreeFile(_props: FileTreeFileProps) {
   return null;
 }
 
-const ROW_ENTER = { duration: 0.22, ease: EASE_OUT } as const;
-const BRANCH_DRAW = { duration: 0.3, ease: EASE_OUT } as const;
+const ROW_ENTER = spring.moderate;
+const BRANCH_DRAW = spring.moderate;
 
 function flattenItems(
   items: FileTreeItem[],
@@ -158,9 +159,9 @@ function DefaultIcon({
   open: boolean;
   reduce: boolean;
 }) {
-  if (item.type === "file") return <File className="size-4" />;
+  if (item.type === "file") return <IconFile className="size-4" />;
   if (reduce) {
-    return open ? <FolderOpen className="size-4" /> : <Folder className="size-4" />;
+    return open ? <IconFolderOpen className="size-4" /> : <IconFolder className="size-4" />;
   }
 
   return (
@@ -170,10 +171,10 @@ function DefaultIcon({
         initial={{ opacity: 0, scale: 0.75, rotate: open ? -8 : 8 }}
         animate={{ opacity: 1, scale: 1, rotate: 0 }}
         exit={{ opacity: 0, scale: 0.75, rotate: open ? 8 : -8 }}
-        transition={SPRING_SWAP}
+        transition={spring.fast}
         className="absolute inset-0 grid place-items-center"
       >
-        {open ? <FolderOpen className="size-4" /> : <Folder className="size-4" />}
+        {open ? <IconFolderOpen className="size-4" /> : <IconFolder className="size-4" />}
       </motion.span>
     </AnimatePresence>
   );
@@ -290,7 +291,6 @@ export function FileTree({
       aria-multiselectable="false"
       inset={0}
       pillClassName="rounded-xl bg-muted"
-      pillContainerClassName="inset-y-auto top-0 h-9"
       className={cn("min-w-0", className, classNames?.tree)}
     >
       {rows.map((row) => {
@@ -306,14 +306,15 @@ export function FileTree({
             animate={{
               opacity: row.item.disabled ? 0.42 : 1,
               y: 0,
-              transition: reduce
-                ? { duration: 0 }
-                : {
-                    ...ROW_ENTER,
-                    delay: Math.min(row.position * 0.025, 0.1),
-                  },
+              transition: reducedTransition(
+                {
+                  ...ROW_ENTER,
+                  delay: Math.min(row.position * 0.025, 0.1),
+                },
+                reduce,
+              ),
             }}
-            transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
+            transition={reducedTransition(spring.moderate, reduce)}
           >
             <button
               ref={(node) => {
@@ -337,7 +338,8 @@ export function FileTree({
                 if (isFolder) toggleFolder(row.item.value);
               }}
               className={cn(
-                "group/file-tree relative flex h-9 w-full items-center gap-2 overflow-hidden rounded-lg pr-2 text-left text-sm text-muted-foreground outline-none",
+                typeClass("body"),
+                "group/file-tree relative flex h-9 w-full items-center gap-2 overflow-hidden rounded-lg pr-2 text-left text-muted-foreground outline-none",
                 "transition-colors hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-inset",
                 "aria-disabled:cursor-not-allowed",
                 isSelected && "bg-muted font-medium text-foreground",
@@ -352,7 +354,7 @@ export function FileTree({
                   initial={reduce ? false : { opacity: 0, scaleY: 0 }}
                   animate={{ opacity: 1, scaleY: 1 }}
                   exit={{ opacity: 0, scaleY: 0 }}
-                  transition={reduce ? { duration: 0 } : BRANCH_DRAW}
+                  transition={reducedTransition(BRANCH_DRAW, reduce)}
                   className="absolute top-0 bottom-0 w-px origin-top bg-border/70"
                   style={{ left: 16 + (row.depth - 1) * indent }}
                 />
@@ -361,13 +363,13 @@ export function FileTree({
               <motion.span
                 aria-hidden="true"
                 animate={{ rotate: isOpen ? 90 : 0 }}
-                transition={reduce ? { duration: 0 } : SPRING_SWAP}
+                transition={reducedTransition(spring.fast, reduce)}
                 className={cn(
                   "relative z-10 grid size-4 shrink-0 place-items-center",
                   !isFolder && "opacity-0",
                 )}
               >
-                <ChevronRight className="size-3.5" />
+                <IconChevronRight className="size-3.5" />
               </motion.span>
 
               <span

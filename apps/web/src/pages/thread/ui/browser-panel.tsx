@@ -2,7 +2,15 @@ import { ResizeHandle } from "@masmeert/ui/resize-handle";
 import { useResizable } from "@masmeert/ui/hooks/use-resizable";
 import { cn } from "@masscode/ui/lib/utils";
 import { Input } from "@masmeert/ui/input";
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, Plus, RotateCw, X } from "lucide-react";
+import {
+  IconArrowLeft,
+  IconArrowRight,
+  IconExternalLink,
+  IconPlus,
+  IconRotateClockwise,
+  IconWorld,
+  IconX,
+} from "@tabler/icons-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconButton } from "@/shared/ui";
 import {
@@ -24,6 +32,7 @@ import {
   updateActivity,
   useBrowser,
 } from "@/entities/browser";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 function getUrlHost(url: string) {
   try {
@@ -85,14 +94,14 @@ export function BrowserPanel({ threadId }: { threadId: string }) {
           ))}
         </div>
         <IconButton label="New tab" onClick={() => openTab(threadId)}>
-          <Plus className="size-3.5" />
+          <IconPlus className="size-3.5" />
         </IconButton>
         <IconButton
           label="Hide browser"
           className="ml-auto"
           onClick={() => toggleBrowser(threadId)}
         >
-          <X className="size-3.5" />
+          <IconX className="size-3.5" />
         </IconButton>
       </div>
       {tab ? <AddressBar key={tab.id} threadId={threadId} tab={tab} activity={activity} /> : null}
@@ -102,12 +111,15 @@ export function BrowserPanel({ threadId }: { threadId: string }) {
         <Message>
           <span>
             Couldn't load {getUrlHost(tab.url)}{" "}
-            <span className="font-mono text-xs">({activity.error})</span>
+            <span className={cn(typeClass("caption"), "font-mono")}>({activity.error})</span>
           </span>
           <button
             type="button"
             onClick={() => reload(tab.id)}
-            className="rounded-lg px-3 py-1 text-xs text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+            className={cn(
+              typeClass("caption"),
+              "rounded-lg px-3 py-1 text-foreground transition-colors outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
+            )}
           >
             Try again
           </button>
@@ -134,10 +146,11 @@ function TabButton({
   return (
     <div
       className={cn(
-        "group/tab flex h-7 max-w-44 shrink-0 items-center rounded-lg pr-0.5 text-xs transition-colors",
+        typeClass("caption"),
+        "group/tab flex h-7 max-w-44 shrink-0 items-center rounded-lg pr-0.5 transition-colors",
         isActive
           ? "bg-muted/60 text-foreground"
-          : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+          : "text-muted-foreground hover:bg-hover hover:text-foreground",
       )}
     >
       <button
@@ -156,7 +169,7 @@ function TabButton({
             className="size-3.5 shrink-0 rounded-sm"
           />
         ) : (
-          <Globe className="size-3.5 shrink-0" />
+          <IconWorld className="size-3.5 shrink-0" />
         )}
         <span className="truncate">{label}</span>
       </button>
@@ -170,7 +183,7 @@ function TabButton({
           isActive ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100",
         )}
       >
-        <X className="size-3" />
+        <IconX className="size-3" />
       </button>
     </div>
   );
@@ -208,22 +221,22 @@ function AddressBar({
       className="flex h-10 shrink-0 items-center gap-0.5 border-b border-border px-2"
     >
       <IconButton label="Back" disabled={!activity?.canGoBack} onClick={() => goBack(tab.id)}>
-        <ArrowLeft className="size-3.5" />
+        <IconArrowLeft className="size-3.5" />
       </IconButton>
       <IconButton
         label="Forward"
         disabled={!activity?.canGoForward}
         onClick={() => goForward(tab.id)}
       >
-        <ArrowRight className="size-3.5" />
+        <IconArrowRight className="size-3.5" />
       </IconButton>
       {activity?.loading ? (
         <IconButton label="Stop" onClick={() => stop(tab.id)}>
-          <X className="size-3.5" />
+          <IconX className="size-3.5" />
         </IconButton>
       ) : (
         <IconButton label="Reload" disabled={!tab.url} onClick={() => reload(tab.id)}>
-          <RotateCw className="size-3.5" />
+          <IconRotateClockwise className="size-3.5" />
         </IconButton>
       )}
       {activity?.automating ? (
@@ -257,7 +270,10 @@ function AddressBar({
         classNames={{
           field:
             "h-7 rounded-lg border-transparent bg-muted/60 ring-0 data-[state=focused]:bg-muted",
-          input: "selectable px-2.5 font-mono text-xs placeholder:text-muted-foreground",
+          input: cn(
+            typeClass("caption"),
+            "selectable px-2.5 font-mono placeholder:text-muted-foreground",
+          ),
         }}
       />
       <IconButton
@@ -265,7 +281,7 @@ function AddressBar({
         disabled={!tab.url}
         onClick={() => window.open(tab.url, "_blank")}
       >
-        <ExternalLink className="size-3.5" />
+        <IconExternalLink className="size-3.5" />
       </IconButton>
     </form>
   );
@@ -304,7 +320,12 @@ function BrowserSurface({ threadId }: { threadId: string }) {
 
 export function Message({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
+    <div
+      className={cn(
+        typeClass("body"),
+        "flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground",
+      )}
+    >
       {children}
     </div>
   );

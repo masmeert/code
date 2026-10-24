@@ -9,22 +9,23 @@ import { SOURCE_CONTROL_LABEL } from "@/shared/ui";
 import { ClientCommand, MergeMethod, type GitAction } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import {
-  ArrowUp,
-  ChevronDown,
-  ExternalLink,
-  Eye,
-  EyeOff,
-  GitCommitHorizontal,
-  GitMerge,
-  GitPullRequestArrow,
-  LoaderCircle,
-  Trash2,
-} from "lucide-react";
+  IconArrowUp,
+  IconChevronDown,
+  IconExternalLink,
+  IconEye,
+  IconEyeOff,
+  IconGitCommit,
+  IconGitCompare,
+  IconGitMerge,
+  IconLoader2,
+  IconTrash,
+} from "@tabler/icons-react";
 import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useRepoStore } from "@/entities/repo";
 import { useThreadStore } from "@/entities/thread";
 import { useSetting } from "@/entities/settings";
 import { send } from "@/shared/api";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 type Panel = "menu" | "commit" | "merge" | "merge-into-base" | null;
 
@@ -73,11 +74,19 @@ function MenuItem({
       role="menuitem"
       disabled={disabled}
       onClick={onClick}
-      className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4 [&_svg]:text-muted-foreground"
+      className={cn(
+        typeClass("body"),
+        "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-foreground transition-colors outline-none hover:bg-hover focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4 [&_svg]:text-muted-foreground",
+      )}
     >
       {children}
       {hint ? (
-        <span className="ml-auto pl-3 font-mono text-xs text-muted-foreground tabular-nums">
+        <span
+          className={cn(
+            typeClass("caption"),
+            "ml-auto pl-3 font-mono text-muted-foreground tabular-nums",
+          )}
+        >
           {hint}
         </span>
       ) : null}
@@ -225,7 +234,7 @@ export function GitMenu({
   const primary =
     status.changes === 0 && canCreatePullRequest
       ? {
-          icon: GitPullRequestArrow,
+          icon: IconGitCompare,
           label:
             canPush || !status.upstream
               ? `Push & create ${pullRequestName}`
@@ -235,7 +244,7 @@ export function GitMenu({
         }
       : status.changes === 0 && canPush
         ? {
-            icon: ArrowUp,
+            icon: IconArrowUp,
             label: "Push",
             title: "Push commits",
             run: () => runGitAction("push"),
@@ -243,20 +252,20 @@ export function GitMenu({
           }
         : status.changes === 0 && isPullRequestOpen
           ? {
-              icon: ExternalLink,
+              icon: IconExternalLink,
               label: `View ${pullRequestName}`,
               title: `Open #${pullRequest.number} on ${SOURCE_CONTROL_LABEL[status.sourceControl ?? "github"]}`,
               run: () => window.open(pullRequest.url, "_blank", "noreferrer"),
             }
           : canMergeIntoBase
             ? {
-                icon: GitMerge,
+                icon: IconGitMerge,
                 label: `Merge into ${base.branch}`,
                 title: `Merge ${status.branch} into ${base.branch}`,
                 run: () => openPanel(panel === "merge-into-base" ? null : "merge-into-base"),
               }
             : {
-                icon: GitCommitHorizontal,
+                icon: IconGitCommit,
                 label: "Commit",
                 title: status.changes
                   ? `Commit ${status.changes} changed ${status.changes === 1 ? "file" : "files"}`
@@ -273,7 +282,11 @@ export function GitMenu({
         : null;
 
   const errorNote = error ? (
-    <p className="px-2 pt-1.5 pb-1 text-xs whitespace-pre-wrap text-destructive">{error}</p>
+    <p
+      className={cn(typeClass("caption"), "px-2 pt-1.5 pb-1 whitespace-pre-wrap text-destructive")}
+    >
+      {error}
+    </p>
   ) : null;
 
   return (
@@ -284,10 +297,13 @@ export function GitMenu({
           onClick={() => primary.run?.()}
           disabled={!!pending || !primary.run}
           title={primary.title}
-          className="flex items-center gap-1.5 pr-2.5 pl-2 text-xs font-medium transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-50"
+          className={cn(
+            typeClass("caption"),
+            "flex items-center gap-1.5 pr-2.5 pl-2 font-medium transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-50",
+          )}
         >
           {pending ? (
-            <LoaderCircle className="size-4 animate-spin" />
+            <IconLoader2 className="size-4 animate-spin" />
           ) : (
             <primary.icon className="size-4" />
           )}
@@ -304,11 +320,11 @@ export function GitMenu({
           aria-expanded={panel === "menu"}
           onClick={() => openPanel(panel === "menu" ? null : "menu")}
           className={cn(
-            "grid w-6 place-items-center border-l border-border transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:bg-muted/60",
+            "grid w-6 place-items-center border-l border-border transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:bg-muted/60",
             panel === "menu" && "bg-muted/60 text-foreground",
           )}
         >
-          <ChevronDown className="size-3.5" />
+          <IconChevronDown className="size-3.5" />
         </button>
       </div>
 
@@ -332,10 +348,10 @@ export function GitMenu({
               if (canMergeIntoBase) runGitAction("merge-into-base");
             }}
           >
-            <p className="px-0.5 text-sm text-foreground">
+            <p className={cn(typeClass("body"), "px-0.5 text-foreground")}>
               Merge {status.branch} into {base.branch}?
             </p>
-            <p className="px-0.5 text-xs text-muted-foreground">
+            <p className={cn(typeClass("caption"), "px-0.5 text-muted-foreground")}>
               {base.ahead} {base.ahead === 1 ? "commit" : "commits"}.{" "}
               {base.checkout
                 ? `Updates the files in ${base.checkout}.`
@@ -345,7 +361,7 @@ export function GitMenu({
             <div className="flex justify-end gap-1.5">
               <Button
                 variant="outline"
-                size="sm"
+                size="compact"
                 className="h-7 px-2.5"
                 onClick={() => openPanel(null)}
               >
@@ -355,7 +371,7 @@ export function GitMenu({
                 ref={mergeButton}
                 type="submit"
                 disabled={!canMergeIntoBase}
-                size="sm"
+                size="compact"
                 className="h-7 px-2.5"
               >
                 {pending === "merge-into-base" ? pendingLabel : "Merge"}
@@ -371,14 +387,17 @@ export function GitMenu({
               if (!pending) runGitAction("merge");
             }}
           >
-            <p className="px-0.5 text-sm text-foreground">
+            <p className={cn(typeClass("body"), "px-0.5 text-foreground")}>
               Merge #{pullRequest.number} into {pullRequest.base}?
             </p>
             <div role="radiogroup" aria-label="Merge method" className="flex flex-col gap-0.5">
               {MergeMethod.literals.map((method) => (
                 <label
                   key={method}
-                  className="flex h-8 items-center gap-2 rounded-lg px-2 text-sm text-foreground hover:bg-muted/60 has-focus-visible:bg-muted/60"
+                  className={cn(
+                    typeClass("body"),
+                    "flex h-8 items-center gap-2 rounded-lg px-2 text-foreground hover:bg-hover has-focus-visible:bg-muted/60",
+                  )}
                 >
                   <input
                     type="radio"
@@ -395,13 +414,13 @@ export function GitMenu({
             <div className="flex justify-end gap-1.5">
               <Button
                 variant="outline"
-                size="sm"
+                size="compact"
                 className="h-7 px-2.5"
                 onClick={() => openPanel(null)}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={!!pending} size="sm" className="h-7 px-2.5">
+              <Button type="submit" disabled={!!pending} size="compact" className="h-7 px-2.5">
                 {pending === "merge" ? pendingLabel : MERGE_LABEL[mergeMethod]}
               </Button>
             </div>
@@ -427,9 +446,12 @@ export function GitMenu({
               }}
               placeholder="Commit message, or leave empty to generate one"
               rows={3}
-              className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className={cn(
+                typeClass("body"),
+                "w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring",
+              )}
             />
-            <p className="px-0.5 text-xs text-muted-foreground">
+            <p className={cn(typeClass("caption"), "px-0.5 text-muted-foreground")}>
               {status.changes} changed {status.changes === 1 ? "file" : "files"}, all staged on
               commit
             </p>
@@ -438,7 +460,7 @@ export function GitMenu({
               {status.hasRemote && !status.detached ? (
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="compact"
                   title="⌘⇧↩"
                   disabled={!canCommit}
                   onClick={() => runGitAction("commit-push")}
@@ -451,7 +473,7 @@ export function GitMenu({
                 type="submit"
                 title="⌘↩"
                 disabled={!canCommit}
-                size="sm"
+                size="compact"
                 className="h-7 px-2.5"
               >
                 {pending === "commit" || pending === "commit-push" ? pendingLabel : "Commit"}
@@ -465,7 +487,7 @@ export function GitMenu({
               disabled={!canCommit}
               hint={status.changes || undefined}
             >
-              <GitCommitHorizontal />
+              <IconGitCommit />
               Commit…
             </MenuItem>
             <MenuItem
@@ -473,7 +495,7 @@ export function GitMenu({
               disabled={!canPush}
               hint={canPush ? pushHint : undefined}
             >
-              <ArrowUp />
+              <IconArrowUp />
               Push
             </MenuItem>
             {base ? (
@@ -487,7 +509,7 @@ export function GitMenu({
                   disabled={status.changes > 0 || !!pending}
                   hint={status.changes > 0 ? "uncommitted" : undefined}
                 >
-                  <Trash2 />
+                  <IconTrash />
                   {isConfirmingDelete ? "Click again to delete" : "Delete thread & worktree"}
                 </MenuItem>
               ) : (
@@ -504,7 +526,7 @@ export function GitMenu({
                           : "no commits"
                   }
                 >
-                  <GitMerge />
+                  <IconGitMerge />
                   Merge into {base.branch}…
                 </MenuItem>
               )
@@ -518,11 +540,19 @@ export function GitMenu({
                     target="_blank"
                     rel="noreferrer"
                     onClick={() => openPanel(null)}
-                    className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:bg-muted/60 [&_svg]:size-4 [&_svg]:text-muted-foreground"
+                    className={cn(
+                      typeClass("body"),
+                      "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-foreground transition-colors outline-none hover:bg-hover focus-visible:bg-muted/60 [&_svg]:size-4 [&_svg]:text-muted-foreground",
+                    )}
                   >
-                    <ExternalLink />
+                    <IconExternalLink />
                     View {pullRequestName}
-                    <span className="ml-auto pl-3 font-mono text-xs text-muted-foreground tabular-nums">
+                    <span
+                      className={cn(
+                        typeClass("caption"),
+                        "ml-auto pl-3 font-mono text-muted-foreground tabular-nums",
+                      )}
+                    >
                       #{pullRequest.number}
                     </span>
                   </a>
@@ -531,7 +561,7 @@ export function GitMenu({
                     disabled={!!pending || pullRequest.state === "draft"}
                     hint={pullRequest.state === "draft" ? "draft" : undefined}
                   >
-                    <GitMerge />
+                    <IconGitMerge />
                     Merge {pullRequestName}…
                   </MenuItem>
                   {status.sourceControl === "github" ? (
@@ -546,7 +576,7 @@ export function GitMenu({
                         openPanel(null);
                       }}
                     >
-                      {watchedUrl === pullRequest.url ? <EyeOff /> : <Eye />}
+                      {watchedUrl === pullRequest.url ? <IconEyeOff /> : <IconEye />}
                       {watchedUrl === pullRequest.url
                         ? `Stop watching ${pullRequestName}`
                         : "Wake agent on reviews & CI"}
@@ -558,7 +588,7 @@ export function GitMenu({
                   onClick={() => runGitAction("pull-request")}
                   disabled={!canCreatePullRequest}
                 >
-                  <GitPullRequestArrow />
+                  <IconGitCompare />
                   Create {pullRequestName}
                 </MenuItem>
               )
@@ -568,25 +598,32 @@ export function GitMenu({
                 href={pullRequest.url}
                 target="_blank"
                 rel="noreferrer"
-                className="block px-2 pt-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+                className={cn(
+                  typeClass("caption"),
+                  "block px-2 pt-1 text-muted-foreground underline-offset-2 hover:underline",
+                )}
               >
                 {pullRequestName} #{pullRequest.number} {pullRequest.state}
               </a>
             ) : null}
             {base?.merged ? (
-              <p className="px-2 pt-1 text-xs text-muted-foreground">Merged into {base.branch}</p>
+              <p className={cn(typeClass("caption"), "px-2 pt-1 text-muted-foreground")}>
+                Merged into {base.branch}
+              </p>
             ) : null}
             {base && base.conflicts.length > 0 ? (
-              <p className="px-2 pt-1 text-xs text-muted-foreground">
+              <p className={cn(typeClass("caption"), "px-2 pt-1 text-muted-foreground")}>
                 Conflicts with {base.branch} in {base.conflicts.join(", ")}. Merge {base.branch}{" "}
                 into this branch and resolve them first.
               </p>
             ) : null}
             {!status.hasRemote ? (
-              <p className="px-2 pt-1 text-xs text-muted-foreground">No remote configured</p>
+              <p className={cn(typeClass("caption"), "px-2 pt-1 text-muted-foreground")}>
+                No remote configured
+              </p>
             ) : null}
             {status.behind > 0 ? (
-              <p className="px-2 pt-1 text-xs text-muted-foreground">
+              <p className={cn(typeClass("caption"), "px-2 pt-1 text-muted-foreground")}>
                 {status.behind} {status.behind === 1 ? "commit" : "commits"} behind{" "}
                 {status.upstream}
               </p>

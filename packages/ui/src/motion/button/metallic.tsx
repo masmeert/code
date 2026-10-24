@@ -17,13 +17,14 @@ const SILVER_DRIFT = {
 };
 
 const CHROME_SHIMMER = {
+  // eslint-disable-next-line masmeert-ui/no-raw-motion -- decorative slow glint sweep across the chrome, not UI feedback
   duration: 2.4,
   ease: EASE_IN_OUT,
 };
 
 export const MetallicButton = forwardRef<HTMLButtonElement, MetallicButtonProps>(
   function MetallicButton(
-    { size = "md", paused = false, className, children, onHoverStart, onHoverEnd, ...rest },
+    { size, paused = false, className, children, onHoverStart, onHoverEnd, ...rest },
     ref,
   ) {
     const reduce = useReducedMotion();
@@ -69,7 +70,7 @@ export const MetallicButton = forwardRef<HTMLButtonElement, MetallicButtonProps>
 
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-[2px] z-[2] rounded-[inherit] bg-background transition-colors group-hover:bg-muted/40"
+          className="pointer-events-none absolute inset-[2px] z-[2] rounded-[inherit] bg-background transition-colors group-hover:bg-hover"
         />
 
         <span

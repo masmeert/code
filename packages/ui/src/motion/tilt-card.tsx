@@ -6,9 +6,11 @@ import {
   useSpring,
 } from "motion/react";
 import { useRef, type ReactNode } from "react";
-import { SPRING_MOUSE } from "@masmeert/ui/lib/ease";
 import { useHoverCapable } from "@masmeert/ui/hooks/use-hover-capable";
 import { cn } from "@masscode/ui/lib/utils";
+
+// Cursor-follow physics for useSpring; not a motion tier.
+const CURSOR_SPRING = { stiffness: 200, damping: 15, mass: 0.3 } as const;
 
 export interface TiltCardProps {
   children: ReactNode;
@@ -28,8 +30,8 @@ export function TiltCard({ children, max = 12, glare = true, className }: TiltCa
   const gx = useMotionValue(50);
   const gy = useMotionValue(50);
 
-  const srx = useSpring(rx, SPRING_MOUSE);
-  const sry = useSpring(ry, SPRING_MOUSE);
+  const srx = useSpring(rx, CURSOR_SPRING);
+  const sry = useSpring(ry, CURSOR_SPRING);
 
   const onMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const el = ref.current;

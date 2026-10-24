@@ -9,7 +9,7 @@
     "baseColor": "neutral",
     "cssVariables": true
   },
-  "iconLibrary": "lucide",
+  "iconLibrary": "tabler",
   "aliases": {
     "components": "@masscode/ui/components",
     "ui": "@masscode/ui/components",

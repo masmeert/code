@@ -9,8 +9,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { EASE_OUT } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring, springExit, tierTween } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 type IslandContextValue = {
   view: string | null;
@@ -18,21 +19,14 @@ type IslandContextValue = {
 
 const IslandContext = createContext<IslandContextValue | null>(null);
 
-// Shell physics in Apple's duration/bounce form one long perceptual glide with barely-there bounce, identical in
-// both directions. The shell animates real width/height (not transforms), so
+// The shell is a large surface, so it rides the slow tier, identical in both
+// directions. The shell animates real width/height (not transforms), so
 // slots are never scale-distorted.
-const SHELL_SPRING = {
-  type: "spring",
-  duration: 0.8,
-  bounce: 0.2,
-} as const;
+const SHELL_SPRING = spring.slow;
 
-// Content gets a touch more life than the shell.
-const CONTENT_SPRING = {
-  type: "spring",
-  duration: 0.8,
-  bounce: 0.35,
-} as const;
+// Content travels on the same tier as the shell; blur uses the matching tween
+// because a spring's settling tail can't land a filter string cleanly.
+const CONTENT_SPRING = { ...spring.slow, filter: tierTween.slow };
 
 // Constant radius — never animated. The browser clamps it to half the shell
 // height, so the pill-to-rounded-rect morph falls out of the resize for free
@@ -102,18 +96,18 @@ function Slot({
       // shrinking shell can clip it.
       exit={
         reduce
-          ? { opacity: 0, filter: "blur(0px)", transition: { duration: 0.1 } }
+          ? { opacity: 0, filter: "blur(0px)", transition: springExit.fast }
           : {
               opacity: 0,
               scale: 0.9,
               y: -6,
               filter: "blur(0px)",
-              transition: { duration: 0.08, ease: EASE_OUT },
+              transition: springExit.fast,
             }
       }
-      // One spring drives transform, opacity and blur together — no per
-      // property tweens, no delays. Content travels with the shell.
-      transition={reduce ? { duration: 0.15 } : CONTENT_SPRING}
+      // One tier drives transform, opacity and blur together — no delays.
+      // Content travels with the shell.
+      transition={reducedTransition(CONTENT_SPRING, reduce)}
       // Anchored to the pill line: content unfurls downward out of it and is
       // sucked back up into it.
       style={{ transformOrigin: "top center" }}
@@ -151,14 +145,14 @@ export function DynamicIsland({ view, compact, children, className }: DynamicIsl
             ? { width: size.width, height: size.height }
             : { width: PILL_WIDTH, height: PILL_HEIGHT }
         }
-        transition={reduce ? { duration: 0 } : SHELL_SPRING}
+        transition={reducedTransition(SHELL_SPRING, reduce)}
         style={{ borderRadius: RADIUS }}
         // items-start pins content to the top edge while the shell springs, so
         // expansion reads as unfurling downward out of the pill. Top-align the
         // island in its parent (like under a notch) to complete the effect.
         className={cn(
           "relative inline-flex items-start justify-center overflow-hidden",
-          "bg-foreground text-background shadow-panel",
+          "bg-foreground text-background shadow-surface-3",
           className,
         )}
       >
@@ -170,7 +164,10 @@ export function DynamicIsland({ view, compact, children, className }: DynamicIsl
               <Slot
                 keyId="compact"
                 // iPhone pill proportions: ~126 x 37.
-                className="min-h-[37px] min-w-[126px] gap-2 px-4 py-1.5 text-xs font-medium"
+                className={cn(
+                  typeClass("caption"),
+                  "min-h-[37px] min-w-[126px] gap-2 px-4 py-1.5 font-medium",
+                )}
               >
                 {compact}
               </Slot>

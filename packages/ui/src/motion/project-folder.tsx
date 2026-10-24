@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { IconX } from "@tabler/icons-react";
 import {
   AnimatePresence,
   LayoutGroup,
@@ -8,9 +8,10 @@ import {
 } from "motion/react";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { SPRING_LAYOUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring } from "@masmeert/ui/lib/springs";
 import { useHoverCapable } from "@masmeert/ui/hooks/use-hover-capable";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type ProjectFolderPreview = {
   id: string;
@@ -96,7 +97,7 @@ export function ProjectFolder({
   const isExpanded = expanded ?? internalExpanded;
   const isOpen = (open ?? internalOpen) || isExpanded;
   const previewItems = previews.slice(0, MAX_PREVIEWS);
-  const transition: Transition = reduce ? { duration: 0 } : SPRING_LAYOUT;
+  const transition: Transition = reducedTransition(spring.moderate, reduce);
   const countText = `${count} ${itemLabel}${count === 1 ? "" : "s"}`;
 
   const setOpen = useCallback(
@@ -206,7 +207,7 @@ export function ProjectFolder({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={reduce ? { duration: 0 } : { duration: 0.18 }}
+              transition={reducedTransition(spring.fast, reduce)}
               className={cn(
                 "fixed inset-0 z-50 cursor-default bg-background/80 backdrop-blur-xl",
                 isClosing && "pointer-events-none",
@@ -238,14 +239,19 @@ export function ProjectFolder({
                   initial={{ opacity: 0, y: reduce ? 0 : 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: reduce ? 0 : -8 }}
-                  transition={reduce ? { duration: 0 } : { duration: 0.18 }}
+                  transition={reducedTransition(spring.moderate, reduce)}
                   className="mb-6 flex items-center justify-between gap-4"
                 >
                   <div>
-                    <h2 id={dialogTitleId} className="text-xl font-medium text-foreground">
+                    <h2
+                      id={dialogTitleId}
+                      className={cn(typeClass("title"), "font-medium text-foreground")}
+                    >
                       {title}
                     </h2>
-                    <p className="mt-1 text-sm text-muted-foreground">{countText}</p>
+                    <p className={cn(typeClass("body"), "mt-1 text-muted-foreground")}>
+                      {countText}
+                    </p>
                   </div>
                   <button
                     ref={closeButtonRef}
@@ -254,7 +260,7 @@ export function ProjectFolder({
                     aria-label={`Close ${title}`}
                     className="flex size-10 items-center justify-center rounded-full border border-foreground/10 bg-background/50 text-muted-foreground backdrop-blur-xl transition-colors hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring focus-visible:outline-none"
                   >
-                    <X className="size-4" aria-hidden="true" />
+                    <IconX className="size-4" aria-hidden="true" />
                   </button>
                 </motion.div>
               ) : null}
@@ -316,7 +322,7 @@ export function ProjectFolder({
         }}
         onClick={handleFolderClick}
         whileTap={reduce || disabled ? undefined : { scale: 0.98 }}
-        transition={reduce ? { duration: 0 } : SPRING_PRESS}
+        transition={reducedTransition(spring.fast, reduce)}
         className={cn(
           "relative block h-56 w-72 rounded-2xl text-left outline-none select-none [perspective:1200px] focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50",
           className,
@@ -380,13 +386,22 @@ export function ProjectFolder({
           className="absolute inset-x-0 bottom-0 z-20 [transform-origin:center_bottom] overflow-hidden rounded-2xl border border-foreground/10 bg-background/60 backdrop-blur-2xl [backface-visibility:hidden]"
         >
           <span className="flex h-16 items-center px-4">
-            <span className="line-clamp-2 text-xl leading-tight font-medium text-foreground">
+            <span
+              className={cn(
+                typeClass("title"),
+                "line-clamp-2 leading-tight font-medium text-foreground",
+              )}
+            >
               {title}
             </span>
           </span>
           <span className="flex h-12 items-center justify-between gap-3 border-t border-foreground/10 px-4">
-            <span className="shrink-0 text-sm font-medium text-foreground/70">{countText}</span>
-            <span className="truncate text-sm text-muted-foreground">{description}</span>
+            <span className={cn(typeClass("body"), "shrink-0 font-medium text-muted-foreground")}>
+              {countText}
+            </span>
+            <span className={cn(typeClass("body"), "truncate text-muted-foreground")}>
+              {description}
+            </span>
           </span>
         </motion.span>
       </motion.button>

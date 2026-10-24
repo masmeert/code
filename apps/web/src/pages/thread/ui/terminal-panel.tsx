@@ -7,7 +7,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { type ITheme, Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { ChevronDown, Plus, SquareTerminal, X } from "lucide-react";
+import { IconChevronDown, IconPlus, IconTerminal2, IconX } from "@tabler/icons-react";
 import { useEffect, useRef } from "react";
 import symbolsFontUrl from "./symbols-nerd-font-mono.woff2";
 import { IconButton } from "@/shared/ui";
@@ -24,6 +24,7 @@ import {
 } from "@/entities/terminal";
 import { sendIfConnected } from "@/shared/api";
 import { useResizableSize } from "@masmeert/ui/hooks/use-resizable";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 const symbolsFont = new FontFace("Symbols Nerd Font Mono", `url(${symbolsFontUrl})`);
 
@@ -135,10 +136,11 @@ export function TerminalPanel({
             <div
               key={terminalId}
               className={cn(
-                "group/tab flex h-7 shrink-0 items-center rounded-lg pr-0.5 text-xs transition-colors",
+                typeClass("caption"),
+                "group/tab flex h-7 shrink-0 items-center rounded-lg pr-0.5 transition-colors",
                 terminalId === activeTerminal
                   ? "bg-muted/60 text-foreground"
-                  : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                  : "text-muted-foreground hover:bg-hover hover:text-foreground",
               )}
             >
               <button
@@ -148,7 +150,7 @@ export function TerminalPanel({
                 onClick={() => showTerminal(threadId, terminalId)}
                 className="flex h-full items-center gap-1.5 rounded-lg pl-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <SquareTerminal className="size-3.5" />
+                <IconTerminal2 className="size-3.5" />
                 {findTerminalScript(terminalId)?.name ?? `Terminal ${index + 1}`}
               </button>
               <button
@@ -163,13 +165,13 @@ export function TerminalPanel({
                     : "opacity-0 group-hover/tab:opacity-100",
                 )}
               >
-                <X className="size-3" />
+                <IconX className="size-3" />
               </button>
             </div>
           ))}
         </div>
         <IconButton label="New terminal" onClick={() => createTerminal(threadId)}>
-          <Plus className="size-3.5" />
+          <IconPlus className="size-3.5" />
         </IconButton>
         <IconButton
           label="Hide terminal"
@@ -179,7 +181,7 @@ export function TerminalPanel({
             focusComposer();
           }}
         >
-          <ChevronDown className="size-3.5" />
+          <IconChevronDown className="size-3.5" />
         </IconButton>
       </div>
       <TerminalView key={activeTerminal} threadId={threadId} terminalId={activeTerminal} />

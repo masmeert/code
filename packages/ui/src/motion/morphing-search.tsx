@@ -1,4 +1,4 @@
-import { type LucideIcon, Search } from "lucide-react";
+import { IconSearch, type Icon as TablerIcon } from "@tabler/icons-react";
 import {
   AnimatePresence,
   LayoutGroup,
@@ -17,31 +17,25 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { EASE_OUT, SPRING_LAYOUT } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring, springExit, tierTween } from "@masmeert/ui/lib/springs";
 import { useOnOpen } from "@masmeert/ui/hooks/use-on-open";
 import { useRowCursor } from "@masmeert/ui/hooks/use-row-cursor";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
-// Keeps the Wallet Card feel with a little more time to read the morph.
-const SEARCH_MORPH: Transition = {
-  type: "spring",
-  duration: 0.58,
-  bounce: 0.22,
-};
+// The shell is a large surface, so it morphs on the slow tier.
+const SEARCH_MORPH: Transition = spring.slow;
 
 // Keep the spring on the shell, but unfold complex clip-path values with the
 // same progressive tween as Morph Popover so the content never snaps ahead.
-const SEARCH_CLIP_TRANSITION: Transition = {
-  duration: 0.32,
-  ease: EASE_OUT,
-};
+const SEARCH_CLIP_TRANSITION: Transition = tierTween.slow;
 
 export type MorphingSearchItem = {
   id: string;
   title: string;
   description?: string;
   keywords?: string[];
-  icon?: LucideIcon;
+  icon?: TablerIcon;
   onSelect?: () => void;
 };
 
@@ -109,7 +103,7 @@ export function MorphingSearch({
   const listRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(open);
-  const transition: Transition = reduce ? { duration: 0 } : SPRING_LAYOUT;
+  const transition: Transition = reduce ? { duration: 0 } : spring.moderate;
   const morphTransition: Transition = reduce ? { duration: 0 } : SEARCH_MORPH;
 
   const setOpen = useCallback(
@@ -428,7 +422,7 @@ export function MorphingSearch({
                     )}
                   >
                     <span className="shrink-0">
-                      <Search className="size-4 text-muted-foreground" />
+                      <IconSearch className="size-4 text-muted-foreground" />
                     </span>
                     <div className="flex h-10 min-w-0 flex-1 items-center">
                       <input
@@ -444,10 +438,18 @@ export function MorphingSearch({
                           filteredItems.length > 0 ? `${uid}-option-${activeIndex}` : undefined
                         }
                         placeholder={placeholder}
-                        className="size-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                        className={cn(
+                          typeClass("body"),
+                          "size-full bg-transparent text-foreground outline-none placeholder:text-muted-foreground",
+                        )}
                       />
                     </div>
-                    <kbd className="flex h-7 shrink-0 items-center rounded-md border border-border px-2 text-xs text-muted-foreground">
+                    <kbd
+                      className={cn(
+                        typeClass("caption"),
+                        "flex h-7 shrink-0 items-center rounded-md border border-border px-2 text-muted-foreground",
+                      )}
+                    >
                       Esc
                     </kbd>
                   </div>
@@ -465,19 +467,12 @@ export function MorphingSearch({
                             closed: {
                               opacity: 0,
                               transform: "translateY(6px)",
-                              transition: {
-                                duration: 0.16,
-                                delay: 0.18,
-                                ease: EASE_OUT,
-                              },
+                              transition: { ...springExit.moderate, delay: 0.18 },
                             },
                             open: {
                               opacity: 1,
                               transform: "translateY(0px)",
-                              transition: {
-                                duration: 0.16,
-                                ease: EASE_OUT,
-                              },
+                              transition: spring.moderate,
                             },
                           }
                     }
@@ -517,11 +512,21 @@ export function MorphingSearch({
                               <Icon className="relative size-4 shrink-0 text-muted-foreground" />
                             ) : null}
                             <span className="relative min-w-0">
-                              <span className="block truncate text-sm font-medium text-foreground">
+                              <span
+                                className={cn(
+                                  typeClass("body"),
+                                  "block truncate font-medium text-foreground",
+                                )}
+                              >
                                 {item.title}
                               </span>
                               {item.description ? (
-                                <span className="block truncate text-xs text-muted-foreground">
+                                <span
+                                  className={cn(
+                                    typeClass("caption"),
+                                    "block truncate text-muted-foreground",
+                                  )}
+                                >
                                   {item.description}
                                 </span>
                               ) : null}
@@ -530,7 +535,12 @@ export function MorphingSearch({
                         );
                       })
                     ) : (
-                      <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+                      <p
+                        className={cn(
+                          typeClass("body"),
+                          "px-3 py-8 text-center text-muted-foreground",
+                        )}
+                      >
                         {emptyMessage}
                       </p>
                     )}
@@ -574,29 +584,28 @@ export function MorphingSearch({
           aria-hidden="true"
           initial={false}
           animate={{ opacity: open ? 0 : 1 }}
-          transition={
-            reduce
-              ? { duration: 0 }
-              : {
-                  duration: 0.1,
-                  delay: open ? 0.1 : 0.12,
-                  ease: EASE_OUT,
-                }
-          }
+          transition={reducedTransition({ ...spring.fast, delay: open ? 0.1 : 0.12 }, reduce)}
           className={cn(
             "pointer-events-none absolute inset-0 flex items-center",
             backgroundScrollLocked && "z-[60]",
             iconOnly ? "justify-center" : "gap-2.5 px-3.5",
           )}
         >
-          <Search className="size-4 shrink-0 text-muted-foreground" />
+          <IconSearch className="size-4 shrink-0 text-muted-foreground" />
           {iconOnly ? null : (
             <>
-              <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+              <span
+                className={cn(typeClass("body"), "min-w-0 flex-1 truncate text-muted-foreground")}
+              >
                 {placeholder}
               </span>
               {shortcut ? (
-                <kbd className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-border px-2 text-xs text-muted-foreground">
+                <kbd
+                  className={cn(
+                    typeClass("caption"),
+                    "flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-border px-2 text-muted-foreground",
+                  )}
+                >
                   {shortcut.toUpperCase()}
                 </kbd>
               ) : null}

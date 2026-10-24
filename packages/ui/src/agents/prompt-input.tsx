@@ -1,19 +1,19 @@
 import {
-  ArrowUp,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  CirclePlus,
-  FileText,
-  ImageIcon,
-  Paperclip,
-  Plus,
-  Search,
-  Square,
-  Star,
-  X,
-  Zap,
-} from "lucide-react";
+  IconArrowUp,
+  IconBolt,
+  IconCheck,
+  IconChevronDown,
+  IconChevronRight,
+  IconCirclePlus,
+  IconFileText,
+  IconPaperclip,
+  IconPhoto,
+  IconPlayerStop,
+  IconPlus,
+  IconSearch,
+  IconStar,
+  IconX,
+} from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   type ButtonHTMLAttributes,
@@ -38,9 +38,10 @@ import {
   MorphingPopoverTrigger,
 } from "@masmeert/ui/morphing-popover";
 import { Switch } from "@masmeert/ui/switch";
-import { SPRING_SWAP } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { formatBinding, matches } from "@masmeert/ui/lib/keys";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 /** One row in a composer picker (model, effort, permissions, branch…). */
 export interface PromptOption {
@@ -240,7 +241,10 @@ export function PromptInput({
           <div
             ref={measurementRef}
             aria-hidden="true"
-            className="pointer-events-none invisible absolute inset-x-2 top-0 px-2 text-sm leading-6 [overflow-wrap:break-word] whitespace-pre-wrap"
+            className={cn(
+              typeClass("body"),
+              "pointer-events-none invisible absolute inset-x-2 top-0 px-2 leading-6 [overflow-wrap:break-word] whitespace-pre-wrap",
+            )}
           >
             {`${currentValue}\u200b`}
           </div>
@@ -255,7 +259,10 @@ export function PromptInput({
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            className="scrollbar-hide block w-full resize-none overflow-y-auto bg-transparent px-2 pt-1.5 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground/55"
+            className={cn(
+              typeClass("body"),
+              "scrollbar-hide block w-full resize-none overflow-y-auto bg-transparent px-2 pt-1.5 leading-6 text-foreground outline-none placeholder:text-muted-foreground",
+            )}
           />
 
           <AnimatePresence initial={false}>
@@ -264,7 +271,7 @@ export function PromptInput({
                 initial={reduce ? { opacity: 1 } : { opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 exit={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
-                transition={reduce ? { duration: 0 } : SPRING_SWAP}
+                transition={reduce ? { duration: 0 } : spring.fast}
                 className="overflow-hidden"
               >
                 <div className="flex flex-wrap gap-1.5 px-1 pt-2">
@@ -296,9 +303,9 @@ export function PromptInput({
                   <motion.span
                     aria-hidden="true"
                     animate={{ rotate: actionsOpen ? 45 : 0 }}
-                    transition={reduce ? { duration: 0 } : SPRING_SWAP}
+                    transition={reduce ? { duration: 0 } : spring.fast}
                   >
-                    <Plus className="size-4" />
+                    <IconPlus className="size-4" />
                   </motion.span>
                 </Button>
               </MorphingPopoverTrigger>
@@ -320,7 +327,7 @@ export function PromptInput({
                         onAction?.(action.value);
                         setActionsOpen(false);
                       }}
-                      className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none hover:bg-muted focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-50"
+                      className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors outline-none hover:bg-hover focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-50"
                     >
                       {action.icon ? (
                         <span className="mt-0.5 grid size-5 shrink-0 place-items-center text-muted-foreground [&_svg]:size-4">
@@ -328,9 +335,16 @@ export function PromptInput({
                         </span>
                       ) : null}
                       <span className="min-w-0">
-                        <span className="block text-sm text-foreground">{action.label}</span>
+                        <span className={cn(typeClass("body"), "block text-foreground")}>
+                          {action.label}
+                        </span>
                         {action.description ? (
-                          <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
+                          <span
+                            className={cn(
+                              typeClass("caption"),
+                              "mt-0.5 block leading-4 text-muted-foreground",
+                            )}
+                          >
                             {action.description}
                           </span>
                         ) : null}
@@ -356,7 +370,7 @@ export function PromptInput({
                 onClick={onAttach}
                 className="size-8 rounded-full border border-border bg-background"
               >
-                <Paperclip className="size-4" />
+                <IconPaperclip className="size-4" />
               </Button>
             ) : null}
             <Button
@@ -387,13 +401,13 @@ export function PromptInput({
                       ? { opacity: 0 }
                       : { opacity: 0, transform: "scale(0.95)", filter: "blur(2px)" }
                   }
-                  transition={reduce ? { duration: 0 } : SPRING_SWAP}
+                  transition={reduce ? { duration: 0 } : spring.fast}
                   className="grid place-items-center"
                 >
                   {showStop ? (
-                    <Square className="size-3 fill-current" />
+                    <IconPlayerStop className="size-3 fill-current" />
                   ) : (
-                    <ArrowUp className="size-4" />
+                    <IconArrowUp className="size-4" />
                   )}
                 </motion.span>
               </AnimatePresence>
@@ -403,7 +417,12 @@ export function PromptInput({
       </form>
 
       {footer ? (
-        <div className="mx-3 -mt-4 flex h-12 items-center justify-between gap-3 rounded-b-xl border border-t-0 border-border bg-background px-1.5 pt-4 text-xs text-muted-foreground">
+        <div
+          className={cn(
+            typeClass("caption"),
+            "mx-3 -mt-4 flex h-12 items-center justify-between gap-3 rounded-b-xl border border-t-0 border-border bg-background px-1.5 pt-4 text-muted-foreground",
+          )}
+        >
           {footer}
         </div>
       ) : null}
@@ -428,7 +447,8 @@ export function PromptInputTray({
     <Collapsible open={open}>
       <div
         className={cn(
-          "relative mx-3 max-h-80 overflow-y-auto overscroll-contain border border-border bg-background px-1.5 text-xs text-muted-foreground",
+          typeClass("caption"),
+          "relative mx-3 max-h-80 overflow-y-auto overscroll-contain border border-border bg-background px-1.5 text-muted-foreground",
           detached ? "mb-2 rounded-xl py-1" : "-mb-4 rounded-t-xl border-b-0 pt-1 pb-5",
         )}
       >
@@ -446,15 +466,20 @@ function AttachmentChip({
   onRemove?: (id: string) => void;
 }) {
   return (
-    <div className="group flex h-8 max-w-52 items-center gap-2 rounded-lg border border-border bg-background pr-1 pl-1 text-xs text-foreground">
+    <div
+      className={cn(
+        typeClass("caption"),
+        "group flex h-8 max-w-52 items-center gap-2 rounded-lg border border-border bg-background pr-1 pl-1 text-foreground",
+      )}
+    >
       {attachment.preview ? (
         <img src={attachment.preview} alt="" className="size-6 shrink-0 rounded-md object-cover" />
       ) : (
         <span className="grid size-6 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
           {attachment.image ? (
-            <ImageIcon className="size-3.5" />
+            <IconPhoto className="size-3.5" />
           ) : (
-            <FileText className="size-3.5" />
+            <IconFileText className="size-3.5" />
           )}
         </span>
       )}
@@ -464,9 +489,9 @@ function AttachmentChip({
           type="button"
           aria-label={`Remove ${attachment.name}`}
           onClick={() => onRemove(attachment.id)}
-          className="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+          className="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
         >
-          <X className="size-3" />
+          <IconX className="size-3" />
         </button>
       ) : null}
     </div>
@@ -526,8 +551,9 @@ function PickerTrigger({
       type="button"
       disabled={disabled}
       className={cn(
-        "flex max-w-56 min-w-0 items-center gap-1.5 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
-        variant === "pill" && "h-8 rounded-full border border-border bg-background px-3 text-xs",
+        "flex max-w-56 min-w-0 items-center gap-1.5 text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+        variant === "pill" &&
+          cn(typeClass("caption"), "h-8 rounded-full border border-border bg-background px-3"),
         variant === "plain" && "h-6 rounded-lg px-2 text-[11px]",
         compact && "@max-md:w-8 @max-md:shrink-0 @max-md:justify-center @max-md:px-0",
         open && "bg-muted text-foreground",
@@ -538,7 +564,7 @@ function PickerTrigger({
         <span className="grid size-3.5 shrink-0 place-items-center [&_svg]:size-3.5">{icon}</span>
       ) : null}
       <span className={cn("truncate", compact && "@max-md:sr-only")}>{children}</span>
-      <ChevronDown className={cn("size-3 shrink-0 opacity-60", compact && "@max-md:hidden")} />
+      <IconChevronDown className={cn("size-3 shrink-0 opacity-60", compact && "@max-md:hidden")} />
     </button>
   );
 }
@@ -794,7 +820,7 @@ function OptionList({
             else if (first) pick(first.value);
           }}
           placeholder={searchPlaceholder}
-          className="mb-1 h-7 w-full rounded-md bg-muted px-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
+          className="mb-1 h-7 w-full rounded-md bg-muted px-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
         />
       ) : null}
       <div
@@ -821,9 +847,9 @@ function OptionList({
           <button
             type="button"
             onClick={create}
-            className="flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-[13px] text-foreground transition-colors outline-none hover:bg-muted focus-visible:bg-muted"
+            className="flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-[13px] text-foreground transition-colors outline-none hover:bg-hover focus-visible:bg-muted"
           >
-            <CirclePlus className="size-3.5 shrink-0 text-muted-foreground" />
+            <IconCirclePlus className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">{createLabel(trimmed)}</span>
           </button>
         ) : null}
@@ -863,7 +889,7 @@ function OptionList({
                   pick(option.value);
                 }}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors outline-none hover:bg-muted focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-50",
+                  "flex w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors outline-none hover:bg-hover focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-50",
                   option.description ? "py-1.5" : "h-7",
                   selected ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
@@ -895,7 +921,7 @@ function OptionList({
                   ) : null}
                 </span>
                 {numberedValues.includes(option.value) ? (
-                  <span className="shrink-0 text-[11px] text-muted-foreground/70 tabular-nums">
+                  <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
                     {formatBinding(`mod+${numberedValues.indexOf(option.value) + 1}`)}
                   </span>
                 ) : null}
@@ -903,10 +929,10 @@ function OptionList({
                   <>
                     {/* Room for the star, which sits over the row as its own button. */}
                     <span aria-hidden="true" className="w-5 shrink-0" />
-                    <Check className={cn("size-3.5 shrink-0", !selected && "invisible")} />
+                    <IconCheck className={cn("size-3.5 shrink-0", !selected && "invisible")} />
                   </>
                 ) : selected ? (
-                  <Check className="size-3.5 shrink-0" />
+                  <IconCheck className="size-3.5 shrink-0" />
                 ) : null}
               </button>
               {onToggleFavorite ? (
@@ -923,7 +949,7 @@ function OptionList({
                       : "opacity-0 group-hover/row:opacity-100",
                   )}
                 >
-                  <Star className={cn("size-3.5", favorite && "fill-current")} />
+                  <IconStar className={cn("size-3.5", favorite && "fill-current")} />
                 </button>
               ) : null}
             </div>
@@ -1022,10 +1048,10 @@ export function PromptModelMenu({
         >
           {modelLabel}
           {currentEffort ? (
-            <span className="ml-1.5 text-muted-foreground/70">{currentEffort.label}</span>
+            <span className="ml-1.5 text-muted-foreground">{currentEffort.label}</span>
           ) : null}
           {fast?.on ? (
-            <Zap aria-label="Fast" className="ml-1 inline size-3 fill-current align-[-1px]" />
+            <IconBolt aria-label="Fast" className="ml-1 inline size-3 fill-current align-[-1px]" />
           ) : null}
         </PickerTrigger>
       </MorphingPopoverTrigger>
@@ -1045,7 +1071,7 @@ export function PromptModelMenu({
             >
               <span className="flex-1">Fast</span>
               <Switch
-                size="sm"
+                size="compact"
                 checked={fast.on}
                 onCheckedChange={fast.onChange}
                 ariaLabel="Fast"
@@ -1131,7 +1157,7 @@ function FlyoutRow({
           onOpenChange(true);
         }}
         className={cn(
-          "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-foreground transition-colors outline-none hover:bg-muted focus-visible:bg-muted",
+          "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-foreground transition-colors outline-none hover:bg-hover focus-visible:bg-muted",
           open && "bg-muted",
         )}
       >
@@ -1139,7 +1165,7 @@ function FlyoutRow({
         <span className="ml-auto flex min-w-0 items-center gap-1.5 text-muted-foreground">
           {value}
         </span>
-        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+        <IconChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
       </button>
       <MorphingPopoverContent side="right" sideOffset={8} radius={12} className={className}>
         {children}
@@ -1217,7 +1243,7 @@ export function ModelList({
         className="flex flex-col gap-1 border-r border-border p-1"
       >
         {[
-          { key: null, label: "Favorites", icon: <Star /> },
+          { key: null, label: "Favorites", icon: <IconStar /> },
           ...groups.map(([group, icon]) => ({ key: group, label: group, icon })),
         ].map((entry) => (
           <button
@@ -1232,7 +1258,7 @@ export function ModelList({
               setQuery("");
             }}
             className={cn(
-              "grid size-8 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted [&_svg]:size-4",
+              "grid size-8 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:bg-muted [&_svg]:size-4",
               !needle && tab === entry.key && "bg-muted text-foreground",
             )}
           >
@@ -1242,7 +1268,7 @@ export function ModelList({
       </div>
       <div className="w-60 p-1">
         <label className="mb-1 flex h-8 items-center gap-2 border-b border-border px-2 text-muted-foreground">
-          <Search className="size-3.5 shrink-0" />
+          <IconSearch className="size-3.5 shrink-0" />
           <input
             ref={searchRef}
             value={query}
@@ -1263,7 +1289,7 @@ export function ModelList({
             }}
             placeholder="Search models"
             aria-label="Search models"
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
+            className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
           />
         </label>
         {/* Fixed height: switching tabs or searching would otherwise resize the panel under the pointer. */}

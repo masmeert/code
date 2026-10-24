@@ -32,23 +32,23 @@ import {
   WORKTREE_SETUP_TERMINAL_ID,
 } from "@masscode/contracts";
 import {
-  ArrowLeftRight,
-  Check,
-  ChevronRight,
-  FileDiff,
-  FileText,
-  GitFork,
-  GitPullRequest,
-  ImageIcon,
-  LoaderCircle,
-  Minimize2,
-  RotateCcw,
-  Square,
-  Undo2,
-  Workflow,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+  IconArrowBackUp,
+  IconArrowsLeftRight,
+  IconArrowsMinimize,
+  IconCheck,
+  IconChevronRight,
+  IconFileDiff,
+  IconFileText,
+  IconGitFork,
+  IconGitPullRequest,
+  IconLoader2,
+  IconPhoto,
+  IconPlayerStop,
+  IconRotate,
+  IconSitemap,
+  IconX,
+  type Icon as TablerIcon,
+} from "@tabler/icons-react";
 import {
   createContext,
   lazy,
@@ -93,6 +93,7 @@ import {
   type ToolCall,
   type TranscriptItem,
 } from "@masscode/client";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 const TerminalView = lazy(() =>
   import("./terminal-panel.tsx").then((module) => ({ default: module.TerminalView })),
@@ -108,12 +109,15 @@ export const RevealContext = createContext<ToolReveal | null>(null);
 export const RunCommandContext = createContext<((command: string) => void) | undefined>(undefined);
 
 function AttachmentChip({ attachment }: { attachment: Attachment }) {
-  const Icon = attachment.isImage ? ImageIcon : FileText;
+  const Icon = attachment.isImage ? IconPhoto : IconFileText;
 
   return (
     <span
       title={attachment.path}
-      className="flex h-7 max-w-52 items-center gap-1.5 rounded-lg border border-border bg-card px-2 text-xs text-muted-foreground"
+      className={cn(
+        typeClass("caption"),
+        "flex h-7 max-w-52 items-center gap-1.5 rounded-lg border border-border bg-card px-2 text-muted-foreground",
+      )}
     >
       <Icon className="size-3.5 shrink-0" />
       <span className="truncate text-foreground">{attachment.name}</span>
@@ -175,7 +179,10 @@ function AttachmentThumbnail({
           alt={attachment.name}
           className="max-h-[80vh] max-w-full rounded-lg object-contain"
         />
-        <p className="mt-3 truncate text-xs text-muted-foreground" title={attachment.path}>
+        <p
+          className={cn(typeClass("caption"), "mt-3 truncate text-muted-foreground")}
+          title={attachment.path}
+        >
           {attachment.name}
         </p>
       </MorphingModal>
@@ -289,12 +296,17 @@ export function RunningCommandWindow({ threadId, run }: { threadId: string; run:
 
   return (
     <div className="overflow-hidden rounded-xl border border-border">
-      <div className="flex h-9 items-center gap-2 border-b border-border pr-1.5 pl-3 text-xs">
-        <LoaderCircle className="size-3.5 shrink-0 text-muted-foreground motion-safe:animate-spin" />
+      <div
+        className={cn(
+          typeClass("caption"),
+          "flex h-9 items-center gap-2 border-b border-border pr-1.5 pl-3",
+        )}
+      >
+        <IconLoader2 className="size-3.5 shrink-0 text-muted-foreground motion-safe:animate-spin" />
         {isSetup ? (
           <span className="shrink-0 text-muted-foreground">Setting up worktree</span>
         ) : null}
-        <code className="min-w-0 flex-1 truncate font-mono text-foreground/85">{run.command}</code>
+        <code className="min-w-0 flex-1 truncate font-mono text-foreground">{run.command}</code>
         <button
           type="button"
           title={
@@ -303,9 +315,9 @@ export function RunningCommandWindow({ threadId, run }: { threadId: string; run:
               : "Stop it; the agent won't hear about this run"
           }
           onClick={() => closeTerminal(threadId, run.terminalId)}
-          className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Square className="size-3" />
+          <IconPlayerStop className="size-3" />
           Stop
         </button>
       </div>
@@ -333,16 +345,21 @@ function CommandRunResult({
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border">
-      <div className="flex h-9 items-center gap-2 border-b border-border px-3 text-xs">
+      <div
+        className={cn(
+          typeClass("caption"),
+          "flex h-9 items-center gap-2 border-b border-border px-3",
+        )}
+      >
         {isStopped ? (
-          <Square className="size-3 shrink-0 text-muted-foreground" />
+          <IconPlayerStop className="size-3 shrink-0 text-muted-foreground" />
         ) : run.exitCode === 0 ? (
-          <Check className="size-3.5 shrink-0 text-success" />
+          <IconCheck className="size-3.5 shrink-0 text-success" />
         ) : (
-          <X className="size-3.5 shrink-0 text-destructive" />
+          <IconX className="size-3.5 shrink-0 text-destructive" />
         )}
         {label ? <span className="shrink-0 text-muted-foreground">{label}</span> : null}
-        <code className="min-w-0 flex-1 truncate font-mono text-foreground/85">{run.command}</code>
+        <code className="min-w-0 flex-1 truncate font-mono text-foreground">{run.command}</code>
         {isStopped ? (
           <span className="shrink-0 text-muted-foreground">Stopped</span>
         ) : run.exitCode === 0 ? null : (
@@ -352,20 +369,25 @@ function CommandRunResult({
       {run.output ? (
         // Reversed, so it opens scrolled to the end, where results and errors are.
         <div className="flex max-h-48 flex-col-reverse overflow-auto">
-          <pre className="selectable m-0 px-3 py-2 font-mono text-xs leading-5 whitespace-pre text-foreground/85">
+          <pre
+            className={cn(
+              typeClass("caption"),
+              "selectable m-0 px-3 py-2 font-mono leading-5 whitespace-pre text-foreground",
+            )}
+          >
             {run.output}
           </pre>
         </div>
       ) : (
-        <p className="px-3 py-2 text-xs text-muted-foreground">No output</p>
+        <p className={cn(typeClass("caption"), "px-3 py-2 text-muted-foreground")}>No output</p>
       )}
     </div>
   );
 }
 
-const MARKERS: Record<MarkerItem["kind"], { readonly icon: LucideIcon; readonly label: string }> = {
-  forked: { icon: GitFork, label: "Forked from" },
-  startedBy: { icon: Workflow, label: "Started by" },
+const MARKERS: Record<MarkerItem["kind"], { readonly icon: TablerIcon; readonly label: string }> = {
+  forked: { icon: IconGitFork, label: "Forked from" },
+  startedBy: { icon: IconSitemap, label: "Started by" },
 };
 
 /** Where a thread's own conversation starts, with the way to the thread it came from. */
@@ -377,7 +399,7 @@ function ThreadMarker({ item }: { item: MarkerItem }) {
   const { icon: Icon, label } = MARKERS[item.kind];
 
   return (
-    <div className="flex items-center gap-3 py-2 text-xs text-muted-foreground">
+    <div className={cn(typeClass("caption"), "flex items-center gap-3 py-2 text-muted-foreground")}>
       <span className="h-px flex-1 bg-border" />
       <Icon className="size-3.5 shrink-0" />
       {source ? (
@@ -459,7 +481,7 @@ function ThreadLink({ threadId, children }: { threadId: string; children: ReactN
       onClick={() => switchToThread(threadId)}
       className="inline-flex items-baseline gap-1 rounded font-medium text-brand underline decoration-brand/40 underline-offset-4 transition-colors outline-none hover:decoration-brand focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <Workflow className="size-3.5 shrink-0 self-center" />
+      <IconSitemap className="size-3.5 shrink-0 self-center" />
       {thread.title}
     </button>
   );
@@ -475,20 +497,25 @@ function SenderNote({ from }: { from: MessageSender }) {
       <ThreadSenderNote threadId={threadId} title={title} label="Report from" />
     ),
     restart: () => (
-      <div className="flex items-center justify-end gap-1.5 text-xs text-muted-foreground">
-        <RotateCcw className="size-3.5 shrink-0" />
+      <div
+        className={cn(
+          typeClass("caption"),
+          "flex items-center justify-end gap-1.5 text-muted-foreground",
+        )}
+      >
+        <IconRotate className="size-3.5 shrink-0" />
         Sent by MassCode to pick up a turn it cut short
       </div>
     ),
     pullRequest: ({ number, url }) => (
-      <div className="flex justify-end text-xs text-muted-foreground">
+      <div className={cn(typeClass("caption"), "flex justify-end text-muted-foreground")}>
         <a
           href={url}
           target="_blank"
           rel="noreferrer"
           className="flex items-center gap-1.5 rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <GitPullRequest className="size-3.5 shrink-0" />
+          <IconGitPullRequest className="size-3.5 shrink-0" />
           News from pull request #{number}
         </a>
       </div>
@@ -509,21 +536,21 @@ function ThreadSenderNote({
   const source = useThreadStore((state) => state.threads[threadId]);
 
   return (
-    <div className="flex justify-end text-xs text-muted-foreground">
+    <div className={cn(typeClass("caption"), "flex justify-end text-muted-foreground")}>
       {source ? (
         <button
           type="button"
           onClick={() => switchToThread(threadId)}
           className="flex max-w-full items-center gap-1.5 rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Workflow className="size-3.5 shrink-0" />
+          <IconSitemap className="size-3.5 shrink-0" />
           <span className="truncate">
             {label} {source.title}
           </span>
         </button>
       ) : (
         <span className="flex max-w-full items-center gap-1.5">
-          <Workflow className="size-3.5 shrink-0" />
+          <IconSitemap className="size-3.5 shrink-0" />
           <span className="truncate">
             {label} {title} (deleted)
           </span>
@@ -545,18 +572,20 @@ function HandoffNote({
   const settings = useSettings();
 
   return (
-    <div className="flex flex-col items-end gap-1.5 text-xs text-muted-foreground">
+    <div
+      className={cn(typeClass("caption"), "flex flex-col items-end gap-1.5 text-muted-foreground")}
+    >
       <button
         type="button"
         aria-expanded={isOpen}
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1.5 rounded underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <ArrowLeftRight className="size-3.5 shrink-0" />
+        <IconArrowsLeftRight className="size-3.5 shrink-0" />
         Gave {formatHarnessLabel(settings, to)} the {handoff.messages}{" "}
         {handoff.messages === 1 ? "message" : "messages"}{" "}
         {formatHarnessLabel(settings, handoff.from)} had
-        <ChevronRight className={cn("size-3.5 transition-transform", isOpen && "rotate-90")} />
+        <IconChevronRight className={cn("size-3.5 transition-transform", isOpen && "rotate-90")} />
       </button>
       {isOpen ? (
         <pre className="selectable max-h-72 w-full overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[11px] whitespace-pre-wrap">
@@ -575,7 +604,7 @@ function EditFromHere({ item, threadId }: { item: UserItem; threadId: string }) 
     <div className="flex justify-end opacity-0 transition-opacity group-hover/turn:opacity-100 has-[[aria-expanded=true]]:opacity-100">
       <PromptSelect
         title="Edit from here"
-        icon={<Undo2 />}
+        icon={<IconArrowBackUp />}
         options={[
           {
             value: "keep",
@@ -647,17 +676,17 @@ function ForkDialog({
       >
         <div className="flex items-center gap-3">
           <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-            <GitFork className="size-4" />
+            <IconGitFork className="size-4" />
           </span>
-          <AlertDialogTitle className="text-sm">Fork from this reply?</AlertDialogTitle>
+          <AlertDialogTitle className={typeClass("body")}>Fork from this reply?</AlertDialogTitle>
         </div>
         {fork?.error ? (
-          <p role="alert" className="text-xs text-destructive">
+          <p role="alert" className={cn(typeClass("caption"), "text-destructive")}>
             {fork.error}
           </p>
         ) : null}
         <AlertDialogFooter className="flex-row justify-end">
-          <AlertDialogCancel size="sm" disabled={isPending}>
+          <AlertDialogCancel size="compact" disabled={isPending}>
             Cancel
             <kbd aria-hidden className="font-sans text-[10px] text-muted-foreground">
               esc
@@ -665,7 +694,7 @@ function ForkDialog({
           </AlertDialogCancel>
           <AlertDialogAction
             ref={forkButton}
-            size="sm"
+            size="compact"
             disabled={isPending}
             onClick={(event) => {
               // Stays open until the fork opens, which replaces this view.
@@ -675,7 +704,7 @@ function ForkDialog({
           >
             {isPending ? "Forking…" : fork?.error ? "Try again" : "Fork"}
             {isPending ? null : (
-              <kbd aria-hidden className="font-sans text-[10px] text-primary-foreground/60">
+              <kbd aria-hidden className="font-sans text-[10px] text-primary-foreground">
                 ↵
               </kbd>
             )}
@@ -694,9 +723,12 @@ function CheckpointChip({ item }: { item: Extract<TranscriptItem, { kind: "check
     <button
       type="button"
       onClick={() => openTurnDiff(item.messageId)}
-      className="flex w-fit items-center gap-2 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(
+        typeClass("caption"),
+        "flex w-fit items-center gap-2 rounded-lg border border-border px-2.5 py-1 text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+      )}
     >
-      <FileDiff className="size-3.5" />
+      <IconFileDiff className="size-3.5" />
       <span>
         {item.files} {item.files === 1 ? "file" : "files"} changed
       </span>
@@ -860,13 +892,19 @@ export const AgentBlock = memo(
 
         return <ToolApprovalRequest threadId={threadId} item={block} />;
       case "error":
-        return <div className="selectable text-xs text-destructive">{block.text}</div>;
+        return (
+          <div className={cn(typeClass("caption"), "selectable text-destructive")}>
+            {block.text}
+          </div>
+        );
       case "checkpoint":
         return <CheckpointChip item={block} />;
       case "compacted":
         return (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Minimize2 className="size-3.5 shrink-0" />
+          <div
+            className={cn(typeClass("caption"), "flex items-center gap-1.5 text-muted-foreground")}
+          >
+            <IconArrowsMinimize className="size-3.5 shrink-0" />
             Compacted while idle, before the prompt cache expired ({Math.round(block.tokens / 1000)}
             K tokens)
           </div>

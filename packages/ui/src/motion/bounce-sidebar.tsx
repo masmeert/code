@@ -1,6 +1,7 @@
 import { animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export interface BounceSidebarItem {
   id: string;
@@ -186,7 +187,8 @@ export function BounceSidebar({
             </>
           );
           const interactiveClasses = cn(
-            "flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-sm font-medium transition-colors outline-none",
+            typeClass("body"),
+            "flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left font-medium transition-colors outline-none",
             "focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             item.disabled ? "cursor-not-allowed opacity-40" : undefined,

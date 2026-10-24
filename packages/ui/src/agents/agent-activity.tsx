@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { IconChevronRight } from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   type ReactNode,
@@ -11,7 +11,7 @@ import {
 } from "react";
 import { ThinkingShimmer } from "@masscode/ui/agents/loading-states/thinking-shimmer";
 import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
-import { EASE_OUT, SPRING_LAYOUT } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
 import { ActivityRow } from "./agent-activity/activity-row";
 import type {
@@ -19,6 +19,7 @@ import type {
   AgentActivityItem,
   AgentActivityProps,
 } from "./agent-activity/types";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type {
   AgentActivityContentType,
@@ -185,7 +186,7 @@ export function AgentActivity({
       data-state={working ? "working" : expanded ? "open" : "closed"}
       data-content={contentType}
       aria-busy={working}
-      className={cn("w-full text-sm", className)}
+      className={cn(typeClass("body"), "w-full", className)}
     >
       {working ? (
         <div
@@ -213,10 +214,10 @@ export function AgentActivity({
               ? renderCompletedStatus({ summary: completedSummary, duration })
               : completedSummary}
           </span>
-          <ChevronRight
+          <IconChevronRight
             aria-hidden="true"
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground/70 transition duration-200 ease-out group-hover:text-foreground",
+              "size-3.5 shrink-0 text-muted-foreground transition duration-(--duration-moderate) ease-out group-hover:text-foreground",
               expanded && "rotate-90",
             )}
           />
@@ -243,7 +244,7 @@ export function AgentActivity({
             role="list"
             initial={false}
             animate={{ transform: `translateY(${streamOffset}px)` }}
-            transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
+            transition={reduce ? { duration: 0 } : spring.moderate}
             className={cn("relative space-y-0.5 py-2", contentClassName)}
           >
             <AnimatePresence mode="popLayout">
@@ -255,15 +256,14 @@ export function AgentActivity({
                   initial={reduce ? { opacity: 1 } : { opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={reduce ? { opacity: 0 } : { opacity: 0, y: -3 }}
-                  transition={
-                    reduce
-                      ? { duration: 0 }
-                      : {
-                          opacity: { duration: 0.18, ease: EASE_OUT },
-                          y: SPRING_LAYOUT,
-                          layout: SPRING_LAYOUT,
-                        }
-                  }
+                  transition={reducedTransition(
+                    {
+                      opacity: spring.fast,
+                      y: spring.moderate,
+                      layout: spring.moderate,
+                    },
+                    reduce,
+                  )}
                 >
                   <ActivityRow item={item} />
                 </motion.div>

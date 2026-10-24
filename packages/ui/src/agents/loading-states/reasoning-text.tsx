@@ -1,13 +1,15 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { TextScramble } from "@masmeert/ui/text-scramble";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@masmeert/ui/lib/ease";
+import { EASE_OUT } from "@masmeert/ui/lib/ease";
+import { spring, springExit } from "@masmeert/ui/lib/springs";
 import {
   TEXT_SHIMMER_CLASS_NAME,
   TEXT_SHIMMER_KEYFRAMES,
   textShimmerStyle,
 } from "@masmeert/ui/lib/text-shimmer";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 const DEFAULT_PHRASES = [
   "Schlepping",
@@ -220,16 +222,12 @@ function CascadePhrase({ phrase, reduce, shimmerDuration }: PhraseProps) {
               animate: (delay: number) => ({
                 opacity: 1,
                 y: "0%",
-                transition: { ...SPRING_SWAP, delay },
+                transition: { ...spring.fast, delay },
               }),
               exit: (delay: number) => ({
                 opacity: 0,
                 y: "-100%",
-                transition: {
-                  duration: 0.14,
-                  ease: EASE_OUT,
-                  delay: delay * 0.45,
-                },
+                transition: { ...springExit.fast, delay: delay * 0.45 },
               }),
             }}
             className={cn(
@@ -334,7 +332,8 @@ export function ReasoningText({
         aria-live="polite"
         aria-labelledby={statusId}
         className={cn(
-          "inline-flex items-center gap-2 text-sm font-medium text-muted-foreground",
+          typeClass("body"),
+          "inline-flex items-center gap-2 font-medium text-muted-foreground",
           className,
         )}
       >
@@ -344,7 +343,7 @@ export function ReasoningText({
           className="max-w-full overflow-hidden"
           initial={false}
           animate={phraseWidthPx === undefined ? undefined : { width: phraseWidthPx }}
-          transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
+          transition={reduce ? { duration: 0 } : spring.moderate}
         >
           <span ref={phraseRef} className="grid w-max text-left">
             {variant === "cascade" ? (

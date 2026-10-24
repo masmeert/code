@@ -9,6 +9,10 @@
     {
       "name": "anti-slop-effect",
       "specifier": "./tools/oxlint/anti-slop/effect/index.ts"
+    },
+    {
+      "name": "masmeert-ui",
+      "specifier": "@masmeert/ui/eslint-plugin"
     }
   ],
   "categories": {
@@ -26,7 +30,12 @@
     "react/preserve-manual-memoization": "off",
     "react/incompatible-library": "off",
     "oxc/no-accumulating-spread": "error",
-    "unicorn/filename-case": ["error", { "case": "kebabCase" }],
+    "unicorn/filename-case": [
+      "error",
+      {
+        "case": "kebabCase"
+      }
+    ],
     "anti-slop/no-array-filter-map": "error",
     "anti-slop/no-reduce-accumulator-copy": "error",
     "anti-slop/no-chained-type-assertions": "error",
@@ -47,6 +56,13 @@
       "files": ["apps/mobile/app/**/\\[*\\].tsx"],
       "rules": {
         "unicorn/filename-case": "off"
+      }
+    },
+    {
+      "files": ["apps/web/src/**", "packages/ui/src/**"],
+      "rules": {
+        "masmeert-ui/no-raw-classes": "error",
+        "masmeert-ui/no-raw-motion": "error"
       }
     },
     {

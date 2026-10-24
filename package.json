@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@feature-sliced/steiger-plugin": "^0.8.0",
+    "@masmeert/ui": "^0.3.0",
     "@oxlint/plugins": "1.85.0",
     "lint-staged": "^17.5.1",
     "oxfmt": "^0.70.0",

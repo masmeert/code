@@ -1,4 +1,10 @@
-import { Check, ChevronRight, Copy, FileCode2, LoaderCircle } from "lucide-react";
+import {
+  IconCheck,
+  IconChevronRight,
+  IconCopy,
+  IconFileCode,
+  IconLoader2,
+} from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import {
   type ReactNode,
@@ -16,8 +22,9 @@ import {
 } from "@masscode/ui/agents/agent-code";
 import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
 import { ActionSwapRollIcon } from "@masscode/ui/motion/action-swap-roll";
-import { SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type FileDiffStatus = "streaming" | "complete";
 export type FileDiffLineType = "added" | "removed" | "context";
@@ -50,7 +57,8 @@ function ChangeCount({ value, type }: { value: number; type: "added" | "removed"
   return (
     <span
       className={cn(
-        "font-mono text-xs tabular-nums",
+        typeClass("caption"),
+        "font-mono tabular-nums",
         type === "added" ? "text-success" : "text-destructive",
       )}
     >
@@ -136,7 +144,11 @@ export function FileDiff({
   }, [copyText, onCopy]);
 
   return (
-    <div data-state={status} aria-busy={streaming} className={cn("w-full text-sm", className)}>
+    <div
+      data-state={status}
+      aria-busy={streaming}
+      className={cn(typeClass("body"), "w-full", className)}
+    >
       <button
         id={triggerId}
         type="button"
@@ -145,26 +157,30 @@ export function FileDiff({
         onClick={() => setOpen(!currentOpen)}
         className="group flex min-h-9 w-full items-center gap-2 rounded-md py-1 text-left outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
-        <FileCode2 aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground/80">{file}</span>
+        <IconFileCode aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+        <span
+          className={cn(typeClass("caption"), "min-w-0 flex-1 truncate font-mono text-foreground")}
+        >
+          {file}
+        </span>
         <span className="flex shrink-0 items-center gap-2">
           <ChangeCount value={additions} type="added" />
           <ChangeCount value={deletions} type="removed" />
         </span>
-        <span className="grid size-4 shrink-0 place-items-center text-muted-foreground/60">
+        <span className="grid size-4 shrink-0 place-items-center text-muted-foreground">
           {streaming ? (
-            <LoaderCircle
+            <IconLoader2
               aria-label="Applying changes"
               className={cn("size-3.5", !reduce && "animate-spin")}
             />
           ) : (
-            <Check aria-label="Changes applied" className="size-3.5" />
+            <IconCheck aria-label="Changes applied" className="size-3.5" />
           )}
         </span>
-        <ChevronRight
+        <IconChevronRight
           aria-hidden="true"
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground/45 transition duration-200 ease-out group-hover:text-muted-foreground",
+            "size-3.5 shrink-0 text-muted-foreground transition duration-(--duration-moderate) ease-out group-hover:text-muted-foreground",
             currentOpen && "rotate-90",
           )}
         />
@@ -180,7 +196,7 @@ export function FileDiff({
               className="scrollbar-hide overflow-auto"
               style={{ maxHeight }}
             >
-              <div className="font-mono text-xs leading-5">
+              <div className={cn(typeClass("caption"), "font-mono leading-5")}>
                 <span className="sr-only">File changes</span>
                 {lines.map((line, index) => {
                   const type = line.type ?? "context";
@@ -193,15 +209,15 @@ export function FileDiff({
                         type === "removed" && "bg-destructive/[0.07]",
                       )}
                     >
-                      <span className="pr-2 text-right text-muted-foreground/40 tabular-nums select-none">
+                      <span className="pr-2 text-right text-muted-foreground tabular-nums select-none">
                         {line.oldLine}
                       </span>
-                      <span className="pr-2 text-right text-muted-foreground/40 tabular-nums select-none">
+                      <span className="pr-2 text-right text-muted-foreground tabular-nums select-none">
                         {line.newLine}
                       </span>
                       <span
                         className={cn(
-                          "text-center text-muted-foreground/45 select-none",
+                          "text-center text-muted-foreground select-none",
                           type === "added" && "text-success",
                           type === "removed" && "text-destructive",
                         )}
@@ -227,11 +243,15 @@ export function FileDiff({
                   title={copied ? "Copied" : "Copy diff"}
                   onClick={handleCopy}
                   whileTap={reduce ? undefined : { scale: 0.95 }}
-                  transition={SPRING_PRESS}
+                  transition={spring.fast}
                   className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-background/70 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
                 >
                   <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">
-                    {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                    {copied ? (
+                      <IconCheck className="size-3.5" />
+                    ) : (
+                      <IconCopy className="size-3.5" />
+                    )}
                   </ActionSwapRollIcon>
                 </motion.button>
               </div>

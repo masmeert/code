@@ -4,5 +4,5 @@
     "stylesheet": "./apps/web/src/app/styles/styles.css",
     "functions": ["cn", "cva", "clsx", "twMerge"]
   },
-  "ignorePatterns": ["tools/oxlint/anti-slop/**"]
+  "ignorePatterns": ["tools/oxlint/anti-slop/**", "CHANGELOG.md", ".release-please-manifest.json"]
 }

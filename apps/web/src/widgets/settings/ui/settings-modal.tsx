@@ -4,15 +4,15 @@ import { ScrollArea } from "@masmeert/ui/scroll-area";
 import { cn } from "@masscode/ui/lib/utils";
 import { ClientCommand } from "@masscode/contracts";
 import {
-  Bot,
-  Coffee,
-  FolderGit2,
-  GitCommitHorizontal,
-  Palette,
-  Server,
-  Settings2,
-  Smartphone,
-} from "lucide-react";
+  IconAdjustmentsHorizontal,
+  IconCoffee,
+  IconDeviceMobile,
+  IconFolderCode,
+  IconGitCommit,
+  IconPalette,
+  IconRobot,
+  IconServer,
+} from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useKeepAwake } from "@/entities/keep-awake";
 import { send } from "@/shared/api";
@@ -24,16 +24,17 @@ import { KeepAwakePage } from "./keep-awake-page.tsx";
 import { HarnessesPage } from "./harnesses-page.tsx";
 import { PhonesPage } from "./phones-page.tsx";
 import { ProjectsPage } from "./projects-page.tsx";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 const PAGES = [
-  { page: "general", title: "General", icon: Settings2, Content: GeneralPage },
-  { page: "projects", title: "Projects", icon: FolderGit2, Content: ProjectsPage },
-  { page: "appearance", title: "Appearance", icon: Palette, Content: AppearancePage },
-  { page: "harnesses", title: "Harnesses", icon: Bot, Content: HarnessesPage },
-  { page: "git", title: "Git", icon: GitCommitHorizontal, Content: GitPage },
-  { page: "keepAwake", title: "Keep awake", icon: Coffee, Content: KeepAwakePage },
-  { page: "connections", title: "Connections", icon: Server, Content: ConnectionsPage },
-  { page: "phone", title: "Phone", icon: Smartphone, Content: PhonesPage },
+  { page: "general", title: "General", icon: IconAdjustmentsHorizontal, Content: GeneralPage },
+  { page: "projects", title: "Projects", icon: IconFolderCode, Content: ProjectsPage },
+  { page: "appearance", title: "Appearance", icon: IconPalette, Content: AppearancePage },
+  { page: "harnesses", title: "Harnesses", icon: IconRobot, Content: HarnessesPage },
+  { page: "git", title: "Git", icon: IconGitCommit, Content: GitPage },
+  { page: "keepAwake", title: "Keep awake", icon: IconCoffee, Content: KeepAwakePage },
+  { page: "connections", title: "Connections", icon: IconServer, Content: ConnectionsPage },
+  { page: "phone", title: "Phone", icon: IconDeviceMobile, Content: PhonesPage },
 ] as const;
 
 /** Settings, over the app; its pages are listed down the side. */
@@ -84,7 +85,7 @@ function SettingsView() {
         }}
         className="flex w-48 shrink-0 flex-col border-r border-border bg-sidebar p-3"
       >
-        <h2 className="px-2 pt-1 pb-3 text-sm font-medium">Settings</h2>
+        <h2 className={cn(typeClass("body"), "px-2 pt-1 pb-3 font-medium")}>Settings</h2>
         <SharedLayoutBg inset={0} pillClassName="rounded-lg bg-muted/50" className="gap-0.5">
           {pages.map((entry) => (
             <div key={entry.page}>
@@ -95,7 +96,8 @@ function SettingsView() {
                 data-page={entry.page}
                 onClick={() => setPage(entry)}
                 className={cn(
-                  "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
+                  typeClass("body"),
+                  "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
                   entry === page && "bg-muted text-foreground",
                 )}
               >

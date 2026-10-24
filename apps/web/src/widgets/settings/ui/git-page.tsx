@@ -11,7 +11,7 @@ import {
   type SourceControlStatus,
   WritingStyle,
 } from "@masscode/contracts";
-import { RefreshCw } from "lucide-react";
+import { IconRefresh } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useProviderStore } from "@/entities/provider";
 import { useRepoStore } from "@/entities/repo";
@@ -24,6 +24,7 @@ import {
   SettingsSelect,
   SettingsModelSelect,
 } from "./settings-controls.tsx";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 const MERGE_METHODS: Array<{ value: MergeMethod | "last"; label: string }> = [
   { value: "last", label: "Last selected" },
@@ -54,7 +55,7 @@ export function GitPage() {
         <SettingsGroup>
           <SettingsRow label="Pull the default branch automatically">
             <Switch
-              size="sm"
+              size="compact"
               checked={settings.autoPull ?? false}
               onCheckedChange={(autoPull) => updateSettings({ ...settings, autoPull })}
               ariaLabel="Pull the default branch automatically"
@@ -96,7 +97,7 @@ export function GitPage() {
                       {!status ? (
                         <Skeleton aria-label="Checking…" className="mt-1 h-3 w-36" />
                       ) : (
-                        <p className="text-xs text-muted-foreground">
+                        <p className={cn(typeClass("caption"), "text-muted-foreground")}>
                           {status.authenticated
                             ? status.account
                               ? `Signed in as ${status.account}`
@@ -130,16 +131,16 @@ export function GitPage() {
         </SettingsGroup>
         <div className="mt-2 flex justify-end">
           <Button
-            size="sm"
+            size="compact"
             variant="ghost"
-            className="h-7 gap-1.5 rounded-lg text-xs"
+            className={cn(typeClass("caption"), "h-7 gap-1.5 rounded-lg")}
             disabled={isChecking}
             onClick={() => {
               setIsChecking(true);
               send(ClientCommand.cases["sourceControl.refresh"].make({}));
             }}
           >
-            <RefreshCw className={cn("size-3.5", isChecking && "animate-spin")} />
+            <IconRefresh className={cn("size-3.5", isChecking && "animate-spin")} />
             {isChecking ? "Checking…" : "Check again"}
           </Button>
         </div>
@@ -157,7 +158,7 @@ export function GitPage() {
           {settings.writingStyle === "custom" ? <WritingInstructionsField /> : null}
           <SettingsRow label="Follow pull request templates">
             <Switch
-              size="sm"
+              size="compact"
               checked={settings.followTemplates ?? true}
               onCheckedChange={(followTemplates) =>
                 updateSettings({ ...settings, followTemplates })

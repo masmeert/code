@@ -8,6 +8,7 @@ import {
 } from "shiki";
 import { cn } from "@masscode/ui/lib/utils";
 import { vesperLight } from "@masscode/ui/lib/vesper-light";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 /** Any Shiki language id or alias; unknown ones render as plain text. */
 export type AgentCodeLanguage =
@@ -273,7 +274,8 @@ export function AgentCode({ code, language = "bash", className }: AgentCodeProps
   return (
     <pre
       className={cn(
-        "m-0 overflow-x-auto font-mono text-xs leading-5 whitespace-pre text-foreground/85",
+        typeClass("caption"),
+        "m-0 overflow-x-auto font-mono leading-5 whitespace-pre text-foreground",
         className,
       )}
     >

@@ -1,9 +1,18 @@
-import { AlertCircle, Bell, Check, Info, LoaderCircle, X, type LucideIcon } from "lucide-react";
+import {
+  IconAlertCircle,
+  IconBell,
+  IconCheck,
+  IconInfoCircle,
+  IconLoader2,
+  IconX,
+  type Icon as TablerIcon,
+} from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion, type Transition } from "motion/react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { EASE_OUT } from "@masmeert/ui/lib/ease";
+import { springExit, tierTween } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type ToastStatus = "neutral" | "info" | "loading" | "success" | "error";
 export type ToastPosition =
@@ -76,17 +85,15 @@ const STACK_SPRING: Transition = {
   mass: 0.75,
 };
 
-const CONTENT_TRANSITION = {
-  duration: 0.28,
-  ease: EASE_OUT,
-} as const;
+// Animates `filter`, so a tween rather than a spring.
+const CONTENT_TRANSITION = tierTween.slow;
 
-const STATUS_ICON: Record<ToastStatus, LucideIcon> = {
-  neutral: Bell,
-  info: Info,
-  loading: LoaderCircle,
-  success: Check,
-  error: AlertCircle,
+const STATUS_ICON: Record<ToastStatus, TablerIcon> = {
+  neutral: IconBell,
+  info: IconInfoCircle,
+  loading: IconLoader2,
+  success: IconCheck,
+  error: IconAlertCircle,
 };
 
 const STATUS_CLASS: Record<ToastStatus, string> = {
@@ -331,7 +338,7 @@ const ToastItem = memo(function ToastItem({
               x: 32,
               scale: 0.96,
               filter: "blur(8px)",
-              transition: { duration: 0.18, ease: EASE_OUT },
+              transition: springExit.moderate,
             }
       }
       transition={STACK_SPRING}
@@ -349,7 +356,7 @@ const ToastItem = memo(function ToastItem({
     >
       <div
         className={cn(
-          "relative overflow-hidden rounded-2xl border border-border bg-popover/95 p-3 shadow-panel backdrop-blur-xl",
+          "relative overflow-hidden rounded-2xl border border-border bg-popover/95 p-3 shadow-surface-3 backdrop-blur-xl",
           classNames?.surface,
         )}
       >
@@ -401,7 +408,8 @@ const ToastItem = memo(function ToastItem({
                 >
                   <p
                     className={cn(
-                      "truncate text-sm leading-5 font-medium text-foreground",
+                      typeClass("body"),
+                      "truncate leading-5 font-medium text-foreground",
                       classNames?.title,
                     )}
                   >
@@ -410,7 +418,8 @@ const ToastItem = memo(function ToastItem({
                   {toast.description ? (
                     <p
                       className={cn(
-                        "mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground",
+                        typeClass("caption"),
+                        "mt-0.5 line-clamp-2 leading-4 text-muted-foreground",
                         classNames?.description,
                       )}
                     >
@@ -425,7 +434,8 @@ const ToastItem = memo(function ToastItem({
                   type="button"
                   onClick={() => toast.action?.onClick(toast)}
                   className={cn(
-                    "mt-2 inline-flex h-7 items-center rounded-lg bg-muted/80 px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted",
+                    typeClass("caption"),
+                    "mt-2 inline-flex h-7 items-center rounded-lg bg-muted/80 px-3 font-medium text-foreground transition-colors hover:bg-hover",
                     classNames?.action,
                   )}
                 >
@@ -440,11 +450,11 @@ const ToastItem = memo(function ToastItem({
                 onClick={() => onDismiss?.(toast.id)}
                 aria-label="Dismiss toast"
                 className={cn(
-                  "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground",
+                  "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-hover hover:text-foreground",
                   classNames?.close,
                 )}
               >
-                <X className="h-3.5 w-3.5" />
+                <IconX className="h-3.5 w-3.5" />
               </button>
             ) : null}
           </div>

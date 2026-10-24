@@ -1,4 +1,4 @@
-import { ChevronRight, ListTodo } from "lucide-react";
+import { IconChecklist, IconChevronRight } from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   type ReactNode,
@@ -12,8 +12,9 @@ import {
 import { ActionSwapRollText } from "@masscode/ui/motion/action-swap-roll";
 import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
 import { useArrivalOrder } from "@masmeert/ui/hooks/use-arrival-order";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type TodoItemStatus = "pending" | "in-progress" | "completed" | "cancelled";
 
@@ -56,7 +57,7 @@ function TodoHeaderIcon({ complete }: { complete: boolean }) {
             initial={reduce ? { opacity: 1 } : { opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0 }}
-            transition={reduce ? { duration: 0 } : SPRING_SWAP}
+            transition={reduce ? { duration: 0 } : spring.fast}
             className="absolute size-5.5 overflow-visible text-success"
           >
             <circle cx="12" cy="12" r="9" fill="currentColor" />
@@ -69,7 +70,7 @@ function TodoHeaderIcon({ complete }: { complete: boolean }) {
               strokeLinejoin="round"
               initial={reduce ? { pathLength: 1 } : { pathLength: 0 }}
               animate={{ pathLength: 1 }}
-              transition={reduce ? { duration: 0 } : { duration: 0.24, ease: EASE_OUT }}
+              transition={reducedTransition(spring.moderate, reduce)}
             />
           </motion.svg>
         ) : (
@@ -78,10 +79,10 @@ function TodoHeaderIcon({ complete }: { complete: boolean }) {
             initial={reduce ? { opacity: 1 } : { opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
-            transition={reduce ? { duration: 0 } : SPRING_SWAP}
+            transition={reduce ? { duration: 0 } : spring.fast}
             className="absolute grid place-items-center text-muted-foreground"
           >
-            <ListTodo className="size-4" />
+            <IconChecklist className="size-4" />
           </motion.span>
         )}
       </AnimatePresence>
@@ -116,7 +117,7 @@ function TodoStatusIcon({ status, progress }: { status: TodoItemStatus; progress
         strokeLinecap="round"
         initial={false}
         animate={{ fillOpacity: status === "completed" ? 0.06 : 0 }}
-        transition={reduce ? { duration: 0 } : { duration: 0.18, ease: EASE_OUT }}
+        transition={reducedTransition(spring.fast, reduce)}
         className={cn(status === "in-progress" && "opacity-20")}
       />
       <g
@@ -142,7 +143,7 @@ function TodoStatusIcon({ status, progress }: { status: TodoItemStatus; progress
             pathLength: status === "in-progress" ? normalizedProgress : 0,
             opacity: status === "in-progress" ? 1 : 0,
           }}
-          transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
+          transition={reduce ? { duration: 0 } : spring.moderate}
         />
       </g>
       <motion.path
@@ -157,7 +158,7 @@ function TodoStatusIcon({ status, progress }: { status: TodoItemStatus; progress
           pathLength: status === "completed" ? 1 : 0,
           opacity: status === "completed" ? 1 : 0,
         }}
-        transition={reduce ? { duration: 0 } : { duration: 0.24, ease: EASE_OUT }}
+        transition={reducedTransition(spring.moderate, reduce)}
       />
       <motion.path
         d="M8.5 8.5 15.5 15.5M15.5 8.5 8.5 15.5"
@@ -170,7 +171,7 @@ function TodoStatusIcon({ status, progress }: { status: TodoItemStatus; progress
           pathLength: status === "cancelled" ? 1 : 0,
           opacity: status === "cancelled" ? 1 : 0,
         }}
-        transition={reduce ? { duration: 0 } : { duration: 0.2, ease: EASE_OUT }}
+        transition={reducedTransition(spring.moderate, reduce)}
       />
     </motion.svg>
   );
@@ -249,10 +250,15 @@ export function TodoList({
         className="group flex h-11 w-full items-center gap-2.5 rounded-2xl px-3.5 text-left outline-none focus-visible:ring-4 focus-visible:ring-ring"
       >
         <TodoHeaderIcon complete={allComplete} />
-        <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground/90">{title}</h3>
+        <h3
+          className={cn(typeClass("body"), "min-w-0 flex-1 truncate font-medium text-foreground")}
+        >
+          {title}
+        </h3>
         <span
           className={cn(
-            "shrink-0 text-xs font-medium text-muted-foreground tabular-nums",
+            typeClass("caption"),
+            "shrink-0 font-medium text-muted-foreground tabular-nums",
             allComplete && "text-success",
           )}
         >
@@ -265,10 +271,10 @@ export function TodoList({
             <span>{items.length}</span>
           </span>
         </span>
-        <ChevronRight
+        <IconChevronRight
           aria-hidden="true"
           className={cn(
-            "size-3.5 text-muted-foreground/50 transition duration-200 ease-out group-hover:text-muted-foreground",
+            "size-3.5 text-muted-foreground transition duration-(--duration-moderate) ease-out group-hover:text-muted-foreground",
             currentOpen && "rotate-90",
           )}
         />
@@ -293,26 +299,26 @@ export function TodoList({
                       initial={reduce ? { opacity: 1 } : { opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={reduce ? { opacity: 0 } : { opacity: 0, y: -3 }}
-                      transition={
-                        reduce
-                          ? { duration: 0 }
-                          : {
-                              opacity: { duration: 0.18, ease: EASE_OUT, delay },
-                              y: { ...SPRING_LAYOUT, delay },
-                              layout: SPRING_LAYOUT,
-                            }
-                      }
+                      transition={reducedTransition(
+                        {
+                          opacity: { ...spring.fast, delay },
+                          y: { ...spring.moderate, delay },
+                          layout: spring.moderate,
+                        },
+                        reduce,
+                      )}
                       className="flex min-h-9 items-center gap-2.5 rounded-xl px-1.5 py-1"
                     >
                       <TodoStatusIcon status={status} progress={item.progress} />
                       <span className="sr-only">{statusLabel(status)}: </span>
                       <span
                         className={cn(
-                          "min-w-0 flex-1 truncate text-sm leading-5",
-                          status === "pending" && "text-muted-foreground/65",
+                          typeClass("body"),
+                          "min-w-0 flex-1 truncate leading-5",
+                          status === "pending" && "text-muted-foreground",
                           status === "in-progress" && "text-foreground",
-                          status === "completed" && "text-muted-foreground/60",
-                          status === "cancelled" && "text-muted-foreground/55",
+                          status === "completed" && "text-muted-foreground",
+                          status === "cancelled" && "text-muted-foreground",
                         )}
                       >
                         <span className="relative inline-block max-w-full">
@@ -324,15 +330,13 @@ export function TodoList({
                               scaleX: status === "completed" ? 1 : 0,
                               opacity: status === "completed" ? 1 : 0,
                             }}
-                            transition={
-                              reduce ? { duration: 0 } : { duration: 0.2, ease: EASE_OUT }
-                            }
+                            transition={reducedTransition(spring.moderate, reduce)}
                             className="absolute inset-x-0 top-1/2 h-px origin-left bg-current"
                           />
                         </span>
                       </span>
                       {item.detail ? (
-                        <span className="shrink-0 text-sm text-muted-foreground/55">
+                        <span className={cn(typeClass("body"), "shrink-0 text-muted-foreground")}>
                           {item.detail}
                         </span>
                       ) : null}
@@ -342,7 +346,9 @@ export function TodoList({
               </AnimatePresence>
             </ol>
           ) : (
-            <p className="px-1.5 py-2 text-sm text-muted-foreground">No tasks yet</p>
+            <p className={cn(typeClass("body"), "px-1.5 py-2 text-muted-foreground")}>
+              No tasks yet
+            </p>
           )}
         </div>
       </AgentDisclosure>

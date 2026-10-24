@@ -3,12 +3,14 @@ import { matches } from "@masmeert/ui/lib/keys";
 import { Button } from "@masmeert/ui/button";
 import { Input } from "@masmeert/ui/input";
 import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
-import { LoaderCircle, Plus, Trash2 } from "lucide-react";
+import { IconLoader2, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { IconButton } from "@/shared/ui";
 import { normalizeUrl } from "@/entities/browser";
 import { formatKeybinding, KEYBINDINGS } from "@/shared/lib/keybindings";
 import { readProjectConfig, updateProjectConfig } from "@/entities/project";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { cn } from "@masscode/ui/lib/utils";
 
 interface ScriptsEditorProps {
   host: string | null;
@@ -160,20 +162,33 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
       }}
     >
       <div className="min-w-0">
-        <h2 className="text-sm font-medium">Scripts</h2>
-        <p className="truncate text-xs text-muted-foreground" title={`${path}/masscode.toml`}>
+        <h2 className={cn(typeClass("body"), "font-medium")}>Scripts</h2>
+        <p
+          className={cn(typeClass("caption"), "truncate text-muted-foreground")}
+          title={`${path}/masscode.toml`}
+        >
           Saved to masscode.toml in the project; commit it to share them with your team
         </p>
       </div>
       {notice ? (
-        <p className="rounded-lg border border-warning/40 px-3 py-2 text-xs text-warning">
+        <p
+          className={cn(
+            typeClass("caption"),
+            "rounded-lg border border-warning/40 px-3 py-2 text-warning",
+          )}
+        >
           {notice}
         </p>
       ) : null}
       {scripts === null ? (
         error ? null : (
-          <div className="flex h-32 items-center justify-center gap-2 text-xs text-muted-foreground">
-            <LoaderCircle className="size-3.5 motion-safe:animate-spin" />
+          <div
+            className={cn(
+              typeClass("caption"),
+              "flex h-32 items-center justify-center gap-2 text-muted-foreground",
+            )}
+          >
+            <IconLoader2 className="size-3.5 motion-safe:animate-spin" />
             Reading the project's scripts…
           </div>
         )
@@ -209,14 +224,17 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
                       value={script.command}
                       aria-invalid={problems.length > 0 && !script.command.trim()}
                       onChange={(event) => updateScript(script.id, { command: event.target.value })}
-                      className="min-h-8 flex-1 rounded-lg bg-background py-1.5 font-mono text-xs leading-5 md:text-xs dark:bg-background"
+                      className={cn(
+                        typeClass("caption"),
+                        "min-h-8 flex-1 rounded-lg bg-background py-1.5 font-mono leading-5 dark:bg-background",
+                      )}
                     />
                     <IconButton
                       label="Remove script"
                       className="mt-0.5"
                       onClick={() => setScripts(scripts.filter((other) => other.id !== script.id))}
                     >
-                      <Trash2 className="size-3.5" />
+                      <IconTrash className="size-3.5" />
                     </IconButton>
                   </div>
                   <Input
@@ -233,11 +251,13 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
                     className="mr-9"
                     classNames={{
                       field: "h-8 rounded-lg bg-background",
-                      input: "pl-2.5 font-mono text-xs",
+                      input: cn(typeClass("caption"), "pl-2.5 font-mono"),
                     }}
                   />
                   {problems.length ? (
-                    <p className="text-xs text-destructive">{problems.join(" ")}</p>
+                    <p className={cn(typeClass("caption"), "text-destructive")}>
+                      {problems.join(" ")}
+                    </p>
                   ) : null}
                 </div>
               );
@@ -251,24 +271,26 @@ function ScriptsForm({ host, path, onClose, onSaved }: ScriptsEditorProps) {
               }}
               className="flex h-10 w-full items-center gap-2 rounded-b-xl px-3 text-[13px] text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Plus className="size-3.5" />
+              <IconPlus className="size-3.5" />
               Add script
             </button>
           </div>
         </div>
       )}
       {error ? (
-        <p className="selectable text-xs whitespace-pre-wrap text-destructive">{error}</p>
+        <p className={cn(typeClass("caption"), "selectable whitespace-pre-wrap text-destructive")}>
+          {error}
+        </p>
       ) : null}
       <div className="flex items-center justify-end gap-1.5">
-        <Button size="sm" variant="ghost" onClick={onClose}>
+        <Button size="compact" variant="ghost" onClick={onClose}>
           Cancel
           <kbd aria-hidden className="font-sans text-[10px] text-muted-foreground">
             esc
           </kbd>
         </Button>
         <Button
-          size="sm"
+          size="compact"
           disabled={scripts === null || isSaving}
           onClick={() => void saveScripts()}
         >

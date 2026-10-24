@@ -1,25 +1,27 @@
 import {
-  AlertCircle,
-  Check,
-  ExternalLink,
-  FileImage,
-  Link as LinkIcon,
-  LoaderCircle,
-  Mic,
-  Paperclip,
-  Pause,
-  Play,
-  RotateCcw,
-  Upload,
-  X,
-} from "lucide-react";
+  IconAlertCircle,
+  IconCheck,
+  IconExternalLink,
+  IconLink,
+  IconLoader2,
+  IconMicrophone,
+  IconPaperclip,
+  IconPhoto,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconRotate,
+  IconUpload,
+  IconX,
+} from "@tabler/icons-react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Tooltip } from "@masmeert/ui/tooltip";
-import { EASE_OUT, SPRING_LAYOUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { EASE_OUT } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { PresenceGate } from "@masmeert/ui/presence-gate";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type AttachmentUploadKind = "file" | "link" | "image" | "audio";
 export type AttachmentRejectReason = "too-large" | "max-files";
@@ -67,7 +69,7 @@ export interface AttachmentUploadProps {
   classNames?: AttachmentUploadClassNames;
 }
 
-const ITEM_TRANSITION = { duration: 0.2, ease: EASE_OUT } as const;
+const ITEM_TRANSITION = spring.moderate;
 const DEFAULT_MAX_FILE_SIZE = 500 * 1024 * 1024;
 const UPLOAD_PROGRESS_MS = 900;
 const UPLOAD_COMPLETE_HOLD_MS = 1000;
@@ -132,10 +134,10 @@ function inferKind(file: File): AttachmentUploadKind {
 }
 
 function AttachmentIcon({ kind }: { kind: AttachmentUploadKind }) {
-  if (kind === "link") return <LinkIcon className="size-4" />;
-  if (kind === "image") return <FileImage className="size-4" />;
-  if (kind === "audio") return <Mic className="size-4" />;
-  return <Paperclip className="size-4" />;
+  if (kind === "link") return <IconLink className="size-4" />;
+  if (kind === "image") return <IconPhoto className="size-4" />;
+  if (kind === "audio") return <IconMicrophone className="size-4" />;
+  return <IconPaperclip className="size-4" />;
 }
 
 function imageSource(item: AttachmentUploadItem) {
@@ -173,7 +175,7 @@ function RowAction({
           transition={ITEM_TRANSITION}
           className="grid size-9 shrink-0 place-items-center rounded-xl text-emerald-600 dark:text-emerald-400"
         >
-          <Check className="size-4" />
+          <IconCheck className="size-4" />
         </motion.span>
       </Tooltip>
     );
@@ -196,7 +198,7 @@ function RowAction({
             }}
             className="grid place-items-center"
           >
-            <LoaderCircle className="size-4" />
+            <IconLoader2 className="size-4" />
           </motion.span>
         </span>
       </Tooltip>
@@ -212,7 +214,7 @@ function RowAction({
             aria-label={`Upload failed for ${label}`}
             className="grid size-9 shrink-0 place-items-center rounded-xl text-destructive"
           >
-            <AlertCircle className="size-4" />
+            <IconAlertCircle className="size-4" />
           </span>
         </Tooltip>
       );
@@ -225,10 +227,10 @@ function RowAction({
           aria-label={`Retry ${label}`}
           onClick={onClick}
           whileTap={reduce ? undefined : { scale: 0.92 }}
-          transition={SPRING_PRESS}
+          transition={spring.fast}
           className="grid size-9 shrink-0 place-items-center rounded-xl text-destructive transition-colors outline-none hover:bg-destructive/10 focus-visible:ring-4 focus-visible:ring-ring"
         >
-          <RotateCcw className="size-4" />
+          <IconRotate className="size-4" />
         </motion.button>
       </Tooltip>
     );
@@ -241,10 +243,10 @@ function RowAction({
         aria-label={`Remove ${label}`}
         onClick={onClick}
         whileTap={reduce ? undefined : { scale: 0.92 }}
-        transition={SPRING_PRESS}
-        className="grid size-9 shrink-0 place-items-center rounded-xl text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+        transition={spring.fast}
+        className="grid size-9 shrink-0 place-items-center rounded-xl text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
       >
-        <X className="size-4" />
+        <IconX className="size-4" />
       </motion.button>
     </Tooltip>
   );
@@ -269,7 +271,7 @@ function ImageThumbnail({
         aria-hidden="true"
         className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"
       >
-        <FileImage className="size-4" />
+        <IconPhoto className="size-4" />
       </span>
     );
   }
@@ -298,7 +300,7 @@ function ImageThumbnail({
           onPreview(item);
         }}
         whileTap={reduce ? undefined : { scale: 0.94 }}
-        transition={SPRING_PRESS}
+        transition={spring.fast}
         className="group/image relative size-9 shrink-0 overflow-hidden rounded-[10px] bg-muted ring-1 ring-border/70 outline-none focus-visible:ring-4 focus-visible:ring-ring"
       >
         {/* biome-ignore lint/performance/noImgElement: Motion layout requires the image element and portable blob URLs. */}
@@ -307,7 +309,7 @@ function ImageThumbnail({
           src={src}
           alt=""
           className="size-full object-cover"
-          transition={{ layout: SPRING_LAYOUT }}
+          transition={{ layout: spring.moderate }}
         />
       </motion.button>
     </Tooltip>
@@ -398,8 +400,8 @@ function ImagePreviewDialog({
                   layoutId={reduce ? undefined : layoutId}
                   src={src}
                   alt={item.name}
-                  className="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain shadow-panel"
-                  transition={{ layout: SPRING_LAYOUT }}
+                  className="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain shadow-surface-3"
+                  transition={{ layout: spring.moderate }}
                 />
                 <motion.button
                   ref={closeRef}
@@ -410,10 +412,10 @@ function ImagePreviewDialog({
                   animate={{ opacity: 1, scale: 1 }}
                   exit={reduce ? undefined : { opacity: 0, scale: 0.8 }}
                   whileTap={reduce ? undefined : { scale: 0.92 }}
-                  transition={SPRING_PRESS}
-                  className="absolute -top-3 -right-3 grid size-9 place-items-center rounded-full bg-popover text-foreground shadow-panel ring-1 ring-border/70 transition-colors outline-none hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
+                  transition={spring.fast}
+                  className="absolute -top-3 -right-3 grid size-9 place-items-center rounded-full bg-popover text-foreground shadow-surface-3 ring-1 ring-border/70 transition-colors outline-none hover:bg-hover focus-visible:ring-4 focus-visible:ring-ring"
                 >
-                  <X className="size-4" />
+                  <IconX className="size-4" />
                 </motion.button>
               </motion.div>
             </div>
@@ -477,13 +479,9 @@ function AttachmentRow({
   const rowTransition =
     !reduce && arrivalIndex >= 0
       ? {
-          ...SPRING_LAYOUT,
+          ...spring.moderate,
           delay: arrivalDelay,
-          opacity: {
-            duration: 0.16,
-            ease: EASE_OUT,
-            delay: arrivalDelay,
-          },
+          opacity: { ...spring.fast, delay: arrivalDelay },
         }
       : ITEM_TRANSITION;
   const showUploadProgress = uploading || uploadComplete;
@@ -543,7 +541,12 @@ function AttachmentRow({
 
         {item.kind === "audio" ? (
           <>
-            <span className="w-9 shrink-0 text-xs text-muted-foreground tabular-nums">
+            <span
+              className={cn(
+                typeClass("caption"),
+                "w-9 shrink-0 text-muted-foreground tabular-nums",
+              )}
+            >
               {formatDuration(item.currentTime)}
             </span>
             <span
@@ -570,7 +573,12 @@ function AttachmentRow({
                 />
               ))}
             </span>
-            <span className="w-9 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
+            <span
+              className={cn(
+                typeClass("caption"),
+                "w-9 shrink-0 text-right text-muted-foreground tabular-nums",
+              )}
+            >
               {formatDuration(item.duration)}
             </span>
             <motion.button
@@ -578,7 +586,7 @@ function AttachmentRow({
               aria-label={`${playing ? "Pause" : "Play"} ${item.name}`}
               onClick={() => onAudioToggle?.(item)}
               whileTap={{ scale: 0.94 }}
-              transition={SPRING_PRESS}
+              transition={spring.fast}
               className="sheen grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               <AnimatePresence mode="wait" initial={false}>
@@ -590,9 +598,9 @@ function AttachmentRow({
                   transition={ITEM_TRANSITION}
                 >
                   {playing ? (
-                    <Pause className="size-4 fill-current" />
+                    <IconPlayerPause className="size-4 fill-current" />
                   ) : (
-                    <Play className="size-4 translate-x-px fill-current" />
+                    <IconPlayerPlay className="size-4 translate-x-px fill-current" />
                   )}
                 </motion.span>
               </AnimatePresence>
@@ -601,7 +609,7 @@ function AttachmentRow({
         ) : (
           <>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-foreground">
+              <span className={cn(typeClass("body"), "block truncate font-medium text-foreground")}>
                 {item.name}
               </span>
               {failed ? (
@@ -610,7 +618,7 @@ function AttachmentRow({
                 </span>
               ) : null}
             </span>
-            <span className="shrink-0 text-xs text-muted-foreground">
+            <span className={cn(typeClass("caption"), "shrink-0 text-muted-foreground")}>
               {item.kind === "link" ? "Web" : size}
             </span>
             {item.kind === "link" && item.href ? (
@@ -619,9 +627,9 @@ function AttachmentRow({
                 target="_blank"
                 rel="noreferrer noopener"
                 aria-label={`Open ${item.name}`}
-                className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+                className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
               >
-                <ExternalLink className="size-4" />
+                <IconExternalLink className="size-4" />
               </a>
             ) : null}
           </>
@@ -878,7 +886,7 @@ export function AttachmentUpload({
           data-dragging={dragging}
           animate={reduce ? undefined : { scale: dragging ? 1.006 : 1 }}
           whileTap={reduce ? undefined : { scale: 0.995 }}
-          transition={SPRING_PRESS}
+          transition={spring.fast}
           onClick={() => inputRef.current?.click()}
           onDragEnter={(event) => {
             if (disabled || maxReached) return;
@@ -906,7 +914,7 @@ export function AttachmentUpload({
           }}
           className={cn(
             "group relative isolate flex min-h-52 w-full flex-col items-center justify-center overflow-hidden rounded-[2rem] bg-muted/65 p-2 text-center outline-none",
-            "transition-colors duration-200 hover:bg-muted/85",
+            "transition-colors duration-(--duration-moderate) hover:bg-hover",
             "focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             "data-[dragging=true]:bg-muted",
             "disabled:pointer-events-none disabled:opacity-55",
@@ -915,7 +923,7 @@ export function AttachmentUpload({
         >
           <span
             aria-hidden="true"
-            className="absolute inset-2 -z-10 rounded-[1.5rem] border border-dashed border-muted-foreground/25 bg-background transition-[border-color,background-color] duration-200 group-hover:border-muted-foreground/45 group-data-[dragging=true]:border-foreground/65 group-data-[dragging=true]:bg-muted/20"
+            className="absolute inset-2 -z-10 rounded-[1.5rem] border border-dashed border-muted-foreground/25 bg-background transition-[border-color,background-color] duration-(--duration-moderate) group-hover:border-muted-foreground/45 group-data-[dragging=true]:border-foreground/65 group-data-[dragging=true]:bg-muted/20"
           />
           <motion.span
             aria-hidden="true"
@@ -928,14 +936,14 @@ export function AttachmentUpload({
                   }
             }
             transition={ITEM_TRANSITION}
-            className="mb-3 grid size-11 place-items-center rounded-2xl bg-muted text-foreground transition-colors duration-200 group-hover:bg-muted/80 group-data-[dragging=true]:bg-foreground group-data-[dragging=true]:text-background"
+            className="mb-3 grid size-11 place-items-center rounded-2xl bg-muted text-foreground transition-colors duration-(--duration-moderate) group-hover:bg-hover group-data-[dragging=true]:bg-foreground group-data-[dragging=true]:text-background"
           >
-            <Upload className="size-[18px]" />
+            <IconUpload className="size-[18px]" />
           </motion.span>
-          <span className="text-sm font-semibold tracking-[-0.01em] text-foreground">
+          <span className={cn(typeClass("body"), "font-semibold text-foreground")}>
             {maxReached ? "Attachment limit reached" : title}
           </span>
-          <span className="mt-1 text-xs leading-5 text-muted-foreground">
+          <span className={cn(typeClass("caption"), "mt-1 leading-5 text-muted-foreground")}>
             {maxReached
               ? `${items.length} of ${maxFiles} attachments added`
               : (description ?? `Maximum ${formatMaxSize(maxFileSize)} file size`)}
@@ -944,7 +952,10 @@ export function AttachmentUpload({
 
         {items.length > 0 ? (
           <section className="mt-8" aria-labelledby={`${inputId}-attachments`}>
-            <h3 id={`${inputId}-attachments`} className="text-sm font-semibold text-foreground">
+            <h3
+              id={`${inputId}-attachments`}
+              className={cn(typeClass("body"), "font-semibold text-foreground")}
+            >
               {attachmentsLabel}
             </h3>
 

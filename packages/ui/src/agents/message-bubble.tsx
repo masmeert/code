@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { IconChevronDown } from "@tabler/icons-react";
 import { type HTMLMotionProps, motion, useReducedMotion } from "motion/react";
 import {
   cloneElement,
@@ -14,9 +14,10 @@ import {
   useId,
   useState,
 } from "react";
-import { EASE_OUT, SPRING_LAYOUT } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
 import { MessageSideContext } from "@masscode/ui/agents/message-context";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type MessageBubbleVariant = "solid" | "soft" | "tint" | "outline" | "ghost" | "danger";
 export type MessageBubbleAlign = "start" | "end";
@@ -73,8 +74,7 @@ function mergeRefs<T>(...refs: Array<Ref<T> | undefined>) {
 }
 
 const BUBBLE_CONTENT_REVEAL = {
-  duration: 0.12,
-  ease: EASE_OUT,
+  ...spring.fast,
   delay: 0.04,
 } as const;
 
@@ -111,7 +111,7 @@ export function MessageBubble({
         layout={layout}
         initial={initial ?? false}
         animate={animate}
-        transition={transition ?? (reduce ? { duration: 0.12 } : SPRING_LAYOUT)}
+        transition={transition ?? reducedTransition(spring.moderate, reduce)}
         className={cn(
           "group/bubble flex w-full flex-col",
           resolvedAlign === "end" ? "items-end" : "items-start",
@@ -127,13 +127,14 @@ export function MessageBubble({
 
 function bubbleContentClass(variant: MessageBubbleVariant, interactive: boolean) {
   return cn(
-    "relative z-0 max-w-[82%] min-w-9 rounded-2xl px-3.5 py-2.5 text-sm leading-6 wrap-anywhere text-foreground",
+    typeClass("body"),
+    "relative z-0 max-w-[82%] min-w-9 rounded-2xl px-3.5 py-2.5 leading-6 wrap-anywhere text-foreground",
     "[&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-background/60 [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.9em] [&_a]:font-medium [&_a]:underline [&_a]:underline-offset-4 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p+p]:mt-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5",
     variant === "solid" && "text-background",
     variant === "ghost" && "w-full max-w-none rounded-none px-0 py-0",
     variant === "danger" && "text-destructive",
     interactive &&
-      "cursor-pointer text-left transition-[background-color,color,transform] duration-150 outline-none hover:brightness-[0.98] focus-visible:ring-4 focus-visible:ring-ring active:scale-[0.99]",
+      "cursor-pointer text-left transition-[background-color,color,transform] duration-(--duration-moderate) outline-none hover:brightness-[0.98] focus-visible:ring-4 focus-visible:ring-ring active:scale-[0.99]",
   );
 }
 
@@ -178,15 +179,14 @@ export function MessageBubbleContent({
               : false
           }
           animate={{ opacity: 1, scale: 1 }}
-          transition={
-            reduce
-              ? { duration: 0 }
-              : {
-                  opacity: { duration: 0.12, ease: EASE_OUT },
-                  scale: BUBBLE_POP,
-                  layout: SPRING_LAYOUT,
-                }
-          }
+          transition={reducedTransition(
+            {
+              opacity: spring.fast,
+              scale: BUBBLE_POP,
+              layout: spring.moderate,
+            },
+            reduce,
+          )}
           className={bubbleSurfaceClass(variant, align)}
         />
       ) : null}
@@ -194,7 +194,7 @@ export function MessageBubbleContent({
         <motion.div
           initial={animateIn ? (reduce ? { opacity: 0 } : { opacity: 0 }) : false}
           animate={{ opacity: 1 }}
-          transition={reduce ? { duration: 0.12, ease: EASE_OUT } : BUBBLE_CONTENT_REVEAL}
+          transition={reducedTransition(BUBBLE_CONTENT_REVEAL, reduce)}
           className="relative"
         >
           {children}
@@ -279,7 +279,7 @@ export function MessageBubbleCollapsible({
       <div
         id={contentId}
         className={cn(
-          "transition-[mask-image] duration-200",
+          "transition-[mask-image] duration-(--duration-moderate)",
           !currentOpen && LINE_CLAMP_CLASS[collapsedLines],
           !currentOpen && "[mask-image:linear-gradient(to_bottom,#000_68%,transparent_100%)]",
           contentClassName,
@@ -293,15 +293,16 @@ export function MessageBubbleCollapsible({
         aria-controls={contentId}
         onClick={() => setOpen(!currentOpen)}
         className={cn(
-          "mt-2 inline-flex h-7 items-center gap-1 rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
+          typeClass("caption"),
+          "mt-2 inline-flex h-7 items-center gap-1 rounded-full px-2 font-medium text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
           triggerClassName,
         )}
       >
         <span>{currentOpen ? lessLabel : moreLabel}</span>
-        <ChevronDown
+        <IconChevronDown
           aria-hidden="true"
           className={cn(
-            "size-3.5 transition-transform duration-200 ease-out",
+            "size-3.5 transition-transform duration-(--duration-moderate) ease-out",
             currentOpen && "rotate-180",
           )}
         />

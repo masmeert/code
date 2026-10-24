@@ -1,16 +1,16 @@
 import {
-  Ban,
-  Braces,
-  Check,
-  ChevronRight,
-  CircleCheck,
-  CircleX,
-  Copy,
-  LoaderCircle,
-  RotateCcw,
-  SquareTerminal,
-  Wrench,
-} from "lucide-react";
+  IconBan,
+  IconBraces,
+  IconCheck,
+  IconChevronRight,
+  IconCircleCheck,
+  IconCircleX,
+  IconCopy,
+  IconLoader2,
+  IconRotate,
+  IconTerminal2,
+  IconTool,
+} from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import {
   type ReactNode,
@@ -24,8 +24,9 @@ import {
 import { AgentCode, type AgentCodeLanguage } from "@masscode/ui/agents/agent-code";
 import { ActionSwapRollIcon, ActionSwapRollText } from "@masscode/ui/motion/action-swap-roll";
 import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
-import { SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type ToolResultStatus = "running" | "success" | "error" | "cancelled";
 export type ToolResultKind = "terminal" | "request" | "custom";
@@ -77,18 +78,18 @@ function getStatusClass(status: ToolResultStatus) {
 }
 
 function KindIcon({ kind }: { kind: ToolResultKind }) {
-  if (kind === "terminal") return <SquareTerminal className="size-4" />;
-  if (kind === "request") return <Braces className="size-4" />;
-  return <Wrench className="size-4" />;
+  if (kind === "terminal") return <IconTerminal2 className="size-4" />;
+  if (kind === "request") return <IconBraces className="size-4" />;
+  return <IconTool className="size-4" />;
 }
 
 function StatusIcon({ status, reduce }: { status: ToolResultStatus; reduce: boolean }) {
   if (status === "running") {
-    return <LoaderCircle className={cn("size-3", !reduce && "animate-spin")} />;
+    return <IconLoader2 className={cn("size-3", !reduce && "animate-spin")} />;
   }
-  if (status === "success") return <CircleCheck className="size-3" />;
-  if (status === "error") return <CircleX className="size-3" />;
-  return <Ban className="size-3" />;
+  if (status === "success") return <IconCircleCheck className="size-3" />;
+  if (status === "error") return <IconCircleX className="size-3" />;
+  return <IconBan className="size-3" />;
 }
 
 function ToolResultAction({
@@ -109,8 +110,8 @@ function ToolResultAction({
       title={label}
       onClick={onClick}
       whileTap={reduce ? undefined : { scale: 0.95 }}
-      transition={SPRING_PRESS}
-      className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+      transition={spring.fast}
+      className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
     >
       {children}
     </motion.button>
@@ -126,7 +127,7 @@ export function ToolResultOutput({
     <AgentCode
       code={children}
       language={language}
-      className={cn("break-words whitespace-pre-wrap text-foreground/80", className)}
+      className={cn("break-words whitespace-pre-wrap text-foreground", className)}
     />
   );
 }
@@ -209,7 +210,11 @@ export function ToolResult({
   }, [copyText, onCopy]);
 
   return (
-    <div data-state={status} aria-busy={running} className={cn("w-full text-sm", className)}>
+    <div
+      data-state={status}
+      aria-busy={running}
+      className={cn(typeClass("body"), "w-full", className)}
+    >
       <button
         id={triggerId}
         type="button"
@@ -225,9 +230,13 @@ export function ToolResult({
           {icon ?? <KindIcon kind={kind} />}
         </span>
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
-          <span className="min-w-0 truncate font-medium text-foreground/90">{title}</span>
-          {meta ? <span className="shrink-0 text-xs text-muted-foreground/60">{meta}</span> : null}
-          <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground/55">
+          <span className="min-w-0 truncate font-medium text-foreground">{title}</span>
+          {meta ? (
+            <span className={cn(typeClass("caption"), "shrink-0 text-muted-foreground")}>
+              {meta}
+            </span>
+          ) : null}
+          <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
             {tool}
           </span>
         </span>
@@ -240,10 +249,10 @@ export function ToolResult({
           <StatusIcon status={status} reduce={reduce} />
           <ActionSwapRollText value={status}>{statusLabel}</ActionSwapRollText>
         </span>
-        <ChevronRight
+        <IconChevronRight
           aria-hidden="true"
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground/50 transition duration-200 ease-out group-hover:text-muted-foreground",
+            "size-3.5 shrink-0 text-muted-foreground transition duration-(--duration-moderate) ease-out group-hover:text-muted-foreground",
             currentOpen && "rotate-90",
           )}
         />
@@ -267,16 +276,20 @@ export function ToolResult({
                 {canCopy ? (
                   <ToolResultAction label={copied ? "Copied" : "Copy result"} onClick={handleCopy}>
                     <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">
-                      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                      {copied ? (
+                        <IconCheck className="size-3.5" />
+                      ) : (
+                        <IconCopy className="size-3.5" />
+                      )}
                     </ActionSwapRollIcon>
                   </ToolResultAction>
                 ) : null}
                 {onRetry ? (
                   <ToolResultAction label="Run again" onClick={onRetry}>
-                    <RotateCcw className="size-3.5" />
+                    <IconRotate className="size-3.5" />
                   </ToolResultAction>
                 ) : null}
-                <span className="ml-auto text-[11px] text-muted-foreground/55">{statusLabel}</span>
+                <span className="ml-auto text-[11px] text-muted-foreground">{statusLabel}</span>
               </div>
             ) : null}
           </div>

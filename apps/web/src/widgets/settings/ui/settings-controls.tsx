@@ -7,16 +7,17 @@ import {
 } from "@masmeert/ui/morphing-popover";
 import { ModelList } from "@masscode/ui/agents/prompt-input";
 import { cn } from "@masscode/ui/lib/utils";
-import { Check, ChevronDown } from "lucide-react";
+import { IconCheck, IconChevronDown } from "@tabler/icons-react";
 import { useState } from "react";
 import { buildModelChoices, getFavoriteChoices, useProviderStore } from "@/entities/provider";
 import { useSettings } from "@/entities/settings";
 import { toggleFavoriteModel } from "@/features/favorite-model";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mb-5 last:mb-0">
-      <h3 className="mb-2 px-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+      <h3 className={cn(typeClass("caption"), "mb-2 px-1 font-medium text-muted-foreground")}>
         {title}
       </h3>
       {children}
@@ -116,10 +117,10 @@ export function SettingsModelSelect(props: {
           <span className="min-w-0 flex-1 truncate text-left">
             {current?.label ?? props.fallback}
           </span>
-          <ChevronDown
+          <IconChevronDown
             aria-hidden
             className={cn(
-              "size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out",
+              "size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-moderate) ease-out",
               isOpen && "rotate-180",
             )}
           />
@@ -134,12 +135,12 @@ export function SettingsModelSelect(props: {
               setIsOpen(false);
             }}
             className={cn(
-              "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors outline-none hover:bg-muted focus-visible:bg-muted",
+              "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors outline-none hover:bg-hover focus-visible:bg-muted",
               current ? "text-muted-foreground hover:text-foreground" : "text-foreground",
             )}
           >
             <span className="flex-1">{props.fallback}</span>
-            {current ? null : <Check className="size-3.5 shrink-0" />}
+            {current ? null : <IconCheck className="size-3.5 shrink-0" />}
           </button>
         </div>
         <ModelList
@@ -159,7 +160,7 @@ export function RowLabel({ title, description }: { title: string; description: s
   return (
     <>
       <p>{title}</p>
-      <p className="text-xs text-muted-foreground">{description}</p>
+      <p className={cn(typeClass("caption"), "text-muted-foreground")}>{description}</p>
     </>
   );
 }
@@ -194,7 +195,7 @@ export function SettingsTextField(props: {
       className="w-64"
       classNames={{
         field: "h-8 rounded-lg bg-background",
-        input: cn("pl-2.5 text-[13px]", props.isMonospace && "font-mono text-xs"),
+        input: cn("pl-2.5 text-[13px]", props.isMonospace && cn(typeClass("caption"), "font-mono")),
       }}
     />
   );

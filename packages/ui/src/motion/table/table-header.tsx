@@ -1,16 +1,16 @@
 import {
-  ArrowLeftToLine,
-  ArrowRightToLine,
-  ChevronUp,
-  GripVertical,
-  MoreHorizontal,
-  Trash2,
-} from "lucide-react";
+  IconArrowBarToLeft,
+  IconArrowBarToRight,
+  IconChevronUp,
+  IconDots,
+  IconGripVertical,
+  IconTrash,
+} from "@tabler/icons-react";
 import { motion } from "motion/react";
 import { type PointerEvent as ReactPointerEvent, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Checkbox } from "@masmeert/ui/checkbox";
-import { EASE_OUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring } from "@masmeert/ui/lib/springs";
 import { TOUCH_GESTURE_CLASS } from "@masmeert/ui/lib/touch";
 import { cn } from "@masscode/ui/lib/utils";
 import { TableMenu } from "./table-menu";
@@ -58,12 +58,12 @@ function columnMenuItems<T>(
       ? [
           {
             label: "Insert before",
-            icon: <ArrowLeftToLine />,
+            icon: <IconArrowBarToLeft />,
             onSelect: () => onInsertColumn(index, "before"),
           },
           {
             label: "Insert after",
-            icon: <ArrowRightToLine />,
+            icon: <IconArrowBarToRight />,
             onSelect: () => onInsertColumn(index, "after"),
           },
         ]
@@ -72,7 +72,7 @@ function columnMenuItems<T>(
       ? [
           {
             label: "Delete column",
-            icon: <Trash2 />,
+            icon: <IconTrash />,
             destructive: true,
             onSelect: () => onDeleteColumn(column.key, index),
           },
@@ -124,7 +124,7 @@ function ColumnHandle<T>({
       <TableMenu
         ariaLabel={`${column.key} column options`}
         triggerClassName="flex h-2 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
-        trigger={<MoreHorizontal className="h-3 w-3" />}
+        trigger={<IconDots className="h-3 w-3" />}
         items={columnMenuItems(column, index, onInsertColumn, onDeleteColumn)}
       />
     </div>,
@@ -227,7 +227,7 @@ export function TableHeader<T>({
                           opacity: isDragging ? 0.5 : 1,
                         }
                   }
-                  transition={SPRING_PRESS}
+                  transition={spring.fast}
                 >
                   {reorderable ? (
                     <button
@@ -237,13 +237,13 @@ export function TableHeader<T>({
                       onPointerMove={onReorderMove}
                       onPointerUp={onReorderEnd}
                       className={cn(
-                        "flex h-full w-6 cursor-grab touch-none items-center justify-center text-muted-foreground/60 transition-colors hover:text-foreground active:cursor-grabbing",
+                        "flex h-full w-6 cursor-grab touch-none items-center justify-center text-muted-foreground transition-colors hover:text-foreground active:cursor-grabbing",
                         // The grip owns the whole press, so iOS must not open its
                         // callout out of the same one and cancel the drag.
                         TOUCH_GESTURE_CLASS,
                       )}
                     >
-                      <GripVertical className="h-3.5 w-3.5" />
+                      <IconGripVertical className="h-3.5 w-3.5" />
                     </button>
                   ) : null}
                   {column.sortable ? (
@@ -264,9 +264,9 @@ export function TableHeader<T>({
                           rotate: active && sort?.direction === "desc" ? 180 : 0,
                           opacity: active ? 1 : 0.35,
                         }}
-                        transition={reduce ? { duration: 0 } : { duration: 0.18, ease: EASE_OUT }}
+                        transition={reducedTransition(spring.moderate, reduce)}
                       >
-                        <ChevronUp className="h-3.5 w-3.5" />
+                        <IconChevronUp className="h-3.5 w-3.5" />
                       </motion.span>
                     </button>
                   ) : onColumnRename ? (
@@ -295,7 +295,7 @@ export function TableHeader<T>({
                     onPointerMove={onResizeMove}
                     onPointerUp={onResizeEnd}
                     className={cn(
-                      "absolute top-0 right-0 h-full w-1.5 cursor-col-resize touch-none bg-transparent transition-colors hover:bg-muted",
+                      "absolute top-0 right-0 h-full w-1.5 cursor-col-resize touch-none bg-transparent transition-colors hover:bg-hover",
                       // Same for the resize drag: the handle drives it end to end.
                       TOUCH_GESTURE_CLASS,
                     )}

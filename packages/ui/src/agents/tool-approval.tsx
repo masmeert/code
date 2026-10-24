@@ -1,12 +1,12 @@
 import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  CircleAlert,
-  LoaderCircle,
-  ShieldCheck,
-  X,
-} from "lucide-react";
+  IconAlertCircle,
+  IconCheck,
+  IconChevronDown,
+  IconChevronRight,
+  IconLoader2,
+  IconShieldCheck,
+  IconX,
+} from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { AgentCode, type AgentCodeLanguage } from "@masscode/ui/agents/agent-code";
@@ -17,8 +17,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@masmeert/ui/dropdown-menu";
-import { SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type ToolApprovalStatus =
   | "pending"
@@ -147,7 +148,8 @@ export function ToolApproval({
       data-state={status}
       aria-busy={busy}
       className={cn(
-        "w-full overflow-hidden rounded-2xl border border-border/60 bg-muted/20 text-sm",
+        typeClass("body"),
+        "w-full overflow-hidden rounded-2xl border border-border/60 bg-muted/20",
         className,
       )}
     >
@@ -160,15 +162,15 @@ export function ToolApproval({
           )}
         >
           {busy ? (
-            <LoaderCircle className={cn("size-4", !reduce && "animate-spin")} />
+            <IconLoader2 className={cn("size-4", !reduce && "animate-spin")} />
           ) : error ? (
-            <CircleAlert className="size-4" />
+            <IconAlertCircle className="size-4" />
           ) : status === "denied" ? (
-            <X className="size-4" />
+            <IconX className="size-4" />
           ) : status === "approved" || status === "complete" ? (
-            <Check className="size-4" />
+            <IconCheck className="size-4" />
           ) : (
-            <ShieldCheck className="size-4" />
+            <IconShieldCheck className="size-4" />
           )}
         </span>
 
@@ -177,7 +179,12 @@ export function ToolApproval({
             <div className="min-w-0">
               <div className="font-medium text-foreground">{title}</div>
               {tool ? (
-                <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                <div
+                  className={cn(
+                    typeClass("caption"),
+                    "mt-0.5 truncate font-mono text-muted-foreground",
+                  )}
+                >
                   {tool}
                 </div>
               ) : null}
@@ -201,13 +208,16 @@ export function ToolApproval({
               aria-expanded={currentOpen}
               aria-controls={detailsId}
               onClick={() => setOpen(!currentOpen)}
-              className="mt-2 inline-flex items-center gap-1 rounded-md text-xs font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+              className={cn(
+                typeClass("caption"),
+                "mt-2 inline-flex items-center gap-1 rounded-md font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
+              )}
             >
               View details
-              <ChevronRight
+              <IconChevronRight
                 aria-hidden="true"
                 className={cn(
-                  "size-3.5 transition duration-200 ease-out",
+                  "size-3.5 transition duration-(--duration-moderate) ease-out",
                   currentOpen && "rotate-90",
                 )}
               />
@@ -226,12 +236,13 @@ export function ToolApproval({
             {parameters.map((parameter) => (
               <div
                 key={parameter.id}
-                className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)] items-center gap-3 text-xs"
+                className={cn(
+                  typeClass("caption"),
+                  "grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)] items-center gap-3",
+                )}
               >
                 <dt className="text-muted-foreground">{parameter.label}</dt>
-                <dd className="min-w-0 font-mono break-words text-foreground/85">
-                  {parameter.value}
-                </dd>
+                <dd className="min-w-0 font-mono break-words text-foreground">{parameter.value}</dd>
               </div>
             ))}
           </dl>
@@ -245,9 +256,10 @@ export function ToolApproval({
               type="button"
               onClick={onApprove}
               whileTap={reduce ? undefined : { scale: 0.97 }}
-              transition={SPRING_PRESS}
+              transition={spring.fast}
               className={cn(
-                "sheen rounded-xl bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2",
+                typeClass("caption"),
+                "sheen rounded-xl bg-primary px-3 py-1.5 font-medium text-primary-foreground outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2",
                 approveOptions && "rounded-r-none",
               )}
             >
@@ -259,7 +271,7 @@ export function ToolApproval({
                   aria-label="More ways to approve"
                   className="grid place-items-center rounded-r-xl border-l border-primary-foreground/20 bg-primary px-1.5 text-primary-foreground outline-none focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
-                  <ChevronDown className="size-3.5" />
+                  <IconChevronDown className="size-3.5" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" sideOffset={6} collisionPadding={8}>
                   {approveOptions.map((option) => (
@@ -276,8 +288,11 @@ export function ToolApproval({
               type="button"
               onClick={onAlwaysAllow}
               whileTap={reduce ? undefined : { scale: 0.97 }}
-              transition={SPRING_PRESS}
-              className="rounded-xl border border-border/60 bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
+              transition={spring.fast}
+              className={cn(
+                typeClass("caption"),
+                "rounded-xl border border-border/60 bg-background px-3 py-1.5 font-medium text-foreground transition-colors outline-none hover:bg-hover focus-visible:ring-4 focus-visible:ring-ring",
+              )}
             >
               Always allow
             </motion.button>
@@ -285,7 +300,10 @@ export function ToolApproval({
           <button
             type="button"
             onClick={onDeny}
-            className="rounded-xl px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+            className={cn(
+              typeClass("caption"),
+              "rounded-xl px-3 py-1.5 font-medium text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
+            )}
           >
             {denyLabel}
           </button>

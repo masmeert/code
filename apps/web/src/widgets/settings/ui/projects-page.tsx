@@ -12,6 +12,7 @@ import {
   SettingsSelect,
   RowLabel,
 } from "./settings-controls.tsx";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export function ProjectsPage() {
   const projects = useProjectStore((state) => state.projects);
@@ -20,7 +21,11 @@ export function ProjectsPage() {
   const project = projects.find((candidate) => candidate.id === projectId) ?? projects[0];
 
   if (!project)
-    return <p className="px-1 text-sm text-muted-foreground">Add a project to set it up here.</p>;
+    return (
+      <p className={cn(typeClass("body"), "px-1 text-muted-foreground")}>
+        Add a project to set it up here.
+      </p>
+    );
 
   return (
     <>
@@ -119,7 +124,12 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
   return (
     <SettingsSection title="New threads">
       {notice ? (
-        <p className="mb-2 rounded-lg border border-warning/40 px-3 py-2 text-xs text-warning">
+        <p
+          className={cn(
+            typeClass("caption"),
+            "mb-2 rounded-lg border border-warning/40 px-3 py-2 text-warning",
+          )}
+        >
           {notice}
         </p>
       ) : null}
@@ -159,7 +169,10 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
               value={draft.setup}
               onChange={(event) => setDraft({ ...draft, setup: event.target.value })}
               onBlur={() => draft.setup !== savedSetup.current && void saveWorktreeSettings(draft)}
-              className="min-h-16 rounded-lg bg-background font-mono text-xs leading-5 md:text-xs dark:bg-background"
+              className={cn(
+                typeClass("caption"),
+                "min-h-16 rounded-lg bg-background font-mono leading-5 dark:bg-background",
+              )}
             />
           </div>
           <SettingsRow
@@ -171,7 +184,7 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
             }
           >
             <Switch
-              size="sm"
+              size="compact"
               checked={draft.waitForSetup}
               disabled={!draft.setup.trim()}
               onCheckedChange={(waitForSetup) =>
@@ -184,7 +197,8 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
       )}
       <p
         className={cn(
-          "mt-2 px-1 text-xs",
+          typeClass("caption"),
+          "mt-2 px-1",
           error ? "selectable text-destructive" : "text-muted-foreground",
         )}
       >

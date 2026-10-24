@@ -11,13 +11,15 @@ import { Button } from "@masmeert/ui/button";
 import { Sheet } from "@masmeert/ui/sheet";
 import { Textarea } from "@masmeert/ui/textarea";
 import { type ProviderKind } from "@masscode/contracts";
-import { X } from "lucide-react";
+import { IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import { formatHarnessLabel } from "@/entities/provider";
 import { useSetting } from "@/entities/settings";
 import { askSideChat, closeSideChat, useSideChat } from "@/features/side-chat";
 import { NO_ITEMS, toBlocks, hasNewestItem, isShowingWork } from "@masscode/client";
 import { AgentBlock } from "./transcript.tsx";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { cn } from "@masscode/ui/lib/utils";
 
 /** Read-only side questions about one reply (BTW), over the thread; closing it ends them for good. */
 export function SideChatDrawer({
@@ -56,8 +58,8 @@ export function SideChatDrawer({
     >
       <div className="flex items-start gap-3 border-b border-border px-4 py-3">
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-medium">By the way</h2>
-          <p className="text-xs text-muted-foreground">
+          <h2 className={cn(typeClass("body"), "font-medium")}>By the way</h2>
+          <p className={cn(typeClass("caption"), "text-muted-foreground")}>
             Ask {label} about this reply. It can read but not change anything, and nothing here goes
             into the thread.
           </p>
@@ -67,9 +69,9 @@ export function SideChatDrawer({
           title="Close and discard (esc)"
           aria-label="Close and discard"
           onClick={() => closeSideChat(threadId)}
-          className="grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <X className="size-4" />
+          <IconX className="size-4" />
         </button>
       </div>
       <MessageScroller
@@ -104,7 +106,7 @@ export function SideChatDrawer({
               )
             : null}
           {isRunning && !isShowingWork(items) ? (
-            <div className="flex h-7 items-center text-sm">
+            <div className={cn(typeClass("body"), "flex h-7 items-center")}>
               <ReasoningText variant="scramble" className="min-w-0 font-mono font-normal" />
             </div>
           ) : null}
@@ -131,7 +133,7 @@ export function SideChatDrawer({
           className="min-h-16 text-[13px]"
         />
         <div className="mt-2 flex justify-end">
-          <Button type="submit" size="sm" disabled={!question.trim() || isRunning}>
+          <Button type="submit" size="compact" disabled={!question.trim() || isRunning}>
             Ask
             <kbd aria-hidden className="font-sans text-[10px] opacity-70">
               ↵

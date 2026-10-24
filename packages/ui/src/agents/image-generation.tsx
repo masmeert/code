@@ -1,10 +1,12 @@
-import { Check, CircleAlert, RotateCcw } from "lucide-react";
+import { IconAlertCircle, IconCheck, IconRotate } from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useRef } from "react";
-import { EASE_OUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { EASE_OUT } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring, tierTween } from "@masmeert/ui/lib/springs";
 import { useHoverCapable } from "@masmeert/ui/hooks/use-hover-capable";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type ImageGenerationStatus = "queued" | "generating" | "refining" | "complete" | "error";
 
@@ -61,11 +63,11 @@ const TWO_PI = Math.PI * 2;
 
 function DitherMark({ status, reduce }: { status: ImageGenerationStatus; reduce: boolean }) {
   if (status === "complete") {
-    return <Check aria-hidden="true" className="size-3.5" />;
+    return <IconCheck aria-hidden="true" className="size-3.5" />;
   }
 
   if (status === "error") {
-    return <CircleAlert aria-hidden="true" className="size-3.5" />;
+    return <IconAlertCircle aria-hidden="true" className="size-3.5" />;
   }
 
   return (
@@ -314,7 +316,7 @@ export function ImageGeneration({
                     scale: mediaState.scale,
                   }
             }
-            transition={reduce ? { duration: 0 } : { duration: 0.4, ease: EASE_OUT }}
+            transition={reducedTransition(tierTween.slow, reduce)}
             className={cn(
               "absolute inset-0 [&_img]:size-full [&_img]:object-cover [&>*]:size-full [&>*]:object-cover",
               mediaClassName,
@@ -351,7 +353,8 @@ export function ImageGeneration({
               <div
                 aria-live="polite"
                 className={cn(
-                  "flex min-h-5 items-center gap-2 text-sm font-medium text-foreground",
+                  typeClass("body"),
+                  "flex min-h-5 items-center gap-2 font-medium text-foreground",
                   status === "error" && "text-destructive",
                   statusClassName,
                 )}
@@ -374,7 +377,9 @@ export function ImageGeneration({
               </div>
             ) : null}
             {prompt ? (
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">“{prompt}”</p>
+              <p className={cn(typeClass("caption"), "mt-0.5 truncate text-muted-foreground")}>
+                “{prompt}”
+              </p>
             ) : null}
           </div>
         ) : null}
@@ -384,10 +389,13 @@ export function ImageGeneration({
             type="button"
             onClick={onRetry}
             whileTap={reduce ? undefined : { scale: 0.96 }}
-            transition={SPRING_PRESS}
-            className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-full px-3 text-sm font-medium text-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
+            transition={spring.fast}
+            className={cn(
+              typeClass("body"),
+              "mt-3 inline-flex min-h-10 items-center gap-2 rounded-full px-3 font-medium text-foreground transition-colors outline-none hover:bg-hover focus-visible:ring-4 focus-visible:ring-ring",
+            )}
           >
-            <RotateCcw aria-hidden="true" className="size-4" />
+            <IconRotate aria-hidden="true" className="size-4" />
             Try again
           </motion.button>
         ) : null}

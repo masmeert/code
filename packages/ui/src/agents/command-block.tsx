@@ -1,10 +1,11 @@
-import { Check, Copy, Play } from "lucide-react";
+import { IconCheck, IconCopy, IconPlayerPlay } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { AgentCodeLine, useAgentCodeTokens } from "@masscode/ui/agents/agent-code";
 import { ActionSwapRollIcon } from "@masscode/ui/motion/action-swap-roll";
-import { SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export interface CommandBlockProps {
   command: string;
@@ -60,7 +61,12 @@ export function CommandBlock({ command, streaming = false, onRun, className }: C
       aria-busy={streaming}
       className={cn("flex items-start gap-2 rounded-xl bg-muted/80 py-1.5 pr-1.5 pl-4", className)}
     >
-      <pre className="m-0 scrollbar-hide min-w-0 flex-1 overflow-x-auto py-1 font-mono text-xs leading-5 text-foreground/85">
+      <pre
+        className={cn(
+          typeClass("caption"),
+          "m-0 scrollbar-hide min-w-0 flex-1 overflow-x-auto py-1 font-mono leading-5 text-foreground",
+        )}
+      >
         <code>
           {lines.map((line, index) => (
             <AgentCodeLine
@@ -80,11 +86,11 @@ export function CommandBlock({ command, streaming = false, onRun, className }: C
           title={ran ? "Started" : "Run this command; the agent gets its output"}
           onClick={run}
           whileTap={reduce || streaming ? undefined : { scale: 0.95 }}
-          transition={SPRING_PRESS}
+          transition={spring.fast}
           className="grid size-7 place-items-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-background/70 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
         >
           <ActionSwapRollIcon value={ran ? "ran" : "run"} className="size-3.5">
-            {ran ? <Check className="size-3.5" /> : <Play className="size-3.5" />}
+            {ran ? <IconCheck className="size-3.5" /> : <IconPlayerPlay className="size-3.5" />}
           </ActionSwapRollIcon>
         </motion.button>
         <motion.button
@@ -93,11 +99,11 @@ export function CommandBlock({ command, streaming = false, onRun, className }: C
           title={copied ? "Copied" : "Copy command"}
           onClick={copy}
           whileTap={reduce ? undefined : { scale: 0.95 }}
-          transition={SPRING_PRESS}
+          transition={spring.fast}
           className="grid size-7 place-items-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-background/70 hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
         >
           <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">
-            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            {copied ? <IconCheck className="size-3.5" /> : <IconCopy className="size-3.5" />}
           </ActionSwapRollIcon>
         </motion.button>
       </div>

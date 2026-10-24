@@ -3,13 +3,20 @@ import { useRowCursor } from "@masmeert/ui/hooks/use-row-cursor";
 import { formatProjectLabel } from "@masscode/client";
 import { cn } from "@masscode/ui/lib/utils";
 import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
-import { ArrowUpRight, ChevronRight, EthernetPort, LoaderCircle, Square } from "lucide-react";
+import {
+  IconArrowUpRight,
+  IconChevronRight,
+  IconLoader2,
+  IconNetwork,
+  IconPlayerStop,
+} from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 import { openPreview } from "@/entities/browser";
 import { buildFallbackProject, ProjectBadge, useProjectStore } from "@/entities/project";
 import { type HostedService, killService, useServices } from "@/entities/service";
 import { useThreadStore } from "@/entities/thread";
 import { IconButton } from "@/shared/ui";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 /** The ports threads' agents and terminals left listening, across every host, to stop the forgotten ones. */
 export function ServicesModal({
@@ -155,11 +162,11 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
     <div className="-m-5 flex max-h-[min(34rem,calc(100vh-4rem))] flex-col">
       <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-4">
         <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-border bg-muted text-foreground">
-          <EthernetPort className="size-4" />
+          <IconNetwork className="size-4" />
         </span>
         <div className="min-w-0">
           <h2 className="text-[15px] leading-5 font-semibold">Services</h2>
-          <p className="text-xs text-muted-foreground">
+          <p className={cn(typeClass("caption"), "text-muted-foreground")}>
             {rows.length === 0
               ? "Nothing running"
               : `${rows.length} running across ${projectLabels.length} ${projectLabels.length === 1 ? "project" : "projects"}`}
@@ -167,7 +174,7 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
         </div>
       </div>
       {rows.length === 0 ? (
-        <p className="px-5 py-5 text-sm text-muted-foreground">
+        <p className={cn(typeClass("body"), "px-5 py-5 text-muted-foreground")}>
           Nothing is listening. Servers that agents or terminals start show up here.
         </p>
       ) : (
@@ -196,7 +203,7 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
                     )
                   }
                   className={cn(
-                    "flex h-10 w-full shrink-0 items-center gap-2.5 rounded-xl px-3 text-left text-[13px] font-medium text-foreground transition-colors outline-none hover:bg-muted/50 focus-visible:ring-4 focus-visible:ring-ring",
+                    "flex h-10 w-full shrink-0 items-center gap-2.5 rounded-xl px-3 text-left text-[13px] font-medium text-foreground transition-colors outline-none hover:bg-hover focus-visible:ring-4 focus-visible:ring-ring",
                     !isCollapsed && "sticky top-0 z-10 bg-background hover:bg-background",
                   )}
                 >
@@ -205,9 +212,9 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
                   <span className="ml-auto rounded-full bg-muted px-1.5 py-px text-[11px] leading-4 font-normal text-muted-foreground tabular-nums">
                     {grouped.length}
                   </span>
-                  <ChevronRight
+                  <IconChevronRight
                     className={cn(
-                      "size-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
+                      "size-3.5 shrink-0 text-muted-foreground transition-transform duration-(--duration-moderate)",
                       !isCollapsed && "rotate-90",
                     )}
                   />
@@ -234,7 +241,12 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
                             isKilling && "opacity-50",
                           )}
                         >
-                          <span className="ml-6 w-14 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+                          <span
+                            className={cn(
+                              typeClass("caption"),
+                              "ml-6 w-14 shrink-0 font-mono text-muted-foreground tabular-nums",
+                            )}
+                          >
                             :{service.ports[0]}
                           </span>
                           <span className="w-24 shrink-0 truncate text-[13px] text-foreground">
@@ -242,14 +254,15 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
                           </span>
                           <span
                             className={cn(
-                              "min-w-0 flex-1 truncate text-xs",
+                              typeClass("caption"),
+                              "min-w-0 flex-1 truncate",
                               errors[id] ? "selectable text-destructive" : "text-muted-foreground",
                             )}
                           >
                             {errors[id] ?? threadTitle}
                           </span>
                           {isKilling ? (
-                            <LoaderCircle className="mr-1.5 size-3.5 shrink-0 animate-spin text-muted-foreground" />
+                            <IconLoader2 className="mr-1.5 size-3.5 shrink-0 animate-spin text-muted-foreground" />
                           ) : (
                             <span
                               onClick={(event) => event.stopPropagation()}
@@ -264,7 +277,7 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
                                   onClick={() => open(service)}
                                   className="hover:bg-foreground/5"
                                 >
-                                  <ArrowUpRight className="size-3.5" />
+                                  <IconArrowUpRight className="size-3.5" />
                                 </IconButton>
                               ) : null}
                               <IconButton
@@ -272,7 +285,7 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
                                 onClick={() => void kill(service)}
                                 className="hover:bg-destructive/10 hover:text-destructive"
                               >
-                                <Square className="size-3 fill-current" />
+                                <IconPlayerStop className="size-3 fill-current" />
                               </IconButton>
                             </span>
                           )}

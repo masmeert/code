@@ -4,7 +4,7 @@ import { searchCommands } from "@masmeert/ui/lib/command-search";
 import { useRowCursor } from "@masmeert/ui/hooks/use-row-cursor";
 import { cn } from "@masscode/ui/lib/utils";
 import type { SearchHit } from "@masscode/contracts";
-import { MessageSquare, Search } from "lucide-react";
+import { IconMessage, IconSearch } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import {
   Fragment,
@@ -20,6 +20,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { searchMessages, useThreadStore } from "@/entities/thread";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 interface PaletteAction {
   readonly id: string;
@@ -163,7 +164,7 @@ function Palette(props: PaletteProps) {
               return {
                 id: `thread:${thread.id}`,
                 section: needle ? "Threads" : "Recent threads",
-                icon: project ? <ProjectBadge project={project} /> : <MessageSquare />,
+                icon: project ? <ProjectBadge project={project} /> : <IconMessage />,
                 label: thread.title,
                 detail: `${project ? formatProjectLabel(project.name, projectHosts[project.id]) : thread.cwd.split("/").at(-1)}${thread.archivedAt ? ", archived" : ""}`,
                 run: createRowAction(latest, (latestProps) => latestProps.onOpenThread(thread.id)),
@@ -208,7 +209,7 @@ function Palette(props: PaletteProps) {
       shownHits.map((hit) => ({
         id: `message:${hit.threadId}:${hit.messageId}`,
         section: "Messages",
-        icon: <Search />,
+        icon: <IconSearch />,
         label: <Snippet text={hit.snippet} />,
         detail: `${hit.from === "user" ? "You" : "Agent"} in ${threads[hit.threadId]?.title ?? ""}`,
         run: createRowAction(latest, (latestProps) => latestProps.onOpenThread(hit.threadId)),
@@ -286,10 +287,10 @@ function Palette(props: PaletteProps) {
           onKeyDown={onKeyDown}
           // Clicks anywhere but the field leave focus in it.
           onMouseDown={(event) => event.target !== input.current && event.preventDefault()}
-          className="pointer-events-auto flex max-h-[60vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-panel"
+          className="pointer-events-auto flex max-h-[60vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-surface-3"
         >
           <div className="flex items-center gap-2 border-b border-border px-3">
-            <Search className="size-4 shrink-0 text-muted-foreground" />
+            <IconSearch className="size-4 shrink-0 text-muted-foreground" />
             <input
               ref={input}
               autoFocus
@@ -301,7 +302,10 @@ function Palette(props: PaletteProps) {
               aria-controls={`${idPrefix}-list`}
               aria-activedescendant={rows.length ? `${idPrefix}-option-${activeIndex}` : undefined}
               aria-autocomplete="list"
-              className="h-11 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
+              className={cn(
+                typeClass("body"),
+                "h-11 min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground",
+              )}
             />
           </div>
           {/*
@@ -318,7 +322,7 @@ function Palette(props: PaletteProps) {
             className="isolate min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5"
           >
             {rows.length === 0 ? (
-              <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+              <div className={cn(typeClass("body"), "px-2 py-6 text-center text-muted-foreground")}>
                 Nothing matches
               </div>
             ) : null}
@@ -397,9 +401,9 @@ const PaletteRow = memo(function PaletteRow(props: {
         ) : null}
       </span>
       {index < 9 ? (
-        <span className="shrink-0 text-[11px] text-muted-foreground/60">⌘{index + 1}</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">⌘{index + 1}</span>
       ) : row.hint ? (
-        <span className="shrink-0 text-[11px] text-muted-foreground/60">{row.hint}</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">{row.hint}</span>
       ) : null}
     </button>
   );

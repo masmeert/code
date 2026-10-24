@@ -1,14 +1,14 @@
 import { Tabs, TabsList, TabsTrigger } from "@masmeert/ui/tabs";
 import { Theme } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
-import { Monitor, Moon, Sun } from "lucide-react";
+import { IconDeviceDesktop, IconMoon, IconSun } from "@tabler/icons-react";
 import { updateSettings, useSettings } from "@/entities/settings";
 import { SettingsGroup, SettingsRow } from "./settings-controls.tsx";
 
-const THEMES: Array<{ value: Theme; label: string; icon: typeof Sun }> = [
-  { value: "system", label: "System", icon: Monitor },
-  { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Moon },
+const THEMES: Array<{ value: Theme; label: string; icon: typeof IconSun }> = [
+  { value: "system", label: "System", icon: IconDeviceDesktop },
+  { value: "light", label: "Light", icon: IconSun },
+  { value: "dark", label: "Dark", icon: IconMoon },
 ];
 
 export function AppearancePage() {

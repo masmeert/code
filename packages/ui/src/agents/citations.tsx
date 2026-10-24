@@ -1,10 +1,11 @@
-import { BookOpenText, ChevronRight, ExternalLink, Globe2 } from "lucide-react";
+import { IconBook, IconChevronRight, IconExternalLink, IconWorld } from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useId, useState } from "react";
 import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
-import { EASE_OUT, SPRING_LAYOUT } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring } from "@masmeert/ui/lib/springs";
 import { useFavicon } from "@masscode/ui/hooks/use-favicon";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export interface CitationItem {
   id: string;
@@ -82,7 +83,7 @@ export function CitationFavicon({ url, className }: { url?: string; className?: 
           className="size-4 rounded-sm object-contain"
         />
       ) : (
-        <Globe2 className="size-3.5" />
+        <IconWorld className="size-3.5" />
       )}
     </span>
   );
@@ -115,11 +116,16 @@ function CitationRow({
     <>
       <CitationFavicon url={citation.url} />
       <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="truncate text-sm font-medium text-foreground/80 transition-colors group-hover/citation:text-foreground">
+        <span
+          className={cn(
+            typeClass("body"),
+            "truncate font-medium text-foreground transition-colors group-hover/citation:text-foreground",
+          )}
+        >
           {citation.title}
         </span>
         {citation.domain ? (
-          <span className="min-w-0 truncate text-xs text-muted-foreground/60">
+          <span className={cn(typeClass("caption"), "min-w-0 truncate text-muted-foreground")}>
             {citation.domain}
           </span>
         ) : null}
@@ -129,7 +135,7 @@ function CitationRow({
           {index}
         </span>
         {citation.url ? (
-          <ExternalLink className="size-3.5 text-muted-foreground/40 transition-colors group-hover/citation:text-muted-foreground" />
+          <IconExternalLink className="size-3.5 text-muted-foreground transition-colors group-hover/citation:text-muted-foreground" />
         ) : null}
       </span>
     </>
@@ -164,15 +170,14 @@ export function CitationList({ citations, idPrefix, className }: CitationListPro
             initial={reduce ? { opacity: 1 } : { opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={reduce ? { opacity: 0 } : { opacity: 0, y: -3 }}
-            transition={
-              reduce
-                ? { duration: 0 }
-                : {
-                    opacity: { duration: 0.18, ease: EASE_OUT },
-                    y: SPRING_LAYOUT,
-                    layout: SPRING_LAYOUT,
-                  }
-            }
+            transition={reducedTransition(
+              {
+                opacity: spring.fast,
+                y: spring.moderate,
+                layout: spring.moderate,
+              },
+              reduce,
+            )}
           >
             <CitationRow citation={citation} index={index + 1} idPrefix={resolvedPrefix} />
           </motion.div>
@@ -205,7 +210,7 @@ export function Citations({
   );
 
   return (
-    <div className={cn("w-full text-sm", className)}>
+    <div className={cn(typeClass("body"), "w-full", className)}>
       <button
         type="button"
         aria-expanded={currentOpen}
@@ -213,15 +218,15 @@ export function Citations({
         onClick={() => setOpen(!currentOpen)}
         className="group -ml-1 flex min-h-8 items-center gap-2 rounded-lg px-1 text-left text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
       >
-        <BookOpenText className="size-4" />
+        <IconBook className="size-4" />
         <span className="font-medium">{title}</span>
         <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
           {citations.length}
         </span>
-        <ChevronRight
+        <IconChevronRight
           aria-hidden="true"
           className={cn(
-            "size-3.5 text-muted-foreground/60 transition duration-200 ease-out",
+            "size-3.5 text-muted-foreground transition duration-(--duration-moderate) ease-out",
             currentOpen && "rotate-90",
           )}
         />

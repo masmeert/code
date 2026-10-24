@@ -9,6 +9,8 @@ import { useNeedsRootConsent } from "@/entities/host";
 import { approvePlan, BUILD_WITH_LABEL, getDraft, RootFullAccessDialog } from "@/widgets/composer";
 import type { TranscriptItem } from "@masscode/client";
 import { respondApproval, useThreadHost, useThreadStore } from "@/entities/thread";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { cn } from "@masscode/ui/lib/utils";
 
 type ApprovalItem = Extract<TranscriptItem, { kind: "approval" }>;
 
@@ -115,7 +117,12 @@ export function QuestionsApproval({
             : {
                 ...choice,
                 preview: (
-                  <pre className="bg-muted/50 p-3 font-mono text-xs leading-relaxed">
+                  <pre
+                    className={cn(
+                      typeClass("caption"),
+                      "bg-muted/50 p-3 font-mono leading-relaxed",
+                    )}
+                  >
                     {option.preview}
                   </pre>
                 ),

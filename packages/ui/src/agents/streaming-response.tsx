@@ -1,20 +1,22 @@
 import {
-  Check,
-  ChevronRight,
-  Copy,
-  GitFork,
-  MessageCircleQuestionMark,
-  RotateCcw,
-  ThumbsDown,
-  ThumbsUp,
-} from "lucide-react";
+  IconCheck,
+  IconChevronRight,
+  IconCopy,
+  IconGitFork,
+  IconMessageQuestion,
+  IconRotate,
+  IconThumbDown,
+  IconThumbUp,
+} from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { type CitationItem, CitationList, CitationStack } from "@masscode/ui/agents/citations";
 import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
 import { ActionSwapRollIcon } from "@masscode/ui/motion/action-swap-roll";
-import { EASE_OUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { EASE_OUT } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type StreamingResponseStatus = "streaming" | "complete" | "error";
 export type StreamingResponseFeedback = "up" | "down" | null;
@@ -75,9 +77,9 @@ function ResponseAction({
       aria-pressed={label === "Helpful" || label === "Not helpful" ? active : undefined}
       onClick={onClick}
       whileTap={reduce ? undefined : { scale: 0.95 }}
-      transition={SPRING_PRESS}
+      transition={spring.fast}
       className={cn(
-        "grid size-7 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
+        "grid size-7 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
         active && "bg-muted text-foreground",
       )}
     >
@@ -165,7 +167,8 @@ export function StreamingResponse({
       <div
         aria-live={announce ? "polite" : "off"}
         className={cn(
-          "text-sm leading-6 text-foreground/90 [&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.9em] [&_a]:font-medium [&_a]:underline [&_a]:underline-offset-4 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_p+p]:mt-3 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5",
+          typeClass("body"),
+          "leading-6 text-foreground [&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.9em] [&_a]:font-medium [&_a]:underline [&_a]:underline-offset-4 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_p+p]:mt-3 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5",
           contentClassName,
         )}
       >
@@ -186,23 +189,27 @@ export function StreamingResponse({
               {canCopy ? (
                 <ResponseAction label={copied ? "Copied" : "Copy response"} onClick={handleCopy}>
                   <ActionSwapRollIcon value={copied ? "copied" : "copy"} className="size-3.5">
-                    {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                    {copied ? (
+                      <IconCheck className="size-3.5" />
+                    ) : (
+                      <IconCopy className="size-3.5" />
+                    )}
                   </ActionSwapRollIcon>
                 </ResponseAction>
               ) : null}
               {onRetry ? (
                 <ResponseAction label="Retry response" onClick={onRetry}>
-                  <RotateCcw className="size-3.5" />
+                  <IconRotate className="size-3.5" />
                 </ResponseAction>
               ) : null}
               {onFork ? (
                 <ResponseAction label={forking ? "Forking…" : "Fork from here"} onClick={onFork}>
-                  <GitFork className={cn("size-3.5", forking && "animate-pulse")} />
+                  <IconGitFork className={cn("size-3.5", forking && "animate-pulse")} />
                 </ResponseAction>
               ) : null}
               {onAskAside ? (
                 <ResponseAction label="Ask a side question (BTW)" onClick={onAskAside}>
-                  <MessageCircleQuestionMark className="size-3.5" />
+                  <IconMessageQuestion className="size-3.5" />
                 </ResponseAction>
               ) : null}
               {complete && showFeedback ? (
@@ -212,14 +219,14 @@ export function StreamingResponse({
                     active={currentFeedback === "up"}
                     onClick={() => setFeedback("up")}
                   >
-                    <ThumbsUp className="size-3.5" />
+                    <IconThumbUp className="size-3.5" />
                   </ResponseAction>
                   <ResponseAction
                     label="Not helpful"
                     active={currentFeedback === "down"}
                     onClick={() => setFeedback("down")}
                   >
-                    <ThumbsDown className="size-3.5" />
+                    <IconThumbDown className="size-3.5" />
                   </ResponseAction>
                 </>
               ) : null}
@@ -229,16 +236,19 @@ export function StreamingResponse({
                   aria-expanded={currentSourcesOpen}
                   aria-controls={sourcesContentId}
                   onClick={() => setSourcesOpen(!currentSourcesOpen)}
-                  className="group ml-1 inline-flex min-h-7 items-center gap-2 rounded-md px-1.5 text-xs text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring"
+                  className={cn(
+                    typeClass("caption"),
+                    "group ml-1 inline-flex min-h-7 items-center gap-2 rounded-md px-1.5 text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
+                  )}
                 >
                   <CitationStack citations={sources} />
                   <span className="tabular-nums">
                     {sources.length} {sources.length === 1 ? "source" : "sources"}
                   </span>
-                  <ChevronRight
+                  <IconChevronRight
                     aria-hidden="true"
                     className={cn(
-                      "size-3 text-muted-foreground/50 transition duration-200 ease-out group-hover:text-muted-foreground",
+                      "size-3 text-muted-foreground transition duration-(--duration-moderate) ease-out group-hover:text-muted-foreground",
                       currentSourcesOpen && "rotate-90",
                     )}
                   />

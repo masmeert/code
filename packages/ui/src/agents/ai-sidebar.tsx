@@ -1,16 +1,16 @@
 import {
-  ArrowDown,
-  ArrowUp,
-  Bookmark,
-  FileText,
-  Folder,
-  FolderInput,
-  FolderOpen,
-  type LucideIcon,
-  MoreHorizontal,
-  Pencil,
-  Undo2,
-} from "lucide-react";
+  IconArrowBackUp,
+  IconArrowDown,
+  IconArrowUp,
+  IconBookmark,
+  IconDots,
+  IconFileText,
+  IconFolder,
+  IconFolderOpen,
+  IconFolderShare,
+  IconPencil,
+  type Icon as TablerIcon,
+} from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   type DragEvent,
@@ -28,9 +28,10 @@ import {
   MorphingPopoverMenu,
   MorphingPopoverTrigger,
 } from "@masmeert/ui/morphing-popover";
-import { EASE_OUT, SPRING_LAYOUT } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { useTouchCapable } from "@masmeert/ui/hooks/use-touch-capable";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type SidebarResourceKind = "folder" | "project" | "file" | "bookmark";
 
@@ -98,10 +99,7 @@ interface DropTarget {
   position: SidebarResourceDropPosition;
 }
 
-const ROW_REVEAL = {
-  duration: 0.16,
-  ease: EASE_OUT,
-} as const;
+const ROW_REVEAL = spring.moderate;
 
 function canContain(item: SidebarResource) {
   return item.kind === "folder" || item.kind === "project";
@@ -215,11 +213,11 @@ function defaultIcon(item: SidebarResource, expanded: boolean) {
   const Icon =
     item.kind === "folder" || item.kind === "project"
       ? expanded
-        ? FolderOpen
-        : Folder
+        ? IconFolderOpen
+        : IconFolder
       : item.kind === "bookmark"
-        ? Bookmark
-        : FileText;
+        ? IconBookmark
+        : IconFileText;
   return <Icon className="size-4" />;
 }
 
@@ -278,7 +276,7 @@ export function ResourceMenuAction({
   onSelect,
   children,
 }: {
-  icon: LucideIcon;
+  icon: TablerIcon;
   onSelect: () => void;
   children: ReactNode;
 }) {
@@ -286,7 +284,10 @@ export function ResourceMenuAction({
     <button
       type="button"
       onClick={onSelect}
-      className="flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs text-foreground transition-colors outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
+      className={cn(
+        typeClass("caption"),
+        "flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-foreground transition-colors outline-none hover:bg-hover focus-visible:bg-muted focus-visible:ring-4 focus-visible:ring-ring",
+      )}
     >
       <Icon aria-hidden="true" className="size-3.5 shrink-0" />
       <span className="min-w-0 truncate">{children}</span>
@@ -382,29 +383,29 @@ function ResourceRow({
     moves,
   }) ?? (
     <>
-      <ResourceMenuAction icon={Pencil} onSelect={runFromMenu(onRenameStart)}>
+      <ResourceMenuAction icon={IconPencil} onSelect={runFromMenu(onRenameStart)}>
         Rename
       </ResourceMenuAction>
       {moves.up || moves.down || moves.into || moves.out ? (
         <div aria-hidden="true" className="my-1 h-px bg-border" />
       ) : null}
       {moves.up ? (
-        <ResourceMenuAction icon={ArrowUp} onSelect={runFromMenu(moves.up)}>
+        <ResourceMenuAction icon={IconArrowUp} onSelect={runFromMenu(moves.up)}>
           Move up
         </ResourceMenuAction>
       ) : null}
       {moves.down ? (
-        <ResourceMenuAction icon={ArrowDown} onSelect={runFromMenu(moves.down)}>
+        <ResourceMenuAction icon={IconArrowDown} onSelect={runFromMenu(moves.down)}>
           Move down
         </ResourceMenuAction>
       ) : null}
       {moves.into ? (
-        <ResourceMenuAction icon={FolderInput} onSelect={runFromMenu(moves.into.run)}>
+        <ResourceMenuAction icon={IconFolderShare} onSelect={runFromMenu(moves.into.run)}>
           Move into {moves.into.label}
         </ResourceMenuAction>
       ) : null}
       {moves.out ? (
-        <ResourceMenuAction icon={Undo2} onSelect={runFromMenu(moves.out)}>
+        <ResourceMenuAction icon={IconArrowBackUp} onSelect={runFromMenu(moves.out)}>
           Move out
         </ResourceMenuAction>
       ) : null}
@@ -415,7 +416,7 @@ function ResourceRow({
     <motion.div
       ref={setRef}
       layout="position"
-      transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
+      transition={reduce ? { duration: 0 } : spring.moderate}
       role="treeitem"
       aria-level={row.depth + 1}
       aria-selected={acceptsChildren ? undefined : active}
@@ -453,8 +454,9 @@ function ResourceRow({
       onDragOver={(event) => onDragOver(event, row)}
       onDrop={onDrop}
       className={cn(
-        "group/resource relative flex min-h-9 min-w-0 cursor-pointer items-center gap-2.5 rounded-xl pr-3 text-sm outline-none",
-        "text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+        typeClass("body"),
+        "group/resource relative flex min-h-9 min-w-0 cursor-pointer items-center gap-2.5 rounded-xl pr-3 outline-none",
+        "text-muted-foreground transition-colors hover:bg-hover hover:text-foreground",
         "focus-visible:bg-muted/70 focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-inset",
         "data-[menu-open=true]:bg-muted data-[menu-open=true]:text-foreground",
         "data-[dragging=true]:opacity-40",
@@ -493,7 +495,10 @@ function ResourceRow({
               onRenameCancel();
             }
           }}
-          className="mx-1 h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus-visible:ring-4 focus-visible:ring-ring"
+          className={cn(
+            typeClass("body"),
+            "mx-1 h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-foreground outline-none focus-visible:ring-4 focus-visible:ring-ring",
+          )}
         />
       ) : (
         <MarqueeLabel active={hovered || menuOpen}>{row.item.label}</MarqueeLabel>
@@ -515,7 +520,7 @@ function ResourceRow({
                 canTouch ? "opacity-100" : "opacity-0",
               )}
             >
-              <MoreHorizontal aria-hidden="true" className="size-4" />
+              <IconDots aria-hidden="true" className="size-4" />
             </button>
           </MorphingPopoverTrigger>
           <MorphingPopoverContent

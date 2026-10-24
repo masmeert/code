@@ -7,8 +7,10 @@ import {
   useState,
 } from "react";
 import { EASE_OUT } from "@masmeert/ui/lib/ease";
+import { reducedTransition, spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
 import { MessageSideContext } from "@masscode/ui/agents/message-context";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export {
   MessageBubble,
@@ -85,9 +87,7 @@ export function Message({
             animate ??
             (entering && !reduce ? { opacity: 1, transform: "translateY(0px)" } : { opacity: 1 })
           }
-          transition={
-            transition ?? (reduce ? { duration: 0.12 } : { duration: 0.15, ease: EASE_OUT })
-          }
+          transition={transition ?? reducedTransition(spring.moderate, reduce)}
           className={cn(
             "group/message flex w-full items-start gap-2",
             from === "user" ? "flex-row-reverse" : "flex-row",
@@ -123,7 +123,8 @@ export function MessageAvatar({
       data-slot="message-avatar"
       aria-hidden={placeholder || undefined}
       className={cn(
-        "grid size-7 shrink-0 place-items-center overflow-hidden rounded-full bg-muted text-xs font-medium text-muted-foreground [&_img]:size-full [&_img]:object-cover [&_svg]:size-3.5",
+        typeClass("caption"),
+        "grid size-7 shrink-0 place-items-center overflow-hidden rounded-full bg-muted font-medium text-muted-foreground [&_img]:size-full [&_img]:object-cover [&_svg]:size-3.5",
         placeholder && "invisible",
         className,
       )}
@@ -187,7 +188,8 @@ export function MessageMarker({ className, ...props }: MessageMarkerProps) {
     <div
       data-slot="message-marker"
       className={cn(
-        "mx-auto flex w-fit max-w-[88%] items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-center text-xs text-muted-foreground",
+        typeClass("caption"),
+        "mx-auto flex w-fit max-w-[88%] items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-center text-muted-foreground",
         className,
       )}
       {...props}

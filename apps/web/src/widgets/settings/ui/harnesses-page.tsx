@@ -18,7 +18,13 @@ import {
   type ProviderStatus,
 } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
-import { ArrowDown, ArrowUp, Monitor, Server, Star } from "lucide-react";
+import {
+  IconArrowDown,
+  IconArrowUp,
+  IconDeviceDesktop,
+  IconServer,
+  IconStar,
+} from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { findDefaultModel, orderModels } from "@masscode/client";
 import { buildMachineOptions, THIS_MAC, toMachine, useHostStore } from "@/entities/host";
@@ -32,6 +38,7 @@ import {
   SettingsTextField,
 } from "./settings-controls.tsx";
 import { ProviderCard } from "./provider-card.tsx";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 const CONFIG_DIR: Record<ProviderKind, { env: string; placeholder: string }> = {
   claude: { env: "CLAUDE_CONFIG_DIR", placeholder: "~/.claude" },
@@ -83,9 +90,9 @@ export function HarnessesPage() {
               value: option.value,
               label: option.label,
               icon: option.machine ? (
-                <Server className="size-3.5" />
+                <IconServer className="size-3.5" />
               ) : (
-                <Monitor className="size-3.5" />
+                <IconDeviceDesktop className="size-3.5" />
               ),
             }))}
           />
@@ -241,10 +248,10 @@ function VariablesField({ provider }: { provider: ProviderKind }) {
         }}
         placeholder="ANTHROPIC_BASE_URL=https://…"
         spellCheck={false}
-        className="mt-2 min-h-14 rounded-lg bg-background font-mono text-xs md:text-xs"
+        className={cn(typeClass("caption"), "mt-2 min-h-14 rounded-lg bg-background font-mono")}
       />
       {invalidLine !== -1 ? (
-        <p className="mt-1 text-xs text-destructive">
+        <p className={cn(typeClass("caption"), "mt-1 text-destructive")}>
           Line {invalidLine + 1} isn't saved: write it as KEY=value, like DEBUG=1.
         </p>
       ) : null}
@@ -320,7 +327,7 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
                     })
                   }
                 >
-                  <Star className={cn("size-3.5", isFavorite && "fill-brand text-brand")} />
+                  <IconStar className={cn("size-3.5", isFavorite && "fill-brand text-brand")} />
                 </IconButton>
                 <div
                   className={cn(
@@ -328,7 +335,7 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
                     isHidden && "opacity-50",
                   )}
                 >
-                  <span className="shrink-0 text-sm">{model.label}</span>
+                  <span className={cn(typeClass("body"), "shrink-0")}>{model.label}</span>
                   <span className="truncate font-mono text-[11px] text-muted-foreground">
                     {model.id}
                   </span>
@@ -343,14 +350,14 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
                   disabled={index === 0}
                   onClick={() => moveModel(index, -1)}
                 >
-                  <ArrowUp className="size-3.5" />
+                  <IconArrowUp className="size-3.5" />
                 </IconButton>
                 <IconButton
                   label={`Move ${model.label} down (⌥↓)`}
                   disabled={index === models.length - 1}
                   onClick={() => moveModel(index, 1)}
                 >
-                  <ArrowDown className="size-3.5" />
+                  <IconArrowDown className="size-3.5" />
                 </IconButton>
                 <Switch
                   checked={!isHidden}
@@ -364,7 +371,7 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
                         : [...hidden, model.id],
                     })
                   }
-                  size="sm"
+                  size="compact"
                   className="ml-2"
                 />
               </div>

@@ -20,7 +20,7 @@ import {
   type MacApp,
 } from "@masscode/contracts";
 import { formatClockTime, formatTimeLeft, useNow } from "@masscode/client";
-import { AppWindow, LoaderCircle, Plus, Search, X } from "lucide-react";
+import { IconAppWindow, IconLoader2, IconPlus, IconSearch, IconX } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 import {
   listKeepAwakeApps,
@@ -38,6 +38,7 @@ import {
   SettingsSection,
   SettingsSelect,
 } from "./settings-controls.tsx";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 const MANUAL_MINUTES = [30, 60, 120, 240, 480, 720];
 
@@ -101,7 +102,7 @@ export function KeepAwakePage() {
             }
           >
             <Switch
-              size="sm"
+              size="compact"
               checked={keepAwake.enabled}
               onCheckedChange={(enabled) => update({ enabled })}
               ariaLabel="Keep this Mac awake for agents"
@@ -113,7 +114,9 @@ export function KeepAwakePage() {
             onPickMinutes={(manualMinutes) => update({ manualMinutes })}
           />
           <Collapsible open={status.notice !== null}>
-            <p className="px-3 py-2.5 text-xs text-muted-foreground">{status.notice}</p>
+            <p className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
+              {status.notice}
+            </p>
           </Collapsible>
         </SettingsGroup>
       </SettingsSection>
@@ -130,7 +133,7 @@ export function KeepAwakePage() {
               }
             >
               <Switch
-                size="sm"
+                size="compact"
                 checked={keepAwake.whileAgentsWork !== false}
                 onCheckedChange={(whileAgentsWork) => update({ whileAgentsWork })}
                 ariaLabel="While agents work"
@@ -183,7 +186,7 @@ export function KeepAwakePage() {
               }
             >
               <Switch
-                size="sm"
+                size="compact"
                 checked={keepAwake.lowPowerWhenClosed !== false}
                 onCheckedChange={(lowPowerWhenClosed) => update({ lowPowerWhenClosed })}
                 ariaLabel="Low Power Mode with the lid closed"
@@ -197,7 +200,7 @@ export function KeepAwakePage() {
               label={<RowLabel title="Mute sound" description="Unmuted when you open the lid" />}
             >
               <Switch
-                size="sm"
+                size="compact"
                 checked={keepAwake.muteWhenClosed !== false}
                 onCheckedChange={(muteWhenClosed) => update({ muteWhenClosed })}
                 ariaLabel="Mute sound"
@@ -212,7 +215,7 @@ export function KeepAwakePage() {
               }
             >
               <Switch
-                size="sm"
+                size="compact"
                 checked={keepAwake.freezeOthers === true}
                 onCheckedChange={(freezeOthers) => update({ freezeOthers })}
                 ariaLabel="Pause every other app"
@@ -253,12 +256,17 @@ export function KeepAwakePage() {
             <div className="px-3 py-2.5">
               <p className="text-[13px]">Closing the lid now would pause</p>
               {choices === null ? (
-                <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <LoaderCircle className="size-3 animate-spin" />
+                <p
+                  className={cn(
+                    typeClass("caption"),
+                    "mt-1 flex items-center gap-1.5 text-muted-foreground",
+                  )}
+                >
+                  <IconLoader2 className="size-3 animate-spin" />
                   Looking at what's running…
                 </p>
               ) : (
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className={cn(typeClass("caption"), "mt-1 text-muted-foreground")}>
                   {pausedNow.length === 0
                     ? "Nothing that's running."
                     : pausedNow.map((choice) => choice.name).join(", ")}
@@ -313,7 +321,12 @@ function SessionRow(props: {
   return (
     <SettingsRow label={<RowLabel title={title} description={description} />}>
       {session ? (
-        <Button size="sm" variant="secondary" className="h-7 rounded-lg" onClick={stopKeepAwake}>
+        <Button
+          size="compact"
+          variant="secondary"
+          className="h-7 rounded-lg"
+          onClick={stopKeepAwake}
+        >
           Stop
         </Button>
       ) : (
@@ -328,7 +341,7 @@ function SessionRow(props: {
             className="w-32"
           />
           <Button
-            size="sm"
+            size="compact"
             variant="secondary"
             className="h-7 rounded-lg"
             onClick={() => startKeepAwake(minutes)}
@@ -364,7 +377,7 @@ function AccessSection({ status }: { status: KeepAwakeStatus }) {
             isConfirming ? (
               <div className="flex items-center gap-1">
                 <Button
-                  size="sm"
+                  size="compact"
                   variant="ghost"
                   className="h-7 rounded-lg"
                   onClick={() => setIsConfirming(false)}
@@ -372,7 +385,7 @@ function AccessSection({ status }: { status: KeepAwakeStatus }) {
                   Cancel
                 </Button>
                 <Button
-                  size="sm"
+                  size="compact"
                   variant="ghost"
                   className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
                   onClick={() => {
@@ -385,7 +398,7 @@ function AccessSection({ status }: { status: KeepAwakeStatus }) {
               </div>
             ) : (
               <Button
-                size="sm"
+                size="compact"
                 variant="ghost"
                 className="h-7 rounded-lg"
                 onClick={() => setIsConfirming(true)}
@@ -395,7 +408,7 @@ function AccessSection({ status }: { status: KeepAwakeStatus }) {
             )
           ) : (
             <Button
-              size="sm"
+              size="compact"
               variant="secondary"
               className="h-7 rounded-lg"
               disabled={status.access === "installing"}
@@ -403,7 +416,7 @@ function AccessSection({ status }: { status: KeepAwakeStatus }) {
             >
               {status.access === "installing" ? (
                 <span className="flex items-center gap-1.5">
-                  <LoaderCircle className="size-3.5 animate-spin" />
+                  <IconLoader2 className="size-3.5 animate-spin" />
                   Waiting for password…
                 </span>
               ) : (
@@ -413,7 +426,7 @@ function AccessSection({ status }: { status: KeepAwakeStatus }) {
           )}
         </SettingsRow>
         <Collapsible open={isConfirming}>
-          <p className="px-3 py-2.5 text-xs text-muted-foreground">
+          <p className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
             Asks for your password again. The Mac goes back to sleeping when the lid closes.
           </p>
         </Collapsible>
@@ -426,7 +439,7 @@ function AppIcon({ icon }: { icon: string | null | undefined }) {
   return icon ? (
     <img src={icon} alt="" className="size-4 shrink-0" />
   ) : (
-    <AppWindow className="size-4 shrink-0 text-muted-foreground" />
+    <IconAppWindow className="size-4 shrink-0 text-muted-foreground" />
   );
 }
 
@@ -470,9 +483,9 @@ function AppListRow(props: {
                 onClick={() =>
                   props.onChange(props.apps.filter((other) => other.bundleId !== app.bundleId))
                 }
-                className="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                className="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <X className="size-3" />
+                <IconX className="size-3" />
               </button>
             </li>
           ))}
@@ -546,13 +559,13 @@ function AppPicker(props: {
     >
       <MorphingPopoverTrigger>
         <Button
-          size="sm"
+          size="compact"
           variant="ghost"
           className="h-7 gap-1 rounded-lg"
           aria-label={props.label}
           title={props.label}
         >
-          <Plus className="size-3.5" />
+          <IconPlus className="size-3.5" />
           Add
         </Button>
       </MorphingPopoverTrigger>
@@ -566,7 +579,7 @@ function AppPicker(props: {
             placeholder="Find an app"
             spellCheck={false}
             autoComplete="off"
-            leftIcon={<Search className="size-3.5" />}
+            leftIcon={<IconSearch className="size-3.5" />}
             onKeyDown={(event) => {
               if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault();
@@ -583,12 +596,17 @@ function AppPicker(props: {
         </div>
         <div role="listbox" aria-label="Apps" className="max-h-56 overflow-y-auto p-1">
           {props.choices === null ? (
-            <p className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground">
-              <LoaderCircle className="size-3 animate-spin" />
+            <p
+              className={cn(
+                typeClass("caption"),
+                "flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground",
+              )}
+            >
+              <IconLoader2 className="size-3 animate-spin" />
               Loading apps…
             </p>
           ) : rows.length === 0 ? (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">
+            <p className={cn(typeClass("caption"), "px-2 py-1.5 text-muted-foreground")}>
               {props.error ?? (needle ? "No app matches." : "No apps left to add.")}
             </p>
           ) : (
@@ -608,7 +626,9 @@ function AppPicker(props: {
                 <AppIcon icon={choice.icon} />
                 <span className="min-w-0 flex-1 truncate">{choice.name}</span>
                 {choice.running ? (
-                  <span className="shrink-0 text-xs text-muted-foreground">Running</span>
+                  <span className={cn(typeClass("caption"), "shrink-0 text-muted-foreground")}>
+                    Running
+                  </span>
                 ) : null}
               </button>
             ))

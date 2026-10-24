@@ -12,14 +12,14 @@ import {
   DropdownMenuTrigger,
 } from "@masmeert/ui/dropdown-menu";
 import {
-  EllipsisVertical,
-  Globe,
-  PanelLeft,
-  Pencil,
-  Play,
-  Smartphone,
-  SquareTerminal,
-} from "lucide-react";
+  IconDeviceMobile,
+  IconDotsVertical,
+  IconLayoutSidebar,
+  IconPencil,
+  IconPlayerPlay,
+  IconTerminal2,
+  IconWorld,
+} from "@tabler/icons-react";
 import { type ReactNode, useState } from "react";
 import { toggleBrowser, useBrowser } from "@/entities/browser";
 import { formatKeybinding } from "@/shared/lib/keybindings";
@@ -28,6 +28,8 @@ import { toggleTerminalPanel, useTerminalStore } from "@/entities/terminal";
 import { runScript } from "../model/run-script.ts";
 import { ScriptsEditor } from "./scripts-editor.tsx";
 import { hasTrafficLights } from "@/shared/config";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { cn } from "@masscode/ui/lib/utils";
 
 /** Top bar: project / title breadcrumb. Leaves room for the traffic lights when the sidebar is folded away. */
 export function ThreadHeader({
@@ -50,20 +52,24 @@ export function ThreadHeader({
       className={`@container flex h-10 shrink-0 items-center gap-2 pr-4 pb-[3px] [-webkit-app-region:drag] ${isSidebarOpen ? "pl-5" : hasTrafficLights ? "pl-[86px]" : "pl-3"}`}
     >
       {isSidebarOpen ? null : (
-        <SidebarTrigger className="mr-1 size-7 rounded-lg text-muted-foreground [-webkit-app-region:no-drag] hover:bg-muted/60 hover:text-foreground">
-          <PanelLeft className="size-4" />
+        <SidebarTrigger className="mr-1 size-7 rounded-lg text-muted-foreground [-webkit-app-region:no-drag] hover:bg-hover hover:text-foreground">
+          <IconLayoutSidebar className="size-4" />
         </SidebarTrigger>
       )}
       {project ? (
         <>
           <ProjectBadge project={project} className="translate-y-px" />
-          <span className="shrink-0 text-sm text-muted-foreground @max-lg:hidden">
+          <span className={cn(typeClass("body"), "shrink-0 text-muted-foreground @max-lg:hidden")}>
             {formatProjectLabel(project.name, host)}
           </span>
-          <span className="shrink-0 text-sm text-muted-foreground/50 @max-lg:hidden">/</span>
+          <span className={cn(typeClass("body"), "shrink-0 text-muted-foreground @max-lg:hidden")}>
+            /
+          </span>
         </>
       ) : null}
-      <span className="min-w-0 truncate text-sm font-medium text-foreground">{title}</span>
+      <span className={cn(typeClass("body"), "min-w-0 truncate font-medium text-foreground")}>
+        {title}
+      </span>
       {badge}
       {actions ? (
         <span className="ml-auto flex shrink-0 items-center gap-2 pl-2 [-webkit-app-region:no-drag]">
@@ -107,13 +113,15 @@ export function ScriptsMenu({
         <DropdownMenuTrigger
           title="Scripts"
           aria-label="Scripts"
-          className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted/60 data-popup-open:text-foreground"
+          className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted/60 data-popup-open:text-foreground"
         >
-          <Play className="size-4" />
+          <IconPlayerPlay className="size-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={4} collisionPadding={8} className="max-w-80">
           {projectConfig?.error ? (
-            <p className="selectable px-2 py-1.5 text-xs text-destructive">{projectConfig.error}</p>
+            <p className={cn(typeClass("caption"), "selectable px-2 py-1.5 text-destructive")}>
+              {projectConfig.error}
+            </p>
           ) : null}
           {scripts.map((script) => (
             <DropdownMenuItem
@@ -121,16 +129,16 @@ export function ScriptsMenu({
               title={script.command}
               onClick={() => runScript(threadId, script)}
             >
-              <Play />
+              <IconPlayerPlay />
               <span className="min-w-0 flex-1 truncate">{script.name}</span>
               {script.preview_url && window.desktop ? (
-                <Globe className="text-muted-foreground" />
+                <IconWorld className="text-muted-foreground" />
               ) : null}
             </DropdownMenuItem>
           ))}
           {scripts.length > 0 || projectConfig?.error ? <DropdownMenuSeparator /> : null}
           <DropdownMenuItem onClick={() => setIsEditingScripts(true)}>
-            <Pencil />
+            <IconPencil />
             {scripts.length > 0 ? "Edit scripts…" : "Add a script…"}
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -156,9 +164,9 @@ export function PanelsMenu({
       <DropdownMenuTrigger
         title="More panels"
         aria-label="More panels"
-        className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted/60 data-popup-open:text-foreground"
+        className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted/60 data-popup-open:text-foreground"
       >
-        <EllipsisVertical className="size-4" />
+        <IconDotsVertical className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={4} collisionPadding={8}>
         <DropdownMenuCheckboxItem
@@ -166,7 +174,7 @@ export function PanelsMenu({
           onCheckedChange={() => toggleTerminalPanel(threadId)}
           closeOnClick
         >
-          <SquareTerminal />
+          <IconTerminal2 />
           Terminal
           <DropdownMenuShortcut>{formatKeybinding("terminal.toggle")}</DropdownMenuShortcut>
         </DropdownMenuCheckboxItem>
@@ -176,7 +184,7 @@ export function PanelsMenu({
             onCheckedChange={() => toggleBrowser(threadId)}
             closeOnClick
           >
-            <Globe />
+            <IconWorld />
             Browser
             <DropdownMenuShortcut>{formatKeybinding("browser.toggle")}</DropdownMenuShortcut>
           </DropdownMenuCheckboxItem>
@@ -187,7 +195,7 @@ export function PanelsMenu({
             onCheckedChange={() => toggleSimulator(threadId)}
             closeOnClick
           >
-            <Smartphone />
+            <IconDeviceMobile />
             Simulator
             <DropdownMenuShortcut>{formatKeybinding("simulator.toggle")}</DropdownMenuShortcut>
           </DropdownMenuCheckboxItem>

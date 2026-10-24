@@ -9,13 +9,22 @@ import {
 import { ResizeHandle } from "@masmeert/ui/resize-handle";
 import { useResizable } from "@masmeert/ui/hooks/use-resizable";
 import { cn } from "@masscode/ui/lib/utils";
-import { ArrowLeft, ChevronDown, House, LoaderCircle, RotateCw, Unplug, X } from "lucide-react";
+import {
+  IconArrowLeft,
+  IconChevronDown,
+  IconHome,
+  IconLoader2,
+  IconPlugConnectedX,
+  IconRotateClockwise,
+  IconX,
+} from "@tabler/icons-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { IconButton } from "@/shared/ui";
 import { connectDeviceStream, type DeviceStream } from "../lib/device-stream.ts";
 import { attachDevice, listDevices, toggleSimulator, useSimulator } from "@/entities/simulator";
 import { useHostStore } from "@/entities/host";
 import { Message } from "./browser-panel.tsx";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 type Setup =
   | { readonly status: "loading" }
@@ -95,7 +104,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
     if (setup.status === "loading") {
       return (
         <Message>
-          <LoaderCircle className="size-4 animate-spin" />
+          <IconLoader2 className="size-4 animate-spin" />
           Starting the device hub…
         </Message>
       );
@@ -116,7 +125,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
     if (setup.status === "installing") {
       return (
         <Message>
-          <LoaderCircle className="size-4 animate-spin" />
+          <IconLoader2 className="size-4 animate-spin" />
           Installing the device tools. This can take a minute…
         </Message>
       );
@@ -134,7 +143,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
     if (bootingDeviceId) {
       return (
         <Message>
-          <LoaderCircle className="size-4 animate-spin" />
+          <IconLoader2 className="size-4 animate-spin" />
           Starting{" "}
           {devices.find((candidate) => candidate.id === bootingDeviceId)?.name ?? "the device"}…
         </Message>
@@ -166,7 +175,7 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
     if (deviceId) {
       return (
         <Message>
-          <LoaderCircle className="size-4 animate-spin" />
+          <IconLoader2 className="size-4 animate-spin" />
           Starting the device…
         </Message>
       );
@@ -184,16 +193,21 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
 
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
-        <p className="px-2 py-1.5 text-xs text-muted-foreground">Choose a device to start</p>
+        <p className={cn(typeClass("caption"), "px-2 py-1.5 text-muted-foreground")}>
+          Choose a device to start
+        </p>
         {devices.map((candidate) => (
           <button
             key={candidate.id}
             type="button"
             onClick={() => void bootDevice(candidate.id)}
-            className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-2 text-left text-sm transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+            className={cn(
+              typeClass("body"),
+              "flex h-8 shrink-0 items-center gap-2 rounded-lg px-2 text-left transition-colors outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
+            )}
           >
             <span className="truncate">{candidate.name}</span>
-            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+            <span className={cn(typeClass("caption"), "ml-auto shrink-0 text-muted-foreground")}>
               {candidate.version}
               {candidate.booted ? " · Running" : ""}
             </span>
@@ -221,11 +235,14 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
         <DropdownMenu>
           <DropdownMenuTrigger
             disabled={setup.status !== "ready"}
-            className="flex h-7 min-w-0 items-center gap-1 rounded-lg px-2 text-xs text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+            className={cn(
+              typeClass("caption"),
+              "flex h-7 min-w-0 items-center gap-1 rounded-lg px-2 text-foreground transition-colors outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
+            )}
           >
             <span className="truncate">{device?.name ?? "Choose a device"}</span>
             {device ? <span className="text-muted-foreground">{device.version}</span> : null}
-            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+            <IconChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" collisionPadding={8}>
             <DropdownMenuRadioGroup
@@ -250,10 +267,10 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
           disabled={!deviceId}
           onClick={() => void attachDevice(threadId, null)}
         >
-          <Unplug className="size-3.5" />
+          <IconPlugConnectedX className="size-3.5" />
         </IconButton>
         <IconButton label="Hide simulator" onClick={() => toggleSimulator(threadId)}>
-          <X className="size-3.5" />
+          <IconX className="size-3.5" />
         </IconButton>
       </div>
       {renderPanelBody()}
@@ -380,8 +397,13 @@ function DeviceScreen({
           />
         ) : null}
         {isStreaming ? null : (
-          <div className="absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <LoaderCircle className="size-4 animate-spin" />
+          <div
+            className={cn(
+              typeClass("body"),
+              "absolute inset-0 flex items-center justify-center gap-2 text-muted-foreground",
+            )}
+          >
+            <IconLoader2 className="size-4 animate-spin" />
             Connecting…
           </div>
         )}
@@ -389,18 +411,18 @@ function DeviceScreen({
       <div className="flex items-center gap-1">
         {device.platform === "android" ? (
           <IconButton label="Back (Esc)" onClick={() => stream.current?.press("back")}>
-            <ArrowLeft className="size-3.5" />
+            <IconArrowLeft className="size-3.5" />
           </IconButton>
         ) : null}
         <IconButton
           label={device.platform === "ios" ? "Home (⌘⇧H)" : "Home"}
           onClick={() => stream.current?.press("home")}
         >
-          <House className="size-3.5" />
+          <IconHome className="size-3.5" />
         </IconButton>
         {device.platform === "ios" ? (
           <IconButton label="Rotate (⌘→)" onClick={() => stream.current?.rotate()}>
-            <RotateCw className="size-3.5" />
+            <IconRotateClockwise className="size-3.5" />
           </IconButton>
         ) : null}
       </div>
@@ -413,7 +435,10 @@ function ActionButton({ onClick, children }: { onClick: () => void; children: Re
     <button
       type="button"
       onClick={onClick}
-      className="rounded-lg px-3 py-1 text-xs text-foreground transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(
+        typeClass("caption"),
+        "rounded-lg px-3 py-1 text-foreground transition-colors outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
+      )}
     >
       {children}
     </button>

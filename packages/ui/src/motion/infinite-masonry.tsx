@@ -1,9 +1,10 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AlertCircle, Inbox } from "lucide-react";
+import { IconAlertCircle, IconInbox } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
-import { EASE_OUT, SPRING_PANEL } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export type InfiniteMasonryKey = string | number | bigint;
 
@@ -98,9 +99,9 @@ function DefaultLoadingItem({ index }: { index: number }) {
 function DefaultEmptyState() {
   return (
     <div className="flex h-full min-h-64 flex-col items-center justify-center px-6 text-center">
-      <Inbox className="size-8 text-muted-foreground" aria-hidden="true" />
-      <p className="mt-3 text-sm font-medium text-foreground">No items yet</p>
-      <p className="mt-1 max-w-xs text-xs leading-5 text-muted-foreground">
+      <IconInbox className="size-8 text-muted-foreground" aria-hidden="true" />
+      <p className={cn(typeClass("body"), "mt-3 font-medium text-foreground")}>No items yet</p>
+      <p className={cn(typeClass("caption"), "mt-1 max-w-xs leading-5 text-muted-foreground")}>
         New items will appear here when they become available.
       </p>
     </div>
@@ -133,8 +134,8 @@ function MasonryItemReveal({
       initial={shouldReveal ? { opacity: 0, y: 12 } : false}
       animate={{ opacity: 1, y: 0 }}
       transition={{
-        y: { ...SPRING_PANEL, delay },
-        opacity: { duration: 0.2, ease: EASE_OUT, delay },
+        y: { ...spring.slow, delay },
+        opacity: { ...spring.fast, delay },
       }}
     >
       {children}
@@ -283,15 +284,24 @@ export function InfiniteMasonry<T>({
                 hasError ? (
                   <div className="flex min-h-36 flex-col items-start justify-center rounded-2xl border border-destructive/20 bg-destructive/5 p-4">
                     <div className="flex items-center gap-2 text-destructive">
-                      <AlertCircle className="size-4" aria-hidden="true" />
-                      <p className="text-sm font-medium">Couldn&apos;t load more</p>
+                      <IconAlertCircle className="size-4" aria-hidden="true" />
+                      <p className={cn(typeClass("body"), "font-medium")}>
+                        Couldn&apos;t load more
+                      </p>
                     </div>
-                    <div className="mt-2 text-xs leading-5 text-muted-foreground">{error}</div>
+                    <div
+                      className={cn(typeClass("caption"), "mt-2 leading-5 text-muted-foreground")}
+                    >
+                      {error}
+                    </div>
                     {onRetry ? (
                       <button
                         type="button"
                         onClick={onRetry}
-                        className="mt-3 min-h-10 rounded-xl border border-border bg-background px-4 text-xs font-medium text-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        className={cn(
+                          typeClass("caption"),
+                          "mt-3 min-h-10 rounded-xl border border-border bg-background px-4 font-medium text-foreground transition-colors outline-none hover:bg-hover focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-offset-2",
+                        )}
                       >
                         Try again
                       </button>
@@ -320,7 +330,9 @@ export function InfiniteMasonry<T>({
       </div>
 
       {!hasMore && items.length > 0 && endState ? (
-        <div className="py-4 text-center text-xs text-muted-foreground">{endState}</div>
+        <div className={cn(typeClass("caption"), "py-4 text-center text-muted-foreground")}>
+          {endState}
+        </div>
       ) : null}
       <span className="sr-only" aria-live="polite">
         {loading ? "Loading more items" : null}

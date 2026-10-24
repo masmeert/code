@@ -12,7 +12,13 @@ import { addProject } from "@/features/add-project";
 import { Button } from "@masmeert/ui/button";
 import { cn } from "@masscode/ui/lib/utils";
 import { type Project, parseRepository } from "@masscode/contracts";
-import { Check, FolderPlus, LoaderCircle, Monitor, Server } from "lucide-react";
+import {
+  IconCheck,
+  IconDeviceDesktop,
+  IconFolderPlus,
+  IconLoader2,
+  IconServer,
+} from "@tabler/icons-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { findDefaultModel } from "@masscode/client";
 import { Composer, focusComposer } from "@/widgets/composer";
@@ -27,6 +33,7 @@ import { buildMachineOptions, THIS_MAC, toMachine, useHostStore } from "@/entiti
 import { useSetting, useSettings } from "@/entities/settings";
 import { createThread, usePathHost, useThreadStore } from "@/entities/thread";
 import { ThreadHeader } from "@/widgets/thread-header";
+import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 const ADD_PROJECT = "\u0000add-project";
 
@@ -163,7 +170,10 @@ function ProjectList({
         aria-controls={listId}
         aria-activedescendant={isSearching ? `${listId}-${activeIndex}` : undefined}
         placeholder="Search projects…"
-        className="mb-1 h-8 w-full rounded-lg bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
+        className={cn(
+          typeClass("body"),
+          "mb-1 h-8 w-full rounded-lg bg-muted px-2.5 text-foreground outline-none placeholder:text-muted-foreground",
+        )}
       />
       <div
         id={listId}
@@ -182,7 +192,8 @@ function ProjectList({
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => pickRow(row)}
             className={cn(
-              "flex h-8 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground",
+              typeClass("body"),
+              "flex h-8 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground",
               isSearching && index === activeIndex && "bg-muted text-foreground",
               row.id === currentKey && "text-foreground",
             )}
@@ -191,14 +202,19 @@ function ProjectList({
               <>
                 <ProjectBadge project={row.project} />
                 <span className="shrink-0">{row.project.name}</span>
-                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground/70">
+                <span
+                  className={cn(
+                    typeClass("caption"),
+                    "min-w-0 flex-1 truncate text-muted-foreground",
+                  )}
+                >
                   {row.where}
                 </span>
-                {row.id === currentKey ? <Check className="size-3.5 shrink-0" /> : null}
+                {row.id === currentKey ? <IconCheck className="size-3.5 shrink-0" /> : null}
               </>
             ) : (
               <>
-                <FolderPlus className="size-4 shrink-0" />
+                <IconFolderPlus className="size-4 shrink-0" />
                 Add project…
               </>
             )}
@@ -272,12 +288,14 @@ function CloneCopy({
           else setError(cloned.error);
         }}
       >
-        {isCloning ? <LoaderCircle className="size-4 animate-spin" /> : null}
+        {isCloning ? <IconLoader2 className="size-4 animate-spin" /> : null}
         {isCloning
           ? "Cloning…"
           : `Clone into ${[parent.replace(/\/$/, ""), project.folder ? parseRepository(project.remote).split("/").at(-1) : project.name, project.folder].filter(Boolean).join("/")}`}
       </Button>
-      {error ? <span className="max-w-md text-xs text-destructive">{error}</span> : null}
+      {error ? (
+        <span className={cn(typeClass("caption"), "max-w-md text-destructive")}>{error}</span>
+      ) : null}
     </span>
   );
 }
@@ -432,7 +450,7 @@ export function DraftPage({
                   value: option.value,
                   label: option.label,
                   description: findCopyOn(option.machine)?.path ?? "Not cloned here yet",
-                  icon: option.machine ? <Server /> : <Monitor />,
+                  icon: option.machine ? <IconServer /> : <IconDeviceDesktop />,
                 })),
                 onChange: (value) => {
                   const machine = toMachine(value);

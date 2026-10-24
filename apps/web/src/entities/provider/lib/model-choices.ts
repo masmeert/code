@@ -1,6 +1,6 @@
 import type { PromptOption } from "@masscode/ui/agents/prompt-input";
 import { PROVIDER_LOGO } from "../ui/provider-logo.tsx";
-import { Star } from "lucide-react";
+import { IconStar } from "@tabler/icons-react";
 import { createElement } from "react";
 import { getVisibleModels } from "@masscode/client";
 import {
@@ -17,7 +17,7 @@ export function formatHarnessLabel(settings: Settings, provider: ProviderKind) {
 
 /** Star marking a harness's own default pick (model, effort) in menus. */
 export function renderRecommendedBadge() {
-  return createElement(Star, {
+  return createElement(IconStar, {
     "aria-label": "Recommended",
     className: "size-3 fill-current text-brand",
   });

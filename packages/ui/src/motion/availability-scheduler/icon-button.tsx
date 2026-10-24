@@ -1,6 +1,6 @@
 import { type HTMLMotionProps, motion } from "motion/react";
 import type { ReactNode } from "react";
-import { SPRING_PRESS } from "@masmeert/ui/lib/ease";
+import { spring } from "@masmeert/ui/lib/springs";
 import { cn } from "@masscode/ui/lib/utils";
 
 export function IconButton({
@@ -31,9 +31,9 @@ export function IconButton({
       onClick={onClick}
       disabled={disabled}
       whileTap={reduce || disabled ? undefined : { scale: 0.86 }}
-      transition={SPRING_PRESS}
+      transition={spring.fast}
       className={cn(
-        "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
+        "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
         className,
       )}
     >
