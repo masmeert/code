@@ -2,8 +2,6 @@ import { formatClockTime, formatTimeLeft, useNow } from "@masscode/client";
 import { IconCoffee } from "@tabler/icons-react";
 import { stopKeepAwake, useKeepAwake } from "@/entities/keep-awake";
 import { IconButton } from "@/shared/ui";
-import { typeClass } from "@masmeert/ui/lib/type-scale";
-import { cn } from "@masscode/ui/lib/utils";
 
 /** Shown while this Mac is kept awake, so it's never kept awake unnoticed. */
 export function KeepAwakeIndicator() {
@@ -14,19 +12,18 @@ export function KeepAwakeIndicator() {
 
   const manual = session.reason === "manual";
 
+  // An agents session ends when the agents do; its endsAt is only the safety cap, not a countdown.
+  const status = manual
+    ? `Kept awake for ${formatTimeLeft(session.endsAt - now)}, until ${formatClockTime(session.endsAt)}.`
+    : `Awake for agents until ${formatClockTime(session.endsAt)} at the latest.`;
+
   return (
     <IconButton
-      label={`${manual ? "Kept awake" : "Awake for agents"} until ${formatClockTime(session.endsAt)} at the latest. Click to stop keeping this Mac awake.`}
+      label={`${status} Click to stop keeping this Mac awake.`}
       onClick={stopKeepAwake}
-      className="w-auto grid-flow-col gap-1 px-1.5 text-foreground"
+      className="text-foreground"
     >
       <IconCoffee className="size-4" />
-      {/* An agents session ends when the agents do; its endsAt is only the safety cap, not a countdown. */}
-      {manual && (
-        <span className={cn(typeClass("caption"), "tabular-nums")}>
-          {formatTimeLeft(session.endsAt - now)}
-        </span>
-      )}
     </IconButton>
   );
 }

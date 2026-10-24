@@ -7,7 +7,7 @@ import {
   IconCoffee,
   IconDeviceMobile,
   IconEdit,
-  IconNetwork,
+  IconBroadcast,
   IconSettings,
   IconTerminal2,
   IconWorld,
@@ -279,7 +279,7 @@ export function App() {
                 id: "services.open",
                 label: "Services",
                 hint: formatKeybinding("services.open"),
-                icon: <IconNetwork />,
+                icon: <IconBroadcast />,
                 run: () => setIsServicesOpen(true),
               },
               {

@@ -7,7 +7,7 @@ import {
   IconArrowUpRight,
   IconChevronRight,
   IconLoader2,
-  IconNetwork,
+  IconBroadcast,
   IconPlayerStop,
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
@@ -162,7 +162,7 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
     <div className="-m-5 flex max-h-[min(34rem,calc(100vh-4rem))] flex-col">
       <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-4">
         <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-border bg-muted text-foreground">
-          <IconNetwork className="size-4" />
+          <IconBroadcast className="size-4" />
         </span>
         <div className="min-w-0">
           <h2 className="text-[15px] leading-5 font-semibold">Services</h2>
