@@ -2,6 +2,13 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.14](https://github.com/masmeert/code/compare/v0.1.13...v0.1.14) (2026-10-24)
+
+
+### Added
+
+* **phones:** reach the computer from anywhere through an end-to-end encrypted relay ([8c4f2e4](https://github.com/masmeert/code/commit/8c4f2e410eabdb0019d48f11499458c968751857))
+
 ## [0.1.13](https://github.com/masmeert/code/compare/v0.1.12...v0.1.13) (2026-10-24)
 
 
