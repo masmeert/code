@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { Composer } from "@/widgets/composer";
+import { Composer, useComposerKeyboardOffset } from "@/widgets/composer";
 import { ThreadHeader } from "@/widgets/thread-header";
 import { useHostStore } from "@/entities/host";
 import { useProjectStore } from "@/entities/project";
@@ -22,6 +22,7 @@ export function NewThreadPage() {
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const stopWaiting = useRef<() => void>(null);
+  const keyboardOffset = useComposerKeyboardOffset();
 
   useEffect(() => () => stopWaiting.current?.(), []);
 
@@ -86,7 +87,7 @@ export function NewThreadPage() {
     <View className="flex-1 bg-background">
       <ThreadHeader title="New thread" project={project} hostName={host.paired.name} />
       <View pointerEvents="box-none" className="absolute inset-x-0 bottom-0">
-        <KeyboardStickyView>
+        <KeyboardStickyView offset={{ opened: keyboardOffset }}>
           <View>
             {copies.length > 1 ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} className="grow-0 pt-2">

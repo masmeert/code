@@ -22,16 +22,13 @@ import { MenuView } from "@expo/ui/community/menu";
 import * as Schema from "effect/Schema";
 import * as DocumentPicker from "expo-document-picker";
 import { File, Paths } from "expo-file-system";
-import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import type { SFSymbol } from "expo-symbols";
 import { useEffect, useState } from "react";
 import { Alert, Image, Pressable, ScrollView, View } from "react-native";
-import { useKeyboardState } from "react-native-keyboard-controller";
 import Animated from "react-native-reanimated";
-import { withUniwind } from "uniwind";
 import {
   type ChoiceGroup,
   type ThreadSettingsSession,
@@ -94,8 +91,6 @@ function alertTooBig(names: ReadonlyArray<string>) {
     "A message from the phone can carry up to 10 MB of files. Send bigger files from your computer.",
   );
 }
-
-const StyledGlassView = withUniwind(GlassView);
 
 /** Where each harness looks for a project's skills. */
 const SKILLS_FOLDER: Record<ProviderKind, string> = {
@@ -171,7 +166,6 @@ export function Composer({
   const prefsKey = thread?.id ?? "new";
   const [remembered, setRemembered] = useState(() => prefsByThread.get(prefsKey));
   const prefs = fitTurnPrefs(settings, remembered, provider);
-  const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
   // The editor's caret, which dictation and the `@`/`$`/`/` menu insert at.
   const [selection, setSelection] = useState<ComposerEditorSelection>({ start: 0, end: 0 });
 
@@ -665,26 +659,18 @@ export function Composer({
     );
 
   return (
-    <View className={cn("gap-2 px-3 pt-1.5", isKeyboardVisible ? "pb-2" : "pb-safe")}>
-      {/* The transcript fades out behind the composer rather than ending at a hard edge. */}
+    // The padding stays put as the keyboard opens, since a change in height would scroll the
+    // transcript; the pages lift the composer by less instead (useComposerKeyboardOffset).
+    <View className="pb-safe gap-2 px-3 pt-1.5">
+      {/* The transcript fades out behind the composer's top, and is hidden around the rest of it. */}
       <View
         pointerEvents="none"
-        className="absolute inset-0 bg-linear-to-b from-background/0 via-background/60 to-background/90"
+        className="absolute inset-0 bg-linear-to-b from-background/0 via-background to-background"
       />
       {commandMenu ? <ComposerCommandMenu {...commandMenu} /> : null}
       {queuedRows}
-      <View
-        className={cn(
-          "shadow-composer-shadow overflow-hidden rounded-[27px] py-0.5 shadow-[0_6px_28px]",
-          // Without Liquid Glass (before iOS 26), a near-opaque fill keeps the transcript out.
-          !isGlassEffectAPIAvailable() && "border border-border-strong bg-muted/95",
-        )}
-      >
-        <StyledGlassView
-          pointerEvents="none"
-          glassEffectStyle="regular"
-          className="absolute inset-0 rounded-[27px]"
-        />
+      {/* Opaque, as Liquid Glass let the transcript show through the draft. */}
+      <View className="shadow-composer-shadow overflow-hidden rounded-[27px] border border-border-strong bg-muted py-0.5 shadow-[0_6px_28px]">
         {files.length > 0 ? (
           <ScrollView
             horizontal

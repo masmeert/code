@@ -6,7 +6,7 @@ import { useLocalSearchParams } from "expo-router";
 import { type ComponentRef, useEffect, useMemo, useRef } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import { Composer } from "@/widgets/composer";
+import { Composer, useComposerKeyboardOffset } from "@/widgets/composer";
 import { ThreadHeader } from "@/widgets/thread-header";
 import { useHostStore } from "@/entities/host";
 import { useHostProjects } from "@/entities/project";
@@ -27,6 +27,7 @@ export function ThreadPage() {
   const turns = useMemo(() => toTurns(transcript?.items ?? []), [transcript?.items]);
   const list = useRef<LegendListRef>(null);
   const composer = useRef<ComponentRef<typeof View>>(null);
+  const keyboardOffset = useComposerKeyboardOffset();
 
   // The composer floats over the transcript; its height is how far the transcript's end sits above the bottom.
   const { contentInsetEndAdjustment, onComposerLayout } = useKeyboardChatComposerInset(
@@ -109,6 +110,7 @@ export function ThreadPage() {
         contentInsetEndAdjustment={contentInsetEndAdjustment}
         // Opening the keyboard lifts the transcript only when its end is showing, as ChatGPT does.
         keyboardLiftBehavior="whenAtEnd"
+        keyboardOffset={keyboardOffset}
         keyboardShouldPersistTaps="handled"
         initialScrollAtEnd
         maintainScrollAtEnd
@@ -154,7 +156,7 @@ export function ThreadPage() {
         }
       />
       <View pointerEvents="box-none" className="absolute inset-x-0 bottom-0">
-        <KeyboardStickyView>
+        <KeyboardStickyView offset={{ opened: keyboardOffset }}>
           {/* The list shifts its end by the composer's growth itself; scrolling here as well
               fought that shift and jumped the transcript while typing. */}
           <View ref={composer} onLayout={onComposerLayout}>

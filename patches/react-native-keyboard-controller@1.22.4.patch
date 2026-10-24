@@ -1,0 +1,45 @@
+diff --git a/src/components/KeyboardChatScrollView/index.tsx b/src/components/KeyboardChatScrollView/index.tsx
+index 554b38c07a8eb534a35edcced685d97d8e5c8a40..7bac6e7b882fe280a13d35a2a76511605b55af35 100644
+--- a/src/components/KeyboardChatScrollView/index.tsx
++++ b/src/components/KeyboardChatScrollView/index.tsx
+@@ -2,6 +2,8 @@ import React, { forwardRef, useCallback, useMemo } from "react";
+ import { StyleSheet } from "react-native";
+ import {
+   makeMutable,
++  scrollTo,
++  useAnimatedReaction,
+   useAnimatedRef,
+   useAnimatedStyle,
+   useDerivedValue,
+@@ -84,6 +86,23 @@ const KeyboardChatScrollView: React.ForwardRefExoticComponent<
+       freeze: freezeSV,
+     });
+ 
++    // Scrolled to rather than set as the `contentOffset` prop: a list that renders its own
++    // `contentOffset` (Legend List's initial offset) has it re-applied by Fabric on its next
++    // render, which differs from the one set here, jumping back to where it first opened.
++    useAnimatedReaction(
++      () => contentOffsetY?.value,
++      (current, previous) => {
++        if (
++          current !== undefined &&
++          previous !== undefined &&
++          previous !== null &&
++          current !== previous
++        ) {
++          scrollTo(scrollViewRef, 0, current, false);
++        }
++      },
++    );
++
+     useFrozenPadding({
+       freeze: freezeSV,
+       offset,
+@@ -159,7 +178,6 @@ const KeyboardChatScrollView: React.ForwardRefExoticComponent<
+             applyWorkaroundForContentInsetHitTestBug
+           }
+           bottomPadding={totalPadding}
+-          contentOffsetY={contentOffsetY}
+           inverted={inverted}
+           scrollIndicatorPadding={indicatorPadding}
+           ScrollViewComponent={ScrollViewComponent}
