@@ -286,7 +286,7 @@ export function ResourceMenuAction({
       onClick={onSelect}
       className={cn(
         typeClass("caption"),
-        "flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-foreground transition-colors outline-none hover:bg-hover focus-visible:bg-muted focus-visible:ring-4 focus-visible:ring-ring",
+        "flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-foreground transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring",
       )}
     >
       <Icon aria-hidden="true" className="size-3.5 shrink-0" />

@@ -76,7 +76,7 @@ function MenuItem({
       onClick={onClick}
       className={cn(
         typeClass("body"),
-        "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-foreground transition-colors outline-none hover:bg-hover focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4 [&_svg]:text-muted-foreground",
+        "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-foreground transition-colors outline-none disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4 [&_svg]:text-muted-foreground",
       )}
     >
       {children}
@@ -542,7 +542,7 @@ export function GitMenu({
                     onClick={() => openPanel(null)}
                     className={cn(
                       typeClass("body"),
-                      "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-foreground transition-colors outline-none hover:bg-hover focus-visible:bg-muted/60 [&_svg]:size-4 [&_svg]:text-muted-foreground",
+                      "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-foreground transition-colors outline-none [&_svg]:size-4 [&_svg]:text-muted-foreground",
                     )}
                   >
                     <IconExternalLink />

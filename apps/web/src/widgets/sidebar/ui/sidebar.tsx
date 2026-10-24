@@ -694,7 +694,7 @@ function MenuRow({ action, onDone }: { action: CardAction; onDone: () => void })
         "flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
         action.destructive
           ? "text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10"
-          : "text-foreground hover:bg-hover focus-visible:bg-muted",
+          : "text-foreground",
       )}
     >
       <action.icon aria-hidden="true" className="size-3.5 shrink-0" />
