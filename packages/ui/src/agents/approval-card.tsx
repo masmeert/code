@@ -100,7 +100,7 @@ function QuestionOptions({
     <div className="mt-3">
       {question.options?.length ? (
         question.multiple ? (
-          <div className="grid gap-0.5">
+          <div className="grid gap-3">
             {question.options.map((option) => (
               <div key={option.value} className="flex" onFocus={() => setLookedAt(option.value)}>
                 <Checkbox
@@ -116,7 +116,7 @@ function QuestionOptions({
                         : answer.selected.filter((value) => value !== option.value),
                     })
                   }
-                  className="min-h-9 rounded-lg px-1.5 py-1"
+                  className="w-full"
                 />
               </div>
             ))}
@@ -128,7 +128,6 @@ function QuestionOptions({
               onChange({ selected: [value], custom: "" });
               onSingleSelect?.();
             }}
-            className="gap-0.5"
           >
             {question.options.map((option) => (
               <div key={option.value} className="flex" onFocus={() => setLookedAt(option.value)}>
@@ -137,7 +136,8 @@ function QuestionOptions({
                   label={option.label}
                   description={option.description}
                   disabled={disabled || option.disabled}
-                  className="min-h-9 rounded-lg px-1.5 py-1"
+                  // Unpadded and full width: the kit pads the highlight past each row itself.
+                  className="w-full"
                 />
               </div>
             ))}
@@ -430,7 +430,8 @@ export function ApprovalCard({
             ) : null}
           </div>
 
-          <AgentDisclosure open={interactive}>
+          {/* Room on the sides: the radio highlight reaches 8px past its rows, and this clips. */}
+          <AgentDisclosure open={interactive} className="-mx-2 px-2">
             {questionMode && question ? (
               <AnimatePresence initial={false} mode="wait">
                 <motion.div
