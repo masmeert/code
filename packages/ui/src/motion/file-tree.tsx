@@ -290,7 +290,7 @@ export function FileTree({
       aria-label={ariaLabel}
       aria-multiselectable="false"
       inset={0}
-      pillClassName="rounded-xl bg-muted"
+      pillClassName="rounded-lg"
       className={cn("min-w-0", className, classNames?.tree)}
     >
       {rows.map((row) => {
@@ -342,7 +342,7 @@ export function FileTree({
                 "group/file-tree relative flex h-9 w-full items-center gap-2 overflow-hidden rounded-lg pr-2 text-left text-muted-foreground outline-none",
                 "transition-colors hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-inset",
                 "aria-disabled:cursor-not-allowed",
-                isSelected && "bg-muted font-medium text-foreground",
+                isSelected && "bg-selected font-medium text-foreground",
                 classNames?.item,
                 row.item.className,
               )}

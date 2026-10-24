@@ -760,7 +760,7 @@ function SuggestionMenu({
               transition={
                 shouldGlide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }
               }
-              className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-muted"
+              className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-hover"
             />
           ) : null}
           <span className="shrink-0 font-mono text-foreground">{item.name}</span>

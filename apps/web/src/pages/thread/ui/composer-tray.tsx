@@ -188,7 +188,7 @@ export function LimitStopNotice({
           <DropdownMenu>
             <DropdownMenuTrigger
               title="Move the thread to another harness and continue there; it's told what happened so far"
-              className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted/60 data-popup-open:text-foreground"
+              className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-hover data-popup-open:text-foreground"
             >
               <IconArrowsLeftRight className="size-3.5" />
               Hand off

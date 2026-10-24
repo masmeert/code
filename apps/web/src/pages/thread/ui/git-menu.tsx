@@ -299,7 +299,7 @@ export function GitMenu({
           title={primary.title}
           className={cn(
             typeClass("caption"),
-            "flex items-center gap-1.5 pr-2.5 pl-2 font-medium transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:bg-muted/60 disabled:pointer-events-none disabled:opacity-50",
+            "flex items-center gap-1.5 pr-2.5 pl-2 font-medium transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:bg-hover disabled:pointer-events-none disabled:opacity-50",
           )}
         >
           {pending ? (
@@ -320,8 +320,8 @@ export function GitMenu({
           aria-expanded={panel === "menu"}
           onClick={() => openPanel(panel === "menu" ? null : "menu")}
           className={cn(
-            "grid w-6 place-items-center border-l border-border transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:bg-muted/60",
-            panel === "menu" && "bg-muted/60 text-foreground",
+            "grid w-6 place-items-center border-l border-border transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:bg-hover",
+            panel === "menu" && "bg-hover text-foreground",
           )}
         >
           <IconChevronDown className="size-3.5" />
@@ -396,7 +396,7 @@ export function GitMenu({
                   key={method}
                   className={cn(
                     typeClass("body"),
-                    "flex h-8 items-center gap-2 rounded-lg px-2 text-foreground hover:bg-hover has-focus-visible:bg-muted/60",
+                    "flex h-8 items-center gap-2 rounded-lg px-2 text-foreground hover:bg-hover has-focus-visible:bg-hover",
                   )}
                 >
                   <input
@@ -481,131 +481,133 @@ export function GitMenu({
             </div>
           </form>
         ) : (
-          <MorphingPopoverMenu>
-            <MenuItem
-              onClick={() => openPanel("commit")}
-              disabled={!canCommit}
-              hint={status.changes || undefined}
-            >
-              <IconGitCommit />
-              Commit…
-            </MenuItem>
-            <MenuItem
-              onClick={() => runGitAction("push")}
-              disabled={!canPush}
-              hint={canPush ? pushHint : undefined}
-            >
-              <IconArrowUp />
-              Push
-            </MenuItem>
-            {base ? (
-              base.merged ? (
-                <MenuItem
-                  onClick={() =>
-                    shouldConfirmDelete && !isConfirmingDelete
-                      ? setIsConfirmingDelete(true)
-                      : send(ClientCommand.cases["thread.close"].make({ threadId }))
-                  }
-                  disabled={status.changes > 0 || !!pending}
-                  hint={status.changes > 0 ? "uncommitted" : undefined}
-                >
-                  <IconTrash />
-                  {isConfirmingDelete ? "Click again to delete" : "Delete thread & worktree"}
-                </MenuItem>
-              ) : (
-                <MenuItem
-                  onClick={() => openPanel("merge-into-base")}
-                  disabled={!canMergeIntoBase}
-                  hint={
-                    base.conflicts.length > 0
-                      ? "conflicts"
-                      : status.changes > 0 && base.ahead > 0
-                        ? "commit first"
-                        : base.ahead > 0
-                          ? `${base.ahead} ${base.ahead === 1 ? "commit" : "commits"}`
-                          : "no commits"
-                  }
-                >
-                  <IconGitMerge />
-                  Merge into {base.branch}…
-                </MenuItem>
-              )
-            ) : null}
-            {status.sourceControl ? (
-              isPullRequestOpen && pullRequest ? (
-                <>
-                  <a
-                    role="menuitem"
-                    href={pullRequest.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={() => openPanel(null)}
-                    className={cn(
-                      typeClass("body"),
-                      "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-foreground transition-colors outline-none [&_svg]:size-4 [&_svg]:text-muted-foreground",
-                    )}
-                  >
-                    <IconExternalLink />
-                    View {pullRequestName}
-                    <span
-                      className={cn(
-                        typeClass("caption"),
-                        "ml-auto pl-3 font-mono text-muted-foreground tabular-nums",
-                      )}
-                    >
-                      #{pullRequest.number}
-                    </span>
-                  </a>
+          <>
+            <MorphingPopoverMenu>
+              <MenuItem
+                onClick={() => openPanel("commit")}
+                disabled={!canCommit}
+                hint={status.changes || undefined}
+              >
+                <IconGitCommit />
+                Commit…
+              </MenuItem>
+              <MenuItem
+                onClick={() => runGitAction("push")}
+                disabled={!canPush}
+                hint={canPush ? pushHint : undefined}
+              >
+                <IconArrowUp />
+                Push
+              </MenuItem>
+              {base ? (
+                base.merged ? (
                   <MenuItem
-                    onClick={() => openPanel("merge")}
-                    disabled={!!pending || pullRequest.state === "draft"}
-                    hint={pullRequest.state === "draft" ? "draft" : undefined}
+                    onClick={() =>
+                      shouldConfirmDelete && !isConfirmingDelete
+                        ? setIsConfirmingDelete(true)
+                        : send(ClientCommand.cases["thread.close"].make({ threadId }))
+                    }
+                    disabled={status.changes > 0 || !!pending}
+                    hint={status.changes > 0 ? "uncommitted" : undefined}
+                  >
+                    <IconTrash />
+                    {isConfirmingDelete ? "Click again to delete" : "Delete thread & worktree"}
+                  </MenuItem>
+                ) : (
+                  <MenuItem
+                    onClick={() => openPanel("merge-into-base")}
+                    disabled={!canMergeIntoBase}
+                    hint={
+                      base.conflicts.length > 0
+                        ? "conflicts"
+                        : status.changes > 0 && base.ahead > 0
+                          ? "commit first"
+                          : base.ahead > 0
+                            ? `${base.ahead} ${base.ahead === 1 ? "commit" : "commits"}`
+                            : "no commits"
+                    }
                   >
                     <IconGitMerge />
-                    Merge {pullRequestName}…
+                    Merge into {base.branch}…
                   </MenuItem>
-                  {status.sourceControl === "github" ? (
-                    <MenuItem
-                      onClick={() => {
-                        send(
-                          ClientCommand.cases["thread.watchPullRequest"].make({
-                            threadId,
-                            url: watchedUrl === pullRequest.url ? null : pullRequest.url,
-                          }),
-                        );
-                        openPanel(null);
-                      }}
+                )
+              ) : null}
+              {status.sourceControl ? (
+                isPullRequestOpen && pullRequest ? (
+                  <>
+                    <a
+                      role="menuitem"
+                      href={pullRequest.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => openPanel(null)}
+                      className={cn(
+                        typeClass("body"),
+                        "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-foreground transition-colors outline-none [&_svg]:size-4 [&_svg]:text-muted-foreground",
+                      )}
                     >
-                      {watchedUrl === pullRequest.url ? <IconEyeOff /> : <IconEye />}
-                      {watchedUrl === pullRequest.url
-                        ? `Stop watching ${pullRequestName}`
-                        : "Wake agent on reviews & CI"}
+                      <IconExternalLink />
+                      View {pullRequestName}
+                      <span
+                        className={cn(
+                          typeClass("caption"),
+                          "ml-auto pl-3 font-mono text-muted-foreground tabular-nums",
+                        )}
+                      >
+                        #{pullRequest.number}
+                      </span>
+                    </a>
+                    <MenuItem
+                      onClick={() => openPanel("merge")}
+                      disabled={!!pending || pullRequest.state === "draft"}
+                      hint={pullRequest.state === "draft" ? "draft" : undefined}
+                    >
+                      <IconGitMerge />
+                      Merge {pullRequestName}…
                     </MenuItem>
-                  ) : null}
-                </>
-              ) : (
-                <MenuItem
-                  onClick={() => runGitAction("pull-request")}
-                  disabled={!canCreatePullRequest}
+                    {status.sourceControl === "github" ? (
+                      <MenuItem
+                        onClick={() => {
+                          send(
+                            ClientCommand.cases["thread.watchPullRequest"].make({
+                              threadId,
+                              url: watchedUrl === pullRequest.url ? null : pullRequest.url,
+                            }),
+                          );
+                          openPanel(null);
+                        }}
+                      >
+                        {watchedUrl === pullRequest.url ? <IconEyeOff /> : <IconEye />}
+                        {watchedUrl === pullRequest.url
+                          ? `Stop watching ${pullRequestName}`
+                          : "Wake agent on reviews & CI"}
+                      </MenuItem>
+                    ) : null}
+                  </>
+                ) : (
+                  <MenuItem
+                    onClick={() => runGitAction("pull-request")}
+                    disabled={!canCreatePullRequest}
+                  >
+                    <IconGitCompare />
+                    Create {pullRequestName}
+                  </MenuItem>
+                )
+              ) : null}
+              {pullRequest && !isPullRequestOpen ? (
+                <a
+                  href={pullRequest.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={cn(
+                    typeClass("caption"),
+                    "block px-2 pt-1 text-muted-foreground underline-offset-2 hover:underline",
+                  )}
                 >
-                  <IconGitCompare />
-                  Create {pullRequestName}
-                </MenuItem>
-              )
-            ) : null}
-            {pullRequest && !isPullRequestOpen ? (
-              <a
-                href={pullRequest.url}
-                target="_blank"
-                rel="noreferrer"
-                className={cn(
-                  typeClass("caption"),
-                  "block px-2 pt-1 text-muted-foreground underline-offset-2 hover:underline",
-                )}
-              >
-                {pullRequestName} #{pullRequest.number} {pullRequest.state}
-              </a>
-            ) : null}
+                  {pullRequestName} #{pullRequest.number} {pullRequest.state}
+                </a>
+              ) : null}
+            </MorphingPopoverMenu>
             {base?.merged ? (
               <p className={cn(typeClass("caption"), "px-2 pt-1 text-muted-foreground")}>
                 Merged into {base.branch}
@@ -629,7 +631,7 @@ export function GitMenu({
               </p>
             ) : null}
             {errorNote}
-          </MorphingPopoverMenu>
+          </>
         )}
       </MorphingPopoverContent>
     </MorphingPopover>

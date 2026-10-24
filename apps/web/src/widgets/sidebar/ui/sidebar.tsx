@@ -252,7 +252,7 @@ export function Sidebar(props: {
   // (hovered or current) row.
   function renderCards(infos: Array<ThreadInfo>) {
     return (
-      <SharedLayoutBg inset={0} pillClassName="rounded-xl bg-muted/50" className="gap-1">
+      <SharedLayoutBg inset={0} pillClassName="rounded-xl" className="gap-1">
         {infos.map((info) => (
           <motion.div
             key={info.id}
@@ -260,8 +260,8 @@ export function Sidebar(props: {
             transition={shouldReduceMotion ? { duration: 0 } : spring.moderate}
             className={cn(
               "before:pointer-events-none before:absolute before:inset-x-3 before:-top-[2.5px] before:h-px before:bg-border/60",
-              "first:before:hidden hover:before:hidden has-[[aria-current=page]]:before:hidden",
-              "[:has([aria-current=page])+&]:before:hidden [:hover+&]:before:hidden",
+              "first:before:hidden has-[[aria-current=page]]:before:hidden data-fluid-hover-active:before:hidden",
+              "[:has([aria-current=page])+&]:before:hidden [[data-fluid-hover-active]+&]:before:hidden",
             )}
           >
             <ThreadCard
@@ -692,9 +692,7 @@ function MenuRow({ action, onDone }: { action: CardAction; onDone: () => void })
       className={cn(
         typeClass("caption"),
         "flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
-        action.destructive
-          ? "text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10"
-          : "text-foreground",
+        action.destructive ? "text-destructive" : "text-foreground",
       )}
     >
       <action.icon aria-hidden="true" className="size-3.5 shrink-0" />
@@ -828,13 +826,22 @@ const ThreadCard = memo(function ThreadCard(props: {
             align="end"
             sideOffset={8}
             radius={12}
-            className="w-48 p-1.5"
+            className="w-48"
           >
-            <MorphingPopoverMenu onClick={(event) => event.stopPropagation()}>
-              {actions.map((action) => (
-                <MenuRow key={action.key} action={action} onDone={() => setIsMenuOpen(false)} />
-              ))}
-            </MorphingPopoverMenu>
+            {/* Portaled, but a React child of the card: keep its events from selecting, swiping or
+                opening the card's context menu. */}
+            <div
+              className="p-1.5"
+              onClick={(event) => event.stopPropagation()}
+              onWheel={(event) => event.stopPropagation()}
+              onContextMenu={(event) => event.stopPropagation()}
+            >
+              <MorphingPopoverMenu>
+                {actions.map((action) => (
+                  <MenuRow key={action.key} action={action} onDone={() => setIsMenuOpen(false)} />
+                ))}
+              </MorphingPopoverMenu>
+            </div>
           </MorphingPopoverContent>
         </MorphingPopover>
       </span>
@@ -883,7 +890,7 @@ const ThreadCard = memo(function ThreadCard(props: {
             className={cn(
               "group/card rounded-xl px-3 transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring",
               props.isShelved ? "py-1.5" : "py-2.5",
-              props.isActive && "bg-muted",
+              props.isActive && "bg-selected",
             )}
           >
             {props.isShelved ? (

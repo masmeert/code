@@ -86,7 +86,7 @@ function SettingsView() {
         className="flex w-48 shrink-0 flex-col border-r border-border bg-sidebar p-3"
       >
         <h2 className={cn(typeClass("body"), "px-2 pt-1 pb-3 font-medium")}>Settings</h2>
-        <SharedLayoutBg inset={0} pillClassName="rounded-lg bg-muted/50" className="gap-0.5">
+        <SharedLayoutBg inset={0} pillClassName="rounded-lg" className="gap-0.5">
           {pages.map((entry) => (
             <div key={entry.page}>
               <button
@@ -98,7 +98,7 @@ function SettingsView() {
                 className={cn(
                   typeClass("body"),
                   "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
-                  entry === page && "bg-muted text-foreground",
+                  entry === page && "bg-selected text-foreground",
                 )}
               >
                 <entry.icon className="size-4 shrink-0" />

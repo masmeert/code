@@ -117,7 +117,7 @@ function ProjectList({
     { id: ADD_PROJECT, project: null, where: "" },
   ];
 
-  const { activeIndex, moveActive } = useRowCursor(rows, needle);
+  const { activeIndex, moveTo, moveActive } = useRowCursor(rows, needle);
 
   useEffect(() => {
     if (focusSignal) searchRef.current?.focus({ preventScroll: true });
@@ -190,11 +190,13 @@ function ProjectList({
             aria-selected={row.id === currentKey}
             tabIndex={-1}
             onMouseDown={(event) => event.preventDefault()}
+            // While searching the cursor is the highlight, so the pointer moves it instead of adding a second one.
+            onMouseMove={isSearching && index !== activeIndex ? () => moveTo(row.id) : undefined}
             onClick={() => pickRow(row)}
             className={cn(
               typeClass("body"),
-              "flex h-8 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground",
-              isSearching && index === activeIndex && "bg-muted text-foreground",
+              "flex h-8 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-muted-foreground transition-colors outline-none hover:text-foreground",
+              isSearching ? index === activeIndex && "bg-hover text-foreground" : "hover:bg-hover",
               row.id === currentKey && "text-foreground",
             )}
           >

@@ -556,7 +556,7 @@ function PickerTrigger({
           cn(typeClass("caption"), "h-8 rounded-full border border-border bg-background px-3"),
         variant === "plain" && "h-6 rounded-lg px-2 text-[11px]",
         compact && "@max-md:w-8 @max-md:shrink-0 @max-md:justify-center @max-md:px-0",
-        open && "bg-muted text-foreground",
+        open && "bg-hover text-foreground",
         className,
       )}
     >
@@ -820,7 +820,7 @@ function OptionList({
             else if (first) pick(first.value);
           }}
           placeholder={searchPlaceholder}
-          className="mb-1 h-7 w-full rounded-md bg-muted px-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+          className="mb-1 h-7 w-full rounded-lg bg-muted px-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
         />
       ) : null}
       <div
@@ -847,7 +847,7 @@ function OptionList({
           <button
             type="button"
             onClick={create}
-            className="flex h-7 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-[13px] text-foreground transition-colors outline-none hover:bg-hover focus-visible:bg-muted"
+            className="flex h-7 w-full shrink-0 items-center gap-2 rounded-lg px-2 text-left text-[13px] text-foreground transition-colors outline-none hover:bg-hover focus-visible:bg-hover"
           >
             <IconCirclePlus className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">{createLabel(trimmed)}</span>
@@ -889,7 +889,7 @@ function OptionList({
                   pick(option.value);
                 }}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors outline-none hover:bg-hover focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-50",
+                  "flex w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] transition-colors outline-none hover:bg-hover focus-visible:bg-hover disabled:pointer-events-none disabled:opacity-50",
                   option.description ? "py-1.5" : "h-7",
                   selected ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
@@ -1065,9 +1065,9 @@ export function PromptModelMenu({
       >
         <MorphingPopoverMenu>
           {fast ? (
-            <div
+            <label
               onPointerEnter={() => setFlyout(null)}
-              className="flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] text-foreground"
+              className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-[13px] text-foreground"
             >
               <span className="flex-1">Fast</span>
               <Switch
@@ -1076,7 +1076,7 @@ export function PromptModelMenu({
                 onCheckedChange={fast.onChange}
                 ariaLabel="Fast"
               />
-            </div>
+            </label>
           ) : null}
           {efforts.length ? (
             <FlyoutRow
@@ -1258,8 +1258,8 @@ export function ModelList({
               setQuery("");
             }}
             className={cn(
-              "grid size-8 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:bg-muted [&_svg]:size-4",
-              !needle && tab === entry.key && "bg-muted text-foreground",
+              "grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:bg-hover [&_svg]:size-4",
+              !needle && tab === entry.key ? "bg-selected text-foreground" : "hover:bg-hover",
             )}
           >
             {entry.icon}

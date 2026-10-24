@@ -237,7 +237,7 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
                           onClick={() => open(service)}
                           className={cn(
                             "flex h-9 cursor-default items-center gap-3 rounded-xl pr-1.5 pl-3 transition-colors",
-                            isActive && "bg-muted",
+                            isActive && "bg-hover",
                             isKilling && "opacity-50",
                           )}
                         >

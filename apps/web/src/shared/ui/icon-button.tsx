@@ -26,7 +26,7 @@ export function IconButton({
       onClick={onClick}
       className={cn(
         "grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
-        isActive && "bg-muted/60 text-foreground",
+        isActive && "bg-selected text-foreground",
         className,
       )}
     >

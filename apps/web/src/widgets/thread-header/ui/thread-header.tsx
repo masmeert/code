@@ -113,7 +113,7 @@ export function ScriptsMenu({
         <DropdownMenuTrigger
           title="Scripts"
           aria-label="Scripts"
-          className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted/60 data-popup-open:text-foreground"
+          className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-hover data-popup-open:text-foreground"
         >
           <IconPlayerPlay className="size-4" />
         </DropdownMenuTrigger>
@@ -164,7 +164,7 @@ export function PanelsMenu({
       <DropdownMenuTrigger
         title="More panels"
         aria-label="More panels"
-        className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted/60 data-popup-open:text-foreground"
+        className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-hover data-popup-open:text-foreground"
       >
         <IconDotsVertical className="size-4" />
       </DropdownMenuTrigger>

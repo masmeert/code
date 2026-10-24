@@ -619,8 +619,8 @@ function AppPicker(props: {
                 onPointerMove={() => moveTo(choice.bundleId)}
                 onClick={() => pick(choice)}
                 className={cn(
-                  "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none",
-                  index === activeIndex && "bg-muted",
+                  "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] outline-none",
+                  index === activeIndex && "bg-hover",
                 )}
               >
                 <AppIcon icon={choice.icon} />

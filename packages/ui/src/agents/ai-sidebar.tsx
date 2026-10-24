@@ -457,13 +457,13 @@ function ResourceRow({
         typeClass("body"),
         "group/resource relative flex min-h-9 min-w-0 cursor-pointer items-center gap-2.5 rounded-xl pr-3 outline-none",
         "text-muted-foreground transition-colors hover:bg-hover hover:text-foreground",
-        "focus-visible:bg-muted/70 focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-inset",
-        "data-[menu-open=true]:bg-muted data-[menu-open=true]:text-foreground",
+        "focus-visible:bg-hover focus-visible:ring-4 focus-visible:ring-ring focus-visible:ring-inset",
+        "data-[menu-open=true]:bg-hover data-[menu-open=true]:text-foreground",
         "data-[dragging=true]:opacity-40",
         "data-[drop=inside]:bg-muted data-[drop=inside]:ring-1 data-[drop=inside]:ring-brand/45",
         "data-[drop=before]:before:absolute data-[drop=before]:before:-top-0.5 data-[drop=before]:before:right-2 data-[drop=before]:before:left-2 data-[drop=before]:before:h-0.5 data-[drop=before]:before:rounded-full data-[drop=before]:before:bg-primary",
         "data-[drop=after]:after:absolute data-[drop=after]:after:right-2 data-[drop=after]:after:-bottom-0.5 data-[drop=after]:after:left-2 data-[drop=after]:after:h-0.5 data-[drop=after]:after:rounded-full data-[drop=after]:after:bg-primary",
-        !acceptsChildren && active && "bg-muted text-foreground",
+        !acceptsChildren && active && "bg-selected text-foreground",
         row.item.disabled && "cursor-not-allowed opacity-45",
       )}
       style={{ paddingLeft: `${12 + row.depth * 16}px` }}
@@ -528,11 +528,18 @@ function ResourceRow({
             align="end"
             sideOffset={8}
             radius={12}
-            className="w-40 p-1.5"
+            className="w-40"
           >
-            <MorphingPopoverMenu data-sidebar-resource-menu={row.item.id}>
-              {menu}
-            </MorphingPopoverMenu>
+            {/* Portaled, but a React child of the row: keep clicks and arrow keys from reaching it. */}
+            <div
+              className="p-1.5"
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              <MorphingPopoverMenu data-sidebar-resource-menu={row.item.id}>
+                {menu}
+              </MorphingPopoverMenu>
+            </div>
           </MorphingPopoverContent>
         </MorphingPopover>
       ) : null}

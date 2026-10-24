@@ -149,7 +149,7 @@ function TabButton({
         typeClass("caption"),
         "group/tab flex h-7 max-w-44 shrink-0 items-center rounded-lg pr-0.5 transition-colors",
         isActive
-          ? "bg-muted/60 text-foreground"
+          ? "bg-selected text-foreground"
           : "text-muted-foreground hover:bg-hover hover:text-foreground",
       )}
     >

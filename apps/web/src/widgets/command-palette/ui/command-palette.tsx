@@ -390,7 +390,7 @@ const PaletteRow = memo(function PaletteRow(props: {
           transition={
             props.shouldGlide ? { type: "spring", stiffness: 480, damping: 38 } : { duration: 0 }
           }
-          className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-muted"
+          className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-hover"
         />
       ) : null}
       <span className="grid size-4 shrink-0 place-items-center [&_svg]:size-3.5">{row.icon}</span>
