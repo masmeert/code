@@ -3,7 +3,7 @@
   "name": "masscode-relay",
   "main": "src/worker.ts",
   "compatibility_date": "2026-10-01",
-  "routes": [{ "pattern": "relay.masscode.dev", "custom_domain": true }],
+  "routes": [{ "pattern": "relay.masmeert.com", "custom_domain": true }],
   "durable_objects": {
     "bindings": [{ "name": "HOST_ROOMS", "class_name": "HostRoom" }],
   },

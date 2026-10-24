@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import { PairingGrant, PairingRequest } from "./phones.ts";
 
 /** Where hosts and phones meet when they can't reach each other directly; `MASSCODE_RELAY_URL` overrides it. */
-export const DEFAULT_RELAY_URL = "wss://relay.masscode.dev";
+export const DEFAULT_RELAY_URL = "wss://relay.masmeert.com";
 
 /** The relay closes a phone's socket with this when its host isn't connected. */
 export const HOST_OFFLINE = 4503;
