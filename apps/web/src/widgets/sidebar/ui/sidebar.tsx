@@ -90,6 +90,7 @@ export function Sidebar(props: {
   currentPath: string | null;
   onSelect: (id: string) => void;
   onOpenSettings: () => void;
+  onOpenKeepAwakeSettings: () => void;
   onOpenServices: () => void;
   /** Opens a new-thread draft; null leaves the project to pick. */
   onDraft: (path: string | null) => void;
@@ -522,7 +523,7 @@ export function Sidebar(props: {
           <IconSettings className="size-4" />
         </IconButton>
         <ServicesIndicator onOpen={props.onOpenServices} />
-        <KeepAwakeIndicator />
+        <KeepAwakeIndicator onOpenSettings={props.onOpenKeepAwakeSettings} />
         {updateStatus &&
         updateAction &&
         UpdateStatus.isAnyOf(["available", "downloading", "ready"])(updateStatus) ? (

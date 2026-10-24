@@ -37,8 +37,18 @@ const PAGES = [
   { page: "phone", title: "Phone", icon: IconDeviceMobile, Content: PhonesPage },
 ] as const;
 
-/** Settings, over the app; its pages are listed down the side. */
-export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+export type SettingsPage = (typeof PAGES)[number]["page"];
+
+/** Settings, over the app; its pages are listed down the side. Opens on `page`, else the first. */
+export function SettingsModal({
+  isOpen,
+  page,
+  onClose,
+}: {
+  isOpen: boolean;
+  page?: SettingsPage;
+  onClose: () => void;
+}) {
   return (
     <MorphingModal
       viewId={isOpen ? "settings" : null}
@@ -46,13 +56,15 @@ export function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: (
       placement="center"
       className="max-w-3xl"
     >
-      {isOpen ? <SettingsView /> : null}
+      {isOpen ? <SettingsView initialPage={page} /> : null}
     </MorphingModal>
   );
 }
 
-function SettingsView() {
-  const [page, setPage] = useState<(typeof PAGES)[number]>(PAGES[0]);
+function SettingsView({ initialPage }: { initialPage?: SettingsPage }) {
+  const [page, setPage] = useState<(typeof PAGES)[number]>(
+    () => PAGES.find((entry) => entry.page === initialPage) ?? PAGES[0],
+  );
 
   const isKeepAwakeAvailable = useKeepAwake()?.available === true;
 

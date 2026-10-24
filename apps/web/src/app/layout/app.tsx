@@ -29,7 +29,7 @@ import { useTheme } from "./use-theme.ts";
 import { openWindow } from "./windows.ts";
 import { AddProjectDialog } from "@/features/add-project";
 import { ServicesModal } from "@/widgets/services";
-import { SettingsModal } from "@/widgets/settings";
+import { SettingsModal, type SettingsPage } from "@/widgets/settings";
 import { BrowserHost } from "@/widgets/browser-host";
 import { CommandPalette } from "@/widgets/command-palette";
 import { DiffWorkers, ThreadPage } from "@/pages/thread";
@@ -81,7 +81,8 @@ export function App() {
   const theme = useSetting((settings) => settings.theme);
   const switchTo = useThreadStore((state) => state.switchTo);
   const [chosen, setView] = useState<View | null>(readInitialView);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  // The page settings opens on; null while closed.
+  const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(null);
   const [isServicesOpen, setIsServicesOpen] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   useKeybinding("palette.open", () => setIsPaletteOpen((isOpen) => !isOpen));
@@ -152,7 +153,7 @@ export function App() {
 
   // Like Claude Code: a new thread starts in the project on screen, if any.
   useShortcut("n", () => openDraft(currentPath));
-  useShortcut(",", () => setIsSettingsOpen(true));
+  useShortcut(",", () => setSettingsPage("general"));
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.ctrlKey && !event.metaKey && event.key === "n") {
@@ -174,7 +175,8 @@ export function App() {
             activeId={view.kind === "thread" ? view.id : null}
             currentPath={currentPath}
             onSelect={selectThread}
-            onOpenSettings={() => setIsSettingsOpen(true)}
+            onOpenSettings={() => setSettingsPage("general")}
+            onOpenKeepAwakeSettings={() => setSettingsPage("keepAwake")}
             onOpenServices={() => setIsServicesOpen(true)}
             onDraft={openDraft}
           />
@@ -202,7 +204,11 @@ export function App() {
               <DraftPage key="draft" path={view.path} onPickProject={openDraft} />
             ) : null}
           </SidebarInset>
-          <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+          <SettingsModal
+            isOpen={settingsPage !== null}
+            page={settingsPage ?? undefined}
+            onClose={() => setSettingsPage(null)}
+          />
           <ServicesModal
             isOpen={isServicesOpen}
             onClose={() => setIsServicesOpen(false)}
@@ -287,7 +293,7 @@ export function App() {
                 label: "Settings",
                 hint: formatKeybinding("settings.open"),
                 icon: <IconSettings />,
-                run: () => setIsSettingsOpen(true),
+                run: () => setSettingsPage("general"),
               },
             ]}
           />
