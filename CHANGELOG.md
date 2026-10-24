@@ -2,6 +2,19 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.13](https://github.com/masmeert/code/compare/v0.1.12...v0.1.13) (2026-10-24)
+
+
+### Added
+
+* **services:** redesign the services modal as a grouped, keyboard-driven list ([7f87e36](https://github.com/masmeert/code/commit/7f87e36ece946be5aeac32ad5bdc0ff4d5dd8f27))
+* **sidebar:** compact icon-button footer ([db35f74](https://github.com/masmeert/code/commit/db35f7440aab9b913294e49b4e08b43e684471ad))
+
+
+### Fixed
+
+* **mobile:** opaque composer, and a transcript that stays put while typing ([0c86fb7](https://github.com/masmeert/code/commit/0c86fb7943bbdf6460125cc085916d369fa4e6ab))
+
 ## [0.1.12](https://github.com/masmeert/code/compare/v0.1.11...v0.1.12) (2026-10-23)
 
 
