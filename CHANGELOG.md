@@ -2,6 +2,13 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.15](https://github.com/masmeert/code/compare/v0.1.14...v0.1.15) (2026-10-24)
+
+
+### Fixed
+
+* **ui:** bump @masmeert/ui to 0.3.2 ([50ff13d](https://github.com/masmeert/code/commit/50ff13d1e9c7a0285d7cf0890912a515c07f2f20))
+
 ## [0.1.14](https://github.com/masmeert/code/compare/v0.1.13...v0.1.14) (2026-10-24)
 
 
