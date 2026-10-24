@@ -9,6 +9,8 @@ on:
       - packages/secure-channel/**
       - pnpm-lock.yaml
       - .github/workflows/relay.yml
+  # To redeploy by hand, like after rotating the Cloudflare token.
+  workflow_dispatch:
 
 concurrency:
   group: relay
