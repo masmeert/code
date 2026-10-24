@@ -212,7 +212,7 @@ export function ThreadListPage() {
           <Text className="text-center text-xl font-semibold">Your threads, on the go</Text>
           <Text className="text-center text-sm leading-6 text-muted-foreground">
             Pair this phone with MassCode on your computer to follow your threads, answer the agent
-            and steer it from anywhere on your Tailscale network.
+            and steer it from anywhere.
           </Text>
           <NativeButton
             label="Pair with your computer"
@@ -305,7 +305,7 @@ function UnreachableHosts({ hosts }: { hosts: ReadonlyArray<HostState> }) {
       <Text className="text-xs leading-5 text-muted-foreground">
         {hosts.some((host) => host.connection === "unpaired" || host.connection === "outdated")
           ? "Tap to see why."
-          : "Retrying. Check the computer is awake with MassCode open, and Tailscale is on."}
+          : "Retrying. Check the computer is awake with MassCode open, and both are online."}
       </Text>
     </Pressable>
   );

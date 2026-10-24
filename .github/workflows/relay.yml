@@ -1,0 +1,46 @@
+name: Relay
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/relay/**
+      - packages/contracts/**
+      - packages/secure-channel/**
+      - pnpm-lock.yaml
+      - .github/workflows/relay.yml
+
+concurrency:
+  group: relay
+  cancel-in-progress: false
+
+jobs:
+  # Phones and hosts of every version connect through the one relay, so it deploys only once its tests pass.
+  deploy:
+    # Waits for the Cloudflare account to be set up: the CLOUDFLARE_ACCOUNT_ID variable and CLOUDFLARE_API_TOKEN secret.
+    if: vars.CLOUDFLARE_ACCOUNT_ID != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          # pnpm only expands NODE_AUTH_TOKEN in a user-level npmrc, which this writes.
+          registry-url: https://npm.pkg.github.com
+          scope: "@masmeert"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: pnpm --filter @masscode/secure-channel --filter @masscode/relay test
+      - run: pnpm --filter @masscode/relay deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

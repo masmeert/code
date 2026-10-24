@@ -9,6 +9,7 @@ export {
   markDisconnected,
   markIncompatible,
   receiveShell,
+  setPhoneAccess,
   setPhones,
   setRemoteHosts,
   showCachedData,

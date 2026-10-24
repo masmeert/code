@@ -115,7 +115,7 @@ function NoProjects({ hosts }: { hosts: ReadonlyArray<HostState> }) {
         : !isConnected
           ? [
               "Can't reach your computers",
-              "Check they're awake with MassCode open, and Tailscale is on here and there.",
+              "Check they're awake with MassCode open, and both are online.",
             ]
           : ["No projects yet", "Add a project in MassCode on your computer to start a thread."];
 

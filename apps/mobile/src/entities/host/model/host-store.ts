@@ -15,7 +15,7 @@ import { PairedHost } from "./paired-host.ts";
 export type HostConnection =
   | "connecting"
   | "connected"
-  /** Unreachable for now: asleep, MassCode closed, or Tailscale off; it keeps retrying. */
+  /** Unreachable for now: asleep, MassCode closed, or offline; it keeps retrying. */
   | "offline"
   /** The host unpaired this phone; only pairing again helps. */
   | "unpaired"
@@ -53,8 +53,8 @@ function createHost(paired: PairedHost): HostState {
   };
 }
 
-// Only the pairings are kept, in the keychain since anyone with a token can steer that host's
-// agents; the rest comes from each host when it connects.
+// Only the pairings are kept, in the keychain since anyone with a token or relay key can steer
+// that host's agents; the rest comes from each host when it connects.
 export const useHostStore = create<State>()(
   persist<State, [], [], { paired: ReadonlyArray<PairedHost> }>(
     () => ({ isLoaded: false, hosts: {} }),
@@ -155,7 +155,11 @@ export function addHost(paired: PairedHost) {
   for (const host of Object.values(useHostStore.getState().hosts)) {
     const knownDataId = host.paired.dataId ?? host.dataId;
 
-    if (knownDataId ? knownDataId === paired.dataId : host.paired.address === paired.address)
+    if (
+      knownDataId
+        ? knownDataId === paired.dataId
+        : Boolean(paired.address) && host.paired.address === paired.address
+    )
       removeHost(host.paired.id);
   }
 

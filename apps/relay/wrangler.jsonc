@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "masscode-relay",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "routes": [{ "pattern": "relay.masscode.dev", "custom_domain": true }],
+  "durable_objects": {
+    "bindings": [{ "name": "HOST_ROOMS", "class_name": "HostRoom" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HostRoom"] }],
+  "ratelimits": [
+    {
+      "name": "CONNECT_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 60, "period": 60 },
+    },
+  ],
+  "observability": { "enabled": true },
+}

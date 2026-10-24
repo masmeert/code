@@ -3,7 +3,7 @@ import { BrowserAction } from "./browser.ts";
 import { Device, DeviceHub } from "./devices.ts";
 import { RuntimeEvent, StoredEvent } from "./events.ts";
 import { AppChoice, KeepAwakeStatus } from "./keep-awake.ts";
-import { PairedPhone, PairingOffer } from "./phones.ts";
+import { PairedPhone, PairingOffer, PhoneAccess } from "./phones.ts";
 import { Project, ProjectConfig } from "./projects.ts";
 import { ProviderStatus } from "./providers.ts";
 import { Service } from "./services.ts";
@@ -41,6 +41,8 @@ export const ServerFrame = Schema.TaggedUnion({
     keepAwake: Schema.optional(KeepAwakeStatus),
     /** Missing from daemons older than services. */
     services: Schema.optional(Schema.Array(Service)),
+    /** Missing from daemons older than the relay. */
+    phoneAccess: Schema.optional(PhoneAccess),
   },
   /** A transcript from scratch: the latest turns, plus the text of any message still streaming. */
   "thread.snapshot": {
@@ -94,7 +96,13 @@ export const ServerFrame = Schema.TaggedUnion({
     requestId: Schema.String,
     url: Schema.NullOr(Schema.String),
   },
-  /** Answers `pairing.start`: the offer to show, or why a phone can't pair, like Tailscale not running. */
+  /** Answers `asset.read`: the file as base64; nulls when the URL expired, the file changed, or it's too large. */
+  "asset.data": {
+    requestId: Schema.String,
+    mediaType: Schema.NullOr(Schema.String),
+    data: Schema.NullOr(Schema.String),
+  },
+  /** Answers `pairing.start`: the offer to show, or why a phone can't pair, like phone access being off. */
   "pairing.started": {
     requestId: Schema.String,
     offer: Schema.NullOr(PairingOffer),

@@ -62,6 +62,7 @@ routeFramesTo((hostId, frame) =>
     "folder.entries": () => {},
     // Answers to this phone's requests, which the connection hands to whoever asked.
     "image.signed": () => {},
+    "asset.data": () => {},
     "thread.createFailed": () => {},
     "project.cloned": () => {},
     "pairing.started": () => {},

@@ -13,6 +13,7 @@ import {
   markDisconnected,
   markIncompatible,
   receiveShell,
+  setPhoneAccess,
   setPhones,
   setRemoteHosts as setHosts,
 } from "@/entities/host";
@@ -114,6 +115,9 @@ function receiveHostShell(host: string | null, shell: Extract<ServerFrame, { _ta
 /** Everything but transcripts: the thread list, settings, projects, git state… */
 function applyShellEvent(host: string | null, event: RuntimeEvent) {
   if (RuntimeEvent.guards["phones.updated"](event)) setPhones(event.phones);
+
+  if (host === null && RuntimeEvent.guards["phoneAccess.updated"](event))
+    setPhoneAccess(event.access);
 
   applySettingsEvent(host, event);
   applyKeepAwakeEvent(host, event);

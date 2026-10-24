@@ -61,6 +61,14 @@ export const ClientCommand = Schema.TaggedUnion({
     cwd: Schema.String,
     requestId: Schema.String,
   },
+  /**
+   * Answered with an `asset.data` frame: the bytes behind a URL `image.sign` returned, for a phone
+   * on the relay, which can't load it over HTTP.
+   */
+  "asset.read": {
+    url: Schema.String,
+    requestId: Schema.String,
+  },
   /** Clones into a new folder under `parent` and adds it as a project; answered with a `project.cloned` frame. */
   "project.clone": {
     url: Schema.String,

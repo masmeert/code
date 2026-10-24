@@ -4,6 +4,8 @@ packages:
 
 allowBuilds:
   electron-winstaller: false
+  esbuild: true
+  workerd: true
 
 catalog:
   effect: 4.0.0-rc.117

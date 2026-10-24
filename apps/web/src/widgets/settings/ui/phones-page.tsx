@@ -2,7 +2,12 @@ import { Button } from "@masmeert/ui/button";
 import { Switch } from "@masmeert/ui/switch";
 import { cn } from "@masscode/ui/lib/utils";
 import { EASE_OUT, SPRING_PRESS } from "@masmeert/ui/lib/ease";
-import { ClientCommand, type PairedPhone, type PairingOffer } from "@masscode/contracts";
+import {
+  ClientCommand,
+  type PairedPhone,
+  type PairingOffer,
+  type PhoneAccess,
+} from "@masscode/contracts";
 import { Collapsible } from "@masmeert/ui/collapsible";
 import { ActionSwapRollText } from "@masscode/ui/motion/action-swap-roll";
 import { LoaderCircle, X } from "lucide-react";
@@ -19,6 +24,7 @@ import { RowLabel, SettingsGroup, SettingsRow, SettingsSection } from "./setting
 export function PhonesPage() {
   const settings = useSettings();
   const phones = useHostStore((state) => state.phones);
+  const phoneAccess = useHostStore((state) => state.phoneAccess);
   const [offer, setOffer] = useState<PairingOffer | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +59,7 @@ export function PhonesPage() {
             label={
               <RowLabel
                 title="Let phones reach this Mac"
-                description="Paired phones see and steer threads over Tailscale while MassCode runs"
+                description="Paired phones see and steer threads from anywhere while MassCode runs"
               />
             }
           >
@@ -68,6 +74,7 @@ export function PhonesPage() {
               ariaLabel="Let phones reach this Mac"
             />
           </SettingsRow>
+          {settings.remoteAccess && phoneAccess ? <PhoneAccessRow access={phoneAccess} /> : null}
           {settings.remoteAccess ? (
             <SettingsRow
               label={
@@ -127,6 +134,40 @@ export function PhonesPage() {
         </SettingsSection>
       ) : null}
     </>
+  );
+}
+
+/** Whether phones can get through right now, and if not, why. */
+function PhoneAccessRow({ access }: { access: PhoneAccess }) {
+  return (
+    <SettingsRow
+      label={
+        <RowLabel
+          title={
+            access.relay === "connected"
+              ? "Reachable from anywhere"
+              : access.relayError
+                ? "Can't reach the relay"
+                : "Connecting to the relay…"
+          }
+          description={
+            access.relayError ??
+            (access.tailscaleAddress
+              ? `End-to-end encrypted through the relay, and directly over Tailscale at ${access.tailscaleAddress}`
+              : "End-to-end encrypted through the relay: it can't read what phones and this Mac say")
+          }
+        />
+      }
+    >
+      {access.relay === "connected" ? (
+        <span aria-hidden className="size-2 rounded-full bg-emerald-500" />
+      ) : (
+        <LoaderCircle
+          aria-label="Connecting"
+          className="size-3.5 animate-spin text-muted-foreground"
+        />
+      )}
+    </SettingsRow>
   );
 }
 
@@ -221,20 +262,26 @@ function PairingCode({ offer, onClose }: { offer: PairingOffer; onClose: () => v
               </p>
             </>
           )}
-          <p className="mt-4 max-w-72 text-xs leading-5 text-muted-foreground">
-            Can't scan? On the phone, enter{" "}
-            <motion.button
-              type="button"
-              title="Copy address"
-              onClick={() => copy(offer.host, "address")}
-              whileTap={reduce ? undefined : { scale: 0.97 }}
-              transition={SPRING_PRESS}
-              className="inline-block rounded-md px-1 font-mono text-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
-            >
-              {offer.host}
-            </motion.button>{" "}
-            and this code.
-          </p>
+          {offer.host ? (
+            <p className="mt-4 max-w-72 text-xs leading-5 text-muted-foreground">
+              Can't scan? On a phone on your tailnet, enter{" "}
+              <motion.button
+                type="button"
+                title="Copy address"
+                onClick={() => offer.host && copy(offer.host, "address")}
+                whileTap={reduce ? undefined : { scale: 0.97 }}
+                transition={SPRING_PRESS}
+                className="inline-block rounded-md px-1 font-mono text-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-4 focus-visible:ring-ring"
+              >
+                {offer.host}
+              </motion.button>{" "}
+              and this code.
+            </p>
+          ) : (
+            <p className="mt-4 max-w-72 text-xs leading-5 text-muted-foreground">
+              Scan it with the camera in MassCode on the phone.
+            </p>
+          )}
         </div>
       </motion.div>
       <button

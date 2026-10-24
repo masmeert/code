@@ -7,6 +7,7 @@ on:
       - apps/mobile/**
       - packages/client/**
       - packages/contracts/**
+      - packages/secure-channel/**
       - patches/**
       - pnpm-lock.yaml
       - .github/workflows/mobile.yml

@@ -25,7 +25,7 @@ export function SettingsScopeHeader({ closeSettings }: { closeSettings?: boolean
             <Stack.Toolbar.MenuAction
               key={host.paired.id}
               icon="laptopcomputer"
-              subtitle={host.paired.dnsName ?? host.paired.address}
+              subtitle={host.paired.dnsName ?? host.paired.address ?? "Through the relay"}
               isOn={selectedIds === null || selectedIds.has(host.paired.id)}
               onPress={() => toggle(host.paired.id)}
             >

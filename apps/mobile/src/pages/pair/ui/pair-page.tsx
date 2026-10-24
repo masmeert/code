@@ -12,7 +12,7 @@ import {
   FormSection,
   FormTextFieldRow,
 } from "@/shared/ui";
-import { pairWithHost, parsePairingLink } from "../api/pairing.ts";
+import { pairWithHost, parsePairingLink, type PairingOffer } from "../api/pairing.ts";
 
 export function PairPage() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -23,13 +23,7 @@ export function PairPage() {
   // The camera reports a code many times a second; only the first starts pairing.
   const isPairing = useRef(false);
 
-  async function pair(offer: {
-    host: string;
-    port: number;
-    code: string;
-    name: string;
-    dnsName?: string | null;
-  }) {
+  async function pair(offer: PairingOffer) {
     if (isPairing.current) return;
 
     isPairing.current = true;
@@ -50,27 +44,16 @@ export function PairPage() {
     }
   }
 
-  const link = useLocalSearchParams<{
-    host?: string;
-    port?: string;
-    code?: string;
-    name?: string;
-    dns?: string;
-  }>();
+  const link = useLocalSearchParams<Record<string, string>>();
 
   const pairFromLink = useEffectEvent(() => {
-    if (link.host && link.code && link.port)
-      void pair({
-        host: link.host,
-        port: Number(link.port),
-        code: link.code,
-        name: link.name ?? link.host,
-        dnsName: link.dns ?? null,
-      });
+    const offer = parsePairingLink(`masscode://pair?${new URLSearchParams(link)}`);
+
+    if (offer) void pair(offer);
   });
 
   // The pairing link (masscode://pair?…) opens this screen with the offer, from the Camera app too.
-  useEffect(() => pairFromLink(), [link.host, link.code]);
+  useEffect(() => pairFromLink(), [link.code]);
 
   return (
     <>
@@ -115,7 +98,10 @@ export function PairPage() {
             <FormButtonRow label="Allow camera" onPress={() => void requestPermission()} />
           )}
         </FormSection>
-        <FormSection title="Or type what it shows">
+        <FormSection
+          title="Or type what it shows"
+          footer="Typing works on the same Tailscale network as the computer. Scan the code to reach it from anywhere."
+        >
           <FormTextFieldRow
             label="Tailscale address"
             placeholder="100.64.0.1"

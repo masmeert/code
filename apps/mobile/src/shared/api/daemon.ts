@@ -8,14 +8,18 @@ import {
 } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import ReconnectingWebSocket from "partysocket/ws";
+import { RELAY_URL_PREFIX, RelaySocket, type RelayRoute } from "./relay-socket.ts";
 
-/** Where a host's daemon listens, and the token it gave this phone. */
+/** How to reach a host's daemon: directly on its Tailscale address, through the relay, or both. */
 export interface DaemonAddress {
   readonly id: string;
-  readonly address: string;
+  /** Its Tailscale address; absent for a host paired through the relay alone. */
+  readonly address?: string | null;
   readonly dnsName?: string | null;
-  readonly port: number;
+  readonly port?: number;
   readonly token: string;
+  /** Absent for pairings from before the relay. */
+  readonly relay?: RelayRoute | null;
 }
 
 /** Why a host's socket closed: unreachable for now, unpaired, or a version the other doesn't understand. */
@@ -30,6 +34,42 @@ interface PendingRequest {
 const decodeFrame = Schema.decodeUnknownSync(Schema.fromJsonString(ServerFrame));
 
 const sockets = new Map<string, ReconnectingWebSocket>();
+
+/** Each host's relay route, by host id, for the relay socket partysocket opens by URL. */
+const relayRoutes = new Map<string, RelayRoute>();
+
+/**
+ * A socket that hasn't opened by now is given up on: an unreachable Tailscale address hangs
+ * rather than failing, and the relay should get its turn quickly.
+ */
+const CONNECT_TIMEOUT_MS = 4_000;
+
+/**
+ * What partysocket constructs for each attempt: a plain WebSocket for a direct URL, the relay
+ * socket for a relay one. Constructed with `new`, so the object it returns is the socket.
+ */
+function createSocket(url: string, protocols?: string | string[]) {
+  const route = url.startsWith(RELAY_URL_PREFIX)
+    ? relayRoutes.get(url.slice(RELAY_URL_PREFIX.length))
+    : undefined;
+
+  return route ? new RelaySocket(route) : new WebSocket(url, protocols);
+}
+
+/** The URLs to try for a host, in order: direct ones first, since they're quicker, then the relay. */
+function listRoutes(host: DaemonAddress) {
+  const direct =
+    host.address && host.port
+      ? [
+          // The MagicDNS name survives the host's address changing; the address works without
+          // MagicDNS on this phone.
+          ...(host.dnsName ? [host.dnsName] : []),
+          host.address,
+        ].map((name) => `ws://${name}:${host.port}/?protocol=${PROTOCOL_VERSION}`)
+      : [];
+
+  return host.relay ? [...direct, `${RELAY_URL_PREFIX}${host.relay.hostId}`] : direct;
+}
 
 // One handler each, not a list: Fast Refresh re-runs the module that sets them, which then
 // replaces its old handler instead of adding a second one.
@@ -66,16 +106,28 @@ function settleRequest(requestId: string, settle: (pending: PendingRequest) => v
 }
 
 export function connect(host: DaemonAddress) {
-  let attempt = 0;
+  const routes = listRoutes(host);
+  // Retries take turns between the routes, starting from the one that last worked.
+  let preferred = 0;
+  let tries = 0;
+
+  if (host.relay) relayRoutes.set(host.relay.hostId, host.relay);
 
   const socket = new ReconnectingWebSocket(
-    // The MagicDNS name survives the host's address changing; the address works without MagicDNS
-    // on this phone. Retries take turns between them.
-    () =>
-      `ws://${host.dnsName && attempt++ % 2 === 0 ? host.dnsName : host.address}:${host.port}/?protocol=${PROTOCOL_VERSION}`,
+    () => routes[(preferred + tries++) % routes.length] ?? "",
     [`masscode.${host.token}`],
-    { minReconnectionDelay: 500, maxReconnectionDelay: 30_000 },
+    {
+      minReconnectionDelay: 500,
+      maxReconnectionDelay: 30_000,
+      connectionTimeout: CONNECT_TIMEOUT_MS,
+      WebSocket: createSocket,
+    },
   );
+
+  socket.addEventListener("open", () => {
+    preferred = Math.max(0, routes.indexOf(socket.url));
+    tries = 0;
+  });
 
   socket.addEventListener("message", (message) => {
     try {
@@ -132,11 +184,24 @@ export function reconnect(hostId: string) {
   sockets.get(hostId)?.reconnect();
 }
 
-/** The host's daemon over HTTP, at the address its open socket reached; null while it isn't open. */
+/** The host's daemon over HTTP, at the address its open socket reached; null while it isn't open, or open through the relay. */
 export function getHttpOrigin(hostId: string) {
   const socket = sockets.get(hostId);
 
-  return socket && socket.readyState === socket.OPEN ? socket.url.replace(/^ws/, "http") : null;
+  return socket && socket.readyState === socket.OPEN && socket.url.startsWith("ws")
+    ? socket.url.replace(/^ws/, "http")
+    : null;
+}
+
+/** Whether the host's open socket goes through the relay, where nothing loads over HTTP. */
+export function isThroughRelay(hostId: string) {
+  const socket = sockets.get(hostId);
+
+  return (
+    socket !== undefined &&
+    socket.readyState === socket.OPEN &&
+    socket.url.startsWith(RELAY_URL_PREFIX)
+  );
 }
 
 export function send(hostId: string, command: ClientCommand) {

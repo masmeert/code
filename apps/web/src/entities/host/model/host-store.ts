@@ -1,4 +1,4 @@
-import type { HostStatus, PairedPhone } from "@masscode/contracts";
+import type { HostStatus, PairedPhone, PhoneAccess } from "@masscode/contracts";
 import { createStore } from "@/shared/lib/store";
 
 /** A remote daemon's connection, where this Mac's lives at the top of `HostsState`. */
@@ -24,6 +24,8 @@ interface HostsState {
   readonly dataId: string | null;
   /** Phones paired with this Mac's daemon. */
   readonly phones: ReadonlyArray<PairedPhone>;
+  /** How phones reach this Mac's daemon; null from daemons older than the relay. */
+  readonly phoneAccess: PhoneAccess | null;
   /** Remote hosts by SSH alias, each with its own daemon. */
   readonly hosts: Readonly<Record<string, RemoteHostState>>;
 }
@@ -34,6 +36,7 @@ const store = createStore<HostsState>({
   source: "none",
   dataId: null,
   phones: [],
+  phoneAccess: null,
   hosts: {},
 });
 
@@ -102,6 +105,7 @@ export function receiveShell(
     readonly dataId: string;
     readonly root: boolean;
     readonly phones: ReadonlyArray<PairedPhone>;
+    readonly phoneAccess?: PhoneAccess;
   },
 ) {
   if (host !== null)
@@ -120,7 +124,12 @@ export function receiveShell(
     source: "daemon",
     dataId: shell.dataId,
     phones: shell.phones,
+    phoneAccess: shell.phoneAccess ?? null,
   });
+}
+
+export function setPhoneAccess(phoneAccess: PhoneAccess) {
+  store.setState({ ...store.getState(), phoneAccess });
 }
 
 export function setPhones(phones: ReadonlyArray<PairedPhone>) {

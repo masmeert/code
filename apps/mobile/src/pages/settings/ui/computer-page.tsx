@@ -33,14 +33,22 @@ export function ComputerPage() {
     <>
       <Stack.Screen options={{ title: paired.name }} />
       <FormList>
-        <FormSection title="Connection" footer={CONNECTION_HELP[connection]}>
+        <FormSection
+          title="Connection"
+          footer={
+            CONNECTION_HELP[connection] ??
+            (paired.relay
+              ? undefined
+              : "Paired before MassCode could connect without Tailscale. Forget it and pair again to reach it from anywhere.")
+          }
+        >
           <FormSwitchRow
             label="Connect to this computer"
             value={connection !== "off"}
             onChange={(enabled) => setHostEnabled(paired.id, enabled)}
           />
           <FormInfoRow
-            label={paired.dnsName ?? paired.address}
+            label={paired.dnsName ?? paired.address ?? "Through the relay"}
             value={CONNECTION_STATUS[connection]}
           />
         </FormSection>

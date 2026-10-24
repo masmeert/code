@@ -15,13 +15,13 @@ export function ComputersPage() {
         />
       </Stack.Toolbar>
       <FormList>
-        <FormSection footer="Pair this phone from MassCode on your computer, in Settings → Phone. It reaches the computer over Tailscale.">
+        <FormSection footer="Pair this phone from MassCode on your computer, in Settings → Phone. It reaches the computer from anywhere, end-to-end encrypted, and directly over Tailscale when it can.">
           {Object.values(hosts).map(({ paired, connection }) => (
             <FormLinkRow
               key={paired.id}
               icon="laptopcomputer"
               label={paired.name}
-              detail={paired.dnsName ?? paired.address}
+              detail={paired.dnsName ?? paired.address ?? "Through the relay"}
               value={CONNECTION_STATUS[connection]}
               onPress={() =>
                 router.push({

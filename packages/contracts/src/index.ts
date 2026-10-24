@@ -22,6 +22,8 @@ export * from "./devices.ts";
 
 export * from "./phones.ts";
 
+export * from "./relay.ts";
+
 export * from "./desktop.ts";
 
 export * from "./events.ts";

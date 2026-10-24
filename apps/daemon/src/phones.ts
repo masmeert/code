@@ -3,7 +3,9 @@ import {
   type PairingGrant,
   type PairingOffer,
   type PairingRequest,
+  type PhoneAccess,
 } from "@masscode/contracts";
+import { hostIdFromSecret } from "@masscode/secure-channel";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { execFile } from "node:child_process";
@@ -12,7 +14,7 @@ import { hostname, networkInterfaces } from "node:os";
 import { CommandError } from "./errors.ts";
 import { openTomlFile } from "./storage/toml-file.ts";
 
-/** Where paired phones reach the daemon, on its Tailscale address. */
+/** Where paired phones on the tailnet reach the daemon directly, on its Tailscale address. */
 export const REMOTE_PORT = Number(process.env.MASSCODE_REMOTE_PORT) || 47822;
 
 const PAIRING_TTL_MS = 5 * 60 * 1000;
@@ -20,7 +22,12 @@ const PAIRING_TTL_MS = 5 * 60 * 1000;
 /** Wrong codes a pairing takes before it's burnt, so a 6-digit code can't be guessed. */
 const PAIRING_ATTEMPTS = 5;
 
-const StoredPhone = Schema.Struct({ ...PairedPhone.fields, tokenHash: Schema.String });
+const StoredPhone = Schema.Struct({
+  ...PairedPhone.fields,
+  tokenHash: Schema.String,
+  /** Its X25519 key for this host, base64url, which it comes through the relay with; missing for phones paired before the relay. */
+  publicKey: Schema.optional(Schema.String),
+});
 
 /** What phones call this host: its name without macOS's `.local`. */
 function findHostName() {
@@ -78,14 +85,22 @@ function findTailnetName() {
   });
 }
 
-/** Phones paired with this daemon, and the one-time codes that pair them. */
+const ACCESS_OFF: PhoneAccess = { relay: "off", relayError: null, tailscaleAddress: null };
+
+/** Phones paired with this daemon, the one-time codes that pair them, and how they reach it. */
 export function createPhones(options: {
   readonly dataId: string;
+  /** The daemon's identity secret: its public half is the host id phones pin. */
+  readonly hostSecret: Uint8Array;
+  readonly relayUrl: string;
   readonly isRemoteAccessOn: Effect.Effect<boolean>;
   readonly onChanged: (phones: ReadonlyArray<PairedPhone>) => void;
+  readonly onAccessChanged: (access: PhoneAccess) => void;
 }) {
   return Effect.gen(function* () {
     const file = yield* openTomlFile("phones", Schema.Array(StoredPhone), []);
+    const hostId = hostIdFromSecret(options.hostSecret);
+    let access = ACCESS_OFF;
 
     let pairing: { code: string; expiresAt: number; attemptsLeft: number } | null = null;
 
@@ -119,27 +134,20 @@ export function createPhones(options: {
             }),
           );
 
-        const host = findTailnetAddress();
-
-        if (!host)
-          return yield* Effect.fail(
-            new CommandError({
-              message:
-                "Tailscale isn't running on this computer. Open Tailscale, sign in, and try again.",
-            }),
-          );
-
-        const dnsName = yield* findTailnetName();
+        // Only an address the listener is on: a phone pairing at another would never get through.
+        const host = access.tailscaleAddress;
+        const dnsName = host ? yield* findTailnetName() : null;
         const code = String(randomInt(1_000_000)).padStart(6, "0");
         const name = findHostName();
         const expiresAt = Date.now() + PAIRING_TTL_MS;
         pairing = { code, expiresAt, attemptsLeft: PAIRING_ATTEMPTS };
 
         const query = new URLSearchParams({
-          host,
-          port: String(REMOTE_PORT),
           code,
           name,
+          id: hostId,
+          relay: options.relayUrl,
+          ...(host && { host, port: String(REMOTE_PORT) }),
           ...(dnsName && { dns: dnsName }),
         });
 
@@ -151,12 +159,17 @@ export function createPhones(options: {
           code,
           name,
           expiresAt,
+          hostId,
+          relayUrl: options.relayUrl,
         };
       });
     }
 
-    /** Trades the current code for a token of the phone's own; the code works once. */
-    function redeem(request: PairingRequest) {
+    /**
+     * Trades the current code for a token of the phone's own; the code works once. `publicKey` is
+     * the key a relay handshake proved, which outranks the one the request claims.
+     */
+    function redeem(request: PairingRequest, publicKey = request.publicKey) {
       return Effect.suspend((): Effect.Effect<PairingGrant, CommandError> => {
         const current = pairing;
 
@@ -178,11 +191,25 @@ export function createPhones(options: {
         return file.get.pipe(
           Effect.flatMap((stored) =>
             save([
-              ...stored,
-              { ...phone, pairedAt: Date.now(), lastSeenAt: null, tokenHash: hashToken(token) },
+              // The same phone pairing again replaces its earlier pairing.
+              ...stored.filter((candidate) => !publicKey || candidate.publicKey !== publicKey),
+              {
+                ...phone,
+                pairedAt: Date.now(),
+                lastSeenAt: null,
+                tokenHash: hashToken(token),
+                ...(publicKey && { publicKey }),
+              },
             ]),
           ),
-          Effect.as({ phoneId: phone.id, token, name: findHostName(), dataId: options.dataId }),
+          Effect.as({
+            phoneId: phone.id,
+            token,
+            name: findHostName(),
+            dataId: options.dataId,
+            hostId,
+            relayUrl: options.relayUrl,
+          }),
         );
       });
     }
@@ -194,12 +221,10 @@ export function createPhones(options: {
       );
     }
 
-    /** The paired phone's id, noting it was seen; null for a token no phone holds. */
-    function authenticate(token: string) {
-      const tokenHash = hashToken(token);
-
+    /** The paired phone's id, noting it was seen; null when no phone matches. */
+    function findPhone(matches: (phone: typeof StoredPhone.Type) => boolean) {
       return Effect.flatMap(file.get, (stored) => {
-        const phone = stored.find((candidate) => candidate.tokenHash === tokenHash);
+        const phone = stored.find(matches);
 
         if (!phone) return Effect.succeed(null);
 
@@ -212,12 +237,51 @@ export function createPhones(options: {
       });
     }
 
+    /** A phone coming in directly, by the token it was granted. */
+    function authenticate(token: string) {
+      const tokenHash = hashToken(token);
+
+      return findPhone((phone) => phone.tokenHash === tokenHash);
+    }
+
+    /** A phone coming through the relay, by the key its handshake proved. */
+    function authenticateKey(publicKey: string) {
+      return findPhone((phone) => phone.publicKey === publicKey);
+    }
+
     /** Where phones can reach the daemon: its Tailscale address while phone access is on, else null. */
     const remoteAddress = Effect.map(options.isRemoteAccessOn, (isOn) =>
       isOn ? findTailnetAddress() : null,
     );
 
-    return { list, startPairing, redeem, unpair, authenticate, remoteAddress };
+    function updateAccess(change: Partial<PhoneAccess>) {
+      const next = { ...access, ...change };
+
+      if (
+        next.relay === access.relay &&
+        next.relayError === access.relayError &&
+        next.tailscaleAddress === access.tailscaleAddress
+      )
+        return;
+
+      access = next;
+      options.onAccessChanged(access);
+    }
+
+    return {
+      list,
+      startPairing,
+      redeem,
+      unpair,
+      authenticate,
+      authenticateKey,
+      remoteAddress,
+      isRemoteAccessOn: options.isRemoteAccessOn,
+      hostSecret: options.hostSecret,
+      relayUrl: options.relayUrl,
+      readAccess: () => access,
+      updateAccess,
+    };
   });
 }
 

@@ -12,7 +12,8 @@ export const CONNECTION_STATUS: Record<HostConnection, string> = {
 
 /** What's wrong and how to fix it, when the connection isn't working. */
 export const CONNECTION_HELP: Partial<Record<HostConnection, string>> = {
-  offline: "Check it's awake with MassCode open, and Tailscale is on here and there.",
+  offline:
+    "Check it's awake with MassCode open, phone access is on in its Settings → Phone, and both are online.",
   unpaired: "This computer unpaired the phone. Forget it, then pair again.",
   outdated: "This app and MassCode on that computer are different versions. Update the older one.",
 };

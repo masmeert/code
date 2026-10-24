@@ -1,5 +1,6 @@
 import {
   ClientCommand,
+  DEFAULT_RELAY_URL,
   ProviderKind,
   RuntimeEvent,
   ServerFrame,
@@ -27,6 +28,7 @@ import { createMcp, type Mcp } from "./mcp.ts";
 import { createKeepAwake, type KeepAwake } from "./keep-awake/keep-awake.ts";
 import { createServices, type Services } from "./services.ts";
 import { createPhones, type Phones } from "./phones.ts";
+import { loadHostSecret } from "./host-identity.ts";
 import { ProviderError } from "./providers/provider-adapter.ts";
 import { ProviderRegistry } from "./providers/provider-registry.ts";
 import { createRepoPanel } from "./repo-panel.ts";
@@ -176,9 +178,13 @@ const make = Effect.gen(function* () {
 
   const phones = yield* createPhones({
     dataId: store.dataId,
+    hostSecret: yield* loadHostSecret,
+    relayUrl: process.env.MASSCODE_RELAY_URL || DEFAULT_RELAY_URL,
     isRemoteAccessOn: Effect.map(settingsStore.get, (settings) => settings.remoteAccess === true),
     onChanged: (paired) =>
       publish(RuntimeEvent.cases["phones.updated"].make({ phones: [...paired] })),
+    onAccessChanged: (access) =>
+      publish(RuntimeEvent.cases["phoneAccess.updated"].make({ access })),
   });
 
   const keepAwake = createKeepAwake({
@@ -595,6 +601,7 @@ const make = Effect.gen(function* () {
         "device.list": () => Effect.void,
         "device.attach": () => Effect.void,
         "pairing.start": () => Effect.void,
+        "asset.read": () => Effect.void,
         "phone.unpair": ({ phoneId }) => phones.unpair(phoneId),
         "keepAwake.start": ({ minutes }) => Effect.promise(() => keepAwake.start(minutes)),
         "keepAwake.stop": () => Effect.promise(() => keepAwake.stop()),
@@ -643,6 +650,7 @@ const make = Effect.gen(function* () {
         threads: [...threads.values()].map((entry) => entry.info),
         terminals: terminals.list(),
         phones: yield* phones.list,
+        phoneAccess: phones.readAccess(),
         keepAwake: keepAwake.readStatus(),
         services: [...services.list()],
         live,

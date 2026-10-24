@@ -11,7 +11,7 @@
     "build": "pnpm --filter @masscode/daemon build && pnpm --filter @masscode/web build && pnpm --filter @masscode/desktop dist",
     "release": "pnpm --filter @masscode/daemon build && pnpm --filter @masscode/web build && pnpm --filter @masscode/desktop release",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @masscode/daemon test",
+    "test": "pnpm --filter @masscode/secure-channel --filter @masscode/relay --filter @masscode/daemon test",
     "lint": "oxlint",
     "lint:fsd": "steiger apps/web/src && steiger apps/mobile/src",
     "lint:fix": "oxlint --fix --no-error-on-unmatched-pattern",
