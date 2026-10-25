@@ -1,13 +1,27 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { DevicePlatform } from "./devices.ts";
 
-/** A phone paired with this daemon, reaching it over Tailscale with a token of its own. */
+/** What reaches the daemon over Tailscale: a phone, or another computer's MassCode app. */
+export const PairingPlatform = Schema.Literals(["ios", "android", "desktop"]);
+
+export type PairingPlatform = typeof PairingPlatform.Type;
+
+/**
+ * What a paired device may do, picked by whoever starts the pairing: `full` does all the local
+ * app does, `limited` can't pair or unpair others, host the browser panel or touch keep-awake.
+ */
+export const PairingAccess = Schema.Literals(["full", "limited"]);
+
+export type PairingAccess = typeof PairingAccess.Type;
+
+/** A phone or computer paired with this daemon, reaching it over Tailscale with a token of its own. */
 export const PairedPhone = Schema.Struct({
   id: Schema.String,
-  /** What the phone calls itself, like "Massimo's iPhone". */
+  /** What the device calls itself, like "Massimo's iPhone". */
   name: Schema.String,
-  platform: DevicePlatform,
+  platform: PairingPlatform,
+  /** Missing from pairings made before access levels, which were all limited. */
+  access: PairingAccess.pipe(Schema.withDecodingDefaultKey(Effect.succeed("limited" as const))),
   pairedAt: Schema.Number,
   /** When it last connected; null (missing in the daemon's TOML) until its first connection after pairing. */
   lastSeenAt: Schema.NullOr(Schema.Number).pipe(
@@ -34,11 +48,11 @@ export const PairingOffer = Schema.Struct({
 
 export type PairingOffer = typeof PairingOffer.Type;
 
-/** What a phone posts to `/pair` with the code from the offer. */
+/** What a phone or computer posts to `/pair` with the code from the offer. */
 export const PairingRequest = Schema.Struct({
   code: Schema.String,
   name: Schema.String,
-  platform: DevicePlatform,
+  platform: PairingPlatform,
 });
 
 export type PairingRequest = typeof PairingRequest.Type;
@@ -57,3 +71,31 @@ export const PairingGrant = Schema.Struct({
 });
 
 export type PairingGrant = typeof PairingGrant.Type;
+
+/** What a `masscode://pair` link (or its QR code) carries; null for anything else. */
+export function parsePairingLink(link: string) {
+  // Parsed by hand: contracts run where `URL` may not be typed (no DOM lib).
+  const query = /^masscode:\/\/pair\/?\?(.+)$/.exec(link.trim())?.[1];
+
+  if (!query) return null;
+
+  const params = new Map(
+    query.split("&").map((pair) => {
+      const [key = "", value = ""] = pair.split("=");
+
+      try {
+        return [key, decodeURIComponent(value.replaceAll("+", " "))] as const;
+      } catch {
+        return [key, ""] as const;
+      }
+    }),
+  );
+
+  const host = params.get("host");
+  const code = params.get("code");
+  const port = Number(params.get("port"));
+
+  return host && code && port
+    ? { host, port, code, name: params.get("name") || host, dnsName: params.get("dns") || null }
+    : null;
+}

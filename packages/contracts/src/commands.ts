@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import { BrowserResult } from "./browser.ts";
 import { MergeMethod } from "./git.ts";
+import { PairingAccess } from "./phones.ts";
 import { ProjectConfig } from "./projects.ts";
 import { ProviderKind } from "./providers.ts";
 import { Settings } from "./settings.ts";
@@ -256,9 +257,9 @@ export const ClientCommand = Schema.TaggedUnion({
     permission: Schema.optional(PermissionLevel),
     answers: Schema.optional(UserAnswers),
   },
-  /** Starts a one-time pairing for a phone; answered with `pairing.started`. Desktop only. */
-  "pairing.start": { requestId: Schema.String },
-  /** Revokes the phone's token and closes its connections. Desktop only. */
+  /** Starts a one-time pairing for a phone or computer; answered with `pairing.started`. Full access only. */
+  "pairing.start": { requestId: Schema.String, access: PairingAccess },
+  /** Revokes the device's token and closes its connections. Full access only, or a device unpairing itself. */
   "phone.unpair": { phoneId: Schema.String },
   "settings.update": { settings: Settings },
   /** Keeps the Mac awake for `minutes`, the lid closed included, whatever the agents do. */

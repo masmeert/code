@@ -24,7 +24,7 @@ export const UpdateStatus = Schema.TaggedUnion({
 
 export type UpdateStatus = typeof UpdateStatus.Type;
 
-/** Where the app is with a remote host, an SSH alias like one from ~/.ssh/config. */
+/** Where the app is with a remote host: an SSH alias like one from ~/.ssh/config, or a paired machine. */
 export const HostStatus = Schema.TaggedUnion({
   /** `step` says what's happening, e.g. "Uploading MassCode (40%)". */
   connecting: { step: Schema.String },
@@ -38,8 +38,20 @@ export type HostStatus = typeof HostStatus.Type;
 
 export interface RemoteHost {
   readonly alias: string;
+  /**
+   * `ssh`: this app starts MassCode on it over SSH. `paired`: it runs MassCode on its own
+   * (`masscode connect`), and this app reaches it over Tailscale with a pairing token.
+   */
+  readonly kind: "ssh" | "paired";
   readonly status: HostStatus;
+  /** What a paired machine knows this app by, for unpairing; null for SSH hosts. */
+  readonly deviceId: string | null;
 }
+
+/** A `masscode://pair` link, or a machine's Tailscale name or address with the code `masscode pair` shows. */
+export const PairHostRequest = Schema.Struct({ target: Schema.String, code: Schema.String });
+
+export type PairHostRequest = typeof PairHostRequest.Type;
 
 /** Where a daemon listens on this machine, and the token it wants. */
 export interface DaemonEndpoint {
@@ -50,11 +62,13 @@ export interface DaemonEndpoint {
 export interface DesktopBridge {
   /** Null in dev, where the daemon runs on its own at DEFAULT_DAEMON_PORT without a token. */
   readonly daemon: () => Promise<DaemonEndpoint | null>;
-  /** Hosts added in Settings → Connections, each with its own daemon over SSH. */
+  /** Hosts added in Settings → Connections, each with its own daemon, over SSH or paired. */
   readonly hosts: () => Promise<ReadonlyArray<RemoteHost>>;
   readonly onHosts: (listener: (hosts: ReadonlyArray<RemoteHost>) => void) => () => void;
   readonly addHost: (alias: string) => Promise<void>;
-  /** Also stops MassCode on the host, and the agents it runs. */
+  /** Pairs with a machine running `masscode connect`; null once paired, else what went wrong. */
+  readonly pairHost: (request: PairHostRequest) => Promise<string | null>;
+  /** On an SSH host, also stops MassCode and the agents it runs; a paired machine keeps running. */
   readonly removeHost: (alias: string) => Promise<void>;
   /** Connects if needed; null while the host can't be reached or is updating (see its status). */
   readonly hostDaemon: (alias: string) => Promise<DaemonEndpoint | null>;

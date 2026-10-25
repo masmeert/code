@@ -80,7 +80,8 @@ jobs:
       # Remote hosts get the daemon from here: the app downloads the one for the host and uploads it over SSH
       - run: |
           pnpm --filter @masscode/daemon build:linux
-          gh release upload "$TAG" apps/daemon/dist/masscode-daemon-linux-*.gz --clobber
+          (cd apps/daemon/dist && shasum -a 256 masscode-daemon-linux-*.gz > SHA256SUMS)
+          gh release upload "$TAG" apps/daemon/dist/masscode-daemon-linux-*.gz apps/daemon/dist/SHA256SUMS scripts/install.sh --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # electron-builder uploads into the existing draft but never publishes it, and the updater only sees published releases

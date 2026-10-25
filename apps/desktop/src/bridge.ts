@@ -1,4 +1,4 @@
-import { AttachmentInput, BrowserAction, Theme } from "@masscode/contracts";
+import { AttachmentInput, BrowserAction, PairHostRequest, Theme } from "@masscode/contracts";
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification } from "electron";
 import * as Schema from "effect/Schema";
 import { readFile } from "node:fs/promises";
@@ -9,6 +9,7 @@ import {
   addHost,
   ensureHostDaemon,
   listHosts,
+  pairHost,
   removeHost,
   restartHost,
   readSshAliases,
@@ -50,6 +51,7 @@ export function registerBridge(findDaemon: () => Promise<{ port: number; token: 
   registerIpcHandler("daemon", Schema.Undefined, () => findDaemon());
   registerIpcHandler("hosts", Schema.Undefined, listHosts);
   registerIpcHandler("add-host", Schema.String, (_window, alias) => addHost(alias));
+  registerIpcHandler("pair-host", PairHostRequest, (_window, request) => pairHost(request));
   registerIpcHandler("remove-host", Schema.String, (_window, alias) => removeHost(alias));
   registerIpcHandler("host-daemon", Schema.String, (_window, alias) => ensureHostDaemon(alias));
   registerIpcHandler("restart-host", Schema.String, (_window, alias) => restartHost(alias));

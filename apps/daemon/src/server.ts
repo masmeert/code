@@ -1,9 +1,11 @@
 import {
   ClientCommand,
   isTranscriptEvent,
+  type PairingAccess,
   PairingRequest,
   PROTOCOL_MISMATCH,
   PROTOCOL_VERSION,
+  RuntimeEvent,
   UNPAIRED,
   ServerFrame,
 } from "@masscode/contracts";
@@ -83,8 +85,8 @@ const decodeCommand = Schema.decodeUnknownEffect(Schema.fromJsonString(ClientCom
 
 const decodePairingRequest = Schema.decodeUnknownEffect(Schema.fromJsonString(PairingRequest));
 
-/** What only the desktop does: pairing, and hosting the browser panel. */
-const DESKTOP_ONLY_COMMANDS = new Set<ClientCommand["_tag"]>([
+/** What a device paired with limited access may not do: pairing, and hosting the browser panel. */
+const FULL_ACCESS_COMMANDS = new Set<ClientCommand["_tag"]>([
   "pairing.start",
   "phone.unpair",
   "browser.host",
@@ -96,8 +98,9 @@ const DESKTOP_ONLY_COMMANDS = new Set<ClientCommand["_tag"]>([
 interface ConnectionData {
   /** The protocol the client says it speaks; null from clients older than the check. */
   protocol: string | null;
-  /** The paired phone on the other end; null for the desktop. */
+  /** The paired phone or computer on the other end; null for the local app. */
   phoneId: string | null;
+  access: PairingAccess;
   /** A phone offering a token no paired phone holds; it's closed as soon as it opens. */
   unpaired?: boolean;
   /**
@@ -152,7 +155,9 @@ export function serve(port: number) {
               providers,
               threads,
               terminals,
-              phones,
+              // Only full access manages pairings; phone builds older than computer pairings
+              // couldn't read a list with one in it.
+              phones: socket.data.access === "full" ? phones : [],
               keepAwake,
               services,
               root: process.getuid?.() === 0,
@@ -167,6 +172,9 @@ export function serve(port: number) {
                 if (since === undefined || seq <= since) return;
               }
 
+              if (socket.data.access === "limited" && RuntimeEvent.guards["phones.updated"](event))
+                return;
+
               send(socket, ServerFrame.cases.event.make({ id, event }));
             }),
           );
@@ -176,8 +184,12 @@ export function serve(port: number) {
 
     /** Transcript subscriptions are per connection, so they're handled here rather than by the manager. */
     function handleCommand(socket: ServerWebSocket<ConnectionData>, command: ClientCommand) {
-      if (socket.data.phoneId && DESKTOP_ONLY_COMMANDS.has(command._tag))
-        return Effect.logWarning(`A phone sent ${command._tag}, which only the desktop may`);
+      if (
+        socket.data.access === "limited" &&
+        FULL_ACCESS_COMMANDS.has(command._tag) &&
+        !(ClientCommand.guards["phone.unpair"](command) && command.phoneId === socket.data.phoneId)
+      )
+        return Effect.logWarning(`A device with limited access sent ${command._tag}`);
 
       return Effect.suspend(() =>
         ClientCommand.matchOrElse(
@@ -357,9 +369,9 @@ export function serve(port: number) {
                   send(socket, ServerFrame.cases["device.attached"].make({ requestId, error })),
                 ),
               ),
-            "pairing.start": ({ requestId }) =>
+            "pairing.start": ({ requestId, access }) =>
               syncPhoneListener.pipe(
-                Effect.andThen(manager.phones.startPairing()),
+                Effect.andThen(manager.phones.startPairing(access)),
                 Effect.match({
                   onSuccess: (offer) => ({ offer, error: null }),
                   onFailure: (error) => ({ offer: null, error: error.message }),
@@ -379,7 +391,7 @@ export function serve(port: number) {
                       if (phoneSocket.data.phoneId === command.phoneId)
                         phoneSocket.close(
                           UNPAIRED,
-                          "This phone was unpaired. Pair it again on your computer.",
+                          "This device was unpaired. Pair it again on the computer running MassCode.",
                         );
                   }),
                 ),
@@ -444,7 +456,10 @@ export function serve(port: number) {
       open(socket) {
         // Upgraded before closing: a refused upgrade reaches a browser with no reason attached.
         if (socket.data.unpaired)
-          return socket.close(UNPAIRED, "This phone isn't paired. Pair it again on your computer.");
+          return socket.close(
+            UNPAIRED,
+            "This device isn't paired. Pair it again on the computer running MassCode.",
+          );
 
         if (socket.data.protocol !== String(PROTOCOL_VERSION))
           return socket.close(
@@ -519,14 +534,15 @@ export function serve(port: number) {
 
       if (!token) return new Response("Unauthorized", { status: 401 });
 
-      const phoneId = await Effect.runPromise(manager.phones.authenticate(token));
+      const device = await Effect.runPromise(manager.phones.authenticate(token));
 
       // An unknown token is upgraded only to be closed with UNPAIRED: refused outright, the phone
       // sees a dropped connection and says the computer can't be reached.
       const data: ConnectionData = {
         protocol: searchParams.get("protocol"),
-        phoneId,
-        unpaired: phoneId === null,
+        phoneId: device?.id ?? null,
+        access: device?.access ?? "limited",
+        unpaired: device === null,
         threads: new Map(),
         sideChats: new Map(),
       };
@@ -588,7 +604,9 @@ export function serve(port: number) {
 
             const origin = request.headers.get("origin");
 
-            if (!origin || !ALLOWED_ORIGINS.has(origin))
+            // Browsers always send an origin. A client without one is a local tool such as
+            // `masscode pair`, which still has to offer the token below.
+            if (origin ? !ALLOWED_ORIGINS.has(origin) : !TOKEN)
               return new Response("Forbidden origin", { status: 403 });
 
             const protocol = findTokenProtocol(request);
@@ -598,6 +616,7 @@ export function serve(port: number) {
             const data: ConnectionData = {
               protocol: searchParams.get("protocol"),
               phoneId: null,
+              access: "full",
               threads: new Map(),
               sideChats: new Map(),
             };

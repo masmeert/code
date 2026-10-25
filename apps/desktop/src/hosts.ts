@@ -1,21 +1,40 @@
-import { getBrowserPartition, HostStatus, type RemoteHost } from "@masscode/contracts";
+import {
+  getBrowserPartition,
+  HostStatus,
+  type PairHostRequest,
+  type RemoteHost,
+} from "@masscode/contracts";
 import { type ChildProcess, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { parse, stringify } from "smol-toml";
-import { connect } from "node:net";
+import { connect, type Server } from "node:net";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pipeline as pipeStreams, Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { app, BrowserWindow, net, session } from "electron";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { configureBrowserSession } from "./browser.ts";
 import { findFreePort } from "./free-port.ts";
+import {
+  findReachableAddress,
+  listAddresses,
+  loadPairing,
+  openRelay,
+  type Pairing,
+  requestPairing,
+  SavedPairing,
+  savePairing,
+} from "./paired-hosts.ts";
 
 /**
- * Remote hosts: each runs its own daemon, started over SSH and reached through a tunnel,
- * so its agents keep working while this Mac sleeps or goes offline. Uses the system `ssh`,
- * so ~/.ssh/config, keys, the agent and ProxyJump all apply as they do in a terminal.
+ * Remote hosts: each runs its own daemon, so its agents keep working while this Mac sleeps or
+ * goes offline. An SSH host's daemon is started over SSH and reached through a tunnel, with the
+ * system `ssh`, so ~/.ssh/config, keys, the agent and ProxyJump all apply as in a terminal. A
+ * paired machine runs MassCode on its own and is reached over Tailscale (see paired-hosts.ts).
  */
 
 interface Daemon {
@@ -31,6 +50,13 @@ interface Host {
     readonly process: ChildProcess;
     readonly remotePort: number;
     readonly daemon: Daemon;
+  } | null;
+  /** Set for a paired machine, which has no tunnel. */
+  paired: {
+    readonly pairing: Pairing;
+    relay: { readonly server: Server; readonly port: number } | null;
+    /** The address that last answered, which the relay connects to. */
+    address: string;
   } | null;
 }
 
@@ -74,6 +100,7 @@ if [ "$2" = stop ]; then
   if alive "$daemon"; then kill "$daemon"; fi
   exit 0
 fi
+if command -v systemctl >/dev/null 2>&1 && systemctl --user is-active --quiet masscode 2>/dev/null; then echo "state=service"; exit 0; fi
 if [ "$(uname -s)" != Linux ]; then echo "state=unsupported"; echo "os=$(uname -s)"; exit 0; fi
 if [ ! -x "$dir/bin/masscode-daemon-$version" ]; then echo "state=missing"; echo "arch=$(uname -m)"; exit 0; fi
 if [ ! -s "$dir/token" ]; then (umask 077; od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > "$dir/token"); fi
@@ -240,9 +267,25 @@ async function fetchDaemonArchive(host: Host, arch: string, version: string) {
 
   if (await stat(path).catch(() => null)) return path;
 
-  const response = await net.fetch(
-    `https://github.com/masmeert/code/releases/download/v${version}/masscode-daemon-linux-${arch}.gz`,
-  );
+  const releaseUrl = `https://github.com/masmeert/code/releases/download/v${version}`;
+  const asset = `masscode-daemon-linux-${arch}.gz`;
+
+  const sums = await net
+    .fetch(`${releaseUrl}/SHA256SUMS`)
+    .then((response) => (response.ok ? response.text() : null))
+    .catch(() => null);
+
+  const expected = sums
+    ?.split("\n")
+    .map((line) => line.trim().split(/\s+\*?/))
+    .find(([, file]) => file === asset)?.[0];
+
+  if (!expected)
+    throw new Error(
+      `Couldn't download MassCode's checksums for ${host.alias} from GitHub. Check this Mac's connection, then retry.`,
+    );
+
+  const response = await net.fetch(`${releaseUrl}/${asset}`);
 
   if (!response.ok || !response.body)
     throw new Error(
@@ -261,6 +304,17 @@ async function fetchDaemonArchive(host: Host, arch: string, version: string) {
     ),
     createWriteStream(`${path}.part`),
   );
+
+  const hash = createHash("sha256");
+  await pipeline(createReadStream(`${path}.part`), hash);
+
+  if (hash.digest("hex") !== expected) {
+    await rm(`${path}.part`, { force: true });
+    throw new Error(
+      `The download of MassCode for ${host.alias} doesn't match its checksum, so it wasn't installed. Retry; if it keeps failing, report it.`,
+    );
+  }
+
   await rename(`${path}.part`, path);
 
   return path;
@@ -312,11 +366,15 @@ function waitForPort(port: number, tunnel: ChildProcess) {
 
 /**
  * Sends a host's browser tabs through its tunnel's SOCKS proxy, loopback included, so
- * `localhost` is the host's. With no tunnel they go nowhere rather than to this Mac.
+ * `localhost` is the host's. With no tunnel they go nowhere rather than to this Mac. A paired
+ * machine's tabs go direct: its pages open at its Tailscale name, as `localhost` is this Mac's.
  */
-async function routeBrowser(alias: string, socksPort: number | null) {
+async function routeBrowser(alias: string, socksPort: number | null | "direct") {
   const partition = session.fromPartition(getBrowserPartition(alias));
   configureBrowserSession(partition);
+
+  if (socksPort === "direct") return partition.setProxy({ mode: "direct" });
+
   // ponytail: port 9 (discard) is a dead end on any Mac; a PAC script that refuses would be exact
   await partition.setProxy({
     proxyRules: `socks5://127.0.0.1:${socksPort ?? 9}`,
@@ -379,7 +437,50 @@ async function openTunnel(host: Host, remotePort: number, token: string) {
   return host.tunnel.daemon;
 }
 
+/** Checks the machine answers over Tailscale, and hands the window a local relay to it. */
+async function connectPairedHost(host: Host, paired: NonNullable<Host["paired"]>) {
+  if (!HostStatus.guards.connected(host.status))
+    setStatus(host, HostStatus.cases.connecting.make({ step: "Connecting" }));
+
+  const { pairing } = paired;
+  const address = await findReachableAddress(listAddresses(pairing), pairing.port);
+
+  if (hosts.get(host.alias) !== host) return null;
+
+  if (!address) {
+    setStatus(
+      host,
+      HostStatus.cases.failed.make({
+        message: `Couldn't reach ${host.alias} over Tailscale. Check that it's on, that Tailscale runs on both machines, and that \`masscode status\` there says it's running.`,
+      }),
+    );
+
+    return null;
+  }
+
+  paired.address = address;
+
+  try {
+    paired.relay ??= await openRelay(() => paired.address, pairing.port);
+  } catch (error) {
+    setStatus(
+      host,
+      HostStatus.cases.failed.make({
+        message: `Couldn't open a local port for ${host.alias}: ${error instanceof Error ? error.message : String(error)}`,
+      }),
+    );
+
+    return null;
+  }
+
+  setStatus(host, HostStatus.cases.connected.make({}));
+
+  return { port: paired.relay.port, token: pairing.token };
+}
+
 async function connectHost(host: Host, mode: "start" | "restart"): Promise<Daemon | null> {
+  if (host.paired) return connectPairedHost(host, host.paired);
+
   if (!HostStatus.guards.connected(host.status))
     setStatus(host, HostStatus.cases.connecting.make({ step: "Connecting" }));
 
@@ -405,6 +506,11 @@ async function connectHost(host: Host, mode: "start" | "restart"): Promise<Daemo
     }
 
     const state = values.get("state");
+
+    if (state === "service")
+      throw new Error(
+        `${host.alias} already runs MassCode on its own (set up with \`masscode connect\`). Remove it here, run \`masscode pair\` on it, and pair with it instead.`,
+      );
 
     if (state === "unsupported")
       throw new Error(
@@ -452,32 +558,78 @@ function ensureConnected(host: Host, mode: "start" | "restart" = "start") {
 }
 
 async function saveHostList() {
+  const list = [...hosts.values()];
+
   await mkdir(app.getPath("userData"), { recursive: true });
-  await writeFile(getHostListPath(), `${stringify({ hosts: [...hosts.keys()] })}\n`);
+  await writeFile(
+    getHostListPath(),
+    `${stringify({
+      hosts: list.flatMap((host) => (host.paired ? [] : [host.alias])),
+      paired: list.flatMap((host) =>
+        host.paired ? [savePairing(host.alias, host.paired.pairing)] : [],
+      ),
+    })}\n`,
+  );
 }
+
+function createPairedHost(alias: string, pairing: Pairing): Host {
+  return {
+    alias,
+    status: HostStatus.cases.connecting.make({ step: "Connecting" }),
+    connecting: null,
+    tunnel: null,
+    paired: { pairing, relay: null, address: pairing.address },
+  };
+}
+
+const decodeSavedPairings = Schema.decodeUnknownOption(Schema.Array(SavedPairing));
 
 export async function loadHosts() {
   const legacyPath = join(app.getPath("userData"), "hosts.json");
   const text = await readFile(getHostListPath(), "utf8").catch(() => null);
 
-  // Older builds kept a JSON list; it moves over once, below.
-  const saved: unknown = await (
+  const table =
     text === null
-      ? readFile(legacyPath, "utf8").then(JSON.parse)
-      : Promise.resolve(text).then((toml) => parse(toml).hosts)
-  ).catch(() => []);
+      ? null
+      : await Promise.resolve(text)
+          .then(parse)
+          .catch(() => null);
 
-  if (!Array.isArray(saved)) return;
+  // Older builds kept a JSON list; it moves over once, below.
+  const saved: unknown = table
+    ? table.hosts
+    : await readFile(legacyPath, "utf8")
+        .then(JSON.parse)
+        .catch(() => []);
 
-  for (const alias of saved) {
+  for (const alias of Array.isArray(saved) ? saved : []) {
     if (typeof alias !== "string") continue;
     hosts.set(alias, {
       alias,
       status: HostStatus.cases.connecting.make({ step: "Connecting" }),
       connecting: null,
       tunnel: null,
+      paired: null,
     });
     await routeBrowser(alias, null);
+  }
+
+  for (const saved of Option.getOrElse(decodeSavedPairings(table?.paired ?? []), () => [])) {
+    const pairing = loadPairing(saved);
+
+    const host = createPairedHost(
+      saved.alias,
+      pairing ?? { ...saved, name: saved.alias, token: "" },
+    );
+
+    // A token the keychain won't give back (say, after moving to another Mac) can't connect.
+    if (!pairing)
+      host.status = HostStatus.cases.failed.make({
+        message: `This Mac can't read its pairing with ${saved.alias} anymore. Remove it, run \`masscode pair\` there, and pair again.`,
+      });
+
+    hosts.set(saved.alias, host);
+    await routeBrowser(saved.alias, "direct");
   }
 
   if (text === null && hosts.size > 0) {
@@ -487,7 +639,12 @@ export async function loadHosts() {
 }
 
 export function listHosts(): ReadonlyArray<RemoteHost> {
-  return [...hosts.values()].map(({ alias, status }) => ({ alias, status }));
+  return [...hosts.values()].map(({ alias, status, paired }) => ({
+    alias,
+    kind: paired ? "paired" : "ssh",
+    status,
+    deviceId: paired?.pairing.deviceId ?? null,
+  }));
 }
 
 /**
@@ -511,10 +668,39 @@ export async function addHost(alias: string) {
     status: HostStatus.cases.connecting.make({ step: "Connecting" }),
     connecting: null,
     tunnel: null,
+    paired: null,
   });
   await routeBrowser(trimmed, null);
   broadcastHosts();
   await saveHostList();
+}
+
+/** Pairs with a machine running `masscode connect`; null once paired, else what went wrong. */
+export async function pairHost(request: PairHostRequest) {
+  try {
+    const pairing = await requestPairing(request);
+
+    // Pairing the same machine again replaces its old pairing, under the name it had.
+    const existing = [...hosts.values()].find(
+      (host) => host.paired?.pairing.dataId === pairing.dataId,
+    );
+
+    existing?.paired?.relay?.server.close();
+
+    let alias = existing?.alias ?? pairing.name;
+
+    for (let suffix = 2; !existing && hosts.has(alias); suffix++)
+      alias = `${pairing.name} ${suffix}`;
+
+    hosts.set(alias, createPairedHost(alias, pairing));
+    await routeBrowser(alias, "direct");
+    broadcastHosts();
+    await saveHostList();
+
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 export async function removeHost(alias: string) {
@@ -524,9 +710,11 @@ export async function removeHost(alias: string) {
 
   hosts.delete(alias);
   host.tunnel?.process.kill();
+  host.paired?.relay?.server.close();
   broadcastHosts();
   await saveHostList();
-  await runSsh(alias, "sh -s -- - stop", REMOTE_SCRIPT).catch(() => {});
+
+  if (!host.paired) await runSsh(alias, "sh -s -- - stop", REMOTE_SCRIPT).catch(() => {});
 }
 
 export async function restartHost(alias: string) {
@@ -539,7 +727,10 @@ export async function restartHost(alias: string) {
 }
 
 export function closeTunnels() {
-  for (const host of hosts.values()) host.tunnel?.process.kill();
+  for (const host of hosts.values()) {
+    host.tunnel?.process.kill();
+    host.paired?.relay?.server.close();
+  }
 }
 
 const GIT_FORGES = new Set(["github.com", "gitlab.com", "bitbucket.org", "ssh.dev.azure.com"]);

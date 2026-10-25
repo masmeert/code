@@ -1,5 +1,6 @@
 import {
   PairedPhone,
+  type PairingAccess,
   type PairingGrant,
   type PairingOffer,
   type PairingRequest,
@@ -53,7 +54,7 @@ const TAILSCALE_COMMANDS = ["tailscale", "/Applications/Tailscale.app/Contents/M
  * This machine's MagicDNS name, like `my-mac.tail1234.ts.net`, which outlives its address; null
  * without the CLI or MagicDNS.
  */
-function findTailnetName() {
+export function findTailnetName() {
   return Effect.promise(async () => {
     for (const command of TAILSCALE_COMMANDS) {
       const output = await new Promise<string | null>((resolve) =>
@@ -87,13 +88,19 @@ export function createPhones(options: {
   return Effect.gen(function* () {
     const file = yield* openTomlFile("phones", Schema.Array(StoredPhone), []);
 
-    let pairing: { code: string; expiresAt: number; attemptsLeft: number } | null = null;
+    let pairing: {
+      code: string;
+      access: PairingAccess;
+      expiresAt: number;
+      attemptsLeft: number;
+    } | null = null;
 
     const list = Effect.map(file.get, (stored) =>
-      stored.map(({ id, name, platform, pairedAt, lastSeenAt }): PairedPhone => ({
+      stored.map(({ id, name, platform, access, pairedAt, lastSeenAt }): PairedPhone => ({
         id,
         name,
         platform,
+        access,
         pairedAt,
         lastSeenAt,
       })),
@@ -109,13 +116,16 @@ export function createPhones(options: {
       );
     }
 
-    /** A new code, replacing any earlier one, for the desktop to show as a QR code. */
-    function startPairing() {
+    /** A new code, replacing any earlier one, for the desktop or `masscode pair` to show. */
+    function startPairing(access: PairingAccess) {
       return Effect.gen(function* (): Effect.fn.Return<PairingOffer, CommandError> {
         if (!(yield* options.isRemoteAccessOn))
           return yield* Effect.fail(
             new CommandError({
-              message: "Phone access is off. Turn it on in Settings → Phone, then pair again.",
+              message:
+                process.platform === "linux"
+                  ? "Remote access is off. Turn it on with `masscode connect`, then pair again."
+                  : "Phone access is off. Turn it on in Settings → Phone, then pair again.",
             }),
           );
 
@@ -125,7 +135,9 @@ export function createPhones(options: {
           return yield* Effect.fail(
             new CommandError({
               message:
-                "Tailscale isn't running on this computer. Open Tailscale, sign in, and try again.",
+                process.platform === "linux"
+                  ? "Tailscale isn't running on this computer. Run `sudo tailscale up`, sign in, and try again."
+                  : "Tailscale isn't running on this computer. Open Tailscale, sign in, and try again.",
             }),
           );
 
@@ -133,7 +145,7 @@ export function createPhones(options: {
         const code = String(randomInt(1_000_000)).padStart(6, "0");
         const name = findHostName();
         const expiresAt = Date.now() + PAIRING_TTL_MS;
-        pairing = { code, expiresAt, attemptsLeft: PAIRING_ATTEMPTS };
+        pairing = { code, access, expiresAt, attemptsLeft: PAIRING_ATTEMPTS };
 
         const query = new URLSearchParams({
           host,
@@ -165,7 +177,10 @@ export function createPhones(options: {
 
           return Effect.fail(
             new CommandError({
-              message: "That code is wrong or has expired. Start pairing again on your computer.",
+              message:
+                process.platform === "linux"
+                  ? "That code is wrong or has expired. Run `masscode pair` on the machine for a new one."
+                  : "That code is wrong or has expired. Start pairing again on your computer.",
             }),
           );
         }
@@ -173,7 +188,13 @@ export function createPhones(options: {
         pairing = null;
 
         const token = randomBytes(32).toString("base64url");
-        const phone = { id: randomUUID(), name: request.name, platform: request.platform };
+
+        const phone = {
+          id: randomUUID(),
+          name: request.name,
+          platform: request.platform,
+          access: current.access,
+        };
 
         return file.get.pipe(
           Effect.flatMap((stored) =>
@@ -194,7 +215,7 @@ export function createPhones(options: {
       );
     }
 
-    /** The paired phone's id, noting it was seen; null for a token no phone holds. */
+    /** The paired device's id and access, noting it was seen; null for a token no device holds. */
     function authenticate(token: string) {
       const tokenHash = hashToken(token);
 
@@ -208,7 +229,7 @@ export function createPhones(options: {
           stored.map((candidate) =>
             candidate.id === phone.id ? { ...candidate, lastSeenAt: Date.now() } : candidate,
           ),
-        ).pipe(Effect.ignore, Effect.as(phone.id));
+        ).pipe(Effect.ignore, Effect.as({ id: phone.id, access: phone.access }));
       });
     }
 

@@ -12,6 +12,7 @@ import {
   getHostState,
   markDisconnected,
   markIncompatible,
+  markUnpaired,
   receiveShell,
   setPhones,
   setRemoteHosts as setHosts,
@@ -65,6 +66,7 @@ import {
   onDisconnect,
   onFrame,
   onIncompatible,
+  onUnpaired,
   reconnectNow,
   routeCommandsWith,
   send,
@@ -203,6 +205,8 @@ routeCommandsWith(findCommandHost);
 onFrame(receiveFrame);
 
 onIncompatible(markIncompatible);
+
+onUnpaired(markUnpaired);
 
 onDisconnect((host) => {
   showHostTranscriptsCached(host);

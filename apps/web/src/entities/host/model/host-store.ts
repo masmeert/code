@@ -1,11 +1,14 @@
-import type { HostStatus, PairedPhone } from "@masscode/contracts";
+import type { HostStatus, PairedPhone, RemoteHost } from "@masscode/contracts";
 import { createStore } from "@/shared/lib/store";
 
 /** A remote daemon's connection, where this Mac's lives at the top of `HostsState`. */
 interface RemoteHostState {
+  readonly kind: RemoteHost["kind"];
   readonly status: HostStatus;
+  /** What a paired machine knows this app by; null for SSH hosts. */
+  readonly deviceId: string | null;
   readonly connected: boolean;
-  /** Why its daemon can't be used: it runs another version of MassCode. */
+  /** Why its daemon can't be used: it runs another version of MassCode, or unpaired this app. */
   readonly incompatible: string | null;
   readonly dataId: string | null;
   readonly root: boolean;
@@ -75,7 +78,10 @@ export function markIncompatible(host: string | null) {
   if (host !== null)
     return updateRemote(host, (current) => ({
       ...current,
-      incompatible: `${host} runs a different version of MassCode. Restart it from Settings → Connections.`,
+      incompatible:
+        current.kind === "paired"
+          ? `${host} runs a different version of MassCode. Update the older one: run \`masscode update\` on ${host}, or update this app.`
+          : `${host} runs a different version of MassCode. Restart it from Settings → Connections.`,
     }));
 
   store.setState({
@@ -83,6 +89,13 @@ export function markIncompatible(host: string | null) {
     incompatible:
       "MassCode's daemon is a different version from this window. Quit MassCode and open it again.",
   });
+}
+
+export function markUnpaired(host: string) {
+  updateRemote(host, (current) => ({
+    ...current,
+    incompatible: `${host} unpaired this Mac. Remove it in Settings → Connections, run \`masscode pair\` on it, and pair again.`,
+  }));
 }
 
 export function markDisconnected(host: string | null) {
@@ -128,15 +141,13 @@ export function setPhones(phones: ReadonlyArray<PairedPhone>) {
 }
 
 /** Follows the desktop app's list of remote hosts, keeping what's known about the ones that stay. */
-export function setRemoteHosts(
-  list: ReadonlyArray<{ readonly alias: string; readonly status: HostStatus }>,
-) {
+export function setRemoteHosts(list: ReadonlyArray<RemoteHost>) {
   const state = store.getState();
 
   store.setState({
     ...state,
     hosts: Object.fromEntries(
-      list.map(({ alias, status }) => [
+      list.map(({ alias, kind, status, deviceId }) => [
         alias,
         {
           ...(state.hosts[alias] ?? {
@@ -145,7 +156,9 @@ export function setRemoteHosts(
             dataId: null,
             root: false,
           }),
+          kind,
           status,
+          deviceId,
         },
       ]),
     ),

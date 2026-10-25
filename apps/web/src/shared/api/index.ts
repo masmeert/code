@@ -8,6 +8,7 @@ export {
   onDisconnect,
   onFrame,
   onIncompatible,
+  onUnpaired,
   reconnectNow,
   routeCommandsWith,
   send,

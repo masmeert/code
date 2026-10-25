@@ -8,6 +8,7 @@ import {
   type AuthFlow,
   type ModelOption,
   ProviderKind,
+  type ProviderSettings,
   ProviderStatus,
   type UsageLimit,
 } from "@masscode/contracts";
@@ -253,6 +254,18 @@ const PROBE: Record<
   cursor: probeCursor,
 };
 
+/** What `kind`'s CLI reports: installed, signed in, its models. A missing CLI is "not installed", not a failure. */
+export function probeHarness(kind: ProviderKind, settings: ProviderSettings) {
+  return resolveHarnessLaunch(kind, settings).pipe(
+    Effect.flatMap((launch) => PROBE[kind](launch)),
+    Effect.catch((error) =>
+      Effect.succeed(
+        buildUnknownStatus(kind, error.message.includes("Could not find") ? null : error.message),
+      ),
+    ),
+  );
+}
+
 // --- usage limits --------------------------------------------------------------
 
 const ClaudeWindow = Schema.Struct({
@@ -404,17 +417,6 @@ const make = Effect.gen(function* () {
     return yield* resolveHarnessLaunch(kind, settings.providers[kind]);
   });
 
-  function probeHarness(kind: ProviderKind) {
-    return resolveLaunch(kind).pipe(
-      Effect.flatMap((launch) => PROBE[kind](launch)),
-      Effect.catch((error) =>
-        Effect.succeed(
-          buildUnknownStatus(kind, error.message.includes("Could not find") ? null : error.message),
-        ),
-      ),
-    );
-  }
-
   // Checking the CLIs takes seconds; until it's done, clients get what the last check found rather
   // than "not installed", which hid every model picker and disabled sending on each launch.
   const lastChecked = yield* openTomlFile("providers", Schema.Array(ProviderStatus), []);
@@ -455,7 +457,7 @@ const make = Effect.gen(function* () {
   const refreshProvider = Effect.fn("ProviderRegistry.refreshProvider")(function* (
     kind: ProviderKind,
   ) {
-    const next = yield* probeHarness(kind);
+    const next = yield* probeHarness(kind, (yield* settingsStore.get).providers[kind]);
     providers = providers.map((provider) => (provider.kind === kind ? next : provider));
     listener.onProviders(providers);
     yield* lastChecked.set(providers);
