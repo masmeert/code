@@ -84,7 +84,7 @@ export function ThreadListMenu(props: {
             variant="ghost"
             size="icon"
             aria-label="View options"
-            className={cn("size-7", isFiltered && "bg-selected text-foreground")}
+            className={cn(isFiltered && "bg-selected text-foreground")}
           />
         }
       >
