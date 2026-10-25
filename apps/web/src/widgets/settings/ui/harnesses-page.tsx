@@ -31,6 +31,8 @@ import { buildMachineOptions, THIS_MAC, toMachine, useHostStore } from "@/entiti
 import { updateHarness, useSetting, useSettings } from "@/entities/settings";
 import { send } from "@/shared/api";
 import {
+  RowLabel,
+  SettingsDisclosure,
   SettingsSection,
   SettingsGroup,
   SettingsRow,
@@ -164,9 +166,20 @@ function LocalHarnessSettings({
           </SettingsRow>
         </SettingsGroup>
       </SettingsSection>
-      <SettingsSection title="Launch">
+      {status?.linked && status.models.length ? <ModelsSection status={status} /> : null}
+      <SettingsDisclosure
+        title="Advanced"
+        isInitiallyOpen={Boolean(
+          harness.binaryPath ||
+          harness.configDir ||
+          harness.launchArgs?.length ||
+          Object.keys(harness.env ?? {}).length,
+        )}
+      >
         <SettingsGroup>
-          <SettingsRow label="Binary">
+          <SettingsRow
+            label={<RowLabel title="Binary path" description="Empty uses the one on your PATH" />}
+          >
             <SettingsTextField
               label="Binary path"
               isMonospace
@@ -175,7 +188,14 @@ function LocalHarnessSettings({
               onCommit={(binaryPath) => updateHarness(kind, { binaryPath })}
             />
           </SettingsRow>
-          <SettingsRow label="Config folder">
+          <SettingsRow
+            label={
+              <RowLabel
+                title="Config folder"
+                description={<span className="font-mono">{CONFIG_DIR[kind].env}</span>}
+              />
+            }
+          >
             <SettingsTextField
               label={CONFIG_DIR[kind].env}
               isMonospace
@@ -184,7 +204,9 @@ function LocalHarnessSettings({
               onCommit={(configDir) => updateHarness(kind, { configDir })}
             />
           </SettingsRow>
-          <SettingsRow label="Launch arguments">
+          <SettingsRow
+            label={<RowLabel title="Launch arguments" description="Added to every launch" />}
+          >
             <SettingsTextField
               label="Launch arguments"
               isMonospace
@@ -197,8 +219,7 @@ function LocalHarnessSettings({
           </SettingsRow>
           <VariablesField provider={kind} />
         </SettingsGroup>
-      </SettingsSection>
-      {status?.linked && status.models.length ? <ModelsSection status={status} /> : null}
+      </SettingsDisclosure>
     </>
   );
 }
@@ -223,9 +244,9 @@ function VariablesField({ provider }: { provider: ProviderKind }) {
 
   return (
     <div className="px-3 py-2">
-      <p>Variables</p>
+      <RowLabel title="Environment variables" description="One KEY=value per line" />
       <Textarea
-        aria-label="Variables"
+        aria-label="Environment variables"
         aria-invalid={invalidLine !== -1 || undefined}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
@@ -315,7 +336,7 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
                   event.preventDefault();
                   moveModel(index, event.key === "ArrowUp" ? -1 : 1);
                 }}
-                className="flex h-11 items-center gap-1 pr-3 pl-1.5"
+                className="group/model flex h-11 items-center gap-1 pr-3 pl-1.5"
               >
                 <IconButton
                   label={isFavorite ? `Unfavorite ${model.label}` : `Favorite ${model.label}`}
@@ -329,36 +350,37 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
                 >
                   <IconStar className={cn("size-3.5", isFavorite && "fill-brand text-brand")} />
                 </IconButton>
-                <div
+                <span
+                  title={model.id}
                   className={cn(
-                    "flex min-w-0 flex-1 items-baseline gap-2 pl-1",
-                    isHidden && "opacity-50",
+                    typeClass("body"),
+                    "min-w-0 flex-1 truncate pl-1",
+                    isHidden && "text-muted-foreground",
                   )}
                 >
-                  <span className={cn(typeClass("body"), "shrink-0")}>{model.label}</span>
-                  <span className="truncate font-mono text-[11px] text-muted-foreground">
-                    {model.id}
-                  </span>
-                </div>
+                  {model.label}
+                </span>
                 {model.recommended ? (
                   <span className="mr-1 shrink-0 rounded-md bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground">
                     Recommended
                   </span>
                 ) : null}
-                <IconButton
-                  label={`Move ${model.label} up (⌥↑)`}
-                  disabled={index === 0}
-                  onClick={() => moveModel(index, -1)}
-                >
-                  <IconArrowUp className="size-3.5" />
-                </IconButton>
-                <IconButton
-                  label={`Move ${model.label} down (⌥↓)`}
-                  disabled={index === models.length - 1}
-                  onClick={() => moveModel(index, 1)}
-                >
-                  <IconArrowDown className="size-3.5" />
-                </IconButton>
+                <div className="flex opacity-0 transition-opacity group-focus-within/model:opacity-100 group-hover/model:opacity-100">
+                  <IconButton
+                    label={`Move ${model.label} up (⌥↑)`}
+                    disabled={index === 0}
+                    onClick={() => moveModel(index, -1)}
+                  >
+                    <IconArrowUp className="size-3.5" />
+                  </IconButton>
+                  <IconButton
+                    label={`Move ${model.label} down (⌥↓)`}
+                    disabled={index === models.length - 1}
+                    onClick={() => moveModel(index, 1)}
+                  >
+                    <IconArrowDown className="size-3.5" />
+                  </IconButton>
+                </div>
                 <Switch
                   checked={!isHidden}
                   // The picker always keeps one model to pick.
@@ -379,6 +401,9 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
           })}
         </SettingsGroup>
       </div>
+      <p className={cn(typeClass("caption"), "mt-2 px-1 text-muted-foreground")}>
+        Starred models are listed first in the picker; switched-off ones are hidden from it.
+      </p>
     </SettingsSection>
   );
 }

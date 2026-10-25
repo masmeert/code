@@ -5,33 +5,45 @@ import { cn } from "@masscode/ui/lib/utils";
 import { type ProjectConfig } from "@masscode/contracts";
 import { useEffect, useRef, useState } from "react";
 import { readProjectConfig, updateProjectConfig, useProjectStore } from "@/entities/project";
+import { updateSettings, useSettings } from "@/entities/settings";
 import {
   SettingsSection,
   SettingsGroup,
   SettingsRow,
   SettingsSelect,
   RowLabel,
+  SettingsTextField,
 } from "./settings-controls.tsx";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 export function ProjectsPage() {
+  const settings = useSettings();
   const projects = useProjectStore((state) => state.projects);
   const projectHosts = useProjectStore((state) => state.projectHosts);
   const [projectId, setProjectId] = useState<string | null>(null);
   const project = projects.find((candidate) => candidate.id === projectId) ?? projects[0];
 
-  if (!project)
-    return (
-      <p className={cn(typeClass("body"), "px-1 text-muted-foreground")}>
-        Add a project to set it up here.
-      </p>
-    );
-
   return (
     <>
-      <SettingsSection title="Project">
+      <SettingsSection title="All projects">
         <SettingsGroup>
-          <SettingsRow label={<RowLabel title="Settings for" description={project.path} />}>
+          <SettingsRow label="Add Project opens in">
+            <SettingsTextField
+              label="Add Project opens in"
+              isMonospace
+              value={settings.addProjectFolder ?? ""}
+              placeholder="~/"
+              onCommit={(folder) =>
+                updateSettings({ ...settings, addProjectFolder: folder || undefined })
+              }
+            />
+          </SettingsRow>
+        </SettingsGroup>
+      </SettingsSection>
+      {project ? (
+        <SettingsSection
+          title="This project"
+          action={
             <SettingsSelect
               value={project.id}
               onChange={setProjectId}
@@ -42,14 +54,19 @@ export function ProjectsPage() {
                   : candidate.name,
               }))}
             />
-          </SettingsRow>
-        </SettingsGroup>
-      </SettingsSection>
-      <ProjectThreadSettings
-        key={project.id}
-        host={projectHosts[project.id] ?? null}
-        path={project.path}
-      />
+          }
+        >
+          <ProjectThreadSettings
+            key={project.id}
+            host={projectHosts[project.id] ?? null}
+            path={project.path}
+          />
+        </SettingsSection>
+      ) : (
+        <p className={cn(typeClass("caption"), "px-1 text-muted-foreground")}>
+          Per-project settings show here once you add a project.
+        </p>
+      )}
     </>
   );
 }
@@ -122,7 +139,7 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
   }
 
   return (
-    <SettingsSection title="New threads">
+    <>
       {notice ? (
         <p
           className={cn(
@@ -142,8 +159,8 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
           <SettingsRow
             label={
               <RowLabel
-                title="Start in"
-                description="Where this project's new threads start; you can still switch per thread"
+                title="New threads start in"
+                description="You can still switch per thread"
               />
             }
           >
@@ -159,8 +176,14 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
           </SettingsRow>
           <div className="flex flex-col gap-2 px-3 py-2.5">
             <RowLabel
-              title="Worktree setup"
-              description="Runs in each new worktree, like installing dependencies. $MASSCODE_PROJECT_ROOT is the project's own checkout, for linking files git ignores, like .env."
+              title="Worktree setup script"
+              description={
+                <>
+                  Runs in each new worktree.{" "}
+                  <code className="selectable font-mono">$MASSCODE_PROJECT_ROOT</code> is the main
+                  checkout, for linking ignored files like .env.
+                </>
+              }
             />
             <Textarea
               aria-label="Worktree setup"
@@ -175,24 +198,25 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
               )}
             />
           </div>
-          <SettingsRow
-            label={
-              <RowLabel
-                title="Wait for setup"
-                description="Hold the first message until setup finishes"
-              />
-            }
-          >
-            <Switch
-              size="compact"
-              checked={draft.waitForSetup}
-              disabled={!draft.setup.trim()}
-              onCheckedChange={(waitForSetup) =>
-                void saveWorktreeSettings({ ...draft, waitForSetup })
+          {draft.setup.trim() ? (
+            <SettingsRow
+              label={
+                <RowLabel
+                  title="Wait for setup"
+                  description="The first message is sent once the script finishes"
+                />
               }
-              ariaLabel="Wait for setup"
-            />
-          </SettingsRow>
+            >
+              <Switch
+                size="compact"
+                checked={draft.waitForSetup}
+                onCheckedChange={(waitForSetup) =>
+                  void saveWorktreeSettings({ ...draft, waitForSetup })
+                }
+                ariaLabel="Wait for setup"
+              />
+            </SettingsRow>
+          ) : null}
         </SettingsGroup>
       )}
       <p
@@ -205,8 +229,8 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
         {error ??
           (isSaving
             ? "Saving…"
-            : "Saved to masscode.toml in the project; commit it to share with your team.")}
+            : "Saved to masscode.toml in the project. Commit it to share with your team.")}
       </p>
-    </SettingsSection>
+    </>
   );
 }

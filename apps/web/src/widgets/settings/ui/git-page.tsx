@@ -23,11 +23,12 @@ import {
   SettingsRow,
   SettingsSelect,
   SettingsModelSelect,
+  RowLabel,
 } from "./settings-controls.tsx";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 const MERGE_METHODS: Array<{ value: MergeMethod | "last"; label: string }> = [
-  { value: "last", label: "Last selected" },
+  { value: "last", label: "Last used" },
   { value: "merge", label: "Merge" },
   { value: "squash", label: "Squash and merge" },
   { value: "rebase", label: "Rebase and merge" },
@@ -51,17 +52,24 @@ export function GitPage() {
 
   return (
     <>
-      <SettingsSection title="Repositories">
+      <SettingsSection title="Branches">
         <SettingsGroup>
-          <SettingsRow label="Pull the default branch automatically">
+          <SettingsRow
+            label={
+              <RowLabel
+                title="Keep the default branch up to date"
+                description="Fast-forwards it from origin in the background"
+              />
+            }
+          >
             <Switch
               size="compact"
               checked={settings.autoPull ?? false}
               onCheckedChange={(autoPull) => updateSettings({ ...settings, autoPull })}
-              ariaLabel="Pull the default branch automatically"
+              ariaLabel="Keep the default branch up to date"
             />
           </SettingsRow>
-          <SettingsRow label="Default merge method">
+          <SettingsRow label="Merge pull requests with">
             <SettingsSelect
               value={settings.mergeMethod ?? "last"}
               onChange={(value) =>
@@ -73,7 +81,24 @@ export function GitPage() {
           </SettingsRow>
         </SettingsGroup>
       </SettingsSection>
-      <SettingsSection title="Source control">
+      <SettingsSection
+        title="Accounts"
+        action={
+          <Button
+            size="compact"
+            variant="ghost"
+            className={cn(typeClass("caption"), "-my-1 h-6 gap-1.5 rounded-md px-1.5")}
+            disabled={isChecking}
+            onClick={() => {
+              setIsChecking(true);
+              send(ClientCommand.cases["sourceControl.refresh"].make({}));
+            }}
+          >
+            <IconRefresh className={cn("size-3.5", isChecking && "animate-spin")} />
+            {isChecking ? "Checking…" : "Check again"}
+          </Button>
+        }
+      >
         <SettingsGroup>
           {SourceControlKind.literals.map((kind) => {
             const status = sourceControl?.find((entry) => entry.kind === kind);
@@ -129,25 +154,10 @@ export function GitPage() {
             );
           })}
         </SettingsGroup>
-        <div className="mt-2 flex justify-end">
-          <Button
-            size="compact"
-            variant="ghost"
-            className={cn(typeClass("caption"), "h-7 gap-1.5 rounded-lg")}
-            disabled={isChecking}
-            onClick={() => {
-              setIsChecking(true);
-              send(ClientCommand.cases["sourceControl.refresh"].make({}));
-            }}
-          >
-            <IconRefresh className={cn("size-3.5", isChecking && "animate-spin")} />
-            {isChecking ? "Checking…" : "Check again"}
-          </Button>
-        </div>
       </SettingsSection>
-      <SettingsSection title="Writing">
+      <SettingsSection title="Commit messages & pull requests">
         <SettingsGroup>
-          <SettingsRow label="Writing style">
+          <SettingsRow label="Style">
             <SettingsSelect
               value={settings.writingStyle ?? "repo_conventions"}
               onChange={(writingStyle) => updateSettings({ ...settings, writingStyle })}
@@ -156,7 +166,11 @@ export function GitPage() {
             />
           </SettingsRow>
           {settings.writingStyle === "custom" ? <WritingInstructionsField /> : null}
-          <SettingsRow label="Follow pull request templates">
+          <SettingsRow
+            label={
+              <RowLabel title="Follow pull request templates" description="When the repo has one" />
+            }
+          >
             <Switch
               size="compact"
               checked={settings.followTemplates ?? true}
@@ -166,7 +180,14 @@ export function GitPage() {
               ariaLabel="Follow pull request templates"
             />
           </SettingsRow>
-          <SettingsRow label="Writer model">
+          <SettingsRow
+            label={
+              <RowLabel
+                title="Model"
+                description="Writes pull requests, and commit messages you leave empty"
+              />
+            }
+          >
             <WriterModelSelect />
           </SettingsRow>
         </SettingsGroup>
@@ -221,7 +242,9 @@ function WriterModelSelect() {
     return <Skeleton className="h-7 w-52 rounded-lg" />;
 
   if (!linked.length)
-    return <span className="text-[13px] text-muted-foreground">Link a harness first</span>;
+    return (
+      <span className="text-[13px] text-muted-foreground">Link a harness in Harnesses first</span>
+    );
 
   return (
     <SettingsModelSelect

@@ -55,7 +55,7 @@ export function PhonesPage() {
             label={
               <RowLabel
                 title="Let phones reach this Mac"
-                description="Paired phones see and steer threads over Tailscale while MassCode runs"
+                description="See and steer threads from your phone, over Tailscale"
               />
             }
           >
@@ -75,7 +75,7 @@ export function PhonesPage() {
               label={
                 <RowLabel
                   title="Give full access"
-                  description="Lets the next device pair others and host the browser panel; leave off for phones"
+                  description="The next device can pair others and host the browser panel. Not needed for phones"
                 />
               }
             >
@@ -95,7 +95,7 @@ export function PhonesPage() {
               label={
                 <RowLabel
                   title="Pair a phone"
-                  description="Open MassCode on the phone and scan the code; it works once, for five minutes"
+                  description="Scan the code with MassCode on your phone"
                 />
               }
             >

@@ -188,7 +188,7 @@ function PairMachineSection() {
           label={
             <RowLabel
               title="1. Set it up"
-              description="On the Linux machine, with Tailscale running, run this command. It installs MassCode, keeps it running, and shows a pairing link."
+              description="Run this on the Linux machine, with Tailscale on. It installs MassCode and shows a pairing link."
             />
           }
         >
@@ -206,7 +206,7 @@ function PairMachineSection() {
         <div className="flex flex-col gap-2 px-3 py-2.5">
           <RowLabel
             title="2. Pair"
-            description="Paste the link it shows, or type the machine's Tailscale name and the code."
+            description="Paste that link, or type the machine's Tailscale name and its code."
           />
           <div className="flex items-center gap-2">
             <Input
@@ -308,7 +308,7 @@ function HostRow({
                 {HostStatus.match(status, {
                   connecting: ({ step }) => `${step}…`,
                   connected: () => "Connected",
-                  updating: () => "Updating: the new version starts once its running turns end",
+                  updating: () => "Update ready. Restarts once its running turns end",
                   failed: ({ message }) => message,
                 })}
               </span>
@@ -393,7 +393,7 @@ function HostRow({
         label={
           <RowLabel
             title="Projects folder"
-            description={`Git repos in it are added as projects on ${alias}, and clones go there`}
+            description="Its git repos become projects, and clones go here"
           />
         }
       >

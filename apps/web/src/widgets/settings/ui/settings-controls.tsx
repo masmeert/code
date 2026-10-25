@@ -1,5 +1,6 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@masmeert/ui/select";
 import { Input } from "@masmeert/ui/input";
+import { Collapsible } from "@masmeert/ui/collapsible";
 import {
   MorphingPopover,
   MorphingPopoverContent,
@@ -7,20 +8,66 @@ import {
 } from "@masmeert/ui/morphing-popover";
 import { ModelList } from "@masscode/ui/agents/prompt-input";
 import { cn } from "@masscode/ui/lib/utils";
-import { IconCheck, IconChevronDown } from "@tabler/icons-react";
+import { IconCheck, IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import { useState } from "react";
 import { buildModelChoices, getFavoriteChoices, useProviderStore } from "@/entities/provider";
 import { useSettings } from "@/entities/settings";
 import { toggleFavoriteModel } from "@/features/favorite-model";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
 
-export function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+export function SettingsSection({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="mb-5 last:mb-0">
-      <h3 className={cn(typeClass("caption"), "mb-2 px-1 font-medium text-muted-foreground")}>
-        {title}
-      </h3>
+    <section className="mb-7 last:mb-0">
+      <div className="mb-2 flex min-h-5 items-center justify-between gap-3 px-1">
+        <h3 className={cn(typeClass("caption"), "font-medium text-muted-foreground")}>{title}</h3>
+        {action}
+      </div>
       {children}
+    </section>
+  );
+}
+
+/** Rarely needed options, folded away; starts open when one of them is already set, so overrides stay visible. */
+export function SettingsDisclosure({
+  title,
+  isInitiallyOpen,
+  children,
+}: {
+  title: string;
+  isInitiallyOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(isInitiallyOpen);
+
+  return (
+    <section className="mb-7 last:mb-0">
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          typeClass("caption"),
+          "-mx-1 mb-2 flex items-center gap-1 rounded-md px-2 py-0.5 font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring",
+        )}
+      >
+        {title}
+        <IconChevronRight
+          aria-hidden
+          className={cn(
+            "size-3.5 transition-transform duration-(--duration-moderate) ease-out",
+            isOpen && "rotate-90",
+          )}
+        />
+      </button>
+      <Collapsible open={isOpen}>{children}</Collapsible>
     </section>
   );
 }
@@ -51,7 +98,11 @@ export function SettingsRow({
 export function SettingsSelect<Value extends string>(props: {
   value: Value;
   onChange: (value: Value) => void;
-  options: ReadonlyArray<{ value: Value; label: string; icon?: React.ReactNode }>;
+  options: ReadonlyArray<{
+    value: Value;
+    label: string;
+    icon?: React.ReactNode;
+  }>;
   disabled?: boolean;
   className?: string;
 }) {
@@ -156,11 +207,19 @@ export function SettingsModelSelect(props: {
   );
 }
 
-export function RowLabel({ title, description }: { title: string; description: string }) {
+export function RowLabel({
+  title,
+  description,
+}: {
+  title: React.ReactNode;
+  description?: React.ReactNode;
+}) {
   return (
     <>
       <p>{title}</p>
-      <p className={cn(typeClass("caption"), "text-muted-foreground")}>{description}</p>
+      {description ? (
+        <p className={cn(typeClass("caption"), "text-muted-foreground")}>{description}</p>
+      ) : null}
     </>
   );
 }

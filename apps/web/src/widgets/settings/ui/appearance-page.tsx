@@ -1,7 +1,13 @@
 import { Tabs, TabsList, TabsTrigger } from "@masmeert/ui/tabs";
 import { Theme } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
-import { IconDeviceDesktop, IconMoon, IconSun } from "@tabler/icons-react";
+import {
+  IconColumns2,
+  IconDeviceDesktop,
+  IconLayoutRows,
+  IconMoon,
+  IconSun,
+} from "@tabler/icons-react";
 import { updateSettings, useSettings } from "@/entities/settings";
 import { SettingsGroup, SettingsRow } from "./settings-controls.tsx";
 
@@ -32,6 +38,29 @@ export function AppearancePage() {
                 </span>
               </TabsTrigger>
             ))}
+          </TabsList>
+        </Tabs>
+      </SettingsRow>
+      <SettingsRow label="Diffs">
+        <Tabs
+          value={settings.diffLayout ?? "unified"}
+          onValueChange={(value) =>
+            updateSettings({ ...settings, diffLayout: value === "split" ? "split" : "unified" })
+          }
+        >
+          <TabsList>
+            <TabsTrigger value="unified">
+              <span className="flex items-center gap-1.5">
+                <IconLayoutRows className="size-3.5" />
+                Stacked
+              </span>
+            </TabsTrigger>
+            <TabsTrigger value="split">
+              <span className="flex items-center gap-1.5">
+                <IconColumns2 className="size-3.5" />
+                Side by side
+              </span>
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </SettingsRow>

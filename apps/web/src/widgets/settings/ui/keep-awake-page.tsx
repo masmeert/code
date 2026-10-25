@@ -97,7 +97,7 @@ export function KeepAwakePage() {
             label={
               <RowLabel
                 title="Keep this Mac awake for agents"
-                description="Agents keep working when you close the lid or walk away"
+                description="So they keep working while you're away"
               />
             }
           >
@@ -113,22 +113,12 @@ export function KeepAwakePage() {
             keepAwake={keepAwake}
             onPickMinutes={(manualMinutes) => update({ manualMinutes })}
           />
-          <Collapsible open={status.notice !== null}>
-            <p className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
-              {status.notice}
-            </p>
-          </Collapsible>
-        </SettingsGroup>
-      </SettingsSection>
-      <AccessSection status={status} />
-      <Collapsible open={keepAwake.enabled}>
-        <SettingsSection title="When">
-          <SettingsGroup>
+          <Collapsible open={keepAwake.enabled}>
             <SettingsRow
               label={
                 <RowLabel
-                  title="While agents work"
-                  description="Starts with a turn, ends 5 minutes after the last one finishes"
+                  title="Start when an agent starts"
+                  description="Ends 5 minutes after the last one finishes"
                 />
               }
             >
@@ -136,17 +126,21 @@ export function KeepAwakePage() {
                 size="compact"
                 checked={keepAwake.whileAgentsWork !== false}
                 onCheckedChange={(whileAgentsWork) => update({ whileAgentsWork })}
-                ariaLabel="While agents work"
+                ariaLabel="Start when an agent starts"
               />
             </SettingsRow>
-            <SettingsRow
-              label={
-                <RowLabel
-                  title="Stop after"
-                  description="The longest agents can keep the Mac awake in one go"
-                />
-              }
-            >
+          </Collapsible>
+          <Collapsible open={status.notice !== null}>
+            <p className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
+              {status.notice}
+            </p>
+          </Collapsible>
+        </SettingsGroup>
+      </SettingsSection>
+      <Collapsible open={keepAwake.enabled}>
+        <SettingsSection title="Limits">
+          <SettingsGroup>
+            <SettingsRow label="Stop after">
               <SettingsSelect
                 value={String(keepAwake.maxHours ?? DEFAULT_KEEP_AWAKE_MAX_HOURS)}
                 onChange={(value) => update({ maxHours: Number(value) })}
@@ -156,18 +150,7 @@ export function KeepAwakePage() {
                 }))}
               />
             </SettingsRow>
-          </SettingsGroup>
-        </SettingsSection>
-        <SettingsSection title="Battery">
-          <SettingsGroup>
-            <SettingsRow
-              label={
-                <RowLabel
-                  title="Stop on low battery"
-                  description="Lets the Mac sleep before it runs flat"
-                />
-              }
-            >
+            <SettingsRow label="Stop on low battery">
               <SettingsSelect
                 value={String(keepAwake.batteryFloor ?? DEFAULT_KEEP_AWAKE_BATTERY_FLOOR)}
                 onChange={(value) => update({ batteryFloor: Number(value) })}
@@ -177,106 +160,105 @@ export function KeepAwakePage() {
                 }))}
               />
             </SettingsRow>
-            <SettingsRow
-              label={
-                <RowLabel
-                  title="Low Power Mode with the lid closed"
-                  description="On battery; it also turns on whenever the Mac runs hot"
-                />
-              }
-            >
-              <Switch
-                size="compact"
-                checked={keepAwake.lowPowerWhenClosed !== false}
-                onCheckedChange={(lowPowerWhenClosed) => update({ lowPowerWhenClosed })}
-                ariaLabel="Low Power Mode with the lid closed"
-              />
-            </SettingsRow>
           </SettingsGroup>
         </SettingsSection>
         <SettingsSection title="With the lid closed">
           <SettingsGroup>
-            <SettingsRow
-              label={<RowLabel title="Mute sound" description="Unmuted when you open the lid" />}
-            >
-              <Switch
-                size="compact"
-                checked={keepAwake.muteWhenClosed !== false}
-                onCheckedChange={(muteWhenClosed) => update({ muteWhenClosed })}
-                ariaLabel="Mute sound"
-              />
-            </SettingsRow>
-            <SettingsRow
-              label={
-                <RowLabel
-                  title="Pause every other app"
-                  description="All but terminals, editors, browsers, AI, meeting and password apps"
-                />
-              }
-            >
-              <Switch
-                size="compact"
-                checked={keepAwake.freezeOthers === true}
-                onCheckedChange={(freezeOthers) => update({ freezeOthers })}
-                ariaLabel="Pause every other app"
-              />
-            </SettingsRow>
-            <AppListRow
-              title="Always pause"
-              description="Resumed as soon as you open the lid"
-              apps={freezeApps}
-              icons={icons}
-              choices={choices}
-              error={appsError}
-              onChange={(apps) =>
-                update({
-                  freezeApps: apps,
-                  keepApps: keepApps.filter(
-                    (kept) => !apps.some((app) => app.bundleId === kept.bundleId),
-                  ),
-                })
-              }
-            />
-            <AppListRow
-              title="Never pause"
-              description="Keeps running even with every other app paused"
-              apps={keepApps}
-              icons={icons}
-              choices={choices}
-              error={appsError}
-              onChange={(apps) =>
-                update({
-                  keepApps: apps,
-                  freezeApps: freezeApps.filter(
-                    (paused) => !apps.some((app) => app.bundleId === paused.bundleId),
-                  ),
-                })
-              }
-            />
-            <div className="px-3 py-2.5">
-              <p className="text-[13px]">Closing the lid now would pause</p>
-              {choices === null ? (
-                <p
-                  className={cn(
-                    typeClass("caption"),
-                    "mt-1 flex items-center gap-1.5 text-muted-foreground",
-                  )}
+            <AccessRow status={status} />
+            <Collapsible open={status.access === "ready"}>
+              <div className="divide-y divide-rule">
+                <SettingsRow
+                  label={
+                    <RowLabel
+                      title="Low Power Mode"
+                      description="On battery; it also turns on whenever the Mac runs hot"
+                    />
+                  }
                 >
+                  <Switch
+                    size="compact"
+                    checked={keepAwake.lowPowerWhenClosed !== false}
+                    onCheckedChange={(lowPowerWhenClosed) => update({ lowPowerWhenClosed })}
+                    ariaLabel="Low Power Mode with the lid closed"
+                  />
+                </SettingsRow>
+                <SettingsRow label="Mute sound">
+                  <Switch
+                    size="compact"
+                    checked={keepAwake.muteWhenClosed !== false}
+                    onCheckedChange={(muteWhenClosed) => update({ muteWhenClosed })}
+                    ariaLabel="Mute sound with the lid closed"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label={
+                    <RowLabel
+                      title="Pause other apps"
+                      description="Not terminals, editors, browsers, AI, meeting or password apps"
+                    />
+                  }
+                >
+                  <Switch
+                    size="compact"
+                    checked={keepAwake.freezeOthers === true}
+                    onCheckedChange={(freezeOthers) => update({ freezeOthers })}
+                    ariaLabel="Pause other apps with the lid closed"
+                  />
+                </SettingsRow>
+                <AppListRow
+                  title="Always pause"
+                  apps={freezeApps}
+                  icons={icons}
+                  choices={choices}
+                  error={appsError}
+                  onChange={(apps) =>
+                    update({
+                      freezeApps: apps,
+                      keepApps: keepApps.filter(
+                        (kept) => !apps.some((app) => app.bundleId === kept.bundleId),
+                      ),
+                    })
+                  }
+                />
+                <AppListRow
+                  title="Never pause"
+                  apps={keepApps}
+                  icons={icons}
+                  choices={choices}
+                  error={appsError}
+                  onChange={(apps) =>
+                    update({
+                      keepApps: apps,
+                      freezeApps: freezeApps.filter(
+                        (paused) => !apps.some((app) => app.bundleId === paused.bundleId),
+                      ),
+                    })
+                  }
+                />
+              </div>
+            </Collapsible>
+          </SettingsGroup>
+          {status.access === "ready" ? (
+            <p className={cn(typeClass("caption"), "mt-2 px-1 text-muted-foreground")}>
+              {choices === null ? (
+                <span className="flex items-center gap-1.5">
                   <IconLoader2 className="size-3 animate-spin" />
                   Looking at what's running…
-                </p>
+                </span>
               ) : (
-                <p className={cn(typeClass("caption"), "mt-1 text-muted-foreground")}>
+                <>
+                  Closing the lid now pauses{" "}
                   {pausedNow.length === 0
-                    ? "Nothing that's running."
+                    ? "nothing that's running"
                     : pausedNow.map((choice) => choice.name).join(", ")}
                   {keepAwake.freezeOthers && protectedNow.length > 0
-                    ? `. Left running: ${protectedNow.map((choice) => `${choice.name} (${choice.protection})`).join(", ")}.`
+                    ? `, and leaves ${protectedNow.map((choice) => `${choice.name} (${choice.protection})`).join(", ")} running`
                     : null}
-                </p>
+                  .
+                </>
               )}
-            </div>
-          </SettingsGroup>
+            </p>
+          ) : null}
         </SettingsSection>
       </Collapsible>
     </>
@@ -296,15 +278,13 @@ function SessionRow(props: {
   if (!props.keepAwake.enabled) return null;
 
   const title = !session
-    ? "Not keeping awake right now"
+    ? "Keep awake now"
     : session.reason === "manual"
       ? `Awake until ${formatClockTime(session.endsAt)}`
       : "Awake while agents work";
 
   const description = !session
-    ? props.keepAwake.whileAgentsWork === false
-      ? "Start it for a set time"
-      : "Starts on its own when an agent starts working"
+    ? null
     : [
         session.reason === "manual"
           ? `${formatTimeLeft(session.endsAt - now)} left`
@@ -355,83 +335,81 @@ function SessionRow(props: {
 }
 
 /** The one-time password prompt that lets sessions go on with the lid closed. */
-function AccessSection({ status }: { status: KeepAwakeStatus }) {
+function AccessRow({ status }: { status: KeepAwakeStatus }) {
   const [isConfirming, setIsConfirming] = useState(false);
 
   return (
-    <SettingsSection title="Lid-closed access">
-      <SettingsGroup>
-        <SettingsRow
-          label={
-            <RowLabel
-              title={status.access === "ready" ? "Set up" : "Not set up"}
-              description={
-                status.access === "ready"
-                  ? "MassCode can turn sleep and Low Power Mode off and on, nothing else"
-                  : "Without it the Mac sleeps when you close the lid. Asks for your password once"
-              }
-            />
-          }
-        >
-          {status.access === "ready" ? (
-            isConfirming ? (
-              <div className="flex items-center gap-1">
-                <Button
-                  size="compact"
-                  variant="ghost"
-                  className="h-7 rounded-lg"
-                  onClick={() => setIsConfirming(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  size="compact"
-                  variant="ghost"
-                  className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
-                  onClick={() => {
-                    setIsConfirming(false);
-                    removeKeepAwake();
-                  }}
-                >
-                  Remove
-                </Button>
-              </div>
-            ) : (
+    <>
+      <SettingsRow
+        label={
+          <RowLabel
+            title="Stay awake with the lid closed"
+            description={
+              status.access === "ready"
+                ? "Allowed. MassCode can only switch sleep and Low Power Mode"
+                : "Otherwise the Mac sleeps when you close it. Asks for your password once"
+            }
+          />
+        }
+      >
+        {status.access === "ready" ? (
+          isConfirming ? (
+            <div className="flex items-center gap-1">
               <Button
                 size="compact"
                 variant="ghost"
                 className="h-7 rounded-lg"
-                onClick={() => setIsConfirming(true)}
+                onClick={() => setIsConfirming(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="compact"
+                variant="ghost"
+                className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
+                onClick={() => {
+                  setIsConfirming(false);
+                  removeKeepAwake();
+                }}
               >
                 Remove
               </Button>
-            )
+            </div>
           ) : (
             <Button
               size="compact"
-              variant="secondary"
+              variant="ghost"
               className="h-7 rounded-lg"
-              disabled={status.access === "installing"}
-              onClick={setUpKeepAwake}
+              onClick={() => setIsConfirming(true)}
             >
-              {status.access === "installing" ? (
-                <span className="flex items-center gap-1.5">
-                  <IconLoader2 className="size-3.5 animate-spin" />
-                  Waiting for password…
-                </span>
-              ) : (
-                "Set up…"
-              )}
+              Remove
             </Button>
-          )}
-        </SettingsRow>
-        <Collapsible open={isConfirming}>
-          <p className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
-            Asks for your password again. The Mac goes back to sleeping when the lid closes.
-          </p>
-        </Collapsible>
-      </SettingsGroup>
-    </SettingsSection>
+          )
+        ) : (
+          <Button
+            size="compact"
+            variant="secondary"
+            className="h-7 rounded-lg"
+            disabled={status.access === "installing"}
+            onClick={setUpKeepAwake}
+          >
+            {status.access === "installing" ? (
+              <span className="flex items-center gap-1.5">
+                <IconLoader2 className="size-3.5 animate-spin" />
+                Waiting for password…
+              </span>
+            ) : (
+              "Allow…"
+            )}
+          </Button>
+        )}
+      </SettingsRow>
+      <Collapsible open={isConfirming}>
+        <p className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
+          Asks for your password again. The Mac goes back to sleeping when the lid closes.
+        </p>
+      </Collapsible>
+    </>
   );
 }
 
@@ -446,7 +424,6 @@ function AppIcon({ icon }: { icon: string | null | undefined }) {
 /** A list of apps, each removable, with a picker to add more. */
 function AppListRow(props: {
   title: string;
-  description: string;
   apps: ReadonlyArray<MacApp>;
   icons: ReadonlyMap<string, string | null>;
   choices: ReadonlyArray<AppChoice> | null;
@@ -457,7 +434,7 @@ function AppListRow(props: {
     <div className="px-3 py-2">
       <div className="flex min-h-7 items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <RowLabel title={props.title} description={props.description} />
+          <RowLabel title={props.title} />
         </div>
         <AppPicker
           label={`Add an app to ${props.title.toLowerCase()}`}

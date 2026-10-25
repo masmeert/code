@@ -1,10 +1,8 @@
 import { Button } from "@masmeert/ui/button";
 import { Switch } from "@masmeert/ui/switch";
-import { Tabs, TabsList, TabsTrigger } from "@masmeert/ui/tabs";
 import { DEFAULT_AUTO_SHELVE_DAYS, PermissionLevel, UpdateStatus } from "@masscode/contracts";
-import { IconColumns2, IconLayoutRows } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { EFFORT_LABEL, EFFORTS, PERMISSION_LABEL } from "@masscode/client";
+import { EFFORT_LABEL, EFFORTS, PERMISSION_DESCRIPTION, PERMISSION_LABEL } from "@masscode/client";
 import { buildModelChoices, decodeChoice, useProviderStore } from "@/entities/provider";
 import { updateSettings, useSettings } from "@/entities/settings";
 import { getUpdateAction, useUpdateStatus } from "@/features/update-app";
@@ -15,7 +13,6 @@ import {
   SettingsSelect,
   SettingsModelSelect,
   RowLabel,
-  SettingsTextField,
 } from "./settings-controls.tsx";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
 import { cn } from "@masscode/ui/lib/utils";
@@ -40,7 +37,7 @@ export function GeneralPage() {
     <>
       <SettingsSection title="New threads">
         <SettingsGroup>
-          <SettingsRow label="Default model">
+          <SettingsRow label="Model">
             {linked.length ? (
               <div className="flex gap-2">
                 <SettingsModelSelect
@@ -73,15 +70,15 @@ export function GeneralPage() {
               </div>
             ) : (
               <p className={cn(typeClass("caption"), "text-muted-foreground")}>
-                Link a harness to pick one
+                Link a harness in Harnesses first
               </p>
             )}
           </SettingsRow>
           <SettingsRow
             label={
               <RowLabel
-                title="Default permissions"
-                description="What new threads may do without asking"
+                title="Permissions"
+                description={PERMISSION_DESCRIPTION[settings.newThreadPermission ?? "ask"]}
               />
             }
           >
@@ -97,7 +94,16 @@ export function GeneralPage() {
             />
           </SettingsRow>
           <SettingsRow
-            label={<RowLabel title="Default workspace" description="Where new threads start" />}
+            label={
+              <RowLabel
+                title="Start in"
+                description={
+                  settings.workspace === "worktree"
+                    ? "A fresh git worktree, so threads don't touch each other's files"
+                    : "The project's own checkout"
+                }
+              />
+            }
           >
             <SettingsSelect
               value={settings.workspace ?? "local"}
@@ -108,15 +114,68 @@ export function GeneralPage() {
               ]}
             />
           </SettingsRow>
+          <SettingsRow
+            label={
+              <RowLabel
+                title="Branch worktrees from origin"
+                description="The remote's latest commit, not your local branch"
+              />
+            }
+          >
+            <Switch
+              checked={settings.worktreeFromOrigin === true}
+              ariaLabel="Branch worktrees from origin"
+              onCheckedChange={(checked) =>
+                updateSettings({ ...settings, worktreeFromOrigin: checked })
+              }
+              size="compact"
+            />
+          </SettingsRow>
         </SettingsGroup>
       </SettingsSection>
-      <SettingsSection title="Organization">
+      <SettingsSection title="While threads run">
         <SettingsGroup>
           <SettingsRow
             label={
               <RowLabel
+                title="Messages sent mid-turn"
+                description={
+                  settings.followUp === "steer"
+                    ? "The agent reads them right away. ⌘↩ queues instead"
+                    : "Queued until the agent finishes. ⌘↩ sends right away"
+                }
+              />
+            }
+          >
+            <SettingsSelect
+              value={settings.followUp ?? "queue"}
+              onChange={(followUp) => updateSettings({ ...settings, followUp })}
+              options={[
+                { value: "queue", label: "Queue" },
+                { value: "steer", label: "Send right away" },
+              ]}
+            />
+          </SettingsRow>
+          <SettingsRow
+            label={
+              <RowLabel
+                title="Notifications"
+                description="When a thread finishes or needs you, while MassCode is in the background"
+              />
+            }
+          >
+            <Switch
+              size="compact"
+              checked={settings.notifications !== false}
+              onCheckedChange={(notifications) => updateSettings({ ...settings, notifications })}
+              ariaLabel="Notifications"
+            />
+          </SettingsRow>
+          <SettingsRow
+            label={
+              <RowLabel
                 title="Shelve idle threads"
-                description="Read or not; new activity brings them back"
+                description="Folds them into Shelved until there's new activity"
               />
             }
           >
@@ -142,53 +201,11 @@ export function GeneralPage() {
               ]}
             />
           </SettingsRow>
-        </SettingsGroup>
-      </SettingsSection>
-      <SettingsSection title="Behavior">
-        <SettingsGroup>
-          <SettingsRow label="Diff layout">
-            <Tabs
-              value={settings.diffLayout ?? "unified"}
-              onValueChange={(value) =>
-                updateSettings({ ...settings, diffLayout: value === "split" ? "split" : "unified" })
-              }
-            >
-              <TabsList>
-                <TabsTrigger value="unified">
-                  <span className="flex items-center gap-1.5">
-                    <IconLayoutRows className="size-3.5" />
-                    Stacked
-                  </span>
-                </TabsTrigger>
-                <TabsTrigger value="split">
-                  <span className="flex items-center gap-1.5">
-                    <IconColumns2 className="size-3.5" />
-                    Split
-                  </span>
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </SettingsRow>
-          <SettingsRow
-            label={
-              <RowLabel
-                title="Notifications"
-                description="When a thread finishes or needs you, while MassCode is in the background"
-              />
-            }
-          >
-            <Switch
-              size="compact"
-              checked={settings.notifications !== false}
-              onCheckedChange={(notifications) => updateSettings({ ...settings, notifications })}
-              ariaLabel="Notifications"
-            />
-          </SettingsRow>
           <SettingsRow
             label={
               <RowLabel
                 title="Compact idle Claude threads"
-                description="Just before the prompt cache expires, for threads over 100K tokens, so the next message costs less"
+                description="Makes the next message cheaper in threads over 100K tokens"
               />
             }
           >
@@ -201,79 +218,24 @@ export function GeneralPage() {
               ariaLabel="Compact idle Claude threads"
             />
           </SettingsRow>
-          <SettingsRow
-            label={<RowLabel title="Follow-up behavior" description="⌘↩ does the opposite once" />}
-          >
-            <SettingsSelect
-              value={settings.followUp ?? "queue"}
-              onChange={(followUp) => updateSettings({ ...settings, followUp })}
-              options={[
-                { value: "queue", label: "Queue until done" },
-                { value: "steer", label: "Send immediately" },
-              ]}
-            />
-          </SettingsRow>
         </SettingsGroup>
       </SettingsSection>
-      <SettingsSection title="Projects & threads">
+      <SettingsSection title="Ask before">
         <SettingsGroup>
-          <SettingsRow
-            label={
-              <RowLabel
-                title="Start from origin"
-                description="Branch new worktrees from origin, not local"
-              />
-            }
-          >
-            <Switch
-              checked={settings.worktreeFromOrigin === true}
-              ariaLabel="Start new worktrees from origin"
-              onCheckedChange={(checked) =>
-                updateSettings({ ...settings, worktreeFromOrigin: checked })
-              }
-              size="compact"
-            />
-          </SettingsRow>
-          <SettingsRow
-            label={
-              <RowLabel
-                title="Add project starts in"
-                description="Where the Add Project browser opens"
-              />
-            }
-          >
-            <SettingsTextField
-              label="Add project starts in"
-              isMonospace
-              value={settings.addProjectFolder ?? ""}
-              placeholder="~/"
-              onCommit={(folder) =>
-                updateSettings({ ...settings, addProjectFolder: folder || undefined })
-              }
-            />
-          </SettingsRow>
-        </SettingsGroup>
-      </SettingsSection>
-      <SettingsSection title="Confirmations">
-        <SettingsGroup>
-          <SettingsRow
-            label={<RowLabel title="Archive confirmation" description="Second click to archive" />}
-          >
+          <SettingsRow label="Archiving a thread">
             <Switch
               checked={settings.confirmArchive === true}
-              ariaLabel="Archive confirmation"
+              ariaLabel="Ask before archiving a thread"
               onCheckedChange={(checked) =>
                 updateSettings({ ...settings, confirmArchive: checked })
               }
               size="compact"
             />
           </SettingsRow>
-          <SettingsRow
-            label={<RowLabel title="Delete confirmation" description="Second click to delete" />}
-          >
+          <SettingsRow label="Deleting a thread or branch">
             <Switch
               checked={settings.confirmDelete !== false}
-              ariaLabel="Delete confirmation"
+              ariaLabel="Ask before deleting a thread or branch"
               onCheckedChange={(checked) => updateSettings({ ...settings, confirmDelete: checked })}
               size="compact"
             />
@@ -302,27 +264,27 @@ function UpdatesSection() {
       <SettingsGroup>
         <SettingsRow
           label={
-            <>
-              <p className="flex items-baseline gap-1.5">
-                Version
-                {version ? (
-                  <span className={cn(typeClass("caption"), "font-mono text-muted-foreground")}>
-                    {version}
-                  </span>
-                ) : null}
-              </p>
-              {UpdateStatus.guards.failed(status) ? (
-                <p className={cn(typeClass("caption"), "text-destructive")}>{status.message}</p>
-              ) : (
-                <p className={cn(typeClass("caption"), "text-muted-foreground")}>
-                  {isReady
-                    ? `Version ${status.version} is downloaded and installs when MassCode restarts.`
-                    : isAvailable
-                      ? `Version ${status.version} is available.`
-                      : "Current version of the application."}
-                </p>
-              )}
-            </>
+            <RowLabel
+              title={
+                <span className="flex items-baseline gap-1.5">
+                  MassCode
+                  {version ? (
+                    <span className={cn(typeClass("caption"), "font-mono text-muted-foreground")}>
+                      {version}
+                    </span>
+                  ) : null}
+                </span>
+              }
+              description={
+                UpdateStatus.guards.failed(status) ? (
+                  <span className="text-destructive">{status.message}</span>
+                ) : isReady ? (
+                  `${status.version} installs when MassCode restarts`
+                ) : isAvailable ? (
+                  `${status.version} is available`
+                ) : null
+              }
+            />
           }
         >
           <Button
