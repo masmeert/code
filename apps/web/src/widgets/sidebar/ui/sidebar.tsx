@@ -499,7 +499,7 @@ export function Sidebar(props: {
             field:
               "h-7 rounded-lg border-transparent ring-0 hover:bg-hover data-[state=focused]:bg-muted",
             leftIcon: "left-1.5",
-            rightIcon: "right-0 [&_button]:size-7",
+            rightIcon: "right-px [&_button]:size-6",
             input: cn(typeClass("body"), "selectable pr-8 pl-8 placeholder:text-muted-foreground"),
           }}
         />
