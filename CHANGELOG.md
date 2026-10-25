@@ -2,6 +2,14 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.16](https://github.com/masmeert/code/compare/v0.1.15...v0.1.16) (2026-10-25)
+
+
+### Fixed
+
+* **sidebar:** keep the view-options button inside the search field ([a2ac57f](https://github.com/masmeert/code/commit/a2ac57f6766c0e18ac586612fd682b8865a5028c))
+* **ui:** bump @masmeert/ui to 0.3.4 ([c73b056](https://github.com/masmeert/code/commit/c73b0565e18cc8006ac3b969d52c1ba7de70d94d))
+
 ## [0.1.15](https://github.com/masmeert/code/compare/v0.1.14...v0.1.15) (2026-10-24)
 
 
