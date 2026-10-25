@@ -1,0 +1,44 @@
+{
+  "name": "masscode",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:24",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+  "mounts": [
+    // node_modules stays off the macOS bind mount, one volume per checkout so worktrees don't share it.
+    "source=masscode-node-modules-${devcontainerId},target=${containerWorkspaceFolder}/node_modules,type=volume",
+    "source=masscode-pnpm-store,target=/home/node/.cache/pnpm-store,type=volume",
+    // Shared across checkouts so `claude` and `codex` logins happen once.
+    "source=masscode-claude,target=/home/node/.claude,type=volume",
+    "source=masscode-codex,target=/home/node/.codex,type=volume"
+  ],
+  "containerEnv": {
+    // Per checkout: two daemons must not share one masscode.db.
+    "MASSCODE_DATA_DIR": "${containerWorkspaceFolder}/.masscode",
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude",
+    "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0"
+  },
+  "remoteEnv": {
+    "NODE_AUTH_TOKEN": "${localEnv:NODE_AUTH_TOKEN}"
+  },
+  "onCreateCommand": "bash .devcontainer/on-create.sh",
+  "updateContentCommand": "bash .devcontainer/update-content.sh",
+  "forwardPorts": [1420, 47821],
+  "portsAttributes": {
+    "1420": { "label": "web", "onAutoForward": "notify" },
+    "47821": { "label": "daemon", "onAutoForward": "silent" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["oxc.oxc-vscode", "bradlc.vscode-tailwindcss"],
+      "settings": {
+        "files.watcherExclude": { "**/.masscode/**": true }
+      }
+    }
+  }
+}

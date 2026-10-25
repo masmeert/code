@@ -27,6 +27,10 @@ pnpm test         # the daemon against recorded claude/codex traffic (apps/daemo
 pnpm --filter @masscode/daemon record [name]   # re-records those fixtures from the real CLIs, on your logins
 ```
 
+### Dev container
+
+`.devcontainer/` runs the daemon and web UI on Linux with Node 24, pnpm, bun, gh, `claude` and `codex`. Before opening it, run `export NODE_AUTH_TOKEN=$(gh auth token)` on the host so pnpm can install `@masmeert` packages. The token needs `read:packages`. Use `pnpm dev:daemon` and `pnpm dev:web`. Electron, release builds and the mobile app still need the Mac. Logins in the container (`claude auth login`, `codex login`) persist across rebuilds and checkouts. Daemon state stays in the checkout's gitignored `.masscode`.
+
 Builds sign with the Developer ID in your keychain. To notarize, store credentials once with `xcrun notarytool store-credentials masscode --apple-id <email> --team-id <team>`, then build with `APPLE_KEYCHAIN_PROFILE=masscode`. `pnpm release` also needs `GH_TOKEN` (e.g. `GH_TOKEN=$(gh auth token)`) and a bumped `version` in `apps/desktop/package.json`.
 
 ## Remote machines
