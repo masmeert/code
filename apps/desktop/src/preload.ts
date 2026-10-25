@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld("desktop", {
     return () => ipcRenderer.removeListener("hosts-changed", forward);
   },
   addHost: (alias) => ipcRenderer.invoke("add-host", alias),
+  pairHost: (request) => ipcRenderer.invoke("pair-host", request),
   removeHost: (alias) => ipcRenderer.invoke("remove-host", alias),
   hostDaemon: (alias) => ipcRenderer.invoke("host-daemon", alias),
   restartHost: (alias) => ipcRenderer.invoke("restart-host", alias),

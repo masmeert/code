@@ -3,31 +3,6 @@ import Constants from "expo-constants";
 import * as Schema from "effect/Schema";
 import type { PairedHost } from "@/entities/host";
 
-/** What the host's pairing QR code carries; null for any other code. */
-export function parsePairingLink(link: string) {
-  try {
-    const url = new URL(link);
-
-    if (url.protocol !== "masscode:" || url.host !== "pair") return null;
-
-    const host = url.searchParams.get("host");
-    const code = url.searchParams.get("code");
-    const port = Number(url.searchParams.get("port"));
-
-    return host && code && port
-      ? {
-          host,
-          port,
-          code,
-          name: url.searchParams.get("name") ?? host,
-          dnsName: url.searchParams.get("dns"),
-        }
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 const decodeGrant = Schema.decodeUnknownSync(PairingGrant);
 
 /** Trades the host's one-time code for a token of this phone's own; throws an Error saying what went wrong. */

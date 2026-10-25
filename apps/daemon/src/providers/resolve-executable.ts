@@ -22,7 +22,12 @@ export function resolveExecutable(name: string, envOverride: string): string {
 
   for (const [command, args] of attempts) {
     try {
-      const found = execFileSync(command, args, { encoding: "utf8", timeout: 5000 })
+      const found = execFileSync(command, args, {
+        encoding: "utf8",
+        timeout: 5000,
+        // A login shell without a terminal complains about job control; that's noise here.
+        stdio: ["ignore", "pipe", "ignore"],
+      })
         .trim()
         .split("\n")
         .at(-1);

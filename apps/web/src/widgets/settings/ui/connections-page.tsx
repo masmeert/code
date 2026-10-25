@@ -1,12 +1,15 @@
 import { Button } from "@masmeert/ui/button";
 import { Input } from "@masmeert/ui/input";
 import { cn } from "@masscode/ui/lib/utils";
-import { HostStatus } from "@masscode/contracts";
-import { IconSearch } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { ClientCommand, HostStatus, parsePairingLink, type RemoteHost } from "@masscode/contracts";
+import { Collapsible } from "@masmeert/ui/collapsible";
+import { ActionSwapRollText } from "@masscode/ui/motion/action-swap-roll";
+import { IconLoader2, IconSearch } from "@tabler/icons-react";
+import { useEffect, useRef, useState } from "react";
 import { forgetFullAccessAsRoot, getHostState, useHostStore } from "@/entities/host";
 import { scanProjects } from "@/entities/project";
 import { getHostProjectsFolder, updateSettings, useSettings } from "@/entities/settings";
+import { send } from "@/shared/api";
 import {
   SettingsSection,
   SettingsGroup,
@@ -78,17 +81,24 @@ export function ConnectionsPage() {
         {added.length ? (
           <SettingsGroup>
             {added.map(([name, host]) => (
-              <HostRow key={name} alias={name} status={host.status} />
+              <HostRow
+                key={name}
+                alias={name}
+                kind={host.kind}
+                status={host.status}
+                deviceId={host.deviceId}
+              />
             ))}
           </SettingsGroup>
         ) : (
           <p className={cn(typeClass("caption"), "px-1 text-muted-foreground")}>
             {Object.keys(hosts).length
               ? "No host matches."
-              : "None yet. A Linux host runs agents over SSH while this Mac sleeps."}
+              : "None yet. A Linux machine runs agents while this Mac sleeps: pair one below, or add one over SSH above."}
           </p>
         )}
       </SettingsSection>
+      <PairMachineSection />
       {addable.length ? (
         <SettingsSection title="Add host">
           <SettingsGroup>
@@ -119,7 +129,150 @@ export function ConnectionsPage() {
   );
 }
 
-function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
+const SETUP_COMMAND =
+  "curl -fsSL https://github.com/masmeert/code/releases/latest/download/install.sh | sh && ~/.local/bin/masscode connect";
+
+/** Pairs with a Linux machine set up with `masscode connect`, from the link or code it shows. */
+function PairMachineSection() {
+  const [target, setTarget] = useState("");
+  const [code, setCode] = useState("");
+  const [isPairing, setIsPairing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+  const copiedTimer = useRef<number | undefined>(undefined);
+  const isLink = parsePairingLink(target) !== null;
+
+  const canPair =
+    !isPairing && (isLink || (target.trim() !== "" && code.replace(/\D/g, "").length === 6));
+
+  useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
+
+  async function copySetupCommand() {
+    await navigator.clipboard?.writeText(SETUP_COMMAND);
+    setIsCopied(true);
+    window.clearTimeout(copiedTimer.current);
+    copiedTimer.current = window.setTimeout(() => setIsCopied(false), 1600);
+  }
+
+  async function pair() {
+    if (!canPair || !window.desktop) return;
+
+    setIsPairing(true);
+    setError(null);
+
+    const failure = await window.desktop.pairHost({ target, code: isLink ? "" : code });
+    setIsPairing(false);
+    setError(failure);
+
+    if (failure === null) {
+      setTarget("");
+      setCode("");
+    }
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent) {
+    if (event.key === "Enter") void pair();
+
+    if (event.key === "Escape" && (target || code || error)) {
+      event.stopPropagation();
+      setTarget("");
+      setCode("");
+      setError(null);
+    }
+  }
+
+  return (
+    <SettingsSection title="Pair a machine">
+      <SettingsGroup>
+        <SettingsRow
+          label={
+            <RowLabel
+              title="1. Set it up"
+              description="On the Linux machine, with Tailscale running, run this command. It installs MassCode, keeps it running, and shows a pairing link."
+            />
+          }
+        >
+          <Button
+            size="compact"
+            variant="secondary"
+            className="h-7 rounded-lg"
+            onClick={() => void copySetupCommand()}
+          >
+            <ActionSwapRollText value={isCopied ? "copied" : "idle"}>
+              {isCopied ? "Copied" : "Copy command"}
+            </ActionSwapRollText>
+          </Button>
+        </SettingsRow>
+        <div className="flex flex-col gap-2 px-3 py-2.5">
+          <RowLabel
+            title="2. Pair"
+            description="Paste the link it shows, or type the machine's Tailscale name and the code."
+          />
+          <div className="flex items-center gap-2">
+            <Input
+              aria-label="Pairing link or machine name"
+              value={target}
+              onChange={(value) => {
+                setTarget(value);
+                setError(null);
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="masscode://pair?… or nuc"
+              spellCheck={false}
+              autoComplete="off"
+              className="min-w-0 flex-1"
+              classNames={{ field: "h-8 rounded-lg bg-background", input: "font-mono text-[13px]" }}
+            />
+            {isLink ? null : (
+              <Input
+                aria-label="Pairing code"
+                value={code}
+                onChange={(value) => {
+                  setCode(value.replace(/[^\d ]/g, "").slice(0, 7));
+                  setError(null);
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder="123 456"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                className="w-24"
+                classNames={{
+                  field: "h-8 rounded-lg bg-background",
+                  input: "font-mono text-[13px] tabular-nums",
+                }}
+              />
+            )}
+            <Button
+              size="compact"
+              variant="secondary"
+              aria-label="Pair"
+              className="h-8 min-w-14 rounded-lg"
+              disabled={!canPair}
+              onClick={() => void pair()}
+            >
+              {isPairing ? <IconLoader2 className="size-3.5 animate-spin" /> : "Pair"}
+            </Button>
+          </div>
+        </div>
+        <Collapsible open={error !== null}>
+          <p className={cn(typeClass("caption"), "px-3 py-2.5 text-destructive")}>{error}</p>
+        </Collapsible>
+      </SettingsGroup>
+    </SettingsSection>
+  );
+}
+
+function HostRow({
+  alias,
+  kind,
+  status,
+  deviceId,
+}: {
+  alias: string;
+  kind: RemoteHost["kind"];
+  status: HostStatus;
+  deviceId: string | null;
+}) {
   const [confirmingAction, setConfirmingAction] = useState<"remove" | "restart" | null>(null);
   const settings = useSettings();
   const isConfirming = confirmingAction !== null;
@@ -129,7 +282,12 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
       <SettingsRow
         label={
           <div className="min-w-0">
-            <p className="font-mono text-[13px]">{alias}</p>
+            <p className="font-mono text-[13px]">
+              {alias}
+              <span className="ml-2 font-sans text-muted-foreground">
+                {kind === "paired" ? "Paired" : "SSH"}
+              </span>
+            </p>
             <div
               className={cn(typeClass("caption"), "flex items-start gap-1.5 text-muted-foreground")}
             >
@@ -177,6 +335,11 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
 
                 if (confirmingAction === "remove") {
                   forgetFullAccessAsRoot(alias);
+
+                  // Revokes this Mac's token there too, when it can still be reached.
+                  if (deviceId)
+                    send(ClientCommand.cases["phone.unpair"].make({ phoneId: deviceId }), alias);
+
                   void window.desktop?.removeHost(alias);
                 } else void window.desktop?.restartHost(alias);
               }}
@@ -220,7 +383,9 @@ function HostRow({ alias, status }: { alias: string; status: HostStatus }) {
       {isConfirming ? (
         <p className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
           {confirmingAction === "remove"
-            ? `This stops MassCode on ${alias}, and any agents working there. Its threads stay on ${alias} for when you add it again.`
+            ? kind === "paired"
+              ? `This unpairs this Mac from ${alias}. MassCode keeps running there with its threads; run \`masscode pair\` on it to pair again.`
+              : `This stops MassCode on ${alias}, and any agents working there. Its threads stay on ${alias} for when you add it again.`
             : `This stops the turns running on ${alias} and restarts it on this version.`}
         </p>
       ) : null}

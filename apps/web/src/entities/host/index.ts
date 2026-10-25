@@ -8,6 +8,7 @@ export {
   isHostReady,
   markDisconnected,
   markIncompatible,
+  markUnpaired,
   receiveShell,
   setPhones,
   setRemoteHosts,

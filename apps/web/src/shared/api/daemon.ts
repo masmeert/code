@@ -4,6 +4,7 @@ import {
   PROTOCOL_MISMATCH,
   PROTOCOL_VERSION,
   ServerFrame,
+  UNPAIRED,
 } from "@masscode/contracts";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -29,6 +30,8 @@ const frameListeners = new Set<(frame: ServerFrame, host: string | null) => void
 const closeListeners = new Set<(host: string | null) => void>();
 
 const incompatibleListeners = new Set<(host: string | null) => void>();
+
+const unpairedListeners = new Set<(host: string) => void>();
 
 let findCommandHost: (command: ClientCommand) => string | null = () => null;
 
@@ -75,6 +78,13 @@ export function onDisconnect(listener: (host: string | null) => void) {
 }
 
 /** A host's daemon runs another version of MassCode. */
+/** A paired machine refused this app's token: it was unpaired there. */
+export function onUnpaired(listener: (host: string) => void) {
+  unpairedListeners.add(listener);
+
+  return () => unpairedListeners.delete(listener);
+}
+
 export function onIncompatible(listener: (host: string | null) => void) {
   incompatibleListeners.add(listener);
 
@@ -196,6 +206,9 @@ async function connect(connection: Connection) {
     connection.socket = null;
 
     if (event.code === PROTOCOL_MISMATCH) notifyIncompatible(host);
+
+    if (event.code === UNPAIRED && host !== null)
+      for (const listener of unpairedListeners) listener(host);
 
     for (const listener of closeListeners) listener(host);
 

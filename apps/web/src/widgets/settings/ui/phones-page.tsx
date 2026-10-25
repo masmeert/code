@@ -22,6 +22,7 @@ export function PhonesPage() {
   const phones = useHostStore((state) => state.phones);
   const [offer, setOffer] = useState<PairingOffer | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  const [hasFullAccess, setHasFullAccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pairedCount, setPairedCount] = useState(phones.length);
   // The last code stays drawn while its panel folds shut.
@@ -40,7 +41,7 @@ export function PhonesPage() {
     setIsStarting(true);
     setError(null);
 
-    const started = await startPhonePairing();
+    const started = await startPhonePairing(hasFullAccess ? "full" : "limited");
     setIsStarting(false);
     setOffer(started.offer);
     setError(started.error);
@@ -69,6 +70,26 @@ export function PhonesPage() {
               ariaLabel="Let phones reach this Mac"
             />
           </SettingsRow>
+          {settings.remoteAccess ? (
+            <SettingsRow
+              label={
+                <RowLabel
+                  title="Give full access"
+                  description="Lets the next device pair others and host the browser panel; leave off for phones"
+                />
+              }
+            >
+              <Switch
+                size="compact"
+                checked={hasFullAccess}
+                onCheckedChange={(checked) => {
+                  setHasFullAccess(checked);
+                  setOffer(null);
+                }}
+                ariaLabel="Give full access"
+              />
+            </SettingsRow>
+          ) : null}
           {settings.remoteAccess ? (
             <SettingsRow
               label={
@@ -265,7 +286,9 @@ function PhoneRow({ phone }: { phone: PairedPhone }) {
         label={
           <RowLabel
             title={phone.name}
-            description={`${phone.platform === "ios" ? "iPhone" : "Android"} · ${
+            description={`${{ ios: "iPhone", android: "Android", desktop: "Computer" }[phone.platform]}${
+              phone.access === "full" ? " · Full access" : ""
+            } · ${
               phone.lastSeenAt === null
                 ? "Hasn't connected yet"
                 : `Last seen ${formatAge(phone.lastSeenAt, now) === "now" ? "just now" : `${formatAge(phone.lastSeenAt, now)} ago`}`

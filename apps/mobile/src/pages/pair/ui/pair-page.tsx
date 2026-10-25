@@ -1,3 +1,4 @@
+import { parsePairingLink } from "@masscode/contracts";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { router, Stack, useLocalSearchParams } from "expo-router";
@@ -12,7 +13,7 @@ import {
   FormSection,
   FormTextFieldRow,
 } from "@/shared/ui";
-import { pairWithHost, parsePairingLink } from "../api/pairing.ts";
+import { pairWithHost } from "../api/pairing.ts";
 
 export function PairPage() {
   const [permission, requestPermission] = useCameraPermissions();

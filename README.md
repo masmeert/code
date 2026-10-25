@@ -29,6 +29,21 @@ pnpm --filter @masscode/daemon record [name]   # re-records those fixtures from 
 
 Builds sign with the Developer ID in your keychain. To notarize, store credentials once with `xcrun notarytool store-credentials masscode --apple-id <email> --team-id <team>`, then build with `APPLE_KEYCHAIN_PROFILE=masscode`. `pnpm release` also needs `GH_TOKEN` (e.g. `GH_TOKEN=$(gh auth token)`) and a bumped `version` in `apps/desktop/package.json`.
 
+## Remote machines
+
+Agents can run on a Linux machine (a home server, a NUC, a VM) and keep working while this Mac sleeps. Two ways to add one in Settings → Connections:
+
+- **Paired** (recommended): the machine runs MassCode on its own, as a systemd user service, and the app reaches it over Tailscale. With Tailscale up there, run:
+
+  ```sh
+  curl -fsSL https://github.com/masmeert/code/releases/latest/download/install.sh | sh
+  ~/.local/bin/masscode connect
+  ```
+
+  `connect` turns on remote access, starts the service at boot, checks the agent CLIs (`claude`, `codex`, `cursor-agent`) are installed and signed in, then shows a pairing link and code to paste in Settings → Connections → Pair a machine. Each pairing gets full access (a computer: may pair others and host the browser panel) or limited access (a phone). `masscode pair` pairs another device, `masscode status` shows what's set up, `masscode update [version]` moves to a release once running agents are idle, `masscode uninstall` removes it and keeps `~/.masscode`. A paired machine's browser tabs reach its pages by Tailscale name, not `localhost`.
+
+- **SSH**: the app uploads MassCode over SSH and tunnels to it; nothing to install, but it only restarts when the app reconnects.
+
 ## Project settings
 
 Two places set up a project, and both save to `masscode.toml` in its folder, so committing that file shares them with the team:
