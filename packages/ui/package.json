@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
-    "@masmeert/ui": "^0.3.4",
+    "@masmeert/ui": "^0.3.5",
     "@masscode/client": "workspace:*",
     "@paper-design/shaders-react": "^0.0.81",
     "@tabler/icons-react": "^3.49.0",
