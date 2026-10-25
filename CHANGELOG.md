@@ -2,6 +2,13 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.17](https://github.com/masmeert/code/compare/v0.1.16...v0.1.17) (2026-10-25)
+
+
+### Added
+
+* pair headless Linux machines over Tailscale with `masscode connect` ([#33](https://github.com/masmeert/code/issues/33)) ([6cdaa6b](https://github.com/masmeert/code/commit/6cdaa6b6f9d4f983f3254ce2310e31fa3e467d48))
+
 ## [0.1.16](https://github.com/masmeert/code/compare/v0.1.15...v0.1.16) (2026-10-25)
 
 
