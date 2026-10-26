@@ -2,6 +2,13 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.19](https://github.com/masmeert/code/compare/v0.1.18...v0.1.19) (2026-10-26)
+
+
+### Fixed
+
+* **sidebar:** hide the hover highlight while rows glide into place ([05ba698](https://github.com/masmeert/code/commit/05ba69891ba260e924e9384e7df9b95d3b780064))
+
 ## [0.1.18](https://github.com/masmeert/code/compare/v0.1.17...v0.1.18) (2026-10-26)
 
 
