@@ -2,7 +2,8 @@ import { PLAN_APPROVAL_TITLE, type TranscriptItem } from "@masscode/client";
 import { type ApprovalDecision, ClientCommand, type UserAnswers } from "@masscode/contracts";
 import * as Haptics from "expo-haptics";
 import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
+import { alertNotConnected, useIsHostConnected } from "@/entities/host";
 import { send } from "@/shared/api";
 import { cn } from "@/shared/lib/cn";
 import { Icon, Markdown, NativeButton, Text } from "@/shared/ui";
@@ -20,22 +21,48 @@ export function ApprovalCard({
   item: ApprovalItem;
 }) {
   const [answers, setAnswers] = useState<Record<string, ReadonlyArray<string>>>({});
+  const isConnected = useIsHostConnected(hostId);
+  // Set from the tap until the host resolves the request, which replaces this card.
+  const [isResponding, setIsResponding] = useState(false);
+
+  // An answer sent as the connection dropped may not have landed; it can be given again.
+  if (isResponding && !isConnected) setIsResponding(false);
+
+  const isLocked = isResponding || !isConnected;
 
   function respond(
     decision: ApprovalDecision,
     extra: { answers?: UserAnswers; permission?: "auto-edit" } = {},
   ) {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    send(
-      hostId,
-      ClientCommand.cases["approval.respond"].make({
-        threadId,
-        requestId: item.id,
-        decision,
-        ...extra,
-      }),
-    );
+    if (isLocked) return;
+
+    if (
+      !send(
+        hostId,
+        ClientCommand.cases["approval.respond"].make({
+          threadId,
+          requestId: item.id,
+          decision,
+          ...extra,
+        }),
+      )
+    )
+      return alertNotConnected(hostId);
+
+    setIsResponding(true);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
+
+  const status = isResponding ? (
+    <View className="flex-row items-center gap-2">
+      <ActivityIndicator size="small" />
+      <Text className="text-sm text-muted-foreground">Sending your answer…</Text>
+    </View>
+  ) : isConnected ? null : (
+    <Text className="text-sm text-muted-foreground">
+      Not connected to the computer. You can answer once it's back.
+    </Text>
+  );
 
   if (item.questions) {
     const questions = item.questions;
@@ -54,7 +81,8 @@ export function ApprovalCard({
                 <Pressable
                   key={option.label}
                   accessibilityRole={question.multiSelect ? "checkbox" : "radio"}
-                  accessibilityState={{ checked: chosen }}
+                  accessibilityState={{ checked: chosen, disabled: isResponding }}
+                  disabled={isResponding}
                   onPress={() =>
                     setAnswers((current) => {
                       const previous = current[question.id] ?? [];
@@ -84,14 +112,19 @@ export function ApprovalCard({
             })}
           </View>
         ))}
+        {status}
         <View className="flex-row gap-2">
           <NativeButton
             label="Send answers"
-            size="small"
-            isDisabled={!isComplete}
+            isDisabled={!isComplete || isLocked}
             onPress={() => respond("allow", { answers })}
           />
-          <NativeButton label="Skip" variant="text" size="small" onPress={() => respond("deny")} />
+          <NativeButton
+            label="Skip"
+            variant="text"
+            isDisabled={isLocked}
+            onPress={() => respond("deny")}
+          />
         </View>
       </View>
     );
@@ -107,16 +140,17 @@ export function ApprovalCard({
           </View>
         </View>
         <Markdown text={item.detail} />
+        {status}
         <View className="flex-row gap-2">
           <NativeButton
             label="Build it"
-            size="small"
+            isDisabled={isLocked}
             onPress={() => respond("allow", { permission: "auto-edit" })}
           />
           <NativeButton
             label="Keep planning"
             variant="outlined"
-            size="small"
+            isDisabled={isLocked}
             onPress={() => respond("deny")}
           />
         </View>
@@ -144,21 +178,29 @@ export function ApprovalCard({
           <Text
             selectable
             numberOfLines={12}
-            className="rounded-xl border border-border bg-background/60 p-3 font-mono text-xs leading-5 text-brand"
+            className="rounded-xl border border-border bg-background/60 p-3 font-mono text-xs leading-5 text-foreground/85"
           >
             {item.detail}
           </Text>
         ) : null}
       </View>
-      <View className="flex-row items-center gap-2 border-t border-border px-3.5 py-3">
-        <NativeButton label="Allow once" size="small" onPress={() => respond("allow")} />
-        <NativeButton
-          label="Always allow"
-          variant="outlined"
-          size="small"
-          onPress={() => respond("allow-session")}
-        />
-        <NativeButton label="Deny" variant="text" size="small" onPress={() => respond("deny")} />
+      <View className="gap-3 border-t border-border px-3.5 py-3">
+        {status}
+        <View className="flex-row flex-wrap items-center gap-2">
+          <NativeButton label="Allow once" isDisabled={isLocked} onPress={() => respond("allow")} />
+          <NativeButton
+            label="Always allow"
+            variant="outlined"
+            isDisabled={isLocked}
+            onPress={() => respond("allow-session")}
+          />
+          <NativeButton
+            label="Deny"
+            variant="text"
+            isDisabled={isLocked}
+            onPress={() => respond("deny")}
+          />
+        </View>
       </View>
     </View>
   );

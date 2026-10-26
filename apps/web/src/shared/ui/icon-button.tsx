@@ -4,6 +4,7 @@ import type { ComponentProps, ReactNode } from "react";
 /** Rest props and the ref reach the button, so a popover trigger can wrap it. */
 export function IconButton({
   label,
+  shortcut,
   onClick,
   isActive,
   disabled,
@@ -12,6 +13,8 @@ export function IconButton({
   ...rest
 }: Omit<ComponentProps<"button">, "onClick" | "children"> & {
   label: string;
+  /** How its keyboard shortcut reads, e.g. ⌘,; shown in the tooltip. */
+  shortcut?: string;
   onClick?: () => void;
   isActive?: boolean;
   disabled?: boolean;
@@ -21,7 +24,7 @@ export function IconButton({
   return (
     <button
       type="button"
-      title={label}
+      title={shortcut ? `${label} (${shortcut})` : label}
       aria-label={label}
       aria-pressed={isActive}
       disabled={disabled}

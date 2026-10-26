@@ -554,7 +554,7 @@ function PickerTrigger({
         "flex max-w-56 min-w-0 items-center gap-1.5 text-muted-foreground transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
         variant === "pill" &&
           cn(typeClass("caption"), "h-8 rounded-full border border-border bg-background px-3"),
-        variant === "plain" && "h-6 rounded-lg px-2 text-[11px]",
+        variant === "plain" && cn(typeClass("caption", "compact"), "h-6 rounded-lg px-2"),
         compact && "@max-md:w-8 @max-md:shrink-0 @max-md:justify-center @max-md:px-0",
         open && "bg-hover text-foreground",
         className,
@@ -577,6 +577,8 @@ export interface PromptSelectProps {
   onChange: (value: string) => void;
   disabled?: boolean;
   placeholder?: ReactNode;
+  /** Trigger text in place of the selected option's label, like "From main". */
+  label?: ReactNode;
   /** Trigger icon; defaults to the selected option's (group) icon when `showOptionIcon`. */
   icon?: ReactNode;
   showOptionIcon?: boolean;
@@ -618,6 +620,7 @@ export function PromptSelect({
   onChange,
   disabled = false,
   placeholder = "Choose",
+  label,
   icon,
   showOptionIcon = false,
   title,
@@ -666,7 +669,7 @@ export function PromptSelect({
           variant={variant}
           className={className}
         >
-          {multi.length ? `${multi.length + 1} models` : (current?.label ?? placeholder)}
+          {multi.length ? `${multi.length + 1} models` : (label ?? current?.label ?? placeholder)}
         </PickerTrigger>
       </MorphingPopoverTrigger>
       <MorphingPopoverContent
@@ -802,7 +805,11 @@ function OptionList({
   return (
     <>
       {title ? (
-        <div className="px-2 pt-1 pb-1.5 text-[11px] text-muted-foreground">{title}</div>
+        <div
+          className={cn(typeClass("caption", "compact"), "px-2 pt-1 pb-1.5 text-muted-foreground")}
+        >
+          {title}
+        </div>
       ) : null}
       {searchable ? (
         <input
@@ -820,7 +827,10 @@ function OptionList({
             else if (first) pick(first.value);
           }}
           placeholder={searchPlaceholder}
-          className="mb-1 h-7 w-full rounded-lg bg-muted px-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+          className={cn(
+            typeClass("body", "compact"),
+            "mb-1 h-7 w-full rounded-lg bg-muted px-2 text-foreground outline-none placeholder:text-muted-foreground",
+          )}
         />
       ) : null}
       <div
@@ -839,7 +849,7 @@ function OptionList({
         className="scrollbar-hide flex max-h-80 flex-col gap-0.5 overflow-y-auto overscroll-contain"
       >
         {visible.length === 0 && !canCreate ? (
-          <div className="px-2 py-1.5 text-[13px] text-muted-foreground">
+          <div className={cn(typeClass("body", "compact"), "px-2 py-1.5 text-muted-foreground")}>
             {needle ? "No matches" : (empty ?? "Nothing here")}
           </div>
         ) : null}
@@ -847,7 +857,10 @@ function OptionList({
           <button
             type="button"
             onClick={create}
-            className="flex h-7 w-full shrink-0 items-center gap-2 rounded-lg px-2 text-left text-[13px] text-foreground transition-colors outline-none hover:bg-hover focus-visible:bg-hover"
+            className={cn(
+              typeClass("body", "compact"),
+              "flex h-7 w-full shrink-0 items-center gap-2 rounded-lg px-2 text-left text-foreground transition-colors outline-none hover:bg-hover focus-visible:bg-hover",
+            )}
           >
             <IconCirclePlus className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">{createLabel(trimmed)}</span>
@@ -866,7 +879,12 @@ function OptionList({
                 <div aria-hidden="true" className="mx-2 my-1 h-px bg-border" />
               ) : null}
               {header ? (
-                <div className="flex items-center gap-1.5 px-2 pt-1 pb-1 text-[11px] text-muted-foreground">
+                <div
+                  className={cn(
+                    typeClass("caption", "compact"),
+                    "flex items-center gap-1.5 px-2 pt-1 pb-1 text-muted-foreground",
+                  )}
+                >
                   {option.groupIcon ? (
                     <span className="grid size-3 place-items-center [&_svg]:size-3">
                       {option.groupIcon}
@@ -889,7 +907,8 @@ function OptionList({
                   pick(option.value);
                 }}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] transition-colors outline-none hover:bg-hover focus-visible:bg-hover disabled:pointer-events-none disabled:opacity-50",
+                  typeClass("body", "compact"),
+                  "flex w-full items-center gap-2 rounded-lg px-2 text-left transition-colors outline-none hover:bg-hover focus-visible:bg-hover disabled:pointer-events-none disabled:opacity-50",
                   option.description ? "py-1.5" : "h-7",
                   selected ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
@@ -915,13 +934,23 @@ function OptionList({
                     ) : null}
                   </span>
                   {option.description ? (
-                    <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">
+                    <span
+                      className={cn(
+                        typeClass("caption", "compact"),
+                        "mt-0.5 block leading-4 text-muted-foreground",
+                      )}
+                    >
                       {option.description}
                     </span>
                   ) : null}
                 </span>
                 {numberedValues.includes(option.value) ? (
-                  <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                  <span
+                    className={cn(
+                      typeClass("caption", "compact"),
+                      "shrink-0 text-muted-foreground tabular-nums",
+                    )}
+                  >
                     {formatBinding(`mod+${numberedValues.indexOf(option.value) + 1}`)}
                   </span>
                 ) : null}
@@ -957,7 +986,12 @@ function OptionList({
         })}
       </div>
       {note ? (
-        <div className="mt-1 border-t border-border px-2 pt-1.5 pb-1 text-[11px] leading-4 text-muted-foreground">
+        <div
+          className={cn(
+            typeClass("caption", "compact"),
+            "mt-1 border-t border-border px-2 pt-1.5 pb-1 leading-4 text-muted-foreground",
+          )}
+        >
           {note}
         </div>
       ) : null}
@@ -1067,7 +1101,10 @@ export function PromptModelMenu({
           {fast ? (
             <label
               onPointerEnter={() => setFlyout(null)}
-              className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-[13px] text-foreground"
+              className={cn(
+                typeClass("body", "compact"),
+                "flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-foreground",
+              )}
             >
               <span className="flex-1">Fast</span>
               <Switch
@@ -1157,7 +1194,8 @@ function FlyoutRow({
           onOpenChange(true);
         }}
         className={cn(
-          "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] text-foreground transition-colors outline-none",
+          typeClass("body", "compact"),
+          "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-foreground transition-colors outline-none",
           open && "bg-selected",
         )}
       >
@@ -1289,7 +1327,10 @@ export function ModelList({
             }}
             placeholder="Search models"
             aria-label="Search models"
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+            className={cn(
+              typeClass("body", "compact"),
+              "min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground",
+            )}
           />
         </label>
         {/* Fixed height: switching tabs or searching would otherwise resize the panel under the pointer. */}

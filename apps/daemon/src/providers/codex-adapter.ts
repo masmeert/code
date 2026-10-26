@@ -8,6 +8,7 @@ import {
   type Effort,
   type PermissionLevel,
   type ThreadUsage,
+  ToolChange,
 } from "@masscode/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -516,10 +517,11 @@ function start({
       title: string,
       detail: string,
       fromThreadId?: string,
+      change?: ToolChange,
     ) {
       approvals.request(
         { rpcId, elicitation },
-        { title, detail, agent: subagents.get(fromThreadId ?? "")?.name },
+        { title, detail, agent: subagents.get(fromThreadId ?? "")?.name, change },
       );
 
       return true;
@@ -547,6 +549,7 @@ function start({
             "Run command",
             params.command ?? params.reason ?? "",
             params.threadId,
+            params.command ? ToolChange.cases.command.make({ command: params.command }) : undefined,
           ),
         "item/fileChange/requestApproval": ({ params }) =>
           requestApproval(id, null, "Apply file changes", params.reason ?? "", params.threadId),

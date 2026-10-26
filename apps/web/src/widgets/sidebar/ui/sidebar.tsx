@@ -17,7 +17,7 @@ import {
 import { spring } from "@masmeert/ui/lib/springs";
 import { NumberTicker } from "@masmeert/ui/number-ticker";
 import { SharedLayoutBg } from "@masmeert/ui/shared-layout-bg";
-import { formatProjectLabel, getProjectKey } from "@masscode/client";
+import { formatProjectLabel, getProjectKey, relativizePaths } from "@masscode/client";
 import {
   buildFallbackProject,
   ProjectBadge,
@@ -37,12 +37,15 @@ import {
 import { categoryOf, describeActivity } from "@masscode/client";
 import { TextShimmer } from "@masmeert/ui/text-shimmer";
 import {
+  IconAlertTriangle,
   IconArchive,
   IconArrowBarToDown,
-  IconCheck,
   IconChevronRight,
   IconDots,
   IconEdit,
+  IconFolderPlus,
+  IconLayoutBottombarCollapse,
+  IconLayoutBottombarExpand,
   IconLayoutSidebar,
   IconPencil,
   IconRestore,
@@ -50,7 +53,6 @@ import {
   IconSearch,
   IconSettings,
   IconTrash,
-  IconX,
   type Icon as TablerIcon,
 } from "@tabler/icons-react";
 import {
@@ -63,17 +65,18 @@ import {
 } from "motion/react";
 import { memo, type ReactNode, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useSetting, useSettings } from "@/entities/settings";
-import { canShelve, isSeen, respondApproval, setShelved, useThreadStore } from "@/entities/thread";
-import { send } from "@/shared/api";
+import { canShelve, isSeen, respondApproval, useThreadStore } from "@/entities/thread";
+import { send, willQueue } from "@/shared/api";
 import { formatKeybinding } from "@/shared/lib/keybindings";
-import { useThreadListView } from "../model/thread-list-view.ts";
+import { addProject } from "@/features/add-project";
+import { clearViewFilters, isViewFiltered, useThreadListView } from "../model/thread-list-view.ts";
 import { formatAge } from "@masscode/client";
 import { useNow } from "@masscode/client";
-import { getUpdateAction, useUpdateStatus } from "@/features/update-app";
+import { useUpdateAction, useUpdateStatus } from "@/features/update-app";
 import { getStatusDotStyle, NEEDS_YOU, PLAN_APPROVAL_TITLE } from "@masscode/client";
 import { usePersistedFlag } from "@/shared/lib/storage";
 import { hasTrafficLights } from "@/shared/config";
-import { IconButton } from "@/shared/ui";
+import { IconButton, showToast, showUndoToast } from "@/shared/ui";
 import { KeepAwakeIndicator } from "./keep-awake-indicator.tsx";
 import { ServicesIndicator } from "./services-indicator.tsx";
 import { ThreadListMenu } from "./thread-list-menu.tsx";
@@ -82,6 +85,37 @@ import { typeClass } from "@masmeert/ui/lib/type-scale";
 /** Waiting on you: an approval, an answer, or a look at what went wrong. */
 function isWaitingOnYou(info: ThreadInfo) {
   return isAwaitingUser(info.status) || info.status === "error";
+}
+
+/**
+ * Sends a thread action and says so, with Undo when it can be taken back. While the daemon is
+ * away the action waits for it, and the toast says that rather than the action looking ignored.
+ */
+function sendThreadAction(command: ClientCommand, title: string, undo?: () => void) {
+  const description = willQueue(command)
+    ? "MassCode is reconnecting; this happens once it's back."
+    : undefined;
+
+  send(command);
+
+  if (undo) showUndoToast(title, undo, description);
+  else if (description) showToast({ title, description, status: "neutral" });
+}
+
+function setArchived(info: ThreadInfo, archived: boolean) {
+  sendThreadAction(
+    ClientCommand.cases["thread.archive"].make({ threadId: info.id, archived }),
+    archived ? `Archived “${info.title}”` : `Unarchived “${info.title}”`,
+    archived ? () => setArchived(info, false) : undefined,
+  );
+}
+
+function setShelved(info: ThreadInfo, shelved: boolean) {
+  sendThreadAction(
+    ClientCommand.cases["thread.shelve"].make({ threadId: info.id, shelved }),
+    shelved ? `Shelved “${info.title}”` : `Unshelved “${info.title}”`,
+    shelved ? () => setShelved(info, false) : undefined,
+  );
 }
 
 export function Sidebar(props: {
@@ -101,8 +135,8 @@ export function Sidebar(props: {
   const [view, setView] = useThreadListView();
   const now = useNow();
   const shouldReduceMotion = useReducedMotion();
-  const updateStatus = useUpdateStatus();
-  const updateAction = updateStatus ? getUpdateAction(updateStatus) : null;
+  const updateStatus = useUpdateStatus() ?? UpdateStatus.cases.idle.make({});
+  const updateAction = useUpdateAction(updateStatus);
 
   // Grouped by state: whatever still needs you on top, then shelved threads, then archived ones.
   const [isArchivedShown, setIsArchivedShown] = useState(false);
@@ -288,7 +322,12 @@ export function Sidebar(props: {
 
     return (
       <section className="flex flex-col">
-        <h3 className="flex items-center gap-2 px-3 pt-2 pb-1 text-[11px] font-medium text-muted-foreground">
+        <h3
+          className={cn(
+            typeClass("caption"),
+            "flex h-9 items-center gap-2 px-3 font-medium text-muted-foreground",
+          )}
+        >
           {label}
         </h3>
         {renderCards(infos)}
@@ -340,7 +379,10 @@ export function Sidebar(props: {
             value={infos.length}
             startOnView={false}
             duration={0.2}
-            className="ml-auto rounded-full bg-muted px-1.5 py-px text-[11px] leading-4"
+            className={cn(
+              typeClass("caption", "compact"),
+              "ml-auto rounded-full bg-muted px-1.5 py-px",
+            )}
           />
           <motion.span
             aria-hidden="true"
@@ -384,15 +426,63 @@ export function Sidebar(props: {
     );
   }
 
+  function renderEmpty(
+    message: string,
+    action?: { label: string; icon?: ReactNode; run: () => void },
+  ) {
+    return (
+      <div className="flex flex-col items-start gap-2 px-3 pt-2">
+        <p className={cn(typeClass("caption"), "text-muted-foreground")}>{message}</p>
+        {action ? (
+          <Button
+            size="compact"
+            variant="secondary"
+            onClick={action.run}
+            className="h-7 rounded-lg px-2.5"
+          >
+            {action.icon}
+            {action.label}
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderThreads() {
-    if (infos.length === 0)
-      return (
-        <p className={cn(typeClass("caption"), "px-3 pt-2 text-muted-foreground")}>
-          {Object.keys(threads).length > 0
-            ? "No matching threads."
-            : `No threads yet. Press ${formatKeybinding("thread.new")} to start one.`}
-        </p>
+    if (infos.length === 0) {
+      if (query)
+        return renderEmpty(`No threads match “${query.trim()}”.`, {
+          label: "Clear search",
+          run: () => setQuery(""),
+        });
+
+      if (isViewFiltered(view))
+        return renderEmpty("No threads match the view options.", {
+          label: "Clear filters",
+          run: () => setView(clearViewFilters(view)),
+        });
+
+      if (Object.keys(threads).length > 0)
+        return renderEmpty("Every thread is archived.", {
+          label: "Show archived",
+          run: () => setView({ status: "archived" }),
+        });
+
+      if (projects.length === 0)
+        return renderEmpty("Threads run in a project folder. Add one to start your first thread.", {
+          label: "Add project",
+          icon: <IconFolderPlus className="size-3.5" />,
+          run: () => {
+            void addProject().then((path) => path && props.onDraft(path));
+          },
+        });
+
+      return renderEmpty(
+        props.activeId === null
+          ? "No threads yet. Send a message to start your first one."
+          : `No threads yet. Press ${formatKeybinding("thread.new")} to start one.`,
       );
+    }
 
     if (view.groupBy === "none") return renderCards(infos);
 
@@ -441,8 +531,13 @@ export function Sidebar(props: {
               needsYou.length + active.length > 0 && "border-t border-border/60 pt-2",
             )}
           >
-            {renderFolding("shelved", "Shelved", <IconCheck />, shelved, isShelvedShown, () =>
-              setIsShelvedShown(!isShelvedShown),
+            {renderFolding(
+              "shelved",
+              "Shelved",
+              <IconLayoutBottombarCollapse />,
+              shelved,
+              isShelvedShown,
+              () => setIsShelvedShown(!isShelvedShown),
             )}
             {renderFolding("archived", "Archived", <IconArchive />, archived, isArchivedShown, () =>
               setIsArchivedShown((isShown) => !isShown),
@@ -458,7 +553,9 @@ export function Sidebar(props: {
       ariaLabel="Threads"
       collapsible="offcanvas"
       className="min-h-0"
-      panelClassName="h-full bg-sidebar"
+      // The kit's rail straddles the panel's edge, 8px past it. A clipped panel isn't a scroll
+      // container, so focus moving to its edge can't scroll the whole sidebar sideways.
+      panelClassName="h-full overflow-clip bg-sidebar"
     >
       {/* Title bar. The traffic lights (trafficLightPosition 16,11) are centred 18.5px down and end at 76px;
           the bottom padding centres this row on them, the left padding leaves them room. */}
@@ -519,22 +616,46 @@ export function Sidebar(props: {
       </div>
 
       <div className="flex shrink-0 items-center gap-0.5 px-3 pt-1 pb-3">
-        <IconButton label="Settings" onClick={props.onOpenSettings}>
+        <IconButton
+          label="Settings"
+          shortcut={formatKeybinding("settings.open")}
+          onClick={props.onOpenSettings}
+        >
           <IconSettings className="size-4" />
         </IconButton>
         <ServicesIndicator onOpen={props.onOpenServices} />
         <KeepAwakeIndicator onOpenSettings={props.onOpenKeepAwakeSettings} />
-        {updateStatus &&
-        updateAction &&
-        UpdateStatus.isAnyOf(["available", "downloading", "ready"])(updateStatus) ? (
+        {UpdateStatus.guards.failed(updateStatus) ? (
+          // Stays in sight when the update fails, rather than leaving the failure to Settings.
           <IconButton
-            label={`${updateAction.label} (v${updateStatus.version})`}
+            label={`Update failed: ${updateStatus.message} Click to try again.`}
+            onClick={updateAction.run}
+            className="ml-auto rounded-full bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive"
+          >
+            <IconAlertTriangle className="size-4" />
+          </IconButton>
+        ) : UpdateStatus.isAnyOf(["available", "downloading", "ready"])(updateStatus) ? (
+          <IconButton
+            label={
+              updateAction.isConfirming
+                ? `${updateAction.label} Click again to restart.`
+                : `${updateAction.label} (v${updateStatus.version})${updateAction.warning ? `. ${updateAction.warning}` : ""}`
+            }
             disabled={updateAction.isBusy}
             onClick={updateAction.run}
-            className="ml-auto w-auto min-w-7 rounded-full bg-brand/10 px-1.5 text-brand hover:bg-brand/15 hover:text-brand disabled:opacity-100"
+            className={cn(
+              "ml-auto w-auto min-w-7 rounded-full px-1.5 disabled:opacity-100",
+              updateAction.isConfirming
+                ? "bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive"
+                : "bg-brand/10 text-brand hover:bg-brand/15 hover:text-brand",
+            )}
           >
             {UpdateStatus.guards.downloading(updateStatus) ? (
-              <span className="text-[10px] tabular-nums">{Math.round(updateStatus.percent)}%</span>
+              <span className={cn(typeClass("micro"), "tabular-nums")}>
+                {Math.round(updateStatus.percent)}%
+              </span>
+            ) : updateAction.isConfirming ? (
+              <span className={cn(typeClass("caption"), "px-1 font-medium")}>Restart?</span>
             ) : UpdateStatus.guards.ready(updateStatus) ? (
               <IconRotateClockwise className="size-4" />
             ) : (
@@ -595,6 +716,8 @@ function TrailingLabel({ info, now }: { info: ThreadInfo; now: number }) {
 interface CardAction {
   readonly key: string;
   readonly label: string;
+  /** What else the action does, shown under the label while it asks for confirmation. */
+  readonly detail?: string;
   readonly icon: TablerIcon;
   readonly onSelect: () => void;
   readonly disabled?: boolean;
@@ -619,21 +742,15 @@ function useThreadActions(info: ThreadInfo, isShelved: boolean, onRename: () => 
             key: "unarchive",
             label: "Unarchive",
             icon: IconRestore,
-            onSelect: () =>
-              send(
-                ClientCommand.cases["thread.archive"].make({
-                  threadId: info.id,
-                  archived: false,
-                }),
-              ),
+            onSelect: () => setArchived(info, false),
           },
         ]
       : [
           {
             key: "shelve",
             label: isShelved ? "Unshelve" : "Shelve",
-            icon: isShelved ? IconX : IconCheck,
-            onSelect: () => setShelved(info.id, !isShelved),
+            icon: isShelved ? IconLayoutBottombarExpand : IconLayoutBottombarCollapse,
+            onSelect: () => setShelved(info, !isShelved),
             disabled: !canShelve(info),
           },
           shouldConfirmArchive && confirming !== "archive"
@@ -649,13 +766,7 @@ function useThreadActions(info: ThreadInfo, isShelved: boolean, onRename: () => 
                 key: "archive",
                 label: shouldConfirmArchive ? "Click again to archive" : "Archive",
                 icon: IconArchive,
-                onSelect: () =>
-                  send(
-                    ClientCommand.cases["thread.archive"].make({
-                      threadId: info.id,
-                      archived: true,
-                    }),
-                  ),
+                onSelect: () => setArchived(info, true),
                 disabled: !canShelve(info),
               },
         ]),
@@ -671,9 +782,19 @@ function useThreadActions(info: ThreadInfo, isShelved: boolean, onRename: () => 
       : {
           key: "delete",
           label: shouldConfirmDelete ? "Click again to delete" : "Delete",
+          // What the daemon removes with the thread (see removeThread there).
+          detail: !shouldConfirmDelete
+            ? undefined
+            : info.worktree
+              ? "Stops its agent and removes its worktree unless it has uncommitted changes. The branch stays. Can't be undone."
+              : "Stops its agent, terminals and services. Files stay. Can't be undone.",
           icon: IconTrash,
           destructive: true,
-          onSelect: () => send(ClientCommand.cases["thread.close"].make({ threadId: info.id })),
+          onSelect: () =>
+            sendThreadAction(
+              ClientCommand.cases["thread.close"].make({ threadId: info.id }),
+              `Deleting “${info.title}”`,
+            ),
         },
   ];
 
@@ -692,12 +813,19 @@ function MenuRow({ action, onDone }: { action: CardAction; onDone: () => void })
       }}
       className={cn(
         typeClass("caption"),
-        "flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
+        "flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors outline-none focus-visible:ring-4 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
         action.destructive ? "text-destructive" : "text-foreground",
       )}
     >
-      <action.icon aria-hidden="true" className="size-3.5 shrink-0" />
-      <span className="min-w-0 truncate">{action.label}</span>
+      <action.icon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 self-start" />
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate">{action.label}</span>
+        {action.detail ? (
+          <span className={cn(typeClass("caption", "compact"), "text-muted-foreground")}>
+            {action.detail}
+          </span>
+        ) : null}
+      </span>
     </button>
   );
 }
@@ -719,6 +847,9 @@ const ThreadCard = memo(function ThreadCard(props: {
   const host = useProjectHost(project.id);
   const shouldReduceMotion = useReducedMotion();
   const [isMenuOpen, setIsMenuOpenState] = useState(false);
+  // The right-click menu's rows are drawn once it first opens: a row per thread otherwise
+  // leaves hundreds of hidden menus in the page.
+  const [hasContextMenu, setHasContextMenu] = useState(false);
   const [isResponding, setIsResponding] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
 
@@ -744,6 +875,15 @@ const ThreadCard = memo(function ThreadCard(props: {
   useEffect(() => () => clearTimeout(swipeEnd.current), []);
   useEffect(() => setIsResponding(false), [request?.requestId]);
 
+  // An answer whose reply never came (a dropped connection, say) can be given again.
+  useEffect(() => {
+    if (!isResponding) return;
+
+    const timer = setTimeout(() => setIsResponding(false), 10_000);
+
+    return () => clearTimeout(timer);
+  }, [isResponding]);
+
   const title = isRenaming ? (
     <input
       autoFocus
@@ -764,7 +904,10 @@ const ThreadCard = memo(function ThreadCard(props: {
         const next = event.currentTarget.value.trim();
 
         if (next && next !== info.title)
-          send(ClientCommand.cases["thread.rename"].make({ threadId: info.id, title: next }));
+          sendThreadAction(
+            ClientCommand.cases["thread.rename"].make({ threadId: info.id, title: next }),
+            `Renaming to “${next}”`,
+          );
       }}
       className="w-full bg-transparent outline-none"
     />
@@ -778,7 +921,10 @@ const ThreadCard = memo(function ThreadCard(props: {
         className={cn(
           typeClass("caption"),
           "shrink-0",
-          isMenuOpen ? "hidden" : "group-hover/card:hidden",
+          // Keyboard focus on the row or its buttons shows them, so Tab reaches them.
+          isMenuOpen
+            ? "hidden"
+            : "group-hover/card:hidden group-focus-visible/card:hidden group-has-[:focus-visible]/card:hidden",
         )}
       >
         <TrailingLabel info={info} now={props.now} />
@@ -786,26 +932,27 @@ const ThreadCard = memo(function ThreadCard(props: {
       <span
         className={cn(
           "-my-1 -mr-1 shrink-0 items-center gap-0.5 text-muted-foreground",
-          isMenuOpen ? "flex" : "hidden group-hover/card:flex",
+          isMenuOpen
+            ? "flex"
+            : "hidden group-hover/card:flex group-focus-visible/card:flex group-has-[:focus-visible]/card:flex",
         )}
       >
         {info.archivedAt === null ? (
           <Tooltip content={props.isShelved ? "Unshelve" : "Shelve"} side="bottom">
             <button
               type="button"
-              tabIndex={-1}
               disabled={!canShelve(info)}
               aria-label={props.isShelved ? "Unshelve" : "Shelve"}
               onClick={(event) => {
                 event.stopPropagation();
-                setShelved(info.id, !props.isShelved);
+                setShelved(info, !props.isShelved);
               }}
-              className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
+              className="grid size-6 place-items-center rounded-full outline-none hover:bg-foreground/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
             >
               {props.isShelved ? (
-                <IconX className="size-3.5" />
+                <IconLayoutBottombarExpand className="size-3.5" />
               ) : (
-                <IconCheck className="size-3.5" />
+                <IconLayoutBottombarCollapse className="size-3.5" />
               )}
             </button>
           </Tooltip>
@@ -814,10 +961,9 @@ const ThreadCard = memo(function ThreadCard(props: {
           <MorphingPopoverTrigger>
             <button
               type="button"
-              tabIndex={-1}
               aria-label={`Actions for ${info.title}`}
               onClick={(event) => event.stopPropagation()}
-              className="grid size-6 place-items-center rounded-full hover:bg-foreground/5 hover:text-foreground"
+              className="grid size-6 place-items-center rounded-full outline-none hover:bg-foreground/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
               <IconDots className="size-4" />
             </button>
@@ -850,7 +996,12 @@ const ThreadCard = memo(function ThreadCard(props: {
   );
 
   return (
-    <ContextMenu onOpenChange={(isOpen) => !isOpen && resetConfirm()}>
+    <ContextMenu
+      onOpenChange={(isOpen) => {
+        if (isOpen) setHasContextMenu(true);
+        else resetConfirm();
+      }}
+    >
       <ContextMenuTrigger>
         <div className="relative">
           <motion.span
@@ -858,7 +1009,11 @@ const ThreadCard = memo(function ThreadCard(props: {
             style={{ opacity: swipeReveal }}
             className="pointer-events-none absolute inset-y-0 right-3 grid place-items-center text-muted-foreground"
           >
-            {props.isShelved ? <IconX className="size-4" /> : <IconCheck className="size-4" />}
+            {props.isShelved ? (
+              <IconLayoutBottombarExpand className="size-4" />
+            ) : (
+              <IconLayoutBottombarCollapse className="size-4" />
+            )}
           </motion.span>
           <motion.div
             role="button"
@@ -884,7 +1039,7 @@ const ThreadCard = memo(function ThreadCard(props: {
               swipeX.set(Math.max(-96, Math.min(0, swipeX.get() - event.deltaX)));
               clearTimeout(swipeEnd.current);
               swipeEnd.current = setTimeout(() => {
-                if (swipeX.get() <= -64) setShelved(info.id, !props.isShelved);
+                if (swipeX.get() <= -64) setShelved(info, !props.isShelved);
                 animate(swipeX, 0, shouldReduceMotion ? { duration: 0 } : spring.fast);
               }, 120);
             }}
@@ -959,8 +1114,14 @@ const ThreadCard = memo(function ThreadCard(props: {
                 !request.asksQuestions &&
                 request.title !== PLAN_APPROVAL_TITLE ? (
                   <>
-                    <p className="mt-2 truncate rounded-lg bg-muted/70 px-2 py-1 font-mono text-[11px] text-muted-foreground">
-                      <span className="text-foreground">{request.title}</span> {request.detail}
+                    <p
+                      className={cn(
+                        typeClass("caption", "compact"),
+                        "mt-2 truncate rounded-lg bg-muted/70 px-2 py-1 font-mono text-muted-foreground",
+                      )}
+                    >
+                      <span className="text-foreground">{request.title}</span>{" "}
+                      {relativizePaths(request.detail, info.cwd)}
                     </p>
                     <div className="mt-2 flex gap-1.5">
                       <Button
@@ -1010,7 +1171,10 @@ const ThreadCard = memo(function ThreadCard(props: {
             // Overlaid, like t3code's: it never displaces the time or status, nor catches clicks.
             <kbd
               aria-hidden="true"
-              className="pointer-events-none absolute top-1/2 right-1.5 z-10 inline-flex h-5 -translate-y-1/2 items-center rounded-full border border-border/80 bg-background/95 px-1.5 font-mono text-[10px] font-medium text-foreground shadow-sm"
+              className={cn(
+                typeClass("micro"),
+                "pointer-events-none absolute top-1/2 right-1.5 z-10 inline-flex h-5 -translate-y-1/2 items-center rounded-full border border-border/80 bg-background/95 px-1.5 font-mono font-medium text-foreground shadow-sm",
+              )}
             >
               {formatBinding(`mod+${props.digit}`)}
             </kbd>
@@ -1018,7 +1182,7 @@ const ThreadCard = memo(function ThreadCard(props: {
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent ariaLabel={`Actions for ${info.title}`} className="min-w-48">
-        {actions.map((action) => (
+        {(hasContextMenu ? actions : []).map((action) => (
           <ContextMenuItem
             key={action.key}
             onSelect={action.onSelect}
@@ -1026,9 +1190,19 @@ const ThreadCard = memo(function ThreadCard(props: {
             closeOnSelect={!action.keepOpen}
             tone={action.destructive ? "destructive" : "default"}
             textValue={action.label}
+            className={action.detail ? "h-auto py-1.5" : undefined}
           >
             <action.icon aria-hidden="true" className="size-3.5 shrink-0" />
-            {action.label}
+            <span className="flex min-w-0 flex-col">
+              {action.label}
+              {action.detail ? (
+                <span
+                  className={cn(typeClass("caption", "compact"), "max-w-56 text-muted-foreground")}
+                >
+                  {action.detail}
+                </span>
+              ) : null}
+            </span>
           </ContextMenuItem>
         ))}
       </ContextMenuContent>

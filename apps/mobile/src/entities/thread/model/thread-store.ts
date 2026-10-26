@@ -153,7 +153,9 @@ export function markTranscriptsCached(hostId: string) {
     transcripts: Object.fromEntries(
       Object.entries(state.transcripts).map(([key, transcript]) => [
         key,
-        key.startsWith(`${hostId}/`) ? { ...transcript, status: "cached" as const } : transcript,
+        key.startsWith(`${hostId}/`)
+          ? { ...transcript, status: "cached" as const, loadingOlder: false }
+          : transcript,
       ]),
     ),
   }));

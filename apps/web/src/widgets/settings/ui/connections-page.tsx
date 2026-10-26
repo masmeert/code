@@ -5,11 +5,12 @@ import { ClientCommand, HostStatus, parsePairingLink, type RemoteHost } from "@m
 import { Collapsible } from "@masmeert/ui/collapsible";
 import { ActionSwapRollText } from "@masscode/ui/motion/action-swap-roll";
 import { IconLoader2, IconSearch } from "@tabler/icons-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { forgetFullAccessAsRoot, getHostState, useHostStore } from "@/entities/host";
 import { scanProjects } from "@/entities/project";
 import { getHostProjectsFolder, updateSettings, useSettings } from "@/entities/settings";
 import { send } from "@/shared/api";
+import { TextWithCode } from "@/shared/ui";
 import {
   SettingsSection,
   SettingsGroup,
@@ -74,7 +75,7 @@ export function ConnectionsPage() {
         classNames={{
           field: "h-9 rounded-lg bg-background",
           leftIcon: "left-2.5",
-          input: "pl-9 text-[13px]",
+          input: cn(typeClass("body", "compact"), "pl-9"),
         }}
       />
       <SettingsSection title="Remote hosts">
@@ -221,7 +222,10 @@ function PairMachineSection() {
               spellCheck={false}
               autoComplete="off"
               className="min-w-0 flex-1"
-              classNames={{ field: "h-8 rounded-lg bg-background", input: "font-mono text-[13px]" }}
+              classNames={{
+                field: "h-8 rounded-lg bg-background",
+                input: cn(typeClass("body", "compact"), "font-mono"),
+              }}
             />
             {isLink ? null : (
               <Input
@@ -238,7 +242,7 @@ function PairMachineSection() {
                 className="w-24"
                 classNames={{
                   field: "h-8 rounded-lg bg-background",
-                  input: "font-mono text-[13px] tabular-nums",
+                  input: cn(typeClass("body", "compact"), "font-mono tabular-nums"),
                 }}
               />
             )}
@@ -282,7 +286,7 @@ function HostRow({
       <SettingsRow
         label={
           <div className="min-w-0">
-            <p className="font-mono text-[13px]">
+            <p className={cn(typeClass("body", "compact"), "font-mono")}>
               {alias}
               <span className="ml-2 font-sans text-muted-foreground">
                 {kind === "paired" ? "Paired" : "SSH"}
@@ -306,10 +310,23 @@ function HostRow({
                 className={cn("min-w-0", HostStatus.guards.failed(status) && "text-destructive")}
               >
                 {HostStatus.match(status, {
-                  connecting: ({ step }) => `${step}…`,
+                  connecting: ({ step }): ReactNode => `${step}…`,
                   connected: () => "Connected",
                   updating: () => "Update ready. Restarts once its running turns end",
-                  failed: ({ message }) => message,
+                  // Paired hosts' messages are written for people; SSH's come straight from ssh.
+                  failed: ({ message }): ReactNode =>
+                    kind === "paired" ? (
+                      <TextWithCode text={message} />
+                    ) : (
+                      <>
+                        <TextWithCode
+                          text={`Couldn't connect to ${alias}. Check that \`ssh ${alias}\` works in a terminal, then Retry.`}
+                        />
+                        <span className="mt-0.5 block selectable font-mono text-muted-foreground">
+                          {message}
+                        </span>
+                      </>
+                    ),
                 })}
               </span>
             </div>
@@ -382,11 +399,15 @@ function HostRow({
       </SettingsRow>
       {isConfirming ? (
         <p className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
-          {confirmingAction === "remove"
-            ? kind === "paired"
-              ? `This unpairs this Mac from ${alias}. MassCode keeps running there with its threads; run \`masscode pair\` on it to pair again.`
-              : `This stops MassCode on ${alias}, and any agents working there. Its threads stay on ${alias} for when you add it again.`
-            : `This stops the turns running on ${alias} and restarts it on this version.`}
+          <TextWithCode
+            text={
+              confirmingAction === "remove"
+                ? kind === "paired"
+                  ? `This unpairs this Mac from ${alias}. MassCode keeps running there with its threads; run \`masscode pair\` on it to pair again.`
+                  : `This stops MassCode on ${alias}, and any agents working there. Its threads stay on ${alias} for when you add it again.`
+                : `This stops the turns running on ${alias} and restarts it on this version.`
+            }
+          />
         </p>
       ) : null}
       <SettingsRow

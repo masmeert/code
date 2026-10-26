@@ -73,6 +73,8 @@ const components: Components = {
         language={language}
         status={open ? "streaming" : "complete"}
         showStatus={false}
+        // Numbers only help find your way in a long block.
+        showLineNumbers={source.split("\n").length > 8}
         maxHeight={360}
         className="my-3"
       />
@@ -181,7 +183,9 @@ const components: Components = {
   hr: () => <hr className="my-4 border-border" />,
   table: ({ children }) => (
     <div className="my-3 overflow-x-auto rounded-xl border border-border">
-      <table className="w-full border-collapse text-left text-[13px]">{children}</table>
+      <table className={cn(typeClass("body", "compact"), "w-full border-collapse text-left")}>
+        {children}
+      </table>
     </div>
   ),
   th: ({ children }) => (

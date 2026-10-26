@@ -28,6 +28,11 @@ export const KEYBINDINGS = {
   "scripts.save": "mod+enter",
   "thread.find": "mod+f",
   "thread.findNext": "mod+g",
+  "diff.toggle": "mod+shift+d",
+  "git.commit": "mod+shift+c",
+  "window.new": "mod+shift+n",
+  // Handled by the kit's sidebar; listed so menus can show it.
+  "sidebar.toggle": "mod+b",
 } as const;
 
 export type KeybindingId = keyof typeof KEYBINDINGS;

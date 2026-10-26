@@ -1,7 +1,8 @@
-import { livePhrase, summarize, type ToolItem, useNow } from "@masscode/client";
+import { hasSameItems, livePhrase, summarize, type ToolItem, useNow } from "@masscode/client";
 import { ClientCommand } from "@masscode/contracts";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Pressable, View } from "react-native";
+import { alertNotConnected, useIsHostConnected } from "@/entities/host";
 import { send } from "@/shared/api";
 import { cn } from "@/shared/lib/cn";
 import { Pulsing, Text } from "@/shared/ui";
@@ -10,19 +11,24 @@ import { Disclosure, ToolCallRow } from "./transcript-turn.tsx";
 /** Latest calls a subagent row unfolds to; older ones are in its row in the transcript. */
 const RECENT_AGENT_CALLS = 5;
 
-/** Subagents still at work, at the transcript's end above the composer, as the desktop lists them above its own. */
-export function RunningAgents({
+interface RunningAgentsProps {
+  readonly hostId: string;
+  readonly threadId: string;
+  readonly agents: ReadonlyArray<ToolItem>;
+  /** Stopping one Codex subagent leaves the main agent waiting on it; Stop ends them all. */
+  readonly canStopOne: boolean;
+}
+
+/**
+ * Subagents still at work, at the transcript's end above the composer, as the desktop lists them
+ * above its own. The list is filtered afresh on every update; the same agents needn't render again.
+ */
+export const RunningAgents = memo(function RunningAgents({
   hostId,
   threadId,
   agents,
   canStopOne,
-}: {
-  hostId: string;
-  threadId: string;
-  agents: ReadonlyArray<ToolItem>;
-  /** Stopping one Codex subagent leaves the main agent waiting on it; Stop ends them all. */
-  canStopOne: boolean;
-}) {
+}: RunningAgentsProps) {
   // Beyond two, the rows fold into one summary so the transcript's end stays short.
   if (agents.length > 2)
     return (
@@ -62,6 +68,15 @@ export function RunningAgents({
       ))}
     </View>
   );
+}, isSameAgents);
+
+function isSameAgents(previous: RunningAgentsProps, next: RunningAgentsProps) {
+  return (
+    previous.hostId === next.hostId &&
+    previous.threadId === next.threadId &&
+    previous.canStopOne === next.canStopOne &&
+    hasSameItems(previous.agents, next.agents)
+  );
 }
 
 function RunningAgent({
@@ -75,7 +90,11 @@ function RunningAgent({
   agent: ToolItem;
   canStop: boolean;
 }) {
+  const isConnected = useIsHostConnected(hostId);
   const [isStopping, setIsStopping] = useState(false);
+
+  // A stop that went out before the connection dropped may not have landed; it can be sent again.
+  if (isStopping && !isConnected) setIsStopping(false);
   const now = useNow(1000);
   const name = agent.summary || "Subagent";
   const calls = agent.children ?? [];
@@ -132,18 +151,22 @@ function RunningAgent({
       {canStop ? (
         <Pressable
           hitSlop={8}
-          disabled={isStopping}
+          disabled={isStopping || !isConnected}
           accessibilityLabel={`Stop ${name}`}
+          accessibilityState={{ disabled: isStopping || !isConnected }}
           onPress={() => {
-            setIsStopping(true);
-            send(
-              hostId,
-              ClientCommand.cases["thread.stopAgent"].make({ threadId, toolId: agent.id }),
-            );
+            if (
+              send(
+                hostId,
+                ClientCommand.cases["thread.stopAgent"].make({ threadId, toolId: agent.id }),
+              )
+            )
+              setIsStopping(true);
+            else alertNotConnected(hostId);
           }}
           className={cn(
             "mb-1 self-start rounded-lg px-2 py-1 active:bg-destructive/10",
-            isStopping && "opacity-50",
+            (isStopping || !isConnected) && "opacity-50",
           )}
         >
           <Text className="text-xs text-destructive">Stop agent</Text>

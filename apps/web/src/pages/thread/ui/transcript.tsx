@@ -7,7 +7,6 @@ import {
 } from "@masscode/ui/agents/message";
 import { Markdown } from "@masscode/ui/agents/markdown";
 import { Reasoning } from "@masscode/ui/agents/reasoning";
-import { thoughtTitle } from "@masscode/client";
 import { OrbFace } from "@masscode/ui/agents/orb-face";
 import { PromptSelect } from "@masscode/ui/agents/prompt-input";
 import { StreamingResponse } from "@masscode/ui/agents/streaming-response";
@@ -16,10 +15,11 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
+  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogTitle,
 } from "@masmeert/ui/alert-dialog";
-import { ToolGroup, type ToolReveal } from "@masscode/ui/agents/tool-group";
+import { ToolCallRow, ToolGroup, type ToolReveal } from "@masscode/ui/agents/tool-group";
 import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
 import { cn } from "@masscode/ui/lib/utils";
 import {
@@ -32,6 +32,7 @@ import {
   WORKTREE_SETUP_TERMINAL_ID,
 } from "@masscode/contracts";
 import {
+  IconAlertCircle,
   IconArrowBackUp,
   IconArrowsLeftRight,
   IconArrowsMinimize,
@@ -41,6 +42,7 @@ import {
   IconFileText,
   IconGitFork,
   IconGitPullRequest,
+  IconMessage,
   IconLoader2,
   IconPhoto,
   IconPlayerStop,
@@ -73,9 +75,11 @@ import {
   switchToThread,
   useFileRestoreBlocker,
   useThreadStore,
+  useTranscript,
 } from "@/entities/thread";
 import { openSideChat } from "@/features/side-chat";
 import { send } from "@/shared/api";
+import { showToast } from "@/shared/ui";
 import { PlanApproval, QuestionsApproval, ToolApprovalRequest } from "./approval-blocks.tsx";
 import {
   PLAN_APPROVAL_TITLE,
@@ -88,6 +92,7 @@ import {
   type MarkerItem,
   type Block,
   type ToolItem,
+  describeThought,
   livePhrase,
   summarize,
   type ToolCall,
@@ -224,6 +229,7 @@ export function TurnList({
   isBusy: boolean;
 }) {
   const turns = useMemo(() => toTurns(items), [items]);
+  const isLoaded = useTranscript(threadId)?.status === "live";
 
   // Older turns skip layout and paint while off screen. Switched on after the first
   // frame with turns in it (the transcript can arrive after the view opens), so every
@@ -237,6 +243,18 @@ export function TurnList({
 
     return () => cancelAnimationFrame(frame);
   }, [hasTurns]);
+
+  if (!hasTurns && isLoaded && !isBusy)
+    return (
+      <div className="flex min-h-64 flex-col items-center justify-center gap-2 text-center text-muted-foreground">
+        <IconMessage className="size-5" />
+        <p className={typeClass("body")}>No messages in this thread</p>
+        <p className={typeClass("caption")}>Write a message below to start the conversation.</p>
+      </div>
+    );
+
+  // Prompts that can be rewound to, newest last: rewinding to one also removes those after it.
+  const prompts = turns.filter((turn) => turn.from === "user" && !turn.item.steer);
 
   return (
     // Lighter than virtualizing (the message rail reads every turn's text from the DOM): the turns
@@ -269,6 +287,7 @@ export function TurnList({
               threadId={threadId}
               isBusy={isBusy}
               animateIn={isSettled}
+              laterPrompts={Math.max(0, prompts.length - 1 - prompts.indexOf(turn))}
             />
           );
         }
@@ -372,7 +391,7 @@ function CommandRunResult({
           <pre
             className={cn(
               typeClass("caption"),
-              "selectable m-0 px-3 py-2 font-mono leading-5 whitespace-pre text-foreground",
+              "m-0 selectable px-3 py-2 font-mono leading-5 whitespace-pre text-foreground",
             )}
           >
             {run.output}
@@ -426,11 +445,13 @@ const UserTurn = memo(
     threadId,
     isBusy,
     animateIn,
+    laterPrompts,
   }: {
     item: UserItem;
     threadId: string;
     isBusy: boolean;
     animateIn: boolean;
+    laterPrompts: number;
   }) =>
     item.run ? (
       <CommandRunResult run={item.run} />
@@ -452,7 +473,9 @@ const UserTurn = memo(
             </MessageBubble>
           ) : null}
           {/* A message sent mid-turn has no turn of its own to go back to. */}
-          {isBusy || item.steer ? null : <EditFromHere item={item} threadId={threadId} />}
+          {isBusy || item.steer ? null : (
+            <EditFromHere item={item} threadId={threadId} laterPrompts={laterPrompts} />
+          )}
         </MessageContent>
       </Message>
     ),
@@ -460,7 +483,8 @@ const UserTurn = memo(
   (previous, next) =>
     previous.item === next.item &&
     previous.threadId === next.threadId &&
-    previous.isBusy === next.isBusy,
+    previous.isBusy === next.isBusy &&
+    previous.laterPrompts === next.laterPrompts,
 );
 
 /** An agent's link to a thread, as a way to it under the thread's current title. */
@@ -588,7 +612,12 @@ function HandoffNote({
         <IconChevronRight className={cn("size-3.5 transition-transform", isOpen && "rotate-90")} />
       </button>
       {isOpen ? (
-        <pre className="selectable max-h-72 w-full overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[11px] whitespace-pre-wrap">
+        <pre
+          className={cn(
+            typeClass("caption", "compact"),
+            "max-h-72 w-full selectable overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono whitespace-pre-wrap",
+          )}
+        >
           {handoff.text}
         </pre>
       ) : null}
@@ -596,118 +625,144 @@ function HandoffNote({
   );
 }
 
-/** Rewinds to before this message and puts it back in the composer to edit and resend. */
-function EditFromHere({ item, threadId }: { item: UserItem; threadId: string }) {
+/** Rewinds to before this message, once confirmed, and puts it back in the composer to edit and resend. */
+function EditFromHere({
+  item,
+  threadId,
+  laterPrompts,
+}: {
+  item: UserItem;
+  threadId: string;
+  laterPrompts: number;
+}) {
   const restoreBlocker = useFileRestoreBlocker(threadId);
+  const [choice, setChoice] = useState<"keep" | "files" | null>(null);
 
   return (
-    <div className="flex justify-end opacity-0 transition-opacity group-hover/turn:opacity-100 has-[[aria-expanded=true]]:opacity-100">
-      <PromptSelect
-        title="Edit from here"
-        icon={<IconArrowBackUp />}
-        options={[
-          {
-            value: "keep",
-            label: "Rewind conversation",
-            description: "The files stay as they are now",
-          },
-          {
-            value: "files",
-            label: "Rewind conversation and files",
-            description: restoreBlocker ?? "The folder goes back to how it was when this was sent",
-            disabled: restoreBlocker !== null,
-          },
-        ]}
-        value={undefined}
-        placeholder="Edit from here"
-        side="bottom"
-        align="end"
-        width="w-72"
-        variant="plain"
-        onChange={(choice) => {
-          // An unsent draft stays, above the restored prompt.
-          setDraft(threadId, (draft) => ({
-            text: draft.text.trim() ? `${draft.text.trimEnd()}\n\n${item.text}` : item.text,
-            attachments: [...draft.attachments, ...item.attachments.map(toDraftAttachment)],
-          }));
-          send(
-            ClientCommand.cases["thread.rewind"].make({
-              threadId,
-              messageId: item.id,
-              restoreFiles: choice === "files",
-            }),
-          );
-          focusComposer();
-        }}
-      />
+    // Floats below the message, in the gap before the reply, rather than holding a row of its own.
+    <div className="relative h-0 w-full">
+      <div className="absolute top-0 right-0 opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100">
+        <PromptSelect
+          title="Edit from here"
+          icon={<IconArrowBackUp />}
+          options={[
+            {
+              value: "keep",
+              label: "Rewind conversation",
+              description: "The files stay as they are now",
+            },
+            {
+              value: "files",
+              label: "Rewind conversation and files",
+              description:
+                restoreBlocker ?? "The folder goes back to how it was when this was sent",
+              disabled: restoreBlocker !== null,
+            },
+          ]}
+          value={undefined}
+          placeholder="Edit from here"
+          side="bottom"
+          align="end"
+          width="w-72"
+          variant="plain"
+          onChange={(value) => setChoice(value === "files" ? "files" : "keep")}
+        />
+      </div>
+      {choice ? (
+        <RewindDialog
+          item={item}
+          threadId={threadId}
+          laterPrompts={laterPrompts}
+          restoreFiles={choice === "files"}
+          onClose={() => setChoice(null)}
+        />
+      ) : null}
     </div>
   );
 }
 
-/** Asks before forking, and stays up with progress until the fork opens (or says why it didn't). */
-function ForkDialog({
-  threadId,
+/** Says what a rewind removes before it does: there's no undoing it. */
+function RewindDialog({
   item,
+  threadId,
+  laterPrompts,
+  restoreFiles,
   onClose,
 }: {
+  item: UserItem;
   threadId: string;
-  item: Extract<TranscriptItem, { kind: "assistant" }>;
+  laterPrompts: number;
+  restoreFiles: boolean;
   onClose: () => void;
 }) {
-  const fork = useThreadStore((state) =>
-    state.forking?.messageId === item.id ? state.forking : null,
-  );
+  const rewindButton = useRef<HTMLButtonElement>(null);
 
-  const isPending = fork !== null && fork.error === null;
-  const forkButton = useRef<HTMLButtonElement>(null);
+  const removed = laterPrompts
+    ? `This message, the ${laterPrompts === 1 ? "one" : laterPrompts} after it and every reply`
+    : "This message and its replies";
 
   return (
-    <AlertDialog
-      open
-      onOpenChange={(isOpen) => {
-        if (isOpen || isPending) return;
-        dismissForkError();
-        onClose();
-      }}
-    >
+    <AlertDialog open onOpenChange={(isOpen) => isOpen || onClose()}>
       <AlertDialogContent
-        className="gap-4 bg-popover p-4 data-[size=default]:sm:max-w-xs"
-        initialFocus={forkButton}
+        className="gap-4 bg-popover p-4 data-[size=default]:sm:max-w-sm"
+        initialFocus={rewindButton}
       >
         <div className="flex items-center gap-3">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-            <IconGitFork className="size-4" />
+          <span
+            className={cn(
+              "grid size-8 shrink-0 place-items-center rounded-lg",
+              restoreFiles
+                ? "bg-destructive/10 text-destructive"
+                : "bg-muted text-muted-foreground",
+            )}
+          >
+            <IconArrowBackUp className="size-4" />
           </span>
-          <AlertDialogTitle className={typeClass("body")}>Fork from this reply?</AlertDialogTitle>
+          <AlertDialogTitle className={typeClass("body")}>
+            {restoreFiles ? "Rewind conversation and files?" : "Rewind conversation?"}
+          </AlertDialogTitle>
         </div>
-        {fork?.error ? (
-          <p role="alert" className={cn(typeClass("caption"), "text-destructive")}>
-            {fork.error}
-          </p>
-        ) : null}
+        <AlertDialogDescription className={typeClass("caption")}>
+          {removed} will be removed from the conversation; the message goes back in the composer to
+          edit.{" "}
+          {restoreFiles
+            ? "The folder goes back to how it was when it was sent: changes made to files since then are lost."
+            : "Files stay as they are now."}{" "}
+          This can't be undone.
+        </AlertDialogDescription>
         <AlertDialogFooter className="flex-row justify-end">
-          <AlertDialogCancel size="compact" disabled={isPending}>
+          <AlertDialogCancel size="compact">
             Cancel
-            <kbd aria-hidden className="font-sans text-[10px] text-muted-foreground">
+            <kbd aria-hidden className={cn(typeClass("micro"), "font-sans text-muted-foreground")}>
               esc
             </kbd>
           </AlertDialogCancel>
           <AlertDialogAction
-            ref={forkButton}
+            ref={rewindButton}
             size="compact"
-            disabled={isPending}
-            onClick={(event) => {
-              // Stays open until the fork opens, which replaces this view.
-              event.preventBaseUIHandler();
-              forkThread(threadId, item.id);
+            onClick={() => {
+              // An unsent draft stays, above the restored prompt.
+              setDraft(threadId, (draft) => ({
+                text: draft.text.trim() ? `${draft.text.trimEnd()}\n\n${item.text}` : item.text,
+                attachments: [...draft.attachments, ...item.attachments.map(toDraftAttachment)],
+              }));
+              send(
+                ClientCommand.cases["thread.rewind"].make({
+                  threadId,
+                  messageId: item.id,
+                  restoreFiles,
+                }),
+              );
+              focusComposer();
             }}
           >
-            {isPending ? "Forking…" : fork?.error ? "Try again" : "Fork"}
-            {isPending ? null : (
-              <kbd aria-hidden className="font-sans text-[10px] text-primary-foreground">
-                ↵
-              </kbd>
-            )}
+            {restoreFiles ? "Rewind and restore files" : "Rewind"}
+            <kbd
+              aria-hidden
+              className={cn(typeClass("micro"), "font-sans text-primary-foreground")}
+            >
+              ↵
+            </kbd>
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -813,28 +868,45 @@ function WorkBlock({
   streaming: boolean;
 }) {
   const reveal = use(RevealContext);
+  const folder = useThreadStore((state) => state.threads[threadId]?.cwd);
   const blocks = useMemo(() => toToolGroups(items), [items]);
   const newest = items.at(-1);
   const calls = items.filter((item) => item.kind === "tool");
 
+  // Unknown as soon as one of the thoughts wasn't timed.
+  const thoughtMs = items.reduce<number | undefined>(
+    (total, item) =>
+      item.kind !== "reasoning"
+        ? total
+        : total === undefined || item.durationMs === undefined
+          ? undefined
+          : total + item.durationMs,
+    0,
+  );
+
   return (
     <Reasoning
-      label={calls.length ? summarize(calls) : thoughtTitle(items[0]?.id ?? "")}
+      label={calls.length ? summarize(calls) : describeThought(thoughtMs)}
       streaming={streaming}
       live={newest?.kind === "tool" && newest.output === null ? livePhrase(newest) : undefined}
       reveal={calls.some((call) => call.id === reveal?.toolId) ? reveal : null}
     >
       <div className="flex flex-col gap-1">
-        {blocks.map((block) => (
-          <AgentBlock
-            key={block.id}
-            block={block}
-            threadId={threadId}
-            live={live}
-            streaming={streaming && block === newest}
-            showActions={false}
-          />
-        ))}
+        {/* A lone tool group would repeat this block's own summary as a second header. */}
+        {blocks.length === 1 && blocks[0]!.kind === "tools"
+          ? blocks[0]!.calls.map((call) => (
+              <ToolCallRow key={call.id} call={call} live={live} reveal={reveal} folder={folder} />
+            ))
+          : blocks.map((block) => (
+              <AgentBlock
+                key={block.id}
+                block={block}
+                threadId={threadId}
+                live={live}
+                streaming={streaming && block === newest}
+                showActions={false}
+              />
+            ))}
       </div>
     </Reasoning>
   );
@@ -866,7 +938,7 @@ export const AgentBlock = memo(
         );
       case "reasoning":
         return (
-          <Reasoning label={thoughtTitle(block.id)} streaming={streaming}>
+          <Reasoning label={describeThought(block.durationMs)} streaming={streaming}>
             <Markdown
               streaming={streaming}
               renderLink={renderThreadLink}
@@ -881,7 +953,7 @@ export const AgentBlock = memo(
           <WorkBlock items={block.items} threadId={threadId} live={live} streaming={streaming} />
         );
       case "tools":
-        return <RevealableToolGroup calls={block.calls} live={live} />;
+        return <RevealableToolGroup calls={block.calls} live={live} threadId={threadId} />;
       case "approval":
         if (block.title === PLAN_APPROVAL_TITLE)
           return <PlanApproval threadId={threadId} item={block} />;
@@ -892,9 +964,14 @@ export const AgentBlock = memo(
 
         return <ToolApprovalRequest threadId={threadId} item={block} />;
       case "error":
+        return <AgentError item={block} />;
+      case "stopped":
         return (
-          <div className={cn(typeClass("caption"), "selectable text-destructive")}>
-            {block.text}
+          <div
+            className={cn(typeClass("caption"), "flex items-center gap-1.5 text-muted-foreground")}
+          >
+            <IconPlayerStop className="size-3.5 shrink-0" />
+            Stopped
           </div>
         );
       case "checkpoint":
@@ -927,13 +1004,69 @@ export const AgentBlock = memo(
 );
 
 /** Opens and scrolls to the call last picked in the running-subagents list. */
-function RevealableToolGroup({ calls, live }: { calls: ReadonlyArray<ToolItem>; live: boolean }) {
+function RevealableToolGroup({
+  calls,
+  live,
+  threadId,
+}: {
+  calls: ReadonlyArray<ToolItem>;
+  live: boolean;
+  threadId: string;
+}) {
   return (
     <ToolGroup
       calls={calls satisfies ReadonlyArray<ToolCall>}
       live={live}
       reveal={use(RevealContext)}
+      folder={useThreadStore((state) => state.threads[threadId]?.cwd)}
     />
+  );
+}
+
+/** What went wrong, in words, with the raw error a click away. */
+function AgentError({ item }: { item: Extract<TranscriptItem, { kind: "error" }> }) {
+  const [isShowingDetail, setIsShowingDetail] = useState(false);
+
+  return (
+    <div
+      className={cn(
+        typeClass("body"),
+        "flex w-full gap-2.5 rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2.5",
+      )}
+    >
+      <IconAlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+      <div className="min-w-0 flex-1">
+        <p className="selectable text-foreground">{item.text}</p>
+        {item.detail ? (
+          <>
+            <button
+              type="button"
+              aria-expanded={isShowingDetail}
+              onClick={() => setIsShowingDetail(!isShowingDetail)}
+              className={cn(
+                typeClass("caption"),
+                "mt-1 inline-flex items-center gap-1 rounded text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+              )}
+            >
+              Details
+              <IconChevronRight
+                className={cn("size-3.5 transition-transform", isShowingDetail && "rotate-90")}
+              />
+            </button>
+            {isShowingDetail ? (
+              <pre
+                className={cn(
+                  typeClass("caption"),
+                  "mt-1.5 max-h-48 selectable overflow-auto rounded-lg bg-muted/60 p-2 font-mono whitespace-pre-wrap text-muted-foreground",
+                )}
+              >
+                {item.detail}
+              </pre>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -951,12 +1084,19 @@ function AssistantReply({
   streaming: boolean;
   showActions: boolean;
 }) {
-  const isForking = useThreadStore(
-    (state) => state.forking?.messageId === item.id && state.forking.error === null,
+  const fork = useThreadStore((state) =>
+    state.forking?.messageId === item.id ? state.forking : null,
   );
 
-  const [isConfirmingFork, setIsConfirmingFork] = useState(false);
+  const forkError = fork?.error ?? null;
   const runReplyCommand = use(RunCommandContext);
+
+  // The fork opens in place of this view; when it can't, the reason shows here instead.
+  useEffect(() => {
+    if (!forkError) return;
+    showToast({ title: "Couldn't fork this thread", description: forkError, status: "error" });
+    dismissForkError();
+  }, [forkError]);
 
   const resolveImage = useCallback((src: string) => fetchImageUrl(threadId, src), [threadId]);
 
@@ -966,8 +1106,8 @@ function AssistantReply({
         <StreamingResponse
           status={streaming ? "streaming" : "complete"}
           copyText={item.text}
-          onFork={live ? undefined : () => setIsConfirmingFork(true)}
-          forking={isForking}
+          onFork={live ? undefined : () => forkThread(threadId, item.id)}
+          forking={fork !== null && fork.error === null}
           onAskAside={() => openSideChat(threadId, item.id)}
           showActions={showActions}
           showFeedback={false}
@@ -983,9 +1123,6 @@ function AssistantReply({
           </Markdown>
         </StreamingResponse>
       </MessageBubbleContent>
-      {isConfirmingFork ? (
-        <ForkDialog threadId={threadId} item={item} onClose={() => setIsConfirmingFork(false)} />
-      ) : null}
     </MessageBubble>
   );
 }

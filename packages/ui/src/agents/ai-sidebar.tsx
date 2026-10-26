@@ -941,7 +941,10 @@ export function AISidebar({
           <div
             aria-hidden="true"
             data-active={dropTarget?.id === null || undefined}
-            className="absolute inset-x-1 bottom-0 flex h-8 items-center justify-center rounded-lg border border-dashed border-border text-[10px] text-muted-foreground data-[active=true]:border-brand/50 data-[active=true]:bg-muted data-[active=true]:text-foreground"
+            className={cn(
+              typeClass("micro"),
+              "absolute inset-x-1 bottom-0 flex h-8 items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground data-[active=true]:border-brand/50 data-[active=true]:bg-muted data-[active=true]:text-foreground",
+            )}
           >
             Move to top level
           </div>

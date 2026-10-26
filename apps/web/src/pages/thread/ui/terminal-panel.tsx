@@ -8,9 +8,10 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { type ITheme, Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { IconChevronDown, IconPlus, IconTerminal2, IconX } from "@tabler/icons-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import symbolsFontUrl from "./symbols-nerd-font-mono.woff2";
 import { IconButton } from "@/shared/ui";
+import { formatKeybinding } from "@/shared/lib/keybindings";
 import { isLocalUrl, openTab } from "@/entities/browser";
 import { focusComposer } from "@/widgets/composer";
 import {
@@ -25,65 +26,76 @@ import {
 import { sendIfConnected } from "@/shared/api";
 import { useResizableSize } from "@masmeert/ui/hooks/use-resizable";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { closeOnEscape } from "../lib/close-on-escape.ts";
 
 const symbolsFont = new FontFace("Symbols Nerd Font Mono", `url(${symbolsFontUrl})`);
 
 document.fonts.add(symbolsFont);
 
-function getTerminalTheme(isDark: boolean): ITheme {
-  return isDark
-    ? {
-        background: "#101010",
-        foreground: "#ffffff",
-        cursor: "#ffc799",
-        cursorAccent: "#101010",
-        selectionBackground: "rgba(255, 255, 255, 0.15)",
-        scrollbarSliderBackground: "rgba(255, 255, 255, 0.12)",
-        scrollbarSliderHoverBackground: "rgba(255, 255, 255, 0.2)",
-        scrollbarSliderActiveBackground: "rgba(255, 255, 255, 0.28)",
-        black: "#484f58",
-        red: "#ff8080",
-        green: "#99ffe4",
-        yellow: "#ffc799",
-        blue: "#58a6ff",
-        magenta: "#bc8cff",
-        cyan: "#39c5cf",
-        white: "#b1bac4",
-        brightBlack: "#6e7681",
-        brightRed: "#ffa198",
-        brightGreen: "#56d364",
-        brightYellow: "#e3b341",
-        brightBlue: "#79c0ff",
-        brightMagenta: "#d2a8ff",
-        brightCyan: "#56d4dd",
-        brightWhite: "#ffffff",
-      }
-    : {
-        background: "#fcfcfc",
-        foreground: "#101010",
-        cursor: "#b66028",
-        cursorAccent: "#fcfcfc",
-        selectionBackground: "rgba(182, 96, 40, 0.2)",
-        scrollbarSliderBackground: "rgba(0, 0, 0, 0.12)",
-        scrollbarSliderHoverBackground: "rgba(0, 0, 0, 0.2)",
-        scrollbarSliderActiveBackground: "rgba(0, 0, 0, 0.28)",
-        black: "#24292f",
-        red: "#d33a3c",
-        green: "#11846e",
-        yellow: "#b66028",
-        blue: "#0969da",
-        magenta: "#8250df",
-        cyan: "#1b7c83",
-        white: "#6e7781",
-        brightBlack: "#57606a",
-        brightRed: "#a40e26",
-        brightGreen: "#1a7f37",
-        brightYellow: "#633c01",
-        brightBlue: "#218bff",
-        brightMagenta: "#a475f9",
-        brightCyan: "#3192aa",
-        brightWhite: "#8c959f",
-      };
+/**
+ * The app's colours for the surface and the hues it shares with the terminal palette (red, green,
+ * yellow); the rest of the ANSI palette has no app colour to follow. xterm only reads opaque colours
+ * from CSS, so the translucent selection and scrollbar stay as they are.
+ */
+function getTerminalTheme(): ITheme {
+  const tokens = getComputedStyle(document.documentElement);
+  const isDark = document.documentElement.classList.contains("dark");
+
+  function readToken(name: string) {
+    return tokens.getPropertyValue(name).trim();
+  }
+
+  const background = readToken("--background");
+  const brand = readToken("--brand");
+
+  return {
+    background,
+    foreground: readToken("--foreground"),
+    cursor: brand,
+    cursorAccent: background,
+    red: readToken("--destructive"),
+    green: readToken("--success"),
+    yellow: brand,
+    ...(isDark
+      ? {
+          selectionBackground: "rgba(255, 255, 255, 0.15)",
+          scrollbarSliderBackground: "rgba(255, 255, 255, 0.12)",
+          scrollbarSliderHoverBackground: "rgba(255, 255, 255, 0.2)",
+          scrollbarSliderActiveBackground: "rgba(255, 255, 255, 0.28)",
+          black: "#484f58",
+          blue: "#58a6ff",
+          magenta: "#bc8cff",
+          cyan: "#39c5cf",
+          white: "#b1bac4",
+          brightBlack: "#6e7681",
+          brightRed: "#ffa198",
+          brightGreen: "#56d364",
+          brightYellow: "#e3b341",
+          brightBlue: "#79c0ff",
+          brightMagenta: "#d2a8ff",
+          brightCyan: "#56d4dd",
+          brightWhite: "#ffffff",
+        }
+      : {
+          selectionBackground: "rgba(182, 96, 40, 0.2)",
+          scrollbarSliderBackground: "rgba(0, 0, 0, 0.12)",
+          scrollbarSliderHoverBackground: "rgba(0, 0, 0, 0.2)",
+          scrollbarSliderActiveBackground: "rgba(0, 0, 0, 0.28)",
+          black: "#24292f",
+          blue: "#0969da",
+          magenta: "#8250df",
+          cyan: "#1b7c83",
+          white: "#6e7781",
+          brightBlack: "#57606a",
+          brightRed: "#a40e26",
+          brightGreen: "#1a7f37",
+          brightYellow: "#633c01",
+          brightBlue: "#218bff",
+          brightMagenta: "#a475f9",
+          brightCyan: "#3192aa",
+          brightWhite: "#8c959f",
+        }),
+  };
 }
 
 export function TerminalPanel({
@@ -94,7 +106,18 @@ export function TerminalPanel({
   activeTerminal: string;
 }) {
   const terminalIds = useTerminalStore((state) => state.terminals[threadId]) ?? [];
+  const busyTerminalIds = useTerminalStore((state) => state.busy[threadId]) ?? [];
   const section = useRef<HTMLElement>(null);
+  // Closing a terminal that runs something, like a script's dev server, takes a second click.
+  const [confirmingClose, setConfirmingClose] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!confirmingClose) return;
+
+    const timer = window.setTimeout(() => setConfirmingClose(null), 4000);
+
+    return () => window.clearTimeout(timer);
+  }, [confirmingClose]);
 
   const panel = useResizableSize({
     key: "masscode.terminalHeight",
@@ -116,6 +139,7 @@ export function TerminalPanel({
       ref={section}
       aria-label="Terminal"
       style={{ height: panel.size }}
+      onKeyDown={closeOnEscape(() => toggleTerminalPanel(threadId))}
       className="relative flex shrink-0 flex-col border-t border-border bg-background"
     >
       <ResizeHandle
@@ -126,62 +150,82 @@ export function TerminalPanel({
         dragging={panel.dragging}
         {...panel.handleProps}
       />
-      <div className="flex h-9 shrink-0 items-center gap-1 pr-2 pl-3">
+      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border pr-2 pl-3">
         <div
           role="tablist"
           aria-label="Terminals"
           className="scrollbar-hide flex min-w-0 items-center gap-0.5 overflow-x-auto"
         >
-          {terminalIds.map((terminalId, index) => (
-            <div
-              key={terminalId}
-              className={cn(
-                typeClass("caption"),
-                "group/tab flex h-7 shrink-0 items-center rounded-lg pr-0.5 transition-colors",
-                terminalId === activeTerminal
-                  ? "bg-selected text-foreground"
-                  : "text-muted-foreground hover:bg-hover hover:text-foreground",
-              )}
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={terminalId === activeTerminal}
-                onClick={() => showTerminal(threadId, terminalId)}
-                className="flex h-full items-center gap-1.5 rounded-lg pl-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <IconTerminal2 className="size-3.5" />
-                {findTerminalScript(terminalId)?.name ?? `Terminal ${index + 1}`}
-              </button>
-              <button
-                type="button"
-                title="Close terminal"
-                aria-label={`Close ${findTerminalScript(terminalId)?.name ?? `terminal ${index + 1}`}`}
-                onClick={() => closeTerminal(threadId, terminalId)}
+          {terminalIds.map((terminalId, index) => {
+            const script = findTerminalScript(terminalId);
+            const name = script?.name ?? `Terminal ${index + 1}`;
+            const isConfirming = confirmingClose === terminalId;
+            const isRunning = script !== undefined || busyTerminalIds.includes(terminalId);
+
+            return (
+              <div
+                key={terminalId}
                 className={cn(
-                  "grid size-6 place-items-center rounded-md transition-opacity outline-none hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring",
+                  typeClass("caption"),
+                  "group/tab flex h-7 shrink-0 items-center rounded-lg pr-0.5 transition-colors",
                   terminalId === activeTerminal
-                    ? "opacity-100"
-                    : "opacity-0 group-hover/tab:opacity-100",
+                    ? "bg-selected text-foreground"
+                    : "text-muted-foreground hover:bg-hover hover:text-foreground",
                 )}
               >
-                <IconX className="size-3" />
-              </button>
-            </div>
-          ))}
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={terminalId === activeTerminal}
+                  onClick={() => showTerminal(threadId, terminalId)}
+                  className="flex h-full items-center gap-1.5 rounded-lg pl-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <IconTerminal2 className="size-3.5" />
+                  {name}
+                </button>
+                <button
+                  type="button"
+                  title={
+                    script
+                      ? `Stop ${name} and close its terminal`
+                      : isRunning
+                        ? "Stop the running program and close the terminal"
+                        : "Close terminal"
+                  }
+                  aria-label={isConfirming ? `Click again to stop ${name}` : `Close ${name}`}
+                  onClick={() => {
+                    if (isRunning && !isConfirming) return setConfirmingClose(terminalId);
+                    setConfirmingClose(null);
+                    closeTerminal(threadId, terminalId);
+                  }}
+                  onBlur={() => isConfirming && setConfirmingClose(null)}
+                  className={cn(
+                    "grid h-6 min-w-6 place-items-center rounded-md transition-opacity outline-none hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring",
+                    isConfirming
+                      ? "px-1.5 text-destructive opacity-100 hover:text-destructive"
+                      : terminalId === activeTerminal
+                        ? "opacity-100"
+                        : "opacity-0 group-hover/tab:opacity-100",
+                  )}
+                >
+                  {isConfirming ? `Click again to stop ${name}` : <IconX className="size-3" />}
+                </button>
+              </div>
+            );
+          })}
         </div>
         <IconButton label="New terminal" onClick={() => createTerminal(threadId)}>
-          <IconPlus className="size-3.5" />
+          <IconPlus className="size-4" />
         </IconButton>
         <IconButton
-          label="Hide terminal"
+          label={`Hide terminal (${formatKeybinding("terminal.toggle")})`}
           className="ml-auto"
           onClick={() => {
             toggleTerminalPanel(threadId);
             focusComposer();
           }}
         >
-          <IconChevronDown className="size-3.5" />
+          <IconChevronDown className="size-4" />
         </IconButton>
       </div>
       <TerminalView key={activeTerminal} threadId={threadId} terminalId={activeTerminal} />
@@ -221,7 +265,7 @@ export function TerminalView({
           scrollback: 5000,
           macOptionClickForcesSelection: true,
           minimumContrastRatio: 4.5,
-          theme: getTerminalTheme(document.documentElement.classList.contains("dark")),
+          theme: getTerminalTheme(),
         });
 
         const fitAddon = new FitAddon();
@@ -298,9 +342,7 @@ export function TerminalView({
         sizeObserver.observe(host.current);
 
         const themeObserver = new MutationObserver(() => {
-          terminal.options.theme = getTerminalTheme(
-            document.documentElement.classList.contains("dark"),
-          );
+          terminal.options.theme = getTerminalTheme();
         });
 
         themeObserver.observe(document.documentElement, {

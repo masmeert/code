@@ -411,7 +411,8 @@ export function ApprovalCard({
             ) : (
               <span
                 className={cn(
-                  "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
+                  typeClass("caption", "compact"),
+                  "shrink-0 rounded-full border px-2 py-0.5 font-medium transition-colors",
                   getStatusBadgeClass(status),
                 )}
               >

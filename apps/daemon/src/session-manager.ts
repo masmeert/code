@@ -150,8 +150,15 @@ const make = Effect.gen(function* () {
   const terminals = createTerminals({
     findFolder: (threadId) => threads.get(threadId)?.info.cwd ?? null,
     onOpened: (terminal) => publish(RuntimeEvent.cases["terminal.opened"].make(terminal)),
-    onClosed: (terminal) => publish(RuntimeEvent.cases["terminal.closed"].make(terminal)),
-    onSpawned: (threadId, pid) => services.track(threadId, pid),
+    onClosed: (terminal) => {
+      publish(RuntimeEvent.cases["terminal.closed"].make(terminal));
+      services.refresh();
+    },
+    onSpawned: (threadId, pid, origin) => services.track(threadId, pid, origin),
+    onBusyChanged: (terminal) => {
+      publish(RuntimeEvent.cases["terminal.busy"].make(terminal));
+      services.refresh();
+    },
   });
 
   const services = createServices({

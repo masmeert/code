@@ -33,6 +33,8 @@ import {
   useBrowser,
 } from "@/entities/browser";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { closeOnEscape } from "../lib/close-on-escape.ts";
+import { PanelAction, PanelMessage } from "./panel-message.tsx";
 
 function getUrlHost(url: string) {
   try {
@@ -69,7 +71,8 @@ export function BrowserPanel({ threadId }: { threadId: string }) {
       ref={aside}
       aria-label="Browser"
       style={{ width: panel.width }}
-      className="relative flex min-h-0 min-w-80 shrink flex-col border-l border-border bg-background"
+      onKeyDown={closeOnEscape(() => toggleBrowser(threadId))}
+      className="relative flex min-h-0 max-w-[max(calc(100%_-_380px),50%)] min-w-[min(320px,50%)] shrink flex-col border-l border-border bg-background"
     >
       <ResizeHandle
         side="start"
@@ -94,36 +97,24 @@ export function BrowserPanel({ threadId }: { threadId: string }) {
           ))}
         </div>
         <IconButton label="New tab" onClick={() => openTab(threadId)}>
-          <IconPlus className="size-3.5" />
+          <IconPlus className="size-4" />
         </IconButton>
         <IconButton
-          label="Hide browser"
+          label="Hide browser (Esc)"
           className="ml-auto"
           onClick={() => toggleBrowser(threadId)}
         >
-          <IconX className="size-3.5" />
+          <IconX className="size-4" />
         </IconButton>
       </div>
       {tab ? <AddressBar key={tab.id} threadId={threadId} tab={tab} activity={activity} /> : null}
       {!tab?.url ? (
-        <Message>Enter an address to open a page.</Message>
+        <PanelMessage>Enter an address to open a page.</PanelMessage>
       ) : activity?.error ? (
-        <Message>
-          <span>
-            Couldn't load {getUrlHost(tab.url)}{" "}
-            <span className={cn(typeClass("caption"), "font-mono")}>({activity.error})</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => reload(tab.id)}
-            className={cn(
-              typeClass("caption"),
-              "rounded-lg px-3 py-1 text-foreground transition-colors outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
-            )}
-          >
-            Try again
-          </button>
-        </Message>
+        <PanelMessage>
+          <span className="selectable text-foreground">{activity.error}</span>
+          <PanelAction onClick={() => reload(tab.id)}>Try again</PanelAction>
+        </PanelMessage>
       ) : (
         <BrowserSurface threadId={threadId} />
       )}
@@ -221,26 +212,31 @@ function AddressBar({
       className="flex h-10 shrink-0 items-center gap-0.5 border-b border-border px-2"
     >
       <IconButton label="Back" disabled={!activity?.canGoBack} onClick={() => goBack(tab.id)}>
-        <IconArrowLeft className="size-3.5" />
+        <IconArrowLeft className="size-4" />
       </IconButton>
       <IconButton
         label="Forward"
         disabled={!activity?.canGoForward}
         onClick={() => goForward(tab.id)}
       >
-        <IconArrowRight className="size-3.5" />
+        <IconArrowRight className="size-4" />
       </IconButton>
       {activity?.loading ? (
         <IconButton label="Stop" onClick={() => stop(tab.id)}>
-          <IconX className="size-3.5" />
+          <IconX className="size-4" />
         </IconButton>
       ) : (
         <IconButton label="Reload" disabled={!tab.url} onClick={() => reload(tab.id)}>
-          <IconRotateClockwise className="size-3.5" />
+          <IconRotateClockwise className="size-4" />
         </IconButton>
       )}
       {activity?.automating ? (
-        <span className="ml-1 shrink-0 rounded-md bg-brand/15 px-1.5 py-0.5 text-[11px] font-medium text-brand">
+        <span
+          className={cn(
+            typeClass("caption", "compact"),
+            "ml-1 shrink-0 rounded-md bg-brand/15 px-1.5 py-0.5 font-medium text-brand",
+          )}
+        >
           Agent
         </span>
       ) : null}
@@ -281,7 +277,7 @@ function AddressBar({
         disabled={!tab.url}
         onClick={() => window.open(tab.url, "_blank")}
       >
-        <IconExternalLink className="size-3.5" />
+        <IconExternalLink className="size-4" />
       </IconButton>
     </form>
   );
@@ -316,17 +312,4 @@ function BrowserSurface({ threadId }: { threadId: string }) {
   }, [threadId]);
 
   return <div ref={slot} className="min-h-0 flex-1" />;
-}
-
-export function Message({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      className={cn(
-        typeClass("body"),
-        "flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground",
-      )}
-    >
-      {children}
-    </div>
-  );
 }

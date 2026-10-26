@@ -17,6 +17,7 @@ import { finishAddProject, pickLocalProject, useAddProjectOpen } from "../model/
 import { buildMachineOptions, THIS_MAC, toMachine, useHostStore } from "@/entities/host";
 import { addProjectOn, cloneProject, listFolders } from "@/entities/project";
 import { useSetting } from "@/entities/settings";
+import { openSettings } from "@/shared/lib/settings-route";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 /** Where a new project lives once there are remote hosts: this Mac, or a folder on one of them. */
@@ -29,6 +30,7 @@ export function AddProjectDialog() {
       onClose={() => finishAddProject(null)}
       placement="center"
       className="max-w-lg"
+      ariaLabel="Add project"
     >
       {isOpen ? <AddProject /> : null}
     </MorphingModal>
@@ -146,7 +148,18 @@ function RemoteFolders({
   if (!isConnected) {
     return (
       <p className={cn(typeClass("caption"), "text-muted-foreground")}>
-        {host} isn't isConnected yet. Its status is in Settings → Connections.
+        {host} isn't connected yet. Check its status in{" "}
+        <button
+          type="button"
+          onClick={() => {
+            finishAddProject(null);
+            openSettings("connections");
+          }}
+          className="rounded-sm text-foreground underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Settings → Connections
+        </button>
+        .
       </p>
     );
   }
@@ -230,7 +243,10 @@ function FolderListing({
           key={name}
           type="button"
           onClick={() => onOpen(`${listing.path.replace(/\/$/, "")}/${name}`)}
-          className="flex h-8 items-center gap-2 rounded-lg px-2 text-left text-[13px] outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(
+            typeClass("body", "compact"),
+            "flex h-8 items-center gap-2 rounded-lg px-2 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
+          )}
         >
           <IconFolder className="size-4 shrink-0 text-muted-foreground" />
           <span className="truncate">{name}</span>

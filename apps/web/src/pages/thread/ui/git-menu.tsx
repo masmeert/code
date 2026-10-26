@@ -5,7 +5,7 @@ import {
 } from "@masmeert/ui/morphing-popover";
 import { cn } from "@masscode/ui/lib/utils";
 import { Button } from "@masmeert/ui/button";
-import { SOURCE_CONTROL_LABEL } from "@/shared/ui";
+import { showToast, SOURCE_CONTROL_LABEL } from "@/shared/ui";
 import { ClientCommand, MergeMethod, type GitAction } from "@masscode/contracts";
 import * as Schema from "effect/Schema";
 import {
@@ -25,18 +25,19 @@ import { useRepoStore } from "@/entities/repo";
 import { useThreadStore } from "@/entities/thread";
 import { useSetting } from "@/entities/settings";
 import { send } from "@/shared/api";
+import { formatKeybinding, useKeybinding } from "@/shared/lib/keybindings";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
+import { describeGitFailure } from "../lib/git-error.ts";
+import { ErrorDetails } from "./panel-message.tsx";
 
 type Panel = "menu" | "commit" | "merge" | "merge-into-base" | null;
 
-const PENDING_LABEL: Record<GitAction, string> = {
-  commit: "Committing…",
-  "commit-push": "Committing…",
-  push: "Pushing…",
-  "pull-request": "Writing PR…",
-  merge: "Merging…",
-  "merge-into-base": "Merging…",
-};
+/** The last git action that failed; `committed`: a commit & push whose commit landed. */
+interface GitActionFailure {
+  readonly action: GitAction;
+  readonly error: string;
+  readonly committed: boolean;
+}
 
 const MERGE_LABEL: Record<MergeMethod, string> = {
   merge: "Merge",
@@ -62,17 +63,20 @@ function MenuItem({
   disabled,
   children,
   hint,
+  title,
 }: {
   onClick: () => void;
   disabled?: boolean;
   children: ReactNode;
   hint?: ReactNode;
+  title?: string;
 }) {
   return (
     <button
       type="button"
       role="menuitem"
       disabled={disabled}
+      title={title}
       onClick={onClick}
       className={cn(
         typeClass("body"),
@@ -84,7 +88,7 @@ function MenuItem({
         <span
           className={cn(
             typeClass("caption"),
-            "ml-auto pl-3 font-mono text-muted-foreground tabular-nums",
+            "ml-auto min-w-0 truncate pl-3 font-mono text-muted-foreground tabular-nums",
           )}
         >
           {hint}
@@ -120,7 +124,8 @@ export function GitMenu({
   const [mergeMethod, setMergeMethod] = useState<MergeMethod>("merge");
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState<GitAction | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const phase = useRepoStore((state) => state.commitPhases[cwd]);
+  const [failure, setFailure] = useState<GitActionFailure | null>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const mergeButton = useRef<HTMLButtonElement>(null);
 
@@ -150,28 +155,103 @@ export function GitMenu({
   const resolvePendingAction = useEffectEvent(() => {
     if (!repo?.action || !pending) return;
 
+    const { action, error, commit } = repo;
     setPending(null);
-    setError(repo.error);
 
-    if (!repo.error) {
-      if (repo.action === "commit" || repo.action === "commit-push") setMessage("");
-      // Back to the menu, where deleting the merged thread is offered.
-      openPanel(repo.action === "merge-into-base" ? "menu" : null);
-    } else if (repo.status?.changes === 0) {
-      // The commit landed even though the push after it failed.
-      setMessage("");
+    if (error) {
+      const committed = action === "commit-push" && commit !== null;
+
+      if (committed) setMessage("");
+      setFailure({ action, error, committed });
+
+      // With the popover closed, the failure would otherwise go unseen.
+      if (panel === null) {
+        const { summary } = describeGitFailure(error);
+
+        showToast({
+          title: committed ? `Committed ${commit}, but the push failed` : summary,
+          description: committed ? summary : "Open the git menu for details.",
+          status: "error",
+          duration: 10_000,
+          action: {
+            label: committed ? "Retry push" : "Retry",
+            onClick: () => runGitAction(committed ? "push" : action),
+          },
+        });
+      }
+
+      return;
     }
+
+    setFailure(null);
+
+    if (action === "commit" || action === "commit-push") setMessage("");
+    // Back to the menu, where deleting the merged thread is offered.
+    openPanel(action === "merge-into-base" ? "menu" : null);
+    announceSuccess(action, commit);
   });
 
   useEffect(() => resolvePendingAction(), [repo]);
 
   const status = repo?.status;
 
-  if (!repo || !status) return null;
+  useKeybinding(status ? "git.commit" : undefined, () =>
+    openPanel(status && status.changes > 0 && !pending ? "commit" : "menu"),
+  );
+
+  // Holds the button's place until the first status arrives, so the header doesn't shift.
+  if (!repo) {
+    return (
+      <div
+        aria-hidden
+        className={cn(
+          typeClass("caption"),
+          "flex h-7 items-stretch rounded-lg border border-border font-medium text-muted-foreground opacity-50",
+        )}
+      >
+        <span className="flex items-center gap-1.5 pr-2.5 pl-2">
+          <IconGitCommit className="size-4" />
+          <span className="@max-md:sr-only">Commit</span>
+        </span>
+        <span className="grid w-6 place-items-center border-l border-border">
+          <IconChevronDown className="size-3.5" />
+        </span>
+      </div>
+    );
+  }
+
+  if (!status) return null;
 
   const canCommit = status.changes > 0 && !pending;
   const canPush = status.hasRemote && !status.detached && status.ahead > 0 && !pending;
-  const pushHint = status.upstream ? `↑${status.ahead}` : status.ahead ? "new branch" : undefined;
+  const commitCount = `${status.ahead} ${status.ahead === 1 ? "commit" : "commits"}`;
+  // A branch the remote doesn't have yet gets published: pushed, and set to track it.
+  const pushLabel = status.upstream ? "Push" : "Publish branch";
+
+  const pushHint = !status.hasRemote
+    ? "no remote"
+    : status.detached
+      ? "detached"
+      : status.ahead === 0
+        ? status.upstream
+          ? `up to date with ${status.upstream}`
+          : "no commits"
+        : status.upstream
+          ? `↑${status.ahead}`
+          : commitCount;
+
+  const pushTitle = !status.hasRemote
+    ? "This repo has no remote to push to"
+    : status.detached
+      ? "Check out a branch to push"
+      : status.ahead === 0
+        ? status.upstream
+          ? `Up to date with ${status.upstream}`
+          : "This branch has no commits to push"
+        : status.upstream
+          ? `Push ${commitCount} to ${status.upstream}`
+          : `Push ${status.branch} to the remote for the first time, and track it`;
+
   const pullRequest = status.pullRequest;
   const isPullRequestOpen = pullRequest?.state === "open" || pullRequest?.state === "draft";
   // GitLab calls them merge requests.
@@ -199,8 +279,38 @@ export function GitMenu({
     status.changes === 0 &&
     !pending;
 
+  function announceSuccess(action: GitAction, commit: string | null) {
+    const after = repo?.status;
+    const upstream = after?.upstream ?? after?.branch ?? "the remote";
+    const opened = after?.pullRequest;
+    const committed = commit ? `Committed ${commit}` : "Committed";
+
+    const title = {
+      commit: `${committed} to ${after?.branch ?? "the current commit"}`,
+      "commit-push": `${committed} · pushed to ${upstream}`,
+      push: `Pushed to ${upstream}`,
+      "pull-request": opened
+        ? `Opened ${after?.sourceControl === "gitlab" ? "MR" : "PR"} #${opened.number}`
+        : "Opened",
+      merge: opened ? `Merged #${opened.number}` : "Merged",
+      "merge-into-base": `Merged into ${after?.base?.branch ?? "its base branch"}`,
+    }[action];
+
+    showToast({
+      title,
+      status: "success",
+      action:
+        action === "pull-request" && opened
+          ? {
+              label: "View",
+              onClick: () => window.open(opened.url, "_blank", "noreferrer"),
+            }
+          : undefined,
+    });
+  }
+
   function runGitAction(action: GitAction) {
-    setError(null);
+    setFailure(null);
     setPending(action);
 
     if (action === "push") {
@@ -245,8 +355,8 @@ export function GitMenu({
       : status.changes === 0 && canPush
         ? {
             icon: IconArrowUp,
-            label: "Push",
-            title: "Push commits",
+            label: pushLabel,
+            title: pushTitle,
             run: () => runGitAction("push"),
             count: status.upstream ? status.ahead : undefined,
           }
@@ -268,26 +378,49 @@ export function GitMenu({
                 icon: IconGitCommit,
                 label: "Commit",
                 title: status.changes
-                  ? `Commit ${status.changes} changed ${status.changes === 1 ? "file" : "files"}`
-                  : "Nothing to commit",
+                  ? `Commit ${status.changes} changed ${status.changes === 1 ? "file" : "files"} (${formatKeybinding("git.commit")})`
+                  : `Nothing to commit. ${pushTitle}`,
                 run: status.changes ? () => openPanel(panel === "commit" ? null : "commit") : null,
               };
 
   // An empty message is written by the commit model first, which takes a moment.
-  const pendingLabel =
-    (pending === "commit" || pending === "commit-push") && !message.trim()
-      ? "Writing message…"
-      : pending
-        ? PENDING_LABEL[pending]
-        : null;
+  const isWritingMessage = !message.trim();
 
-  const errorNote = error ? (
-    <p
-      className={cn(typeClass("caption"), "px-2 pt-1.5 pb-1 whitespace-pre-wrap text-destructive")}
-    >
-      {error}
-    </p>
-  ) : null;
+  const pushingLabel = status.upstream ? "Pushing…" : "Publishing…";
+  const committingLabel = isWritingMessage && !phase ? "Writing message…" : "Committing…";
+
+  const pendingLabel = pending
+    ? {
+        commit: committingLabel,
+        "commit-push": phase === "pushing" ? pushingLabel : committingLabel,
+        push: pushingLabel,
+        "pull-request": "Writing PR…",
+        merge: "Merging…",
+        "merge-into-base": "Merging…",
+      }[pending]
+    : null;
+
+  const failureText = failure ? describeGitFailure(failure.error) : null;
+
+  const errorNote =
+    failure && failureText ? (
+      <div
+        role="alert"
+        className={cn(typeClass("caption"), "flex flex-col gap-1 px-2 pt-1.5 pb-1")}
+      >
+        <p className="text-destructive">
+          {failure.committed
+            ? `Committed, but the push failed. ${failureText.summary}`
+            : failureText.summary}
+        </p>
+        {failureText.hint ? <p className="text-muted-foreground">{failureText.hint}</p> : null}
+        {failureText.detail !== failureText.summary ? (
+          <ErrorDetails>{failureText.detail}</ErrorDetails>
+        ) : null}
+      </div>
+    ) : null;
+
+  const pendingSpinner = <IconLoader2 className="size-3.5 animate-spin" />;
 
   return (
     <MorphingPopover open={panel !== null} onOpenChange={(isOpen) => !isOpen && openPanel(null)}>
@@ -336,7 +469,7 @@ export function GitMenu({
         className={
           panel === "commit" || panel === "merge" || panel === "merge-into-base"
             ? "w-80 p-2"
-            : "w-56 p-1.5"
+            : "w-64 p-1.5"
         }
       >
         {panel === "merge-into-base" && base ? (
@@ -374,7 +507,14 @@ export function GitMenu({
                 size="compact"
                 className="h-7 px-2.5"
               >
-                {pending === "merge-into-base" ? pendingLabel : "Merge"}
+                {pending === "merge-into-base" ? (
+                  <>
+                    {pendingSpinner}
+                    {pendingLabel}
+                  </>
+                ) : (
+                  "Merge"
+                )}
               </Button>
             </div>
           </form>
@@ -421,10 +561,39 @@ export function GitMenu({
                 Cancel
               </Button>
               <Button type="submit" disabled={!!pending} size="compact" className="h-7 px-2.5">
-                {pending === "merge" ? pendingLabel : MERGE_LABEL[mergeMethod]}
+                {pending === "merge" ? (
+                  <>
+                    {pendingSpinner}
+                    {pendingLabel}
+                  </>
+                ) : (
+                  MERGE_LABEL[mergeMethod]
+                )}
               </Button>
             </div>
           </form>
+        ) : panel === "commit" && failure?.committed && !pending ? (
+          <div className="flex flex-col gap-2">
+            {errorNote}
+            <div className="flex justify-end gap-1.5">
+              <Button
+                variant="outline"
+                size="compact"
+                className="h-7 px-2.5"
+                onClick={() => openPanel(null)}
+              >
+                Close
+              </Button>
+              <Button
+                size="compact"
+                disabled={!status.hasRemote || status.detached}
+                onClick={() => runGitAction("push")}
+                className="h-7 px-2.5"
+              >
+                Retry push
+              </Button>
+            </div>
+          </div>
         ) : panel === "commit" ? (
           <form
             className="flex flex-col gap-2"
@@ -446,14 +615,16 @@ export function GitMenu({
               }}
               placeholder="Commit message, or leave empty to generate one"
               rows={3}
+              readOnly={!!pending}
               className={cn(
                 typeClass("body"),
-                "w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                "w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-foreground outline-none placeholder:text-muted-foreground read-only:opacity-60 focus-visible:ring-2 focus-visible:ring-ring",
               )}
             />
             <p className={cn(typeClass("caption"), "px-0.5 text-muted-foreground")}>
-              {status.changes} changed {status.changes === 1 ? "file" : "files"}, all staged on
-              commit
+              {status.changes
+                ? `${status.changes} changed ${status.changes === 1 ? "file" : "files"}, all staged on commit`
+                : "Nothing to commit"}
             </p>
             {errorNote}
             <div className="flex justify-end gap-1.5">
@@ -466,7 +637,16 @@ export function GitMenu({
                   onClick={() => runGitAction("commit-push")}
                   className="h-7 px-2.5"
                 >
-                  Commit & push
+                  {pending === "commit-push" ? (
+                    <>
+                      {pendingSpinner}
+                      {pendingLabel}
+                    </>
+                  ) : status.upstream ? (
+                    "Commit & push"
+                  ) : (
+                    "Commit & publish"
+                  )}
                 </Button>
               ) : null}
               <Button
@@ -476,7 +656,14 @@ export function GitMenu({
                 size="compact"
                 className="h-7 px-2.5"
               >
-                {pending === "commit" || pending === "commit-push" ? pendingLabel : "Commit"}
+                {pending === "commit" ? (
+                  <>
+                    {pendingSpinner}
+                    {pendingLabel}
+                  </>
+                ) : (
+                  "Commit"
+                )}
               </Button>
             </div>
           </form>
@@ -486,7 +673,8 @@ export function GitMenu({
               <MenuItem
                 onClick={() => openPanel("commit")}
                 disabled={!canCommit}
-                hint={status.changes || undefined}
+                title={`Commit (${formatKeybinding("git.commit")})`}
+                hint={status.changes || "nothing to commit"}
               >
                 <IconGitCommit />
                 Commit…
@@ -494,10 +682,11 @@ export function GitMenu({
               <MenuItem
                 onClick={() => runGitAction("push")}
                 disabled={!canPush}
-                hint={canPush ? pushHint : undefined}
+                title={pushTitle}
+                hint={pending === "push" ? pendingLabel : pushHint}
               >
                 <IconArrowUp />
-                Push
+                {pushLabel}
               </MenuItem>
               {base ? (
                 base.merged ? (
@@ -617,11 +806,6 @@ export function GitMenu({
               <p className={cn(typeClass("caption"), "px-2 pt-1 text-muted-foreground")}>
                 Conflicts with {base.branch} in {base.conflicts.join(", ")}. Merge {base.branch}{" "}
                 into this branch and resolve them first.
-              </p>
-            ) : null}
-            {!status.hasRemote ? (
-              <p className={cn(typeClass("caption"), "px-2 pt-1 text-muted-foreground")}>
-                No remote configured
               </p>
             ) : null}
             {status.behind > 0 ? (

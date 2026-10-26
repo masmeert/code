@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { spring, springExit, tierTween } from "@masmeert/ui/lib/springs";
 import { PresenceGate } from "@masmeert/ui/presence-gate";
@@ -13,6 +13,43 @@ export interface MorphingModalProps {
   /** "bottom" anchors to the viewport bottom (mobile-like). "center" centers vertically. */
   placement?: "bottom" | "center";
   className?: string;
+  /** Names the dialog for assistive tech; prefer `ariaLabelledBy` when a visible title exists. */
+  ariaLabel?: string;
+  ariaLabelledBy?: string;
+}
+
+/** Open panels, oldest first: with focus lost to the page, Escape closes only the topmost. */
+const openPanels: Array<HTMLElement> = [];
+
+const TABBABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
+
+/** Keeps Tab and Shift+Tab cycling through the panel's own controls. */
+function trapTab(event: ReactKeyboardEvent<HTMLElement>) {
+  if (event.key !== "Tab" || event.defaultPrevented) return;
+
+  const tabbables = [...event.currentTarget.querySelectorAll<HTMLElement>(TABBABLE)].filter(
+    (element) => element.getClientRects().length > 0 && !element.closest("[inert]"),
+  );
+
+  const first = tabbables[0];
+  const last = tabbables.at(-1);
+
+  if (!first || !last) {
+    event.preventDefault();
+
+    return;
+  }
+
+  const active = document.activeElement;
+
+  if (event.shiftKey && (active === first || active === event.currentTarget)) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 export function MorphingModal({
@@ -21,6 +58,8 @@ export function MorphingModal({
   children,
   placement = "bottom",
   className,
+  ariaLabel,
+  ariaLabelledBy,
 }: MorphingModalProps) {
   const open = viewId !== null;
   const reduce = useReducedMotion();
@@ -32,15 +71,30 @@ export function MorphingModal({
   close.current = onClose;
 
   useEffect(() => {
-    if (!open) return;
+    const element = panel.current;
+    if (!open || !element) return;
     // Focus left behind the modal keeps getting keys, and a terminal there swallows Escape.
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const takeFocus = !panel.current?.contains(previous);
-    if (takeFocus) panel.current?.focus({ preventScroll: true });
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && close.current();
+    const takeFocus = !element.contains(previous);
+    if (takeFocus) element.focus({ preventScroll: true });
+    openPanels.push(element);
+    // Bubbling, so a menu or field inside that handles Escape (and says so) gets it first. Escape
+    // from outside the panel belongs to whatever has focus there: a portaled popover, another modal.
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      const isFocusLost = event.target === document.body || event.target === document;
+      if (
+        !(event.target instanceof Node && element.contains(event.target)) &&
+        !(isFocusLost && openPanels.at(-1) === element)
+      )
+        return;
+      event.preventDefault();
+      close.current();
+    };
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
+      openPanels.splice(openPanels.indexOf(element), 1);
       if (takeFocus) previous?.focus({ preventScroll: true });
     };
   }, [open]);
@@ -69,6 +123,7 @@ export function MorphingModal({
           {({ gate }) => (
             <motion.button
               type="button"
+              tabIndex={-1}
               aria-label="Close modal"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -99,7 +154,12 @@ export function MorphingModal({
               <motion.div
                 key="panel"
                 ref={panel}
+                role="dialog"
+                aria-modal="true"
+                aria-label={ariaLabel}
+                aria-labelledby={ariaLabelledBy}
                 tabIndex={-1}
+                onKeyDown={trapTab}
                 layout={!reduce}
                 initial={{ opacity: 0, y: enterY, scale: enterScale }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}

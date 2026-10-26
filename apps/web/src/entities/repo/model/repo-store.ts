@@ -12,6 +12,8 @@ interface RepoState {
   /** The commit/push the last update answered, and why it failed. */
   readonly action: GitAction | null;
   readonly error: string | null;
+  /** Short hash of the commit that action made, even when its push failed. */
+  readonly commit: string | null;
 }
 
 interface RepoDiff {
@@ -36,6 +38,8 @@ interface ReposState {
   readonly diffs: Readonly<Record<string, RepoDiff>>;
   /** Working-tree/upstream state per repo path, fetched on demand by the git menu. */
   readonly repos: Readonly<Record<string, RepoState>>;
+  /** The step a commit in flight is on, per repo path, once its message is written. */
+  readonly commitPhases: Readonly<Record<string, "committing" | "pushing">>;
   /** One turn's changes, keyed `<threadId>:<messageId>`, fetched by the changes panel. */
   readonly turnDiffs: Readonly<Record<string, RepoDiff>>;
   /** This Mac's GitHub and GitLab CLI status; null until Settings asks for it. */
@@ -49,6 +53,7 @@ const store = createStore<ReposState>({
   files: {},
   diffs: {},
   repos: {},
+  commitPhases: {},
   turnDiffs: {},
   sourceControl: null,
   hosts: {},
@@ -82,8 +87,17 @@ export function applyRepoEvent(host: string | null, event: RuntimeEvent) {
             [`${threadId}:${messageId}`]: { patch, truncated, error },
           },
         }),
-      "git.status": ({ path, status, action, error }) =>
-        store.setState({ ...state, repos: { ...state.repos, [path]: { status, action, error } } }),
+      "git.status": ({ path, status, action, error, commit }) => {
+        const { [path]: _answered, ...commitPhases } = state.commitPhases;
+
+        store.setState({
+          ...state,
+          repos: { ...state.repos, [path]: { status, action, error, commit: commit ?? null } },
+          commitPhases: action ? commitPhases : state.commitPhases,
+        });
+      },
+      "git.progress": ({ path, phase }) =>
+        store.setState({ ...state, commitPhases: { ...state.commitPhases, [path]: phase } }),
       "sourceControl.updated": ({ statuses }) => {
         if (host === null) return store.setState({ ...state, sourceControl: statuses });
 

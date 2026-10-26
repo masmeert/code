@@ -55,6 +55,7 @@ export function SettingsModal({
       onClose={onClose}
       placement="center"
       className="max-w-3xl"
+      ariaLabel="Settings"
     >
       {isOpen ? <SettingsView initialPage={page} /> : null}
     </MorphingModal>
@@ -79,7 +80,7 @@ function SettingsView({ initialPage }: { initialPage?: SettingsPage }) {
   useEffect(() => send(ClientCommand.cases["providers.refresh"].make({})), []);
 
   return (
-    <div className="-m-5 flex h-[min(36rem,calc(100vh-4rem))]">
+    <div className="-m-5 flex h-[min(56rem,calc(100vh-4rem))]">
       <nav
         aria-label="Settings"
         onKeyDown={(event) => {

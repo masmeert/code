@@ -12,9 +12,9 @@ import { ClientCommand, type ThreadInfo } from "@masscode/contracts";
 import * as Haptics from "expo-haptics";
 import { router, Stack } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, RefreshControl, SectionList, View } from "react-native";
+import { ActivityIndicator, Pressable, RefreshControl, SectionList, View } from "react-native";
 import Swipeable from "react-native-gesture-handler/ReanimatedSwipeable";
-import { type HostState, reconnectAll, useHostStore } from "@/entities/host";
+import { alertNotConnected, type HostState, reconnectAll, useHostStore } from "@/entities/host";
 import { useProjectStore } from "@/entities/project";
 import { ProviderLogo } from "@/entities/provider";
 import { useThreadStore } from "@/entities/thread";
@@ -36,8 +36,13 @@ interface ArchivedThread {
   readonly title: string;
 }
 
+/** False when the host isn't connected, after saying so: nothing was archived. */
 function archive(hostId: string, threadId: string, archived: boolean) {
-  send(hostId, ClientCommand.cases["thread.archive"].make({ threadId, archived }));
+  if (send(hostId, ClientCommand.cases["thread.archive"].make({ threadId, archived }))) return true;
+
+  alertNotConnected(hostId);
+
+  return false;
 }
 
 export function ThreadListPage() {
@@ -49,6 +54,8 @@ export function ThreadListPage() {
   const [query, setQuery] = useState("");
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const [hostFilter, setHostFilter] = useState<string | null>(null);
+  // A pull shows the spinner until the computers it retried have connected or failed again.
+  const [isPulling, setIsPulling] = useState(false);
 
   useEffect(() => {
     if (!archived) return;
@@ -114,6 +121,29 @@ export function ThreadListPage() {
       host.connection !== "connecting" &&
       host.connection !== "off",
   );
+
+  const isConnecting = Object.values(hosts).some((host) => host.connection === "connecting");
+
+  if (isPulling && !isConnecting) setIsPulling(false);
+
+  // Threads aren't kept on the phone, so until a computer's list arrives, none means "not yet".
+  const awaited = Object.values(hosts).filter(
+    (host) => host.connection === "connecting" && !threadsByHost[host.paired.id],
+  );
+
+  const hasThreadLists = Object.keys(hosts).some((hostId) => threadsByHost[hostId]);
+
+  function getEmptyText() {
+    if (query.trim() || isFiltered)
+      return "No threads match. Clear the search or the filter to see them all.";
+
+    if (!hasThreadLists)
+      return Object.values(hosts).every((host) => host.connection === "off")
+        ? "Every computer is turned off on this phone. Turn one on in Settings → Computers."
+        : "Your threads show here once a computer connects.";
+
+    return "No threads yet. Start one with the compose button.";
+  }
 
   const orbState = Object.keys(hosts).some((hostId) =>
     Object.values(threadsByHost[hostId] ?? {}).some((thread) => thread.status === "running"),
@@ -227,18 +257,33 @@ export function ThreadListPage() {
           contentInsetAdjustmentBehavior="automatic"
           contentContainerClassName="pb-24"
           stickySectionHeadersEnabled={false}
-          refreshControl={<RefreshControl refreshing={false} onRefresh={reconnectAll} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={isPulling && isConnecting}
+              onRefresh={() => {
+                setIsPulling(true);
+                reconnectAll();
+              }}
+            />
+          }
           ListHeaderComponent={
             unreachable.length > 0 ? <UnreachableHosts hosts={unreachable} /> : undefined
           }
           ListEmptyComponent={
-            isLoaded ? (
+            !isLoaded ? undefined : awaited.length > 0 && allRows.length === 0 ? (
+              <View className="items-center gap-3 p-8">
+                <ActivityIndicator />
+                <Text className="text-center text-sm text-muted-foreground">
+                  {awaited.length === 1
+                    ? `Connecting to ${awaited[0]?.paired.name}…`
+                    : `Connecting to ${awaited.length} computers…`}
+                </Text>
+              </View>
+            ) : (
               <Text className="p-8 text-center text-sm text-muted-foreground">
-                {query.trim() || isFiltered
-                  ? "No threads match. Clear the search or the filter to see them all."
-                  : "No threads yet. Start one with the compose button."}
+                {getEmptyText()}
               </Text>
-            ) : undefined
+            )
           }
           renderSectionHeader={({ section }) =>
             section.key === "needs-you" ? (
@@ -258,9 +303,11 @@ export function ThreadListPage() {
           renderItem={({ item }) => (
             <ThreadRowView
               row={item}
+              isConnected={hosts[item.hostId]?.connection === "connected"}
               onArchive={() => {
+                if (!archive(item.hostId, item.thread.id, true)) return;
+
                 void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                archive(item.hostId, item.thread.id, true);
                 setArchived({
                   hostId: item.hostId,
                   threadId: item.thread.id,
@@ -279,10 +326,8 @@ export function ThreadListPage() {
           <NativeButton
             label="Undo"
             variant="outlined"
-            size="small"
             onPress={() => {
-              archive(archived.hostId, archived.threadId, false);
-              setArchived(null);
+              if (archive(archived.hostId, archived.threadId, false)) setArchived(null);
             }}
           />
         </View>
@@ -311,28 +356,46 @@ function UnreachableHosts({ hosts }: { hosts: ReadonlyArray<HostState> }) {
   );
 }
 
-function ThreadRowView({ row, onArchive }: { row: ThreadRow; onArchive: () => void }) {
+function ThreadRowView({
+  row,
+  isConnected,
+  onArchive,
+}: {
+  row: ThreadRow;
+  isConnected: boolean;
+  onArchive: () => void;
+}) {
   const { thread } = row;
   const needsYou = NEEDS_YOU[thread.status];
   const isUnread = thread.seenRev < thread.updatedAt;
   const request = needsYou ? thread.request : null;
   const isRunning = thread.status === "running";
   const now = useNow();
-  const [isResponding, setIsResponding] = useState(false);
+  // The request answered from here: the row keeps its key, so the next request starts unanswered.
+  const [answeredRequestId, setAnsweredRequestId] = useState<string | null>(null);
+
+  // An answer sent as the connection dropped may not have landed; it can be given again.
+  if (answeredRequestId !== null && !isConnected) setAnsweredRequestId(null);
+
+  const isResponding = answeredRequestId !== null && request?.requestId === answeredRequestId;
 
   function respond(decision: "allow" | "deny") {
-    if (!request) return;
+    if (!request || isResponding) return;
 
-    setIsResponding(true);
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    send(
-      row.hostId,
-      ClientCommand.cases["approval.respond"].make({
-        threadId: thread.id,
-        requestId: request.requestId,
-        decision,
-      }),
-    );
+    if (
+      !send(
+        row.hostId,
+        ClientCommand.cases["approval.respond"].make({
+          threadId: thread.id,
+          requestId: request.requestId,
+          decision,
+        }),
+      )
+    )
+      return alertNotConnected(row.hostId);
+
+    setAnsweredRequestId(request.requestId);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
 
   function open() {
@@ -373,7 +436,7 @@ function ThreadRowView({ row, onArchive }: { row: ThreadRow; onArchive: () => vo
             provider={thread.provider}
             className={cn(
               "size-3.5 text-muted-foreground",
-              isRunning && thread.provider === "claude" && "text-[#D97757]",
+              isRunning && thread.provider === "claude" && "text-claude",
             )}
           />
           {isRunning ? (
@@ -423,27 +486,25 @@ function ThreadRowView({ row, onArchive }: { row: ThreadRow; onArchive: () => vo
             >
               <Text className="font-mono text-[11px]">{request.title}</Text> {request.detail}
             </Text>
-            <View className="mt-2 flex-row gap-1.5">
+            <View className="mt-2 flex-row items-center gap-1.5">
               <NativeButton
                 label="Allow"
-                size="small"
-                isDisabled={isResponding}
+                isDisabled={isResponding || !isConnected}
                 onPress={() => respond("allow")}
               />
               <NativeButton
                 label="Deny"
                 variant="text"
-                size="small"
-                isDisabled={isResponding}
+                isDisabled={isResponding || !isConnected}
                 onPress={() => respond("deny")}
               />
+              {isResponding ? <ActivityIndicator size="small" className="ml-1" /> : null}
             </View>
           </>
         ) : request ? (
           <NativeButton
             label={request.asksQuestions ? "Answer" : "Review plan"}
             variant="outlined"
-            size="small"
             className="mt-2 self-start"
             onPress={open}
           />

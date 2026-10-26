@@ -20,6 +20,8 @@ interface ProviderLimits {
 /** One daemon's harnesses: their status, sign-in and subscription limits. */
 interface HarnessesState {
   readonly providers: ReadonlyArray<ProviderStatus>;
+  /** The daemon (or the cache from the last run) has said which harnesses there are. */
+  readonly received: boolean;
   readonly authFlows: Partial<Record<ProviderKind, AuthFlow>>;
   /** Subscription rate limits per harness, read when the usage panel opens. */
   readonly limits: Partial<Record<ProviderKind, ProviderLimits>>;
@@ -42,6 +44,7 @@ const NO_PROVIDERS: ReadonlyArray<ProviderStatus> = [];
 
 const store = createStore<ProvidersState>({
   providers: [],
+  received: false,
   authFlows: {},
   limits: {},
   hosts: {},
@@ -66,6 +69,13 @@ export function getProviders() {
 export function useProviders(host: string | null) {
   return store.useStore((state) =>
     host === null ? state.providers : (state.hosts[host]?.providers ?? NO_PROVIDERS),
+  );
+}
+
+/** False until the host has said which harnesses it has: an empty list then means "not known yet". */
+export function useHasHarnessStatus(host: string | null) {
+  return store.useStore((state) =>
+    host === null ? state.received : (state.hosts[host]?.received ?? false),
   );
 }
 
@@ -104,7 +114,7 @@ export function readLimits(provider: ProviderKind, host: string | null) {
 }
 
 export function receiveProviders(host: string | null, providers: ReadonlyArray<ProviderStatus>) {
-  updateHarnesses(host, (current) => ({ ...current, providers }));
+  updateHarnesses(host, (current) => ({ ...current, providers, received: true }));
 }
 
 export function applyProviderEvent(host: string | null, event: RuntimeEvent) {
@@ -152,7 +162,7 @@ export function setRemoteHosts(aliases: ReadonlyArray<string>) {
     hosts: Object.fromEntries(
       aliases.map((alias) => [
         alias,
-        hosts[alias] ?? { providers: NO_PROVIDERS, authFlows: {}, limits: {} },
+        hosts[alias] ?? { providers: NO_PROVIDERS, received: false, authFlows: {}, limits: {} },
       ]),
     ),
   });

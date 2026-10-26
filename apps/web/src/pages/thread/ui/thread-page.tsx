@@ -10,13 +10,28 @@ import { OrbFace } from "@masscode/ui/agents/orb-face";
 import { PromptInputTray } from "@masscode/ui/agents/prompt-input";
 import { categoryOf } from "@masscode/client";
 import { type ToolReveal } from "@masscode/ui/agents/tool-group";
-import { ClientCommand, isTurnActive, type QueuedMessage } from "@masscode/contracts";
+import {
+  ClientCommand,
+  isTurnActive,
+  type QueuedMessage,
+  type ThreadInfo,
+} from "@masscode/contracts";
 import { IconBinaryTree, IconEye, IconFileDiff } from "@tabler/icons-react";
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  memo,
+  type ReactNode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toggleBrowser, useBrowser } from "@/entities/browser";
 import { toggleSimulator, useSimulator } from "@/entities/simulator";
 import { Composer, focusComposer, toTurnOptions, useTurnPrefs } from "@/widgets/composer";
-import { useKeybinding } from "@/shared/lib/keybindings";
+import { formatKeybinding, useKeybinding } from "@/shared/lib/keybindings";
 import { TranscriptFind } from "./transcript-find.tsx";
 import {
   type ReviewComment,
@@ -24,6 +39,7 @@ import {
   useReviewComments,
   buildReviewMessage,
 } from "../model/review-comments.ts";
+import { holdMessage, isThreadHostConnected, useHeldMessages } from "../model/held-messages.ts";
 import { findDefaultModel } from "@masscode/client";
 import {
   buildModelChoices,
@@ -34,6 +50,7 @@ import {
   useProviders,
 } from "@/entities/provider";
 import { buildFallbackProject, useProjectStore } from "@/entities/project";
+import { useIsHostConnected } from "@/entities/host";
 import { useSetting, useSettings } from "@/entities/settings";
 import {
   runCommand,
@@ -69,6 +86,7 @@ import {
 } from "./transcript.tsx";
 import {
   returnToComposer,
+  HeldMessageRow,
   QueuedFollowUp,
   LimitStopNotice,
   ReviewCommentRow,
@@ -77,6 +95,7 @@ import {
 import { SideChatDrawer } from "./side-chat-drawer.tsx";
 import { QuoteSelection } from "./quote-selection.tsx";
 import { ErrorBoundary, IconButton } from "@/shared/ui";
+import { ErrorDetails, PanelAction, PanelMessage } from "./panel-message.tsx";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
 import { cn } from "@masscode/ui/lib/utils";
 
@@ -95,8 +114,27 @@ const NO_QUEUE: ReadonlyArray<QueuedMessage> = [];
 
 const NO_RUNS: ReadonlyArray<RunningCommand> = [];
 
+/** Renders nothing once the thread is gone, say deleted while on screen. */
 export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: string }) {
-  const info = useThreadStore((state) => state.threads[threadId])!;
+  const info = useThreadStore((state) => state.threads[threadId]);
+
+  return info ? <ThreadView threadId={threadId} info={info} /> : null;
+});
+
+/** The changes panel's room before it has loaded, or after it failed: the width it last had. */
+function DiffPanelFrame({ children }: { children?: ReactNode }) {
+  return (
+    <aside
+      aria-label="Changes"
+      style={{ width: readWidth(DIFF_PANEL_WIDTH_KEY, getDefaultDiffPanelWidth()) }}
+      className="flex max-w-[max(calc(100%_-_380px),50%)] min-w-[min(320px,50%)] shrink flex-col border-l border-border bg-background"
+    >
+      {children}
+    </aside>
+  );
+}
+
+function ThreadView({ threadId, info }: { threadId: string; info: ThreadInfo }) {
   // Loaded on open: from the local cache first, then caught up by the daemon.
   const transcript = useTranscript(threadId);
   const items = transcript?.items ?? NO_ITEMS;
@@ -158,14 +196,21 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
   const [revealedComment, setRevealedComment] = useState<ReviewComment | null>(null);
   const clearRevealedComment = useCallback(() => setRevealedComment(null), []);
 
-  const [composerHeightPx, setComposerHeightPx] = useState(0);
+  const scrollArea = useRef<HTMLDivElement>(null);
 
+  // Set on the element rather than through state, so typing that grows the composer doesn't re-render the thread.
   const observeComposer = useCallback((node: HTMLDivElement) => {
-    const observer = new ResizeObserver(() => setComposerHeightPx(node.offsetHeight));
+    const observer = new ResizeObserver(() =>
+      scrollArea.current?.style.setProperty("--composer-height", `${node.offsetHeight}px`),
+    );
+
     observer.observe(node);
 
     return () => observer.disconnect();
   }, []);
+
+  const isHostConnected = useIsHostConnected(host);
+  const heldMessages = useHeldMessages(threadId);
 
   const followUps = useThreadStore((state) => state.threads[threadId]?.queue) ?? NO_QUEUE;
   const followUpMode = useSetting((settings) => settings.followUp ?? "queue");
@@ -191,7 +236,6 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
     [items],
   );
 
-  const scrollArea = useRef<HTMLDivElement>(null);
   const transcriptViewport = useRef<HTMLElement>(null);
 
   // Re-read the diff whenever a tool finishes or a turn ends: either may have changed files.
@@ -208,6 +252,14 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
 
     if (activeTerminal) focusComposer();
   });
+
+  function toggleDiff() {
+    if (isDiffOpen) focusComposer();
+    setIsDiffOpen(!isDiffOpen);
+    setDiffTurn(null);
+  }
+
+  useKeybinding("diff.toggle", toggleDiff);
 
   const isBrowserOpen = useBrowser((state) => state.threads[threadId]?.open ?? false);
   useKeybinding(window.desktop ? "browser.toggle" : undefined, () => toggleBrowser(threadId));
@@ -237,7 +289,10 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
   return (
     <>
       <div className="flex min-h-0 flex-1">
-        <div ref={scrollArea} className="relative flex min-h-0 min-w-95 flex-1 flex-col">
+        <div
+          ref={scrollArea}
+          className="relative flex min-h-0 min-w-[min(380px,50%)] flex-1 flex-col"
+        >
           <ThreadHeader
             project={project ?? buildFallbackProject(info.projectId, info.cwd)}
             title={info.title}
@@ -278,12 +333,9 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
                     <ScriptsMenu threadId={threadId} host={host} path={project.path} />
                   ) : null}
                   <IconButton
-                    label={isDiffOpen ? "Hide changes" : "Show changes"}
+                    label={`${isDiffOpen ? "Hide" : "Show"} changes (${formatKeybinding("diff.toggle")})`}
                     isActive={isDiffOpen}
-                    onClick={() => {
-                      setIsDiffOpen(!isDiffOpen);
-                      setDiffTurn(null);
-                    }}
+                    onClick={toggleDiff}
                   >
                     <IconFileDiff className="size-4" />
                   </IconButton>
@@ -300,7 +352,7 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
             navigation="rail"
             viewportRef={transcriptViewport}
             className="min-h-0 flex-1"
-            viewportClassName="@container px-3 py-5 sm:px-5 [&_*::highlight(find)]:bg-amber-300/40 [&_*::highlight(find-active)]:bg-amber-400 [&_*::highlight(find-active)]:text-black"
+            viewportClassName="@container px-3 py-5 sm:px-5 [&_*::highlight(find)]:bg-brand/25 [&_*::highlight(find-active)]:bg-primary [&_*::highlight(find-active)]:text-primary-foreground"
             contentClassName="mx-auto min-h-full w-full max-w-3xl"
           >
             <MessageGroup spacing="default">
@@ -346,14 +398,14 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
                   <MessageContent>
                     {/* Styled like a streaming work row, which takes its place once the agent's first output arrives. */}
                     <div className={cn(typeClass("body"), "flex h-7 items-center")}>
-                      <ReasoningText variant="scramble" className="min-w-0 font-mono font-normal" />
+                      <ReasoningText variant="swap" className="min-w-0 font-normal" />
                     </div>
                   </MessageContent>
                 </Message>
               ) : null}
             </MessageGroup>
             {/* The composer floats over the transcript's end; this keeps the last message clear of it. */}
-            <div aria-hidden style={{ height: composerHeightPx }} />
+            <div aria-hidden className="h-(--composer-height)" />
           </MessageScroller>
 
           <div ref={observeComposer} className="pointer-events-none absolute inset-x-0 bottom-0">
@@ -387,7 +439,11 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
                       />
                     ) : null}
                   </PromptInputTray>
-                  <PromptInputTray open={followUps.length > 0 || reviewComments.length > 0}>
+                  <PromptInputTray
+                    open={
+                      followUps.length > 0 || reviewComments.length > 0 || heldMessages.length > 0
+                    }
+                  >
                     {reviewComments.map((comment) => (
                       <ReviewCommentRow
                         key={comment.id}
@@ -407,6 +463,9 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
                         isNext={index === 0}
                       />
                     ))}
+                    {heldMessages.map((message) => (
+                      <HeldMessageRow key={message.id} threadId={threadId} message={message} />
+                    ))}
                   </PromptInputTray>
                 </>
               }
@@ -421,11 +480,13 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
                 )
               }
               placeholder={
-                isBusy
-                  ? followUpMode === "queue"
-                    ? "Queue a follow-up (⌘↩ to send now)"
-                    : `Steer ${formatHarnessLabel(settings, provider)} (⌘↩ to queue)`
-                  : `Ask ${formatHarnessLabel(settings, provider)}…`
+                !isHostConnected
+                  ? "Reconnecting… messages send once MassCode is back"
+                  : isBusy
+                    ? followUpMode === "queue"
+                      ? "Queue a follow-up (⌘↩ to send now)"
+                      : `Steer ${formatHarnessLabel(settings, provider)} (⌘↩ to queue)`
+                    : `Ask ${formatHarnessLabel(settings, provider)}…`
               }
               hasPendingContent={reviewComments.length > 0}
               onSubmit={(typed, options, how) => {
@@ -433,7 +494,9 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
                 // While the agent works, a message waits for the turn to end, or steers it; ⌘Enter flips that.
                 const steer = (followUpMode === "steer") !== how.alternate;
 
-                if (isBusy && !steer) queueMessage(threadId, text, options);
+                if (!isThreadHostConnected(threadId))
+                  holdMessage({ threadId, text, options, queue: isBusy && !steer });
+                else if (isBusy && !steer) queueMessage(threadId, text, options);
                 else
                   send(
                     ClientCommand.cases["thread.send"].make({
@@ -462,50 +525,21 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
         {isDiffOpen ? (
           <ErrorBoundary
             fallback={(error, retry) => (
-              <aside
-                aria-label="Changes"
-                style={{ width: readWidth(DIFF_PANEL_WIDTH_KEY, getDefaultDiffPanelWidth()) }}
-                className={cn(
-                  typeClass("body"),
-                  "flex shrink-0 flex-col items-center justify-center gap-3 border-l border-border px-6 text-center text-muted-foreground",
-                )}
-              >
-                <p>Couldn't show the changes: {error.message}</p>
-                <span className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={retry}
-                    className={cn(
-                      typeClass("caption"),
-                      "rounded-lg border border-border px-2.5 py-1 transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                    )}
-                  >
-                    Try again
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsDiffOpen(false)}
-                    className={cn(
-                      typeClass("caption"),
-                      "rounded-lg border border-border px-2.5 py-1 transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                    )}
-                  >
-                    Close
-                  </button>
-                </span>
-              </aside>
+              <DiffPanelFrame>
+                <PanelMessage>
+                  <span>
+                    Something went wrong showing the changes. Try again, or close the panel.
+                  </span>
+                  <span className="flex gap-2">
+                    <PanelAction onClick={retry}>Try again</PanelAction>
+                    <PanelAction onClick={() => setIsDiffOpen(false)}>Close</PanelAction>
+                  </span>
+                  <ErrorDetails>{error.message}</ErrorDetails>
+                </PanelMessage>
+              </DiffPanelFrame>
             )}
           >
-            <Suspense
-              fallback={
-                <div
-                  style={{
-                    width: readWidth(DIFF_PANEL_WIDTH_KEY, getDefaultDiffPanelWidth()),
-                  }}
-                  className="shrink-0 border-l border-border"
-                />
-              }
-            >
+            <Suspense fallback={<DiffPanelFrame />}>
               <DiffPanel
                 threadId={threadId}
                 cwd={info.cwd}
@@ -529,4 +563,4 @@ export const ThreadPage = memo(function ThreadPage({ threadId }: { threadId: str
       ) : null}
     </>
   );
-});
+}

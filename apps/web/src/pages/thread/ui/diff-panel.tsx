@@ -10,6 +10,7 @@ import {
   IconColumns2,
   IconLayoutRows,
   IconListTree,
+  IconLoader2,
   IconRefresh,
   IconX,
 } from "@tabler/icons-react";
@@ -34,9 +35,11 @@ import { send } from "@/shared/api";
 import { ChangedFilesTree } from "./changed-files-tree.tsx";
 import { DiffComment, DiffCommentForm } from "./diff-comment.tsx";
 import { HIGHLIGHT, useDiffWorkersReady } from "./diff-workers.tsx";
+import { ErrorDetails, PanelAction, PanelMessage } from "./panel-message.tsx";
+import { closeOnEscape } from "../lib/close-on-escape.ts";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
 
-/** The chat keeps at least this much room next to the panel. */
+/** The chat keeps at least this much room next to the panel (also in the aside's max-width). */
 const MIN_CHAT = 380;
 
 const MIN_PANEL = 360;
@@ -61,15 +64,18 @@ function readIsTreeShown() {
 interface ParsedPatch {
   readonly patch: string;
   readonly files: Array<FileDiffMetadata>;
+  /** Why the patch couldn't be read; `files` is empty then. */
+  readonly error: string | null;
 }
 
 /** Last parse per patch string, so reopening the panel (or another thread in the same repo) skips the work. */
-let lastParse: ParsedPatch = { patch: "", files: [] };
+let lastParse: ParsedPatch = { patch: "", files: [], error: null };
 
-function parseFiles(patch: string): Array<FileDiffMetadata> {
-  if (patch === lastParse.patch) return lastParse.files;
+function parseFiles(patch: string): ParsedPatch {
+  if (patch === lastParse.patch) return lastParse;
 
   let files: Array<FileDiffMetadata> = [];
+  let error: string | null = null;
 
   try {
     // Key each file's highlight cache by its blob ids, so an unchanged file is never re-highlighted
@@ -87,11 +93,13 @@ function parseFiles(patch: string): Array<FileDiffMetadata> {
       ...file,
       cacheKey: `${file.name}:${file.prevObjectId ?? ""}:${file.newObjectId ?? ""}`,
     }));
-  } catch {}
+  } catch (parseError) {
+    error = parseError instanceof Error ? parseError.message : String(parseError);
+  }
 
-  lastParse = { patch, files };
+  lastParse = { patch, files, error };
 
-  return files;
+  return lastParse;
 }
 
 /** What sits under one diff line: its saved comments, and the one being written. */
@@ -173,6 +181,10 @@ export function DiffPanel({
   const turnKey = turn ? `${turn.threadId}:${turn.messageId}` : null;
   const diff = useRepoStore((state) => (turnKey ? state.turnDiffs[turnKey] : state.diffs[cwd]));
 
+  // Cleared by the next answer, which always comes as a new object.
+  const [refreshingDiff, setRefreshingDiff] = useState<typeof diff | null>(null);
+  const isRefreshing = refreshingDiff !== null && refreshingDiff === diff;
+
   const refreshDiff = useCallback(
     () =>
       send(
@@ -249,7 +261,7 @@ export function DiffPanel({
     return () => window.clearTimeout(timer);
   }, [refreshDiff, turnKey, changesKey]);
 
-  const files = useMemo(() => parseFiles(diff?.patch ?? ""), [diff?.patch]);
+  const { files, error: parseError } = useMemo(() => parseFiles(diff?.patch ?? ""), [diff?.patch]);
   // CodeView reconciles by id; a file whose content or comments changed keeps its id, so its version must go up.
   const versions = useRef(new Map<string, { key: string; version: number }>());
 
@@ -402,13 +414,45 @@ export function DiffPanel({
     } catch {}
   }
 
-  function renderPanelBody() {
-    if (!diff || !isWorkerPoolReady) return <Empty>Loading changes…</Empty>;
+  function refreshNow() {
+    setRefreshingDiff(diff);
+    refreshDiff();
+  }
 
-    if (diff.error) return <Empty>{diff.error}</Empty>;
+  function renderPanelBody() {
+    if (!diff || !isWorkerPoolReady) {
+      return (
+        <PanelMessage>
+          <IconLoader2 className="size-4 animate-spin" />
+          Loading changes…
+        </PanelMessage>
+      );
+    }
+
+    const failure = diff.error ?? parseError;
+
+    if (failure) {
+      return (
+        <PanelMessage>
+          <span>
+            {diff.error
+              ? `Couldn't read ${turn ? "this turn's" : "the"} changes from git.`
+              : "Couldn't make sense of the changes git reported."}
+          </span>
+          <PanelAction disabled={isRefreshing} onClick={refreshNow}>
+            {isRefreshing ? "Trying again…" : "Try again"}
+          </PanelAction>
+          <ErrorDetails>{failure}</ErrorDetails>
+        </PanelMessage>
+      );
+    }
 
     if (!files.length) {
-      return <Empty>{turn ? "This turn changed no files" : "No uncommitted changes"}</Empty>;
+      return (
+        <PanelMessage>
+          {turn ? "This turn changed no files" : "No uncommitted changes"}
+        </PanelMessage>
+      );
     }
 
     return (
@@ -438,9 +482,11 @@ export function DiffPanel({
     <aside
       ref={aside}
       aria-label="Changes"
-      // Never wider than the room left for the chat, even if the window shrank since the last drag.
-      style={{ width: panel.width, maxWidth: `calc(100% - ${MIN_CHAT}px)` }}
-      className="@container relative flex min-h-0 min-w-80 shrink flex-col border-l border-border bg-background"
+      style={{ width: panel.width }}
+      onKeyDown={closeOnEscape(onClose)}
+      // Never wider than the room left for the chat, even if the window shrank since the last drag;
+      // in a window too narrow for both, the two split it.
+      className="@container relative flex min-h-0 max-w-[max(calc(100%_-_380px),50%)] min-w-[min(320px,50%)] shrink flex-col border-l border-border bg-background"
     >
       <ResizeHandle
         side="start"
@@ -457,17 +503,17 @@ export function DiffPanel({
       >
         {turn ? (
           <IconButton label="All uncommitted changes" onClick={onShowAll}>
-            <IconChevronLeft className="size-3.5" />
+            <IconChevronLeft className="size-4" />
           </IconButton>
         ) : null}
-        <span className={cn(typeClass("body"), "font-medium text-foreground")}>
+        <span className={cn(typeClass("body"), "min-w-0 truncate font-medium text-foreground")}>
           {turn ? "Turn changes" : "Changes"}
         </span>
         {files.length ? (
           <span
             className={cn(
               typeClass("caption"),
-              "flex items-center gap-2 font-mono tabular-nums @max-[400px]:hidden",
+              "flex shrink-0 items-center gap-2 font-mono tabular-nums @max-[400px]:hidden",
             )}
           >
             <span className="text-muted-foreground">
@@ -477,21 +523,21 @@ export function DiffPanel({
             {deletions ? <span className="text-destructive">−{deletions}</span> : null}
           </span>
         ) : null}
-        <span className="ml-auto flex items-center gap-0.5">
+        <span className="ml-auto flex shrink-0 items-center gap-0.5">
           <IconButton
             label="File tree"
             isActive={isTreeShown}
             onClick={toggleTree}
             className="@max-[480px]:hidden"
           >
-            <IconListTree className="size-3.5" />
+            <IconListTree className="size-4" />
           </IconButton>
           <IconButton
             label="Stacked"
             isActive={style === "unified"}
             onClick={() => updateSettings({ ...getSettings(), diffLayout: "unified" })}
           >
-            <IconLayoutRows className="size-3.5" />
+            <IconLayoutRows className="size-4" />
           </IconButton>
           <IconButton
             label={canSplit ? "Split" : "Split (widen the panel to use it)"}
@@ -499,31 +545,22 @@ export function DiffPanel({
             disabled={!canSplit}
             onClick={() => updateSettings({ ...getSettings(), diffLayout: "split" })}
           >
-            <IconColumns2 className="size-3.5" />
+            <IconColumns2 className="size-4" />
           </IconButton>
-          <IconButton label="Refresh" onClick={refreshDiff}>
-            <IconRefresh className="size-3.5" />
+          <IconButton
+            label={isRefreshing ? "Refreshing…" : "Refresh"}
+            disabled={isRefreshing}
+            onClick={refreshNow}
+          >
+            <IconRefresh className={cn("size-4", isRefreshing && "animate-spin")} />
           </IconButton>
-          <IconButton label="Close changes" onClick={onClose}>
-            <IconX className="size-3.5" />
+          <IconButton label="Close changes (Esc)" onClick={onClose}>
+            <IconX className="size-4" />
           </IconButton>
         </span>
       </div>
 
-      <div className="selectable flex min-h-0 flex-1">{renderPanelBody()}</div>
+      <div className="flex min-h-0 flex-1 selectable">{renderPanelBody()}</div>
     </aside>
-  );
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      className={cn(
-        typeClass("body"),
-        "flex h-full w-full items-center justify-center px-6 text-center text-muted-foreground",
-      )}
-    >
-      {children}
-    </div>
   );
 }

@@ -1,7 +1,7 @@
 import { formatAge, formatProjectLabel, useNow } from "@masscode/client";
 import { ClientCommand } from "@masscode/contracts";
 import * as Haptics from "expo-haptics";
-import { useHostStore } from "@/entities/host";
+import { alertNotConnected, useHostStore } from "@/entities/host";
 import { useProjectStore } from "@/entities/project";
 import { useThreadStore } from "@/entities/thread";
 import { send } from "@/shared/api";
@@ -36,7 +36,9 @@ export function ArchivedThreadsPage() {
         footer={
           rows.length === 0
             ? "No archived threads. Swipe a thread left in the list to archive it."
-            : "Restoring puts a thread back in the list."
+            : rows.some((row) => hosts[row.hostId]?.connection !== "connected")
+              ? "Restoring puts a thread back in the list. Threads on a computer that isn't connected can be restored once it's back."
+              : "Restoring puts a thread back in the list."
         }
       >
         {rows.map((row) => (
@@ -45,15 +47,20 @@ export function ArchivedThreadsPage() {
             label={row.thread.title || "New thread"}
             detail={`${row.project} · ${formatAge(row.thread.archivedAt ?? row.thread.updatedAt, now)}`}
             actionLabel="Restore"
+            isDisabled={hosts[row.hostId]?.connection !== "connected"}
             onPress={() => {
+              if (
+                !send(
+                  row.hostId,
+                  ClientCommand.cases["thread.archive"].make({
+                    threadId: row.thread.id,
+                    archived: false,
+                  }),
+                )
+              )
+                return alertNotConnected(row.hostId);
+
               void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              send(
-                row.hostId,
-                ClientCommand.cases["thread.archive"].make({
-                  threadId: row.thread.id,
-                  archived: false,
-                }),
-              );
             }}
           />
         ))}

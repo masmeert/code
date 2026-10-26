@@ -30,6 +30,8 @@ export const ClientCommand = Schema.TaggedUnion({
     requestId: Schema.String,
     /** Absent: the project's `masscode.toml` decides, else Settings. */
     workspace: Schema.optional(Workspace),
+    /** New worktrees only: the local branch to start from; absent, the project folder's current one. */
+    baseBranch: Schema.optional(Schema.String),
   },
   /** A model of another harness switches the thread to it, when no turn is running. */
   "thread.setModel": {
@@ -314,6 +316,8 @@ export const ClientCommand = Schema.TaggedUnion({
     rows: TerminalRows,
     /** Typed into the shell when this starts one, like a script's command; ignored when the shell is already running. */
     input: Schema.optionalKey(Schema.String),
+    /** The project script `input` runs, by name, for labeling the servers it starts. */
+    script: Schema.optionalKey(Schema.String),
   },
   /**
    * Runs one command in the thread's folder, in a terminal of its own. When it exits, what it

@@ -104,12 +104,19 @@ export function CodeBlock({
             {filename}
           </span>
         ) : null}
-        <span className={cn(typeClass("micro"), "font-medium text-muted-foreground")}>
-          {language}
-        </span>
+        {language === "text" ? null : (
+          <span className={cn(typeClass("micro"), "font-medium text-muted-foreground")}>
+            {language}
+          </span>
+        )}
         <span className="ml-auto" />
         {showStatus ? (
-          <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-medium text-success">
+          <span
+            className={cn(
+              typeClass("micro"),
+              "inline-flex shrink-0 items-center gap-1 font-medium text-success",
+            )}
+          >
             {streaming ? (
               <IconLoader2 className={cn("size-3", !reduce && "animate-spin")} />
             ) : (

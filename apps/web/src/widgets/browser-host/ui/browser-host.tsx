@@ -76,6 +76,47 @@ export function BrowserHost() {
   );
 }
 
+/** Chromium's `net::` error names, said plainly with what to do next. */
+const LOAD_ERRORS = new Map([
+  ["ERR_CONNECTION_REFUSED", "Nothing is running there. Start the dev server, then try again."],
+  [
+    "ERR_EMPTY_RESPONSE",
+    "The server closed the connection without answering. Check its logs, then try again.",
+  ],
+  [
+    "ERR_CONNECTION_RESET",
+    "The server dropped the connection. Check it's still running, then try again.",
+  ],
+  [
+    "ERR_CONNECTION_CLOSED",
+    "The server dropped the connection. Check it's still running, then try again.",
+  ],
+  [
+    "ERR_CONNECTION_TIMED_OUT",
+    "The server took too long to answer. Check it's running, then try again.",
+  ],
+  ["ERR_TIMED_OUT", "The server took too long to answer. Check it's running, then try again."],
+  ["ERR_NAME_NOT_RESOLVED", "That address doesn't exist. Check it for typos."],
+  [
+    "ERR_ADDRESS_UNREACHABLE",
+    "That address can't be reached from this Mac. Check it, then try again.",
+  ],
+  ["ERR_INTERNET_DISCONNECTED", "This Mac is offline. Reconnect, then try again."],
+  [
+    "ERR_SSL_PROTOCOL_ERROR",
+    "The server doesn't speak HTTPS. Try the address with http:// instead.",
+  ],
+]);
+
+function describeLoadError(code: string) {
+  if (code.startsWith("ERR_CERT_"))
+    return "The site's security certificate isn't trusted, so the page wasn't opened.";
+
+  return (
+    LOAD_ERRORS.get(code) ?? `The page didn't load (${code}). Check the address, then try again.`
+  );
+}
+
 /** Fields Electron sets on the `<webview>` events handled here. */
 interface WebviewEvent extends Event {
   readonly url: string;
@@ -146,7 +187,10 @@ function HostedTab({
         updateActivity(tab.id, { favicon: event.favicons[0] ?? null }),
       "did-fail-load": (event: WebviewEvent) => {
         if (event.isMainFrame && event.errorDescription !== "ERR_ABORTED") {
-          updateActivity(tab.id, { loading: false, error: event.errorDescription });
+          updateActivity(tab.id, {
+            loading: false,
+            error: describeLoadError(event.errorDescription),
+          });
         }
       },
       "render-process-gone": () => {

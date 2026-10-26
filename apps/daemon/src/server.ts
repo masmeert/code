@@ -314,6 +314,7 @@ export function serve(port: number) {
                   command.rows,
                   socket.data.viewer,
                   command.input,
+                  command.script,
                 );
 
               return Effect.void;

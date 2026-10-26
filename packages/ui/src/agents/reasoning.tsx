@@ -38,10 +38,10 @@ export function Reasoning({
       >
         {streaming ? (
           <ReasoningText
-            variant="scramble"
+            variant="swap"
             // ReasoningText adds its own ellipsis.
             phrases={live ? [live.replace(/[.…:]+$/, "")] : undefined}
-            className="min-w-0 font-mono font-normal"
+            className="min-w-0 font-normal"
           />
         ) : (
           <span className="truncate">{label}</span>

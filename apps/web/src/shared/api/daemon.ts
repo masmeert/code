@@ -242,15 +242,27 @@ export function disconnectFrom(host: string) {
   connections.delete(host);
 }
 
-/** Skips the rest of the backoff, for a host that's back (say, restarted on the new version). */
-export function reconnectNow(host: string) {
+/**
+ * Skips the rest of the backoff, for a host that's back (say, restarted on the new version) or
+ * when the user asks to retry; later retries start short again.
+ */
+export function reconnectNow(host: string | null) {
   const connection = connections.get(host);
 
   if (!connection?.retry) return;
 
   clearTimeout(connection.retry);
   connection.retry = null;
+  connection.attempt = 0;
   void connect(connection);
+}
+
+/**
+ * Whether `send` would hold this command until its host reconnects, so a caller can show the
+ * action as pending rather than done.
+ */
+export function willQueue(command: ClientCommand, host = findCommandHost(command)) {
+  return connections.has(host) && !findOpenSocket(host);
 }
 
 /** Sends to the daemon the command is for, or to `host`'s; held while that one is down. */

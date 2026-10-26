@@ -19,10 +19,17 @@ function formatShortVersion(raw: string) {
   return raw.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? raw;
 }
 
+/** How each harness's CLI is installed; MassCode runs whichever is on the PATH. */
+const INSTALL_COMMAND: Record<ProviderKind, string> = {
+  claude: "curl -fsSL https://claude.ai/install.sh | bash",
+  codex: "npm install -g @openai/codex",
+  cursor: "curl https://cursor.com/install -fsS | bash",
+};
+
 function formatStatusLine(status: ProviderStatus | undefined) {
   if (!status) return "Checking…";
 
-  if (!status.installed) return status.error ?? "Not installed";
+  if (!status.installed) return status.error ? "Found, but it didn't start" : "Not installed";
 
   return status.linked ? (status.account ?? "Signed in") : "Not signed in";
 }
@@ -54,7 +61,17 @@ export function ProviderCard({
   function renderAction() {
     if (isChecking) return <Skeleton className="h-7 w-16 rounded-lg" />;
 
-    if (!status?.installed) return null;
+    if (!status?.installed)
+      return (
+        <Button
+          size="compact"
+          variant="secondary"
+          className="h-7 rounded-lg"
+          onClick={() => send(ClientCommand.cases["providers.refresh"].make({}), host)}
+        >
+          Check again
+        </Button>
+      );
 
     if (isSigningIn)
       return (
@@ -142,7 +159,12 @@ export function ProviderCard({
                   </span>
                 ) : null}
                 {status?.linked && status.plan ? (
-                  <span className="self-center rounded-md bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground capitalize">
+                  <span
+                    className={cn(
+                      typeClass("micro"),
+                      "self-center rounded-md bg-muted px-1.5 py-px font-medium text-muted-foreground capitalize",
+                    )}
+                  >
                     {status.plan}
                   </span>
                 ) : null}
@@ -175,6 +197,21 @@ export function ProviderCard({
       >
         {renderAction()}
       </SettingsRow>
+
+      {status && !status.installed && !isChecking ? (
+        <div className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
+          <p>
+            {status.error
+              ? `MassCode found ${formatHarnessLabel(settings, kind)} but couldn't run it. Reinstall it`
+              : "To use it, install it"}{" "}
+            by running <code className="selectable font-mono">{INSTALL_COMMAND[kind]}</code> in a
+            terminal{host ? ` on ${host}` : ""}, then Check again.
+          </p>
+          {status.error ? (
+            <p className="mt-1 selectable font-mono break-words">{status.error}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {isConfirmingUnlink ? (
         <p className={cn(typeClass("caption"), "px-3 py-2.5 text-muted-foreground")}>
@@ -214,7 +251,7 @@ export function ProviderCard({
                   placeholder="Paste code"
                   className={cn(
                     typeClass("caption"),
-                    "selectable h-7 min-w-0 flex-1 rounded-lg border border-border bg-background px-2 font-mono text-foreground outline-none focus:border-ring",
+                    "h-7 min-w-0 flex-1 selectable rounded-lg border border-border bg-background px-2 font-mono text-foreground outline-none focus:border-ring",
                   )}
                 />
                 <Button

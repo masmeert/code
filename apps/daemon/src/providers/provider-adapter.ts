@@ -9,6 +9,7 @@ import {
   type Skill,
   type SlashCommand,
   type ThreadUsage,
+  ToolChange,
   type UserAnswers,
   type UserQuestion,
 } from "@masscode/contracts";
@@ -185,6 +186,7 @@ interface ApprovalPrompt {
   readonly agent?: string | undefined;
   /** Set when the "approval" is the user's answers. */
   readonly questions?: ReadonlyArray<UserQuestion> | undefined;
+  readonly change?: ToolChange | undefined;
 }
 
 /**
@@ -349,6 +351,45 @@ export function summarizeToolInput(input: Schema.Json): string {
   const json = JSON.stringify(input);
 
   return json.length > 200 ? `${json.slice(0, 200)}…` : json;
+}
+
+/** Past this, a change's text is cut: it's stored with the transcript, and only there to be read. */
+const MAX_CHANGE_CHARS = 20_000;
+
+function capChangeText(text: string) {
+  return text.length > MAX_CHANGE_CHARS ? `${text.slice(0, MAX_CHANGE_CHARS)}\n…` : text;
+}
+
+/** What a Claude-style tool call (Edit, MultiEdit, Write, Bash) changes; undefined for other tools. */
+export function toToolChange(name: string, input: Schema.Json): ToolChange | undefined {
+  if (!Schema.is(Schema.JsonObject)(input)) return undefined;
+
+  const { file_path: path, command, content } = input;
+
+  if (name === "Bash" && Predicate.isString(command))
+    return ToolChange.cases.command.make({ command });
+
+  if (!Predicate.isString(path)) return undefined;
+
+  if (name === "Write" && Predicate.isString(content))
+    return ToolChange.cases.write.make({ path, content: capChangeText(content) });
+
+  if (name !== "Edit" && name !== "MultiEdit") return undefined;
+
+  const edits = name === "Edit" ? [input] : input.edits;
+
+  if (!Array.isArray(edits)) return undefined;
+
+  return ToolChange.cases.edit.make({
+    path,
+    edits: edits.flatMap((edit) =>
+      Schema.is(Schema.JsonObject)(edit) &&
+      Predicate.isString(edit.old_string) &&
+      Predicate.isString(edit.new_string)
+        ? [{ before: capChangeText(edit.old_string), after: capChangeText(edit.new_string) }]
+        : [],
+    ),
+  });
 }
 
 /** The message text with non-image attachments listed as paths for the agent to read. */

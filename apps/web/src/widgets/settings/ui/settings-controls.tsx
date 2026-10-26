@@ -114,7 +114,7 @@ export function SettingsSelect<Value extends string>(props: {
       disabled={props.disabled}
       className={props.className ?? "w-44"}
     >
-      <SelectTrigger className="py-1.5 text-[13px] whitespace-nowrap">
+      <SelectTrigger className={cn(typeClass("body", "compact"), "py-1.5 whitespace-nowrap")}>
         <SelectValue className="min-w-0 truncate" />
       </SelectTrigger>
       <SelectContent>
@@ -123,7 +123,7 @@ export function SettingsSelect<Value extends string>(props: {
             key={option.value}
             value={option.value}
             label={option.label}
-            className="text-[13px]"
+            className={typeClass("body", "compact")}
           >
             {option.icon ? (
               <span className="flex items-center gap-1.5">
@@ -158,7 +158,10 @@ export function SettingsModelSelect(props: {
       <MorphingPopoverTrigger>
         <button
           type="button"
-          className="flex w-full items-center gap-2 rounded-[12px] border border-border bg-background px-3 py-1.5 text-[13px] whitespace-nowrap text-foreground transition-colors outline-none hover:border-border-strong focus-visible:ring-4 focus-visible:ring-ring"
+          className={cn(
+            typeClass("body", "compact"),
+            "flex w-full items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 whitespace-nowrap text-foreground transition-colors outline-none hover:border-border-strong focus-visible:ring-4 focus-visible:ring-ring",
+          )}
         >
           {current ? (
             <span className="grid size-3.5 shrink-0 place-items-center [&_svg]:size-3.5">
@@ -186,7 +189,8 @@ export function SettingsModelSelect(props: {
               setIsOpen(false);
             }}
             className={cn(
-              "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-colors outline-none hover:bg-hover focus-visible:bg-muted",
+              typeClass("body", "compact"),
+              "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left transition-colors outline-none hover:bg-hover focus-visible:bg-muted",
               current ? "text-muted-foreground hover:text-foreground" : "text-foreground",
             )}
           >
@@ -254,7 +258,11 @@ export function SettingsTextField(props: {
       className="w-64"
       classNames={{
         field: "h-8 rounded-lg bg-background",
-        input: cn("pl-2.5 text-[13px]", props.isMonospace && cn(typeClass("caption"), "font-mono")),
+        input: cn(
+          typeClass("body", "compact"),
+          "pl-2.5",
+          props.isMonospace && cn(typeClass("caption"), "font-mono"),
+        ),
       }}
     />
   );

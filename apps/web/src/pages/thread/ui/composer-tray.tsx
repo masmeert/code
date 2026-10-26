@@ -14,6 +14,7 @@ import {
   type LimitStop,
   type ProviderKind,
   type ProviderStatus,
+  isTurnActive,
   type QueuedMessage,
   type Settings,
   type TurnOptions,
@@ -25,10 +26,12 @@ import {
   IconClock,
   IconCornerDownRight,
   IconGauge,
+  IconLoader2,
   IconMessage,
   IconPencil,
   IconPlayerPlay,
   IconPlayerStop,
+  IconTrash,
   IconX,
 } from "@tabler/icons-react";
 import { type ReactNode, useId, useState } from "react";
@@ -40,8 +43,10 @@ import {
   type ReviewComment,
 } from "../model/review-comments.ts";
 import { useNow } from "@masscode/client";
-import { sendQueuedNow, takeQueued } from "@/entities/thread";
+import { getThreadState, queueMessage, sendQueuedNow, takeQueued } from "@/entities/thread";
 import { send } from "@/shared/api";
+import { showUndoToast } from "@/shared/ui";
+import { type HeldMessage, holdMessage, takeHeldMessage } from "../model/held-messages.ts";
 import { type ToolItem } from "@masscode/client";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
 
@@ -50,6 +55,27 @@ export function returnToComposer(threadId: string, queued: ReadonlyArray<QueuedM
   if (!queued.length) return;
   appendToDraft(threadId, queued.map((message) => message.text).join("\n\n"));
   focusComposer();
+}
+
+/** Takes a queued message out; Undo puts it back in line, or in the composer once the turn is over. */
+function removeQueued(threadId: string, followUp: QueuedMessage) {
+  takeQueued(threadId, followUp.id);
+  showUndoToast("Removed the queued message", () => {
+    const status = getThreadState().threads[threadId]?.status;
+
+    if (status === undefined || !isTurnActive(status))
+      return returnToComposer(threadId, [followUp]);
+
+    queueMessage(threadId, followUp.text, {
+      effort: followUp.effort,
+      fast: followUp.fast,
+      permission: followUp.permission,
+      attachments: followUp.attachments.map((attachment) => ({
+        _tag: "path" as const,
+        path: attachment.path,
+      })),
+    });
+  });
 }
 
 /** A message waiting for the turn to end: sends by itself then, or steers it now, or goes back to the composer. */
@@ -73,7 +99,9 @@ export function QueuedFollowUp({
       }
     >
       <IconCornerDownRight className="size-3.5 shrink-0" />
-      <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">{followUp.text}</span>
+      <span className={cn(typeClass("body", "compact"), "min-w-0 flex-1 truncate text-foreground")}>
+        {followUp.text}
+      </span>
       {followUp.attachments.length ? (
         <span className="shrink-0">
           {followUp.attachments.length} file
@@ -94,6 +122,45 @@ export function QueuedFollowUp({
         onClick={() => returnToComposer(threadId, takeQueued(threadId, followUp.id))}
       >
         <IconPencil className="size-3.5" />
+      </IconAction>
+      <IconAction label="Remove from the queue" onClick={() => removeQueued(threadId, followUp)}>
+        <IconTrash className="size-3.5" />
+      </IconAction>
+    </div>
+  );
+}
+
+/** A message written while MassCode was unreachable: it sends once MassCode is back, unless taken back. */
+export function HeldMessageRow({ threadId, message }: { threadId: string; message: HeldMessage }) {
+  return (
+    <div className="flex h-8 items-center gap-2 pl-1.5" title="Sends when MassCode reconnects">
+      <IconLoader2 className="size-3.5 shrink-0 animate-spin" />
+      <span className={cn(typeClass("body", "compact"), "min-w-0 flex-1 truncate text-foreground")}>
+        {message.text}
+      </span>
+      <span className="shrink-0">Sends when MassCode reconnects</span>
+      <IconAction
+        label="Edit in the composer"
+        onClick={() => {
+          const taken = takeHeldMessage(message.id);
+
+          if (taken) {
+            appendToDraft(threadId, taken.text);
+            focusComposer();
+          }
+        }}
+      >
+        <IconPencil className="size-3.5" />
+      </IconAction>
+      <IconAction
+        label="Don't send"
+        onClick={() => {
+          const taken = takeHeldMessage(message.id);
+
+          if (taken) showUndoToast("Won't send that message", () => holdMessage(taken));
+        }}
+      >
+        <IconTrash className="size-3.5" />
       </IconAction>
     </div>
   );
@@ -126,8 +193,10 @@ export function LimitStopNotice({
   return (
     <div role="status" className="pb-1.5">
       <div className="flex h-8 items-center gap-2 pl-1.5">
-        <IconGauge className="size-3.5 shrink-0 text-amber-500" />
-        <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+        <IconGauge className="size-3.5 shrink-0 text-warning" />
+        <span
+          className={cn(typeClass("body", "compact"), "min-w-0 flex-1 truncate text-foreground")}
+        >
           {formatHarnessLabel(settings, stop.provider)} hit its usage limit
           {stop.resetsAt === null ? null : (
             <span className="ml-1 text-muted-foreground">
@@ -177,7 +246,7 @@ export function LimitStopNotice({
             }
             className={cn(
               "flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 transition-colors outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-              stop.resumeAtReset && "text-amber-500",
+              stop.resumeAtReset && "text-warning",
             )}
           >
             <IconClock className="size-3.5" />
@@ -244,10 +313,12 @@ export function ReviewCommentRow({
         onClick={onReveal}
         className="flex min-w-0 flex-1 items-baseline gap-2 text-left outline-none focus-visible:underline"
       >
-        <span className="shrink-0 font-mono text-[11px]">
+        <span className={cn(typeClass("caption", "compact"), "shrink-0 font-mono")}>
           {comment.path.slice(comment.path.lastIndexOf("/") + 1)}, {describeRange(comment.range)}
         </span>
-        <span className="min-w-0 truncate text-[13px] text-foreground">{comment.text}</span>
+        <span className={cn(typeClass("body", "compact"), "min-w-0 truncate text-foreground")}>
+          {comment.text}
+        </span>
       </button>
       <IconAction label="Delete comment" onClick={() => removeReviewComment(threadId, comment.id)}>
         <IconX className="size-3.5" />
@@ -331,7 +402,7 @@ export function RunningAgents({
           <span className="grid size-3.5 shrink-0 place-items-center">
             <span className="size-1.5 animate-pulse rounded-full bg-success" />
           </span>
-          <span className="flex-1 text-[13px] text-foreground">
+          <span className={cn(typeClass("body", "compact"), "flex-1 text-foreground")}>
             {agents.length} subagents running
           </span>
           <IconChevronRight
@@ -362,7 +433,9 @@ export function RunningAgents({
                     onClick={() => onReveal(agent.id)}
                     className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <span className="truncate text-[13px] text-foreground">{name}</span>
+                    <span className={cn(typeClass("body", "compact"), "truncate text-foreground")}>
+                      {name}
+                    </span>
                     <span className="truncate">{describeAgentActivity(agent)}</span>
                   </button>
                   {agent.tokens === undefined ? null : (

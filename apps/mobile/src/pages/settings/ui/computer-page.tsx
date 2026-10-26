@@ -79,8 +79,14 @@ export function ComputerPage() {
                 leading={<ProviderLogo provider={provider.kind} className="size-5" />}
                 label={PROVIDER_NAME[provider.kind]}
                 detail={
-                  [provider.version, provider.plan, provider.error].filter(Boolean).join(" · ") ||
-                  undefined
+                  [
+                    provider.version,
+                    provider.plan,
+                    provider.error &&
+                      `MassCode couldn't check it on ${paired.name}. See Settings → Providers there.`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || undefined
                 }
                 value={
                   provider.checking

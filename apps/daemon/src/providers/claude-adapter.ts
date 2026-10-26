@@ -34,6 +34,7 @@ import {
   createApprovalBook,
   prefixErrorMessage,
   summarizeToolInput,
+  toToolChange,
   tryProviderPromise,
   formatTextWithFiles,
   listMcpEndpoints,
@@ -158,6 +159,16 @@ function appendUltrathink(turn: TurnInput): TurnInput {
 /** Tool inputs come from the model as JSON; anything else gets an empty summary. */
 const decodeToolInput = Schema.decodeUnknownOption(Schema.Json);
 
+/** Why a turn ended early, by its result's subtype; a stop the user asked for says nothing. */
+const TURN_END_MESSAGES = {
+  error_during_execution:
+    "Claude ran into an error and ended this turn early. Send a message to carry on.",
+  error_max_turns: "Claude reached its limit of steps for one turn. Send a message to carry on.",
+  error_max_budget_usd: "Claude reached the spending limit set for this session.",
+  error_max_structured_output_retries:
+    "Claude couldn't give its answer in the format asked for. Send a message to try again.",
+} as const;
+
 /**
  * Claude Code runs a skill only when the message's last text block starts with `/name`, taking
  * the rest of that block as its arguments; it runs one per message. So the last `$name` starts
@@ -269,6 +280,7 @@ function openSession(
               : summarizeToolInput(Option.getOrNull(decodeToolInput(input))),
           agent: agentID === undefined ? undefined : agentNames.get(agentID),
           questions,
+          change: toToolChange(toolName, Option.getOrNull(decodeToolInput(input))),
         },
       );
 
@@ -385,6 +397,8 @@ function openSession(
   // The plan's limit refused a request this turn: when it resets (epoch ms, null if unsaid),
   // undefined while it hasn't. Told only if the turn then fails, since extra usage can pay on.
   let limitResetsAt: number | null | undefined;
+  // The user stopped the turn in progress.
+  let isInterrupted = false;
 
   /** "summary" estimates the breakdown locally; "full" would make a token-count request per category. */
   async function reportUsage(costUsd: number) {
@@ -497,13 +511,15 @@ function openSession(
             // Shown as its question card instead.
             questionTools.add(block.id);
           } else if (block.type === "tool_use") {
+            const input = Option.getOrNull(decodeToolInput(block.input));
             emit(
               RuntimeEvent.cases["tool.started"].make({
                 threadId,
                 toolId: block.id,
                 name: block.name,
-                summary: summarizeToolInput(Option.getOrNull(decodeToolInput(block.input))),
+                summary: summarizeToolInput(input),
                 parentToolId: parentToolId ?? undefined,
+                change: toToolChange(block.name, input),
               }),
             );
           }
@@ -606,14 +622,21 @@ function openSession(
 
         limitResetsAt = undefined;
 
-        if (message.subtype !== "success") {
+        // Stopping a turn ends it "during execution" too, but that's no error to the user.
+        if (
+          message.subtype !== "success" &&
+          !(isInterrupted && message.subtype === "error_during_execution")
+        ) {
           emit(
             RuntimeEvent.cases.error.make({
               threadId,
-              message: `Turn ended: ${message.subtype}`,
+              message: TURN_END_MESSAGES[message.subtype],
+              detail: message.errors.length ? message.errors.join("\n") : undefined,
             }),
           );
         }
+
+        isInterrupted = false;
 
         emit(
           RuntimeEvent.cases["turn.completed"].make({
@@ -642,8 +665,9 @@ function openSession(
       emit(
         RuntimeEvent.cases.error.make({
           threadId,
-          message: stderrTail.trim()
-            ? `${getErrorMessage(error)}. stderr: ${stderrTail.trim()}`
+          message: "Claude Code stopped unexpectedly. Send a message to start it again.",
+          detail: stderrTail.trim()
+            ? `${getErrorMessage(error)}\n\nstderr: ${stderrTail.trim()}`
             : getErrorMessage(error),
         }),
       );
@@ -665,6 +689,7 @@ function openSession(
   const session: ProviderSession = {
     send: (turn) =>
       tryProviderPromise("claude", async () => {
+        isInterrupted = false;
         emit(RuntimeEvent.cases["thread.status"].make({ threadId, status: "running" }));
 
         if (turn.permission !== permission) {
@@ -704,13 +729,16 @@ function openSession(
       catch: (error) => createError(String(error)),
     }),
     interrupt: Effect.tryPromise({
-      try: () =>
-        Promise.all([
+      try: () => {
+        isInterrupted = true;
+
+        return Promise.all([
           conversation.interrupt(),
           ...[...agentTools].flatMap(([taskId, toolId]) =>
             backgroundAgents.has(toolId) ? [conversation.stopTask(taskId)] : [],
           ),
-        ]),
+        ]);
+      },
       catch: (error) => createError(String(error)),
     }).pipe(Effect.asVoid),
     stopAgent: (toolId) =>

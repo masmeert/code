@@ -222,7 +222,8 @@ export function MessageScroller({
         );
       return unchanged ? current : nextItems;
     });
-    setRailOverflowing(viewport.scrollHeight > viewport.clientHeight + 1 && prompts.length > 1);
+    // With a couple of prompts, scrolling is quicker than a rail of marks that read as stray dashes.
+    setRailOverflowing(viewport.scrollHeight > viewport.clientHeight + 1 && prompts.length > 2);
   }, [navigation]);
 
   const scheduleRailSync = useCallback(() => {
@@ -425,7 +426,7 @@ export function MessageScroller({
           previewContainerClassName="right-8 left-3"
           previewClassName="mr-1 w-64 max-w-full [&_[data-slot=preview-rail-card]]:h-20 [&_[data-slot=preview-rail-card]]:overflow-hidden [&_[data-slot=preview-rail-card]]:p-3 [&_[data-slot=preview-rail-title]]:line-clamp-1 [&_[data-slot=preview-rail-title]]:text-[length:var(--fs-caption,12px)] [&_[data-slot=preview-rail-title]]:leading-[var(--lh-caption,16px)] [&_[data-slot=preview-rail-title]]:leading-4 [&_[data-slot=preview-rail-description]]:line-clamp-2 [&_[data-slot=preview-rail-description]]:text-[length:var(--fs-caption,12px)] [&_[data-slot=preview-rail-description]]:leading-[var(--lh-caption,16px)] [&_[data-slot=preview-rail-description]]:leading-4"
           railClassName={cn(
-            "absolute inset-y-3 right-1 w-7 content-center py-1 [&_[data-slot=preview-rail-item]]:w-7 [&_[data-slot=preview-rail-item]]:justify-end [&_[data-slot=preview-rail-tick]]:h-px [&_[data-slot=preview-rail-tick]]:w-4 [&_[data-slot=preview-rail-tick]]:origin-right",
+            "absolute inset-y-3 right-1 w-7 content-center py-1 [&_[data-slot=preview-rail-item]]:w-7 [&_[data-slot=preview-rail-item]]:justify-end [&_[data-slot=preview-rail-tick]]:h-0.5 [&_[data-slot=preview-rail-tick]]:w-3 [&_[data-slot=preview-rail-tick]]:origin-right [&_[data-slot=preview-rail-tick]]:rounded-full",
             railOverflowing ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
             railClassName,
           )}

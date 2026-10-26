@@ -46,6 +46,21 @@ export const UserQuestion = Schema.Struct({
 
 export type UserQuestion = typeof UserQuestion.Type;
 
+/**
+ * What a tool call changes, to show in place of its raw input: each edit's text before and after,
+ * a written file's content, or a command.
+ */
+export const ToolChange = Schema.TaggedUnion({
+  edit: {
+    path: Schema.String,
+    edits: Schema.Array(Schema.Struct({ before: Schema.String, after: Schema.String })),
+  },
+  write: { path: Schema.String, content: Schema.String },
+  command: { command: Schema.String },
+});
+
+export type ToolChange = typeof ToolChange.Type;
+
 /** Question id to the chosen option labels, plus any answer typed instead. */
 export const UserAnswers = Schema.Record(Schema.String, Schema.Array(Schema.String));
 

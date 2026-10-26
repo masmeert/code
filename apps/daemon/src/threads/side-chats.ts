@@ -7,7 +7,7 @@ import { ADAPTERS, getHarnessName } from "../harnesses.ts";
 import type { ProviderSession } from "../providers/provider-adapter.ts";
 import type { SettingsStore } from "../storage/settings-store.ts";
 import type { ThreadStore } from "../storage/thread-store.ts";
-import type { Agents } from "./agents.ts";
+import { type Agents, describeMissingFolder } from "./agents.ts";
 import { getForkPoint, hasSwitchedHarness, isBusy, type ThreadEntry } from "./entry.ts";
 import type { ThreadRegistry } from "./registry.ts";
 
@@ -45,6 +45,9 @@ export function createSideChats({
   ) {
     const { id: threadId, provider } = source.info;
     yield* ensureHarnessReady(provider);
+    const missingFolder = yield* Effect.promise(() => describeMissingFolder(source.home));
+
+    if (missingFolder) return yield* new CommandError({ message: missingFolder });
 
     const cut = store.findTurnsAfter(threadId, messageId);
 

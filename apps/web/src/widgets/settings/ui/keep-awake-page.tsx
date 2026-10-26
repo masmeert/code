@@ -449,7 +449,10 @@ function AppListRow(props: {
           {props.apps.map((app) => (
             <li
               key={app.bundleId}
-              className="flex h-7 items-center gap-1.5 rounded-lg border border-border bg-background pr-1 pl-2 text-[13px]"
+              className={cn(
+                typeClass("body", "compact"),
+                "flex h-7 items-center gap-1.5 rounded-lg border border-border bg-background pr-1 pl-2",
+              )}
             >
               <AppIcon icon={props.icons.get(app.bundleId)} />
               {app.name}
@@ -568,7 +571,10 @@ function AppPicker(props: {
                 pick(rows[activeIndex]);
               }
             }}
-            classNames={{ field: "h-8 rounded-lg border-0 bg-transparent", input: "text-[13px]" }}
+            classNames={{
+              field: "h-8 rounded-lg border-0 bg-transparent",
+              input: typeClass("body", "compact"),
+            }}
           />
         </div>
         <div role="listbox" aria-label="Apps" className="max-h-56 overflow-y-auto p-1">
@@ -596,7 +602,8 @@ function AppPicker(props: {
                 onPointerMove={() => moveTo(choice.bundleId)}
                 onClick={() => pick(choice)}
                 className={cn(
-                  "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] outline-none",
+                  typeClass("body", "compact"),
+                  "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left outline-none",
                   index === activeIndex && "bg-hover",
                 )}
               >

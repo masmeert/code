@@ -8,8 +8,11 @@ import { useCSSVariable, useResolveClassNames } from "uniwind";
 class ThreadLinkRenderer extends Renderer {
   #links = 0;
 
-  constructor(private readonly openThread: (threadId: string) => void) {
-    super();
+  constructor(
+    private readonly openThread: (threadId: string) => void,
+    selectable: boolean,
+  ) {
+    super({ selectable });
   }
 
   override link(children: string | ReactNode[], href: string, styles?: TextStyle, title?: string) {
@@ -34,10 +37,12 @@ class ThreadLinkRenderer extends Renderer {
 export function Markdown({
   text,
   isMuted = false,
+  isSelectable = true,
   onOpenThread,
 }: {
   text: string;
   isMuted?: boolean;
+  isSelectable?: boolean;
   /** Where thread links go; without it they open like any link. */
   onOpenThread?: (threadId: string) => void;
 }) {
@@ -72,12 +77,13 @@ export function Markdown({
   const muted = useCSSVariable("--color-muted");
 
   const renderer = useMemo(
-    () => (onOpenThread ? new ThreadLinkRenderer(onOpenThread) : undefined),
-    [onOpenThread],
+    () => (onOpenThread ? new ThreadLinkRenderer(onOpenThread, isSelectable) : undefined),
+    [onOpenThread, isSelectable],
   );
 
   const elements = useMarkdown(text, {
     renderer,
+    selectable: isSelectable,
     colorScheme: colorScheme ?? undefined,
     theme: {
       colors: {

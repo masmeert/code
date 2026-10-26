@@ -23,14 +23,18 @@ import { IconButton } from "@/shared/ui";
 import { connectDeviceStream, type DeviceStream } from "../lib/device-stream.ts";
 import { attachDevice, listDevices, toggleSimulator, useSimulator } from "@/entities/simulator";
 import { useHostStore } from "@/entities/host";
-import { Message } from "./browser-panel.tsx";
+import { ErrorDetails, PanelAction, PanelMessage } from "./panel-message.tsx";
+import { closeOnEscape } from "../lib/close-on-escape.ts";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
+
+/** How long a device screen may take to show its first frame before the panel offers to reconnect. */
+const FIRST_FRAME_TIMEOUT_MS = 15_000;
 
 type Setup =
   | { readonly status: "loading" }
   | { readonly status: "missing" }
   | { readonly status: "installing" }
-  | { readonly status: "failed"; readonly message: string }
+  | { readonly status: "failed"; readonly message: string; readonly detail: string | null }
   | { readonly status: "ready"; readonly hub: DeviceHub; readonly devices: ReadonlyArray<Device> };
 
 export function SimulatorPanel({ threadId }: { threadId: string }) {
@@ -56,9 +60,20 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
   async function refreshDevices(install: boolean) {
     const listed = await listDevices(install);
 
-    if (!listed) setSetup({ status: "failed", message: "MassCode didn't answer. Try again." });
-    else if (listed.error) setSetup({ status: "failed", message: listed.error });
-    else if (!listed.hub) setSetup({ status: "missing" });
+    if (!listed) {
+      setSetup({
+        status: "failed",
+        message: "MassCode didn't answer when asked for devices. Try again in a moment.",
+        detail: null,
+      });
+    } else if (listed.error) {
+      setSetup({
+        status: "failed",
+        message:
+          "Couldn't start the device tools. Check that Xcode or Android Studio is installed, then try again.",
+        detail: listed.error,
+      });
+    } else if (!listed.hub) setSetup({ status: "missing" });
     else setSetup({ status: "ready", hub: listed.hub, devices: listed.devices });
 
     return Boolean(listed?.hub && !listed.error);
@@ -103,61 +118,67 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
   function renderPanelBody() {
     if (setup.status === "loading") {
       return (
-        <Message>
+        <PanelMessage>
           <IconLoader2 className="size-4 animate-spin" />
           Starting the device hub…
-        </Message>
+        </PanelMessage>
       );
     }
 
     if (setup.status === "missing") {
       return (
-        <Message>
+        <PanelMessage>
           <span>
             Run iOS simulators and Android emulators here, for you and the agent. This installs
             expo-device-hub and agent-device from npm into ~/.masscode/tools.
           </span>
-          <ActionButton onClick={() => void loadDevices(true)}>Set up</ActionButton>
-        </Message>
+          <PanelAction onClick={() => void loadDevices(true)}>Set up</PanelAction>
+        </PanelMessage>
       );
     }
 
     if (setup.status === "installing") {
       return (
-        <Message>
+        <PanelMessage>
           <IconLoader2 className="size-4 animate-spin" />
           Installing the device tools. This can take a minute…
-        </Message>
+        </PanelMessage>
       );
     }
 
     if (setup.status === "failed") {
       return (
-        <Message>
-          <span className="selectable">{setup.message}</span>
-          <ActionButton onClick={() => void loadDevices(false)}>Try again</ActionButton>
-        </Message>
+        <PanelMessage>
+          <span>{setup.message}</span>
+          <PanelAction onClick={() => void loadDevices(false)}>Try again</PanelAction>
+          {setup.detail ? <ErrorDetails>{setup.detail}</ErrorDetails> : null}
+        </PanelMessage>
       );
     }
 
     if (bootingDeviceId) {
       return (
-        <Message>
+        <PanelMessage>
           <IconLoader2 className="size-4 animate-spin" />
           Starting{" "}
           {devices.find((candidate) => candidate.id === bootingDeviceId)?.name ?? "the device"}…
-        </Message>
+        </PanelMessage>
       );
     }
 
     if (bootError) {
       return (
-        <Message>
-          <span className="selectable">{bootError}</span>
+        <PanelMessage>
+          <span>
+            Couldn't start{" "}
+            {devices.find((candidate) => candidate.id === deviceId)?.name ?? "the device"}. Try
+            again, or choose another device above.
+          </span>
           {deviceId ? (
-            <ActionButton onClick={() => void bootDevice(deviceId)}>Try again</ActionButton>
+            <PanelAction onClick={() => void bootDevice(deviceId)}>Try again</PanelAction>
           ) : null}
-        </Message>
+          <ErrorDetails>{bootError}</ErrorDetails>
+        </PanelMessage>
       );
     }
 
@@ -174,20 +195,20 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
 
     if (deviceId) {
       return (
-        <Message>
+        <PanelMessage>
           <IconLoader2 className="size-4 animate-spin" />
           Starting the device…
-        </Message>
+        </PanelMessage>
       );
     }
 
     if (devices.length === 0) {
       return (
-        <Message>
+        <PanelMessage>
           This Mac has no iOS simulators or Android emulators. Add a simulator in Xcode → Settings →
           Components, or an emulator in Android Studio's Device Manager, then try again.
-          <ActionButton onClick={() => void loadDevices(false)}>Try again</ActionButton>
-        </Message>
+          <PanelAction onClick={() => void loadDevices(false)}>Try again</PanelAction>
+        </PanelMessage>
       );
     }
 
@@ -222,7 +243,8 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
       ref={aside}
       aria-label="Simulator"
       style={{ width: panel.width }}
-      className="relative flex min-h-0 min-w-70 shrink flex-col border-l border-border bg-background"
+      onKeyDown={closeOnEscape(() => toggleSimulator(threadId))}
+      className="relative flex min-h-0 max-w-[max(calc(100%_-_380px),50%)] min-w-[min(280px,50%)] shrink flex-col border-l border-border bg-background"
     >
       <ResizeHandle
         side="start"
@@ -267,10 +289,10 @@ export function SimulatorPanel({ threadId }: { threadId: string }) {
           disabled={!deviceId}
           onClick={() => void attachDevice(threadId, null)}
         >
-          <IconPlugConnectedX className="size-3.5" />
+          <IconPlugConnectedX className="size-4" />
         </IconButton>
-        <IconButton label="Hide simulator" onClick={() => toggleSimulator(threadId)}>
-          <IconX className="size-3.5" />
+        <IconButton label="Hide simulator (Esc)" onClick={() => toggleSimulator(threadId)}>
+          <IconX className="size-4" />
         </IconButton>
       </div>
       {renderPanelBody()}
@@ -295,8 +317,12 @@ function DeviceScreen({
   const isTouching = useRef(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [mjpegUrl, setMjpegUrl] = useState<string | null>(null);
+  const [connection, setConnection] = useState(0);
+  const [isSlowToConnect, setIsSlowToConnect] = useState(false);
 
   useEffect(() => {
+    setIsSlowToConnect(false);
+
     const deviceStream = connectDeviceStream(hub, device.platform, streamId, canvas.current!, {
       onStatus: (status) => setIsStreaming(status === "streaming"),
       onMjpeg: setMjpegUrl,
@@ -305,7 +331,15 @@ function DeviceScreen({
     stream.current = deviceStream;
 
     return () => deviceStream.stop();
-  }, [hub, device.platform, streamId]);
+  }, [hub, device.platform, streamId, connection]);
+
+  useEffect(() => {
+    if (isStreaming) return;
+
+    const timer = window.setTimeout(() => setIsSlowToConnect(true), FIRST_FRAME_TIMEOUT_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [isStreaming, connection]);
 
   // A multipart image may never fire `load`, so watch for its first frame instead.
   useEffect(() => {
@@ -396,7 +430,24 @@ function DeviceScreen({
             className="max-h-full max-w-full touch-none rounded-[2rem] select-none"
           />
         ) : null}
-        {isStreaming ? null : (
+        {isStreaming ? null : isSlowToConnect ? (
+          <div className="absolute inset-0 flex">
+            <PanelMessage>
+              <span>
+                {device.name}'s screen isn't coming through. Reconnect, or detach the device and
+                start it again.
+              </span>
+              <PanelAction
+                onClick={() => {
+                  setMjpegUrl(null);
+                  setConnection((count) => count + 1);
+                }}
+              >
+                Reconnect
+              </PanelAction>
+            </PanelMessage>
+          </div>
+        ) : (
           <div
             className={cn(
               typeClass("body"),
@@ -404,43 +455,28 @@ function DeviceScreen({
             )}
           >
             <IconLoader2 className="size-4 animate-spin" />
-            Connecting…
+            Connecting to {device.name}…
           </div>
         )}
       </div>
       <div className="flex items-center gap-1">
         {device.platform === "android" ? (
           <IconButton label="Back (Esc)" onClick={() => stream.current?.press("back")}>
-            <IconArrowLeft className="size-3.5" />
+            <IconArrowLeft className="size-4" />
           </IconButton>
         ) : null}
         <IconButton
           label={device.platform === "ios" ? "Home (⌘⇧H)" : "Home"}
           onClick={() => stream.current?.press("home")}
         >
-          <IconHome className="size-3.5" />
+          <IconHome className="size-4" />
         </IconButton>
         {device.platform === "ios" ? (
           <IconButton label="Rotate (⌘→)" onClick={() => stream.current?.rotate()}>
-            <IconRotateClockwise className="size-3.5" />
+            <IconRotateClockwise className="size-4" />
           </IconButton>
         ) : null}
       </div>
     </div>
-  );
-}
-
-function ActionButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        typeClass("caption"),
-        "rounded-lg px-3 py-1 text-foreground transition-colors outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
-      )}
-    >
-      {children}
-    </button>
   );
 }

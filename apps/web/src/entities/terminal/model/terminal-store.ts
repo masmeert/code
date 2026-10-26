@@ -19,6 +19,8 @@ interface TerminalsState {
   readonly activeTerminals: Readonly<Record<string, string>>;
   /** Commands from agents' replies still running, per thread; shown in the transcript, not the terminal panel. */
   readonly runs: Readonly<Record<string, ReadonlyArray<RunningCommand>>>;
+  /** Plain shells running a program in the foreground, per thread. */
+  readonly busy: Readonly<Record<string, ReadonlyArray<string>>>;
 }
 
 interface TerminalScreen {
@@ -30,7 +32,12 @@ interface TerminalScreen {
   readonly fail: (message: string) => void;
 }
 
-const store = createStore<TerminalsState>({ terminals: {}, activeTerminals: {}, runs: {} });
+const store = createStore<TerminalsState>({
+  terminals: {},
+  activeTerminals: {},
+  runs: {},
+  busy: {},
+});
 
 export const useTerminalStore = store.useStore;
 
@@ -80,17 +87,23 @@ function removeTerminal(
       ...state.runs,
       [threadId]: (state.runs[threadId] ?? []).filter((run) => run.terminalId !== terminalId),
     },
+    busy: {
+      ...state.busy,
+      [threadId]: (state.busy[threadId] ?? []).filter((id) => id !== terminalId),
+    },
   };
 }
 
 function openScreen(screen: TerminalScreen) {
   const input = terminalInputs.get(screen.terminalId);
+  const script = terminalScripts.get(screen.terminalId)?.name;
   sendIfConnected(
     ClientCommand.cases["terminal.open"].make({
       threadId: screen.threadId,
       terminalId: screen.terminalId,
       ...screen.size(),
       ...(input !== undefined && { input }),
+      ...(script !== undefined && { script }),
     }),
   );
 }
@@ -224,6 +237,14 @@ export function applyTerminalEvent(event: RuntimeEvent) {
       },
       "terminal.closed": ({ threadId, terminalId }) =>
         store.setState(removeTerminal(state, threadId, terminalId)),
+      "terminal.busy": ({ threadId, terminalId, busy }) => {
+        const others = (state.busy[threadId] ?? []).filter((id) => id !== terminalId);
+
+        store.setState({
+          ...state,
+          busy: { ...state.busy, [threadId]: busy ? [...others, terminalId] : others },
+        });
+      },
       "thread.removed": ({ threadId }) => forgetThreads(new Set([threadId])),
     },
     () => {},
@@ -241,6 +262,7 @@ export function receiveShellTerminals(
     readonly threadId: string;
     readonly terminalId: string;
     readonly command?: string;
+    readonly busy?: boolean;
   }>,
 ) {
   const state = store.getState();
@@ -274,9 +296,19 @@ export function receiveShellTerminals(
     if (!terminals[threadId]?.includes(terminalId)) (terminals[threadId] ??= []).push(terminalId);
   }
 
+  const busy: Record<string, Array<string>> = {};
+
+  for (const [threadId, terminalIds] of Object.entries(state.busy)) {
+    if (others[threadId]) busy[threadId] = [...terminalIds];
+  }
+
+  for (const { threadId, terminalId, busy: isBusy } of shellTerminals)
+    if (isBusy) (busy[threadId] ??= []).push(terminalId);
+
   store.setState({
     terminals,
     runs,
+    busy,
     activeTerminals: Object.fromEntries(
       Object.entries(state.activeTerminals).flatMap(([threadId, terminalId]) => {
         const active = terminals[threadId]?.includes(terminalId)
@@ -308,5 +340,6 @@ export function forgetThreads(threadIds: ReadonlySet<string>) {
     terminals: dropThreads(state.terminals),
     activeTerminals: dropThreads(state.activeTerminals),
     runs: dropThreads(state.runs),
+    busy: dropThreads(state.busy),
   });
 }

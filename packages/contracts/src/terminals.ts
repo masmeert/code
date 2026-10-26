@@ -5,6 +5,8 @@ export const TerminalInfo = Schema.Struct({
   terminalId: Schema.String,
   /** Set on a terminal running one command from an agent's reply; it shows in the transcript, not the terminal panel. */
   command: Schema.optionalKey(Schema.String),
+  /** A program runs in the foreground of this plain shell, so closing it would stop that program. */
+  busy: Schema.optionalKey(Schema.Boolean),
 });
 
 export type TerminalInfo = typeof TerminalInfo.Type;

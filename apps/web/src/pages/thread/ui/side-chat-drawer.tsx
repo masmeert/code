@@ -7,9 +7,8 @@ import {
   MessageScroller,
 } from "@masscode/ui/agents/message";
 import { ReasoningText } from "@masscode/ui/agents/loading-states/reasoning-text";
-import { Button } from "@masmeert/ui/button";
+import { PromptInput } from "@masscode/ui/agents/prompt-input";
 import { Sheet } from "@masmeert/ui/sheet";
-import { Textarea } from "@masmeert/ui/textarea";
 import { type ProviderKind } from "@masscode/contracts";
 import { IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
@@ -41,20 +40,12 @@ export function SideChatDrawer({
   const lastItem = items.at(-1);
   const blocks = useMemo(() => toBlocks(items), [items]);
 
-  function askQuestion() {
-    const text = question.trim();
-
-    if (!text || isRunning) return;
-    askSideChat(text);
-    setQuestion("");
-  }
-
   return (
     <Sheet
       open={sideChat !== null}
       onOpenChange={(isOpen) => isOpen || closeSideChat(threadId)}
       ariaLabel="Side question"
-      className="w-[32rem]"
+      className="w-[32rem] border-l border-border bg-background"
     >
       <div className="flex items-start gap-3 border-b border-border px-4 py-3">
         <div className="min-w-0 flex-1">
@@ -107,40 +98,25 @@ export function SideChatDrawer({
             : null}
           {isRunning && !isShowingWork(items) ? (
             <div className={cn(typeClass("body"), "flex h-7 items-center")}>
-              <ReasoningText variant="scramble" className="min-w-0 font-mono font-normal" />
+              <ReasoningText variant="swap" className="min-w-0 font-normal" />
             </div>
           ) : null}
         </MessageGroup>
       </MessageScroller>
-      <form
-        className="border-t border-border p-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          askQuestion();
+      <PromptInput
+        autoFocus
+        value={question}
+        onValueChange={setQuestion}
+        onSubmit={(text) => {
+          askSideChat(text);
+          setQuestion("");
         }}
-      >
-        <Textarea
-          autoFocus
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
-            event.preventDefault();
-            askQuestion();
-          }}
-          placeholder={isRunning ? `${label} is answering…` : "Ask a side question…"}
-          aria-label="Side question"
-          className="min-h-16 text-[13px]"
-        />
-        <div className="mt-2 flex justify-end">
-          <Button type="submit" size="compact" disabled={!question.trim() || isRunning}>
-            Ask
-            <kbd aria-hidden className="font-sans text-[10px] opacity-70">
-              ↵
-            </kbd>
-          </Button>
-        </div>
-      </form>
+        submitDisabled={isRunning}
+        maxRows={6}
+        placeholder={isRunning ? `${label} is answering…` : "Ask a side question…"}
+        aria-label="Side question"
+        className="p-3"
+      />
     </Sheet>
   );
 }

@@ -9,9 +9,9 @@ import {
   WORKTREE_SETUP_TERMINAL_ID,
 } from "@masscode/contracts";
 import * as Effect from "effect/Effect";
-import { basename, join, relative } from "node:path";
+import { basename, join } from "node:path";
 import { CommandError } from "../errors.ts";
-import { addWorktree, readBranch, readRepoRoot } from "../git.ts";
+import { addWorktree, readBranch, readRepoFolder, readRepoRoot } from "../git.ts";
 import { buildWriterInput } from "../harnesses.ts";
 import { readProjectConfig } from "../project-config.ts";
 import { DATA_DIR } from "../storage/toml-file.ts";
@@ -55,10 +55,15 @@ export function createThreadOpener({
     projectPath: string,
     title: string,
     threadId: string,
+    baseBranch: string | null = null,
   ) {
-    const root = yield* Effect.promise(() => readRepoRoot(projectPath));
+    // Git's own prefix rather than a path comparison: git resolves symlinks (/tmp is
+    // /private/tmp on macOS), the stored project path may not.
+    const [root, folder] = yield* Effect.promise(() =>
+      Promise.all([readRepoRoot(projectPath), readRepoFolder(projectPath)]),
+    );
 
-    if (!root)
+    if (!root || folder === null)
       return yield* new CommandError({
         message: "New worktrees need the project to be a git repo",
       });
@@ -75,12 +80,15 @@ export function createThreadOpener({
     const { worktreeFromOrigin } = yield* settingsStore.get;
 
     const error = yield* Effect.promise(() =>
-      addWorktree(projectPath, path, `masscode/${slug}`, worktreeFromOrigin === true),
+      addWorktree(projectPath, path, `masscode/${slug}`, {
+        base: baseBranch,
+        fromOrigin: worktreeFromOrigin === true,
+      }),
     );
 
     if (error) return yield* new CommandError({ message: `Couldn't create a worktree: ${error}` });
 
-    return join(path, relative(root, projectPath));
+    return join(path, folder);
   });
 
   /**
@@ -198,7 +206,9 @@ export function createThreadOpener({
           : "local");
 
     const cwd =
-      workspace === "worktree" ? yield* createWorktree(project.path, title, id) : project.path;
+      workspace === "worktree"
+        ? yield* createWorktree(project.path, title, id, command.baseBranch)
+        : project.path;
 
     const entry = yield* openThread(
       buildThreadInfo({

@@ -2,18 +2,18 @@ import { categoryOf, isShowingWork, type ToolItem, toTurns } from "@masscode/cli
 import { ClientCommand, isTurnActive } from "@masscode/contracts";
 import { KeyboardAwareLegendList, useKeyboardChatComposerInset } from "@legendapp/list/keyboard";
 import type { LegendListRef } from "@legendapp/list/react-native";
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { type ComponentRef, useEffect, useMemo, useRef } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { Composer, useComposerKeyboardOffset } from "@/widgets/composer";
 import { ThreadHeader } from "@/widgets/thread-header";
-import { useHostStore } from "@/entities/host";
+import { CONNECTION_HELP, useHostStore } from "@/entities/host";
 import { useHostProjects } from "@/entities/project";
 import { useHostProviders } from "@/entities/provider";
 import { loadOlder, openThread, transcriptKey, useThreadStore } from "@/entities/thread";
 import { send } from "@/shared/api";
-import { OrbFace, type OrbFaceState, Pulsing, Text } from "@/shared/ui";
+import { NativeButton, OrbFace, type OrbFaceState, Pulsing, Text } from "@/shared/ui";
 import { RunningAgents } from "./running-agents.tsx";
 import { TranscriptTurn } from "./transcript-turn.tsx";
 
@@ -46,14 +46,66 @@ export function ThreadPage() {
       send(hostId, ClientCommand.cases["thread.seen"].make({ threadId, rev: updatedAt }));
   }, [hostId, threadId, seenRev, updatedAt]);
 
-  if (!host || !thread)
+  const isBusy = thread !== undefined && isTurnActive(thread.status);
+
+  const runningAgents = useMemo(
+    () =>
+      isBusy
+        ? (transcript?.items ?? []).filter(
+            (item): item is ToolItem =>
+              item.kind === "tool" && categoryOf(item.name) === "agent" && item.output === null,
+          )
+        : [],
+    [isBusy, transcript?.items],
+  );
+
+  if (!host)
     return (
       <View className="flex-1 items-center justify-center bg-background p-8">
         <Text className="text-center text-sm text-muted-foreground">
-          {host?.connection === "connected"
-            ? "This thread is gone; it was deleted on the computer."
-            : "Connecting to the computer…"}
+          This computer is no longer paired with this phone. Pair it again to see its threads.
         </Text>
+      </View>
+    );
+
+  if (!thread && host.connection === "connecting")
+    return (
+      <View className="flex-1 items-center justify-center gap-3 bg-background p-8">
+        <ActivityIndicator />
+        <Text className="text-center text-sm text-muted-foreground">
+          Connecting to {host.paired.name}…
+        </Text>
+      </View>
+    );
+
+  if (!thread && host.connection === "connected")
+    return (
+      <View className="flex-1 items-center justify-center bg-background p-8">
+        <Text className="text-center text-sm text-muted-foreground">
+          This thread is gone; it was deleted on the computer.
+        </Text>
+      </View>
+    );
+
+  if (!thread)
+    return (
+      <View className="flex-1 items-center justify-center gap-3 bg-background p-8">
+        <Text className="text-center font-medium">
+          {host.connection === "off"
+            ? `${host.paired.name} is turned off on this phone`
+            : `Can't reach ${host.paired.name}`}
+        </Text>
+        <Text className="text-center text-sm leading-6 text-muted-foreground">
+          {CONNECTION_HELP[host.connection] ?? "Turn it on to see this thread."}
+        </Text>
+        <NativeButton
+          label="Open computer settings"
+          variant="outlined"
+          className="mt-2"
+          onPress={() =>
+            router.push({ pathname: "/settings/computers/[hostId]", params: { hostId } })
+          }
+        />
       </View>
     );
 
@@ -61,14 +113,6 @@ export function ThreadPage() {
   const isThinking = thread.status === "running" && !isShowingWork(transcript?.items ?? []);
   const lastTurn = turns.at(-1);
   const lastItem = lastTurn?.from === "assistant" ? lastTurn.items.at(-1) : undefined;
-  const isBusy = isTurnActive(thread.status);
-
-  const runningAgents = isBusy
-    ? (transcript?.items ?? []).filter(
-        (item): item is ToolItem =>
-          item.kind === "tool" && categoryOf(item.name) === "agent" && item.output === null,
-      )
-    : [];
 
   const faceState: OrbFaceState | null = isThinking
     ? "thinking"
@@ -162,7 +206,9 @@ export function ThreadPage() {
           <View ref={composer} onLayout={onComposerLayout}>
             {host.connection === "connected" ? null : (
               <Text className="px-4 pt-2 text-center text-xs text-warning">
-                Not connected to {host.paired.name}; showing what was last loaded.
+                {host.connection === "connecting"
+                  ? `Connecting to ${host.paired.name}… You can send once it's back.`
+                  : `Not connected to ${host.paired.name}; showing what was last loaded. You can send once it's back.`}
               </Text>
             )}
             <Composer

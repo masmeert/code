@@ -30,6 +30,7 @@ import {
   IconFolder,
   IconGitBranch,
   IconListCheck,
+  IconLoader2,
   IconLockOpen,
   IconShieldCheck,
   IconSparkles,
@@ -77,6 +78,7 @@ import { useSetting, useSettings } from "@/entities/settings";
 import { usePathHost, useThreadStore } from "@/entities/thread";
 import { toggleFavoriteModel } from "@/features/favorite-model";
 import { send } from "@/shared/api";
+import { showToast } from "@/shared/ui";
 import { formatAge } from "@masscode/client";
 import { useNow } from "@masscode/client";
 import { UsageMeter } from "./usage-meter.tsx";
@@ -123,6 +125,9 @@ interface ComposerProps {
   workspace?: {
     readonly value: "local" | "worktree";
     readonly onChange: (value: "local" | "worktree") => void;
+    /** The local branch a new worktree starts from; null for the project folder's current one. */
+    readonly baseBranch: string | null;
+    readonly onBaseBranchChange: (branch: string) => void;
   };
   /** Card on top of the composer, e.g. queued messages. */
   header?: ReactNode;
@@ -612,7 +617,12 @@ export function Composer(props: ComposerProps) {
                 {props.workspace ? (
                   <WorkspaceSelect {...props.workspace} disabled={props.disabled} />
                 ) : isWorktree === undefined ? null : (
-                  <span className="flex min-w-0 items-center gap-1.5 px-2 text-[11px]">
+                  <span
+                    className={cn(
+                      typeClass("caption", "compact"),
+                      "flex min-w-0 items-center gap-1.5 px-2",
+                    )}
+                  >
                     {isWorktree ? (
                       <IconBinaryTree className="size-3.5 shrink-0" />
                     ) : (
@@ -629,7 +639,14 @@ export function Composer(props: ComposerProps) {
                 {props.cwd ? (
                   <BranchPicker
                     cwd={props.cwd}
-                    isWorktree={props.workspace?.value === "worktree"}
+                    worktreeBase={
+                      props.workspace?.value === "worktree"
+                        ? {
+                            value: props.workspace.baseBranch,
+                            onChange: props.workspace.onBaseBranchChange,
+                          }
+                        : undefined
+                    }
                     disabled={(props.disabled || props.isBusy) ?? false}
                   />
                 ) : (
@@ -680,7 +697,7 @@ export function RootFullAccessDialog({
         <AlertDialogFooter className="flex-row justify-end">
           <AlertDialogCancel size="compact">
             Cancel
-            <kbd aria-hidden className="font-sans text-[10px] text-muted-foreground">
+            <kbd aria-hidden className={cn(typeClass("micro"), "font-sans text-muted-foreground")}>
               esc
             </kbd>
           </AlertDialogCancel>
@@ -750,7 +767,8 @@ function SuggestionMenu({
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => onPick(index)}
           className={cn(
-            "relative flex w-full items-baseline gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] outline-none",
+            typeClass("body", "compact"),
+            "relative flex w-full items-baseline gap-2 rounded-lg px-2.5 py-1.5 text-left outline-none",
             index === activeIndex ? "text-foreground" : "text-muted-foreground",
           )}
         >
@@ -765,7 +783,12 @@ function SuggestionMenu({
           ) : null}
           <span className="shrink-0 font-mono text-foreground">{item.name}</span>
           {item.hint ? (
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+            <span
+              className={cn(
+                typeClass("caption", "compact"),
+                "shrink-0 font-mono text-muted-foreground",
+              )}
+            >
               {item.hint}
             </span>
           ) : null}
@@ -839,54 +862,114 @@ function WorkspaceSelect({
   );
 }
 
-/** Current branch of the project folder; picking another checks it out. */
+/**
+ * Current branch of the project folder; picking another checks it out. For a new worktree it
+ * picks the branch the worktree starts from instead, leaving the project folder as it is.
+ */
 function BranchPicker({
   cwd,
-  isWorktree,
+  worktreeBase,
   disabled,
 }: {
   cwd: string;
-  /** A new worktree will start from this branch, so it reads "From main". */
-  isWorktree: boolean;
+  /** A new worktree starts from this branch (null: the current one), so it reads "From main". */
+  worktreeBase?: { value: string | null; onChange: (branch: string) => void };
   disabled: boolean;
 }) {
   const list = useRepoStore((state) => state.branches[cwd]);
   const isFromOrigin = useSetting((settings) => settings.worktreeFromOrigin === true);
+  // The branch being checked out or created; the next list from the daemon answers it.
+  const [switching, setSwitching] = useState<{ branch: string; list: typeof list } | null>(null);
+  const isSwitching = switching !== null && switching.list === list;
 
   useEffect(() => send(ClientCommand.cases["git.listBranches"].make({ path: cwd })), [cwd]);
 
-  if (!list) return null;
+  useEffect(() => {
+    if (!switching || switching.list === list) return;
+    setSwitching(null);
+
+    if (list?.error) {
+      showToast({
+        title: `Couldn't switch to ${switching.branch}`,
+        description: list.error,
+        status: "error",
+        duration: 10_000,
+      });
+    }
+  }, [list, switching]);
+
+  function switchTo(branch: string, create: boolean) {
+    setSwitching({ branch, list });
+    send(
+      create
+        ? ClientCommand.cases["git.createBranch"].make({ path: cwd, branch })
+        : ClientCommand.cases["git.checkout"].make({ path: cwd, branch }),
+    );
+  }
+
+  // Holds the picker's place until the branches arrive, so the footer doesn't shift.
+  if (!list) {
+    return (
+      <span
+        aria-hidden
+        className={cn(
+          typeClass("caption", "compact"),
+          "flex h-6 items-center gap-1.5 px-2 text-muted-foreground opacity-50",
+        )}
+      >
+        <IconGitBranch className="size-3.5" />
+        <span className="h-2 w-12 animate-pulse rounded-full bg-muted" />
+      </span>
+    );
+  }
 
   if (!list.current && !list.branches.length)
     return <span className="px-1.5 text-muted-foreground">Not a git repo</span>;
 
+  if (worktreeBase) {
+    const base = worktreeBase.value ?? list.current;
+
+    return (
+      <PromptSelect
+        title="Start the worktree from"
+        icon={<IconGitBranch />}
+        searchPlaceholder="Find a branch…"
+        options={list.branches.map((branch) => ({ value: branch, label: branch }))}
+        value={base ?? undefined}
+        label={base ? `From ${isFromOrigin ? "origin/" : ""}${base}` : "From the current commit"}
+        onChange={worktreeBase.onChange}
+        onOpenChange={(isOpen) =>
+          isOpen && send(ClientCommand.cases["git.listBranches"].make({ path: cwd }))
+        }
+        disabled={disabled}
+        shortcut={KEYBINDINGS["picker.branch"]}
+        note={isFromOrigin ? "Starts from origin's copy of the branch when it has one." : undefined}
+        align="end"
+        width="w-72"
+        variant="plain"
+      />
+    );
+  }
+
   return (
     <PromptSelect
-      title={isWorktree ? "Start the worktree from" : "Switch branch"}
-      icon={<IconGitBranch />}
+      title="Switch branch"
+      icon={isSwitching ? <IconLoader2 className="animate-spin" /> : <IconGitBranch />}
       searchPlaceholder="Find or create a branch…"
-      onCreate={(branch) =>
-        send(ClientCommand.cases["git.createBranch"].make({ path: cwd, branch }))
-      }
+      onCreate={(branch) => switchTo(branch, true)}
       createLabel={(branch) => (
         <>
           Create <span className="text-foreground">{branch}</span>
         </>
       )}
-      options={list.branches.map((branch) => ({
-        value: branch,
-        label: isWorktree ? `From ${isFromOrigin ? "origin/" : ""}${branch}` : branch,
-      }))}
-      value={list.current ?? undefined}
-      placeholder="Detached"
-      onChange={(branch) =>
-        branch !== list.current &&
-        send(ClientCommand.cases["git.checkout"].make({ path: cwd, branch }))
-      }
+      options={list.branches.map((branch) => ({ value: branch, label: branch }))}
+      value={isSwitching ? switching.branch : (list.current ?? undefined)}
+      placeholder={isSwitching ? `${switching.branch}…` : "Detached"}
+      onChange={(branch) => branch !== list.current && switchTo(branch, false)}
       onOpenChange={(isOpen) =>
         isOpen && send(ClientCommand.cases["git.listBranches"].make({ path: cwd }))
       }
-      disabled={disabled}
+      disabled={disabled || isSwitching}
       shortcut={KEYBINDINGS["picker.branch"]}
       note={
         list.error ? (

@@ -309,12 +309,18 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
               onValueChange={(model) => updateHarness(kind, { defaultModel: model })}
               className="w-52"
             >
-              <SelectTrigger className="py-1.5 text-[13px] whitespace-nowrap">
+              <SelectTrigger
+                className={cn(typeClass("body", "compact"), "py-1.5 whitespace-nowrap")}
+              >
                 <SelectValue className="min-w-0 truncate" />
               </SelectTrigger>
               <SelectContent>
                 {shown.map((model) => (
-                  <SelectItem key={model.id} value={model.id} className="text-[13px]">
+                  <SelectItem
+                    key={model.id}
+                    value={model.id}
+                    className={typeClass("body", "compact")}
+                  >
                     {model.label}
                   </SelectItem>
                 ))}
@@ -361,7 +367,12 @@ function ModelsSection({ status }: { status: ProviderStatus }) {
                   {model.label}
                 </span>
                 {model.recommended ? (
-                  <span className="mr-1 shrink-0 rounded-md bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground">
+                  <span
+                    className={cn(
+                      typeClass("micro"),
+                      "mr-1 shrink-0 rounded-md bg-muted px-1.5 py-px font-medium text-muted-foreground",
+                    )}
+                  >
                     Recommended
                   </span>
                 ) : null}

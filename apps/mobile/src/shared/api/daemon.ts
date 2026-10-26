@@ -139,15 +139,21 @@ export function getHttpOrigin(hostId: string) {
   return socket && socket.readyState === socket.OPEN ? socket.url.replace(/^ws/, "http") : null;
 }
 
+/** Sends the command if the host's socket is open; false when it isn't, so nothing went. */
 export function send(hostId: string, command: ClientCommand) {
   const socket = sockets.get(hostId);
 
-  if (socket && socket.readyState === socket.OPEN) socket.send(JSON.stringify(command));
+  if (!socket || socket.readyState !== socket.OPEN) return false;
+
+  socket.send(JSON.stringify(command));
+
+  return true;
 }
 
 /**
  * Sends the command `build` makes for a fresh request id; `onReply` gets the host's answer, and
- * `onLost` runs instead when the connection closes first. Call what it returns to stop waiting.
+ * `onLost` runs instead when the connection closes first, or isn't open to send it. Call what it
+ * returns to stop waiting.
  */
 export function request(
   hostId: string,
@@ -157,7 +163,8 @@ export function request(
 ) {
   const requestId = crypto.randomUUID();
   pendingRequests.set(requestId, { hostId, onReply, onLost });
-  send(hostId, build(requestId));
+
+  if (!send(hostId, build(requestId))) settleRequest(requestId, () => onLost());
 
   return () => pendingRequests.delete(requestId);
 }

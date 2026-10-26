@@ -16,6 +16,7 @@ export {
   receiveProviders,
   setRemoteHosts,
   useAuthFlow,
+  useHasHarnessStatus,
   useLimits,
   useProviders,
   useProviderStore,

@@ -631,19 +631,24 @@ export async function readRecentSubjects(cwd: string, count = 8) {
   return log.ok ? log.stdout.split("\n").filter(Boolean) : [];
 }
 
-/** Stages everything and commits it; resolves to an error message on failure. */
-export async function commitAll(cwd: string, message: string) {
+/** Stages everything and commits it; resolves to the new commit's short hash, or an error message on failure. */
+export async function commitAll(
+  cwd: string,
+  message: string,
+): Promise<{ commit: string } | { error: string }> {
   const text = message.trim();
 
-  if (!text) return "Write a commit message first";
+  if (!text) return { error: "Write a commit message first" };
 
   const add = await runGitLong(cwd, ["add", "-A"]);
 
-  if (!add.ok) return getFirstLines(add.stderr);
+  if (!add.ok) return { error: getFirstLines(add.stderr) };
 
   const commit = await runGitLong(cwd, ["commit", "-m", text]);
 
-  return commit.ok ? null : getFirstLines(commit.stderr);
+  if (!commit.ok) return { error: getFirstLines(commit.stderr) };
+
+  return { commit: (await runGit(cwd, ["rev-parse", "--short", "HEAD"])).stdout };
 }
 
 /** Pushes the current branch, setting its upstream on the first push; resolves to an error message on failure. */
@@ -949,20 +954,28 @@ export async function readRepoRoot(cwd: string) {
 }
 
 /**
- * Adds a worktree at `path` on a new branch `branch`, starting from what's checked out in
- * `cwd`; with `fromOrigin`, from origin's copy of the current branch when it has one.
- * Resolves to an error message on failure.
+ * Adds a worktree at `path` on a new branch `branch`, starting from the local branch `base`, or
+ * what's checked out in `cwd` without one; with `fromOrigin`, from origin's copy of that branch
+ * when it has one. Resolves to an error message on failure.
  */
-export async function addWorktree(cwd: string, path: string, branch: string, fromOrigin: boolean) {
+export async function addWorktree(
+  cwd: string,
+  path: string,
+  branch: string,
+  { base, fromOrigin }: { base: string | null; fromOrigin: boolean },
+) {
   await mkdir(dirname(path), { recursive: true });
   const hasHead = (await runGit(cwd, ["rev-parse", "--verify", "--quiet", "HEAD"])).ok;
 
   if (!hasHead) return "Worktrees need at least one commit";
 
-  const current = fromOrigin ? await readBranch(cwd) : null;
+  if (base !== null && !(await listBranches(cwd)).branches.includes(base))
+    return `No local branch "${base}" to start from. Pick another branch.`;
+
+  const source = base ?? (await runGit(cwd, ["symbolic-ref", "--short", "--quiet", "HEAD"])).stdout;
 
   const isFetched =
-    current !== null && (await runGitLong(cwd, ["fetch", "origin", current], 30000)).ok;
+    fromOrigin && source !== "" && (await runGitLong(cwd, ["fetch", "origin", source], 30000)).ok;
 
   const result = await runGitLong(cwd, [
     "worktree",
@@ -970,16 +983,13 @@ export async function addWorktree(cwd: string, path: string, branch: string, fro
     "-b",
     branch,
     path,
-    isFetched ? `origin/${current}` : "HEAD",
+    isFetched ? `origin/${source}` : base === null ? "HEAD" : `refs/heads/${base}`,
   ]);
 
   if (!result.ok) return getFirstLines(result.stderr);
 
   // What the branch merges into, locally and in pull requests.
-  const source = await runGit(cwd, ["symbolic-ref", "--short", "--quiet", "HEAD"]);
-
-  if (source.ok && source.stdout)
-    await runGit(path, ["config", `branch.${branch}.gh-merge-base`, source.stdout]);
+  if (source) await runGit(path, ["config", `branch.${branch}.gh-merge-base`, source]);
 
   return null;
 }

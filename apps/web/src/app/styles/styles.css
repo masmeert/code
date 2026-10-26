@@ -15,25 +15,19 @@ html[data-theme-switching] *::after {
   transition: none !important;
 }
 
-html,
-body,
-#root {
-  height: 100%;
+@layer base {
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply m-0 cursor-default bg-background font-sans [font-feature-settings:"tnum"_1] text-[13px] text-foreground antialiased select-none;
+  }
 }
 
-body {
-  margin: 0;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-feature-settings: "tnum" 1;
-  -webkit-font-smoothing: antialiased;
-  user-select: none;
-  cursor: default;
-}
-
-.selectable {
-  user-select: text;
-  cursor: text;
+/* The app is select-none like a native one; text worth copying opts back in with this. */
+@utility selectable {
+  @apply cursor-text select-text;
 }

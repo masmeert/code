@@ -110,15 +110,16 @@ export const createRepoPanel = Effect.fn("createRepoPanel")(function* ({
       if (key.startsWith(`${path}\0`)) pullRequests.delete(key);
   }
 
-  /** Announces the repo state at `path`; `action`/`error` report the git action it answers. */
+  /** Announces the repo state at `path`; `action`/`error`/`commit` report the git action it answers. */
   function publishStatus(
     path: string,
     action: GitAction | null = null,
     error: string | null = null,
+    commit?: string,
   ) {
     return Effect.promise(() => readRepo(path)).pipe(
       Effect.map((status) =>
-        publish(RuntimeEvent.cases["git.status"].make({ path, status, action, error })),
+        publish(RuntimeEvent.cases["git.status"].make({ path, status, action, error, commit })),
       ),
     );
   }
@@ -279,14 +280,27 @@ export const createRepoPanel = Effect.fn("createRepoPanel")(function* ({
       Effect.gen(function* () {
         const written = message.trim() ? { message } : yield* writeCommitMessage(path);
 
-        let error =
+        if (!("error" in written))
+          publish(RuntimeEvent.cases["git.progress"].make({ path, action, phase: "committing" }));
+
+        const committed =
           "error" in written
-            ? written.error
+            ? written
             : yield* Effect.promise(() => commitAll(path, written.message));
 
-        if (!error && push) error = yield* Effect.promise(() => pushBranch(path));
+        let error = "error" in committed ? committed.error : null;
 
-        yield* publishStatus(path, action, error);
+        if (!error && push) {
+          publish(RuntimeEvent.cases["git.progress"].make({ path, action, phase: "pushing" }));
+          error = yield* Effect.promise(() => pushBranch(path));
+        }
+
+        yield* publishStatus(
+          path,
+          action,
+          error,
+          "commit" in committed ? committed.commit : undefined,
+        );
         yield* publishDiff(path);
       }),
     );

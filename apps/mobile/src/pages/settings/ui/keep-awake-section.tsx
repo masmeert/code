@@ -4,7 +4,7 @@ import {
   DEFAULT_KEEP_AWAKE_MANUAL_MINUTES,
   type KeepAwakeSettings,
 } from "@masscode/contracts";
-import type { HostState } from "@/entities/host";
+import { alertNotConnected, type HostState } from "@/entities/host";
 import { send } from "@/shared/api";
 import { FormButtonRow, FormInfoRow, FormSection, FormSwitchRow } from "@/shared/ui";
 
@@ -12,6 +12,7 @@ import { FormButtonRow, FormInfoRow, FormSection, FormSwitchRow } from "@/shared
 export function KeepAwakeSection({ host }: { host: HostState }) {
   const now = useNow(15_000);
   const { paired, keepAwake: status, settings } = host;
+  const isConnected = host.connection === "connected";
 
   if (!status?.available || !settings) return null;
 
@@ -19,10 +20,13 @@ export function KeepAwakeSection({ host }: { host: HostState }) {
   const minutes = keepAwake.manualMinutes ?? DEFAULT_KEEP_AWAKE_MANUAL_MINUTES;
   const { session } = status;
 
+  function sendCommand(command: ClientCommand) {
+    if (!send(paired.id, command)) alertNotConnected(paired.id);
+  }
+
   function update(patch: Partial<KeepAwakeSettings>) {
     if (settings)
-      send(
-        paired.id,
+      sendCommand(
         ClientCommand.cases["settings.update"].make({
           settings: { ...settings, keepAwake: { ...keepAwake, ...patch } },
         }),
@@ -33,15 +37,18 @@ export function KeepAwakeSection({ host }: { host: HostState }) {
     <FormSection
       title="Keep awake"
       footer={
-        status.notice ??
-        (status.access === "ready"
-          ? `Agents keep working with ${paired.name}'s lid closed. Apps to pause are picked on the computer.`
-          : `${paired.name} still sleeps when its lid closes. Set up lid-closed access in MassCode's settings there.`)
+        isConnected
+          ? (status.notice ??
+            (status.access === "ready"
+              ? `Agents keep working with ${paired.name}'s lid closed. Apps to pause are picked on the computer.`
+              : `${paired.name} still sleeps when its lid closes. Set up lid-closed access in MassCode's settings there.`))
+          : `Showing what ${paired.name} last said. You can change this once it's connected.`
       }
     >
       <FormSwitchRow
         label="Keep awake for agents"
         value={keepAwake.enabled}
+        isDisabled={!isConnected}
         onChange={(enabled) => update({ enabled })}
       />
       {keepAwake.enabled ? (
@@ -49,6 +56,7 @@ export function KeepAwakeSection({ host }: { host: HostState }) {
           <FormSwitchRow
             label="While agents work"
             value={keepAwake.whileAgentsWork !== false}
+            isDisabled={!isConnected}
             onChange={(whileAgentsWork) => update({ whileAgentsWork })}
           />
           <FormInfoRow
@@ -78,14 +86,14 @@ export function KeepAwakeSection({ host }: { host: HostState }) {
             <FormButtonRow
               label="Stop"
               isDestructive
-              onPress={() => send(paired.id, ClientCommand.cases["keepAwake.stop"].make({}))}
+              isDisabled={!isConnected}
+              onPress={() => sendCommand(ClientCommand.cases["keepAwake.stop"].make({}))}
             />
           ) : (
             <FormButtonRow
               label={`Keep awake for ${formatTimeLeft(minutes * 60_000)}`}
-              onPress={() =>
-                send(paired.id, ClientCommand.cases["keepAwake.start"].make({ minutes }))
-              }
+              isDisabled={!isConnected}
+              onPress={() => sendCommand(ClientCommand.cases["keepAwake.start"].make({ minutes }))}
             />
           )}
         </>

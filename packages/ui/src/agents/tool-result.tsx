@@ -236,13 +236,19 @@ export function ToolResult({
               {meta}
             </span>
           ) : null}
-          <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
+          <span
+            className={cn(
+              typeClass("caption", "compact"),
+              "min-w-0 truncate font-mono text-muted-foreground",
+            )}
+          >
             {tool}
           </span>
         </span>
         <span
           className={cn(
-            "inline-flex shrink-0 items-center gap-1 text-[11px] font-medium",
+            typeClass("caption", "compact"),
+            "inline-flex shrink-0 items-center gap-1 font-medium",
             getStatusClass(status),
           )}
         >
@@ -289,7 +295,11 @@ export function ToolResult({
                     <IconRotate className="size-3.5" />
                   </ToolResultAction>
                 ) : null}
-                <span className="ml-auto text-[11px] text-muted-foreground">{statusLabel}</span>
+                <span
+                  className={cn(typeClass("caption", "compact"), "ml-auto text-muted-foreground")}
+                >
+                  {statusLabel}
+                </span>
               </div>
             ) : null}
           </div>

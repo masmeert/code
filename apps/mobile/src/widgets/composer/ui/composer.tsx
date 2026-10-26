@@ -34,6 +34,7 @@ import {
   type ThreadSettingsSession,
   useThreadSettings,
 } from "@/features/thread-settings";
+import { alertNotConnected, useIsHostConnected } from "@/entities/host";
 import { useProjectStore } from "@/entities/project";
 import { getSkillsKey, ProviderLogo, useProviderStore } from "@/entities/provider";
 import { useThreadStore } from "@/entities/thread";
@@ -183,13 +184,18 @@ export function Composer({
     setSelection({ start: caret, end: caret });
   }
 
+  const isConnected = useIsHostConnected(hostId);
   const isVoiceInputPresented = voiceInput.presentation.statusLabel !== null;
   const editorLayout = useComposerEditorLayout(text);
   const isWorking = thread !== null && isTurnActive(thread.status);
   const willQueue = isWorking && settings?.followUp !== "steer";
 
+  // Offline, the draft stays here rather than going nowhere; the page says why.
   const canSend =
-    Boolean(text.trim()) && !(target.thread === null && target.disabled) && !voiceInput.isBusy;
+    Boolean(text.trim()) &&
+    isConnected &&
+    !(target.thread === null && target.disabled) &&
+    !voiceInput.isBusy;
 
   const modelId =
     (target.thread ? target.thread.model : target.model) ??
@@ -218,16 +224,20 @@ export function Composer({
     // A draft keeps its text and files until the thread exists, in case the host doesn't start it.
     if (target.thread === null) return target.onCreate(message, options);
 
-    send(
-      hostId,
-      ClientCommand.cases["thread.send"].make({
-        threadId: target.thread.id,
-        text: message,
-        options,
-        queue: followUp ? followUp === "queue" : willQueue,
-        messageId: crypto.randomUUID(),
-      }),
-    );
+    if (
+      !send(
+        hostId,
+        ClientCommand.cases["thread.send"].make({
+          threadId: target.thread.id,
+          text: message,
+          options,
+          queue: followUp ? followUp === "queue" : willQueue,
+          messageId: crypto.randomUUID(),
+        }),
+      )
+    )
+      return alertNotConnected(hostId);
+
     changeDraft("");
     setFiles([]);
   }
@@ -440,9 +450,12 @@ export function Composer({
           label: "/compact",
           description: "Summarize the conversation so far to free up context",
           onSelect: () => {
-            changeDraft("");
+            if (!threadId) return;
 
-            if (threadId) send(hostId, ClientCommand.cases["thread.compact"].make({ threadId }));
+            if (!send(hostId, ClientCommand.cases["thread.compact"].make({ threadId })))
+              return alertNotConnected(hostId);
+
+            changeDraft("");
           },
         },
         ...(commands ?? [])
@@ -483,8 +496,9 @@ export function Composer({
         })),
         emptyText: !skillList
           ? "Loading skills…"
-          : (skillList.error ??
-            `No skills here yet. Add one as ${SKILLS_FOLDER[provider]}/skills/<name>/SKILL.md in the project.`),
+          : skillList.error
+            ? `${PROVIDER_NAME[provider]} couldn't list this project's skills. Check it works on the computer, then type $ again.`
+            : `No skills here yet. Add one as ${SKILLS_FOLDER[provider]}/skills/<name>/SKILL.md in the project.`,
       };
     }
 
@@ -506,28 +520,39 @@ export function Composer({
   const queuedRows = thread?.queue?.map((queued) => (
     <View
       key={queued.id}
-      className="flex-row items-center gap-2 rounded-xl border border-border bg-card py-2 pr-2 pl-3"
+      className="flex-row items-center gap-2 rounded-xl border border-border bg-card pl-3"
     >
       <Text className="text-xs text-muted-foreground">Queued</Text>
       <Text numberOfLines={1} className="flex-1 text-sm">
         {queued.text}
       </Text>
+      {/* A 24-point circle in a 44-point tap target. */}
       <Pressable
         accessibilityLabel="Take back this message"
-        hitSlop={8}
+        accessibilityState={{ disabled: !isConnected }}
+        disabled={!isConnected}
         onPress={() => {
-          changeDraft(queued.text);
-          send(
-            hostId,
-            ClientCommand.cases["thread.unqueue"].make({
-              threadId: thread.id,
-              messageIds: [queued.id],
-            }),
-          );
+          if (
+            send(
+              hostId,
+              ClientCommand.cases["thread.unqueue"].make({
+                threadId: thread.id,
+                messageIds: [queued.id],
+              }),
+            )
+          )
+            changeDraft(queued.text);
+          else alertNotConnected(hostId);
         }}
-        className="size-6 items-center justify-center rounded-full active:bg-muted"
+        className={cn("size-11 items-center justify-center", !isConnected && "opacity-40")}
       >
-        <Icon name="xmark" className="size-3.5 text-muted-foreground" />
+        {({ pressed }) => (
+          <View
+            className={cn("size-6 items-center justify-center rounded-full", pressed && "bg-muted")}
+          >
+            <Icon name="xmark" className="size-3.5 text-muted-foreground" />
+          </View>
+        )}
       </Pressable>
     </View>
   ));
@@ -570,7 +595,7 @@ export function Composer({
     onModelChange:
       target.thread === null
         ? (target.modelChoice?.onChange ?? null)
-        : isWorking
+        : isWorking || !isConnected
           ? null
           : (picked) => {
               const [kind, ...modelParts] = picked.split(":");
@@ -600,14 +625,25 @@ export function Composer({
     thread && isWorking && !text.trim() ? (
       <Pressable
         accessibilityLabel="Stop the agent"
+        accessibilityState={{ disabled: !isConnected }}
+        disabled={!isConnected}
         onPress={() => {
+          if (!send(hostId, ClientCommand.cases["thread.interrupt"].make({ threadId: thread.id })))
+            return alertNotConnected(hostId);
+
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          send(hostId, ClientCommand.cases["thread.interrupt"].make({ threadId: thread.id }));
         }}
-        className="size-11 items-center justify-center active:opacity-70"
+        className={cn(
+          "size-11 items-center justify-center active:opacity-70",
+          !isConnected && "opacity-40",
+        )}
       >
         <View className="size-[30px] items-center justify-center rounded-full bg-destructive">
-          <Icon name="stop.fill" weight="semibold" className="size-3.5 text-white" />
+          <Icon
+            name="stop.fill"
+            weight="semibold"
+            className="size-3.5 text-destructive-foreground"
+          />
         </View>
       </Pressable>
     ) : (

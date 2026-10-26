@@ -1,10 +1,11 @@
 import { ApprovalCard } from "@masscode/ui/agents/approval-card";
 import { Markdown } from "@masscode/ui/agents/markdown";
 import { ToolApproval, ToolApprovalCode } from "@masscode/ui/agents/tool-approval";
+import { ToolChangePreview } from "@masscode/ui/agents/tool-change";
 import { ScrollArea } from "@masmeert/ui/scroll-area";
 import type { UserQuestion } from "@masscode/contracts";
 import { useState } from "react";
-import { PERMISSIONS } from "@masscode/client";
+import { PERMISSIONS, relativizePaths } from "@masscode/client";
 import { useNeedsRootConsent } from "@/entities/host";
 import { approvePlan, BUILD_WITH_LABEL, getDraft, RootFullAccessDialog } from "@/widgets/composer";
 import type { TranscriptItem } from "@masscode/client";
@@ -165,27 +166,46 @@ export function QuestionsApproval({
   );
 }
 
-/** A tool call waiting for permission to run. */
+/** The question a tool approval asks, naming the file or saying it's a command. */
+function describeRequest(item: ApprovalItem, folder: string | undefined) {
+  switch (item.change?._tag) {
+    case "edit":
+      return `Allow editing ${relativizePaths(item.change.path, folder)}?`;
+    case "write":
+      return `Allow writing ${relativizePaths(item.change.path, folder)}?`;
+    case "command":
+      return "Allow running this command?";
+    case undefined:
+      return `Allow ${item.title}?`;
+  }
+}
+
+/** A tool call waiting for permission to run, showing what it would change. */
 export function ToolApprovalRequest({ threadId, item }: { threadId: string; item: ApprovalItem }) {
+  const folder = useThreadStore((state) => state.threads[threadId]?.cwd);
+
   // Once approved, the tool group shows what ran; only pending and denied requests stay visible.
   if (item.resolved && item.decision !== "deny") return null;
 
   return (
     <ToolApproval
-      tool={item.title}
-      title={`Allow ${item.title}${item.agent ? ` for ${item.agent}` : ""}?`}
+      title={describeRequest(item, folder)}
+      description={item.agent ? `Asked by ${item.agent}` : undefined}
       status={item.decision === "deny" ? "denied" : item.decision ? "approving" : "pending"}
       defaultOpen
-      parameters={[
-        {
-          id: "input",
-          label: "Input",
-          value: <ToolApprovalCode code={item.detail} language="bash" />,
-        },
-      ]}
       onApprove={() => respondApproval(threadId, item.id, "allow")}
       onAlwaysAllow={() => respondApproval(threadId, item.id, "allow-session")}
       onDeny={() => respondApproval(threadId, item.id, "deny")}
-    />
+    >
+      {item.change ? (
+        <ToolChangePreview change={item.change} className="bg-transparent py-0" />
+      ) : item.detail ? (
+        <ToolApprovalCode
+          code={relativizePaths(item.detail, folder)}
+          language="text"
+          className="border-0 bg-transparent p-0"
+        />
+      ) : null}
+    </ToolApproval>
   );
 }

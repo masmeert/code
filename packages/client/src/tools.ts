@@ -60,6 +60,16 @@ export function toolVerb(name: string) {
   return VERB[category];
 }
 
+/**
+ * `text` with paths inside `folder` written relative to it. Harnesses report macOS's /tmp paths
+ * resolved, as /private/tmp, so those count too.
+ */
+export function relativizePaths(text: string, folder: string | undefined) {
+  if (!folder) return text;
+
+  return text.replaceAll(`/private${folder}/`, "").replaceAll(`${folder}/`, "");
+}
+
 const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
 /** Past-tense phrase for one category, e.g. "read index.ts" or "ran 3 commands". */
@@ -136,4 +146,33 @@ export function describeActivity(activity: ThreadActivity | undefined) {
     output: null,
     isError: false,
   });
+}
+
+type DiffLine = { readonly type: "added" | "removed" | "context"; readonly text: string };
+
+/** One edit as lines: what both sides share at the start and end stays context. */
+export function toDiffLines(before: string, after: string): Array<DiffLine> {
+  const removed = before.split("\n");
+  const added = after.split("\n");
+  let start = 0;
+
+  while (start < removed.length && start < added.length && removed[start] === added[start]) start++;
+
+  let end = 0;
+
+  while (
+    end < removed.length - start &&
+    end < added.length - start &&
+    removed[removed.length - 1 - end] === added[added.length - 1 - end]
+  )
+    end++;
+
+  return [
+    ...removed.slice(0, start).map((text) => ({ type: "context" as const, text })),
+    ...removed
+      .slice(start, removed.length - end)
+      .map((text) => ({ type: "removed" as const, text })),
+    ...added.slice(start, added.length - end).map((text) => ({ type: "added" as const, text })),
+    ...removed.slice(removed.length - end).map((text) => ({ type: "context" as const, text })),
+  ];
 }

@@ -38,6 +38,8 @@
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-composer-shadow: var(--composer-shadow);
+  /* Claude's own orange, which its logo takes while it works, as on the desktop. */
+  --color-claude: #d97757;
   /* 14 / 20 / 28: keys and rows, fields and icon buttons, cards. */
   --radius-lg: 0.875rem;
   --radius-xl: 1.25rem;

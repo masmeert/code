@@ -1,11 +1,16 @@
+import { Button } from "@masmeert/ui/button";
 import { Switch } from "@masmeert/ui/switch";
 import { Skeleton } from "@masmeert/ui/skeleton";
 import { Textarea } from "@masmeert/ui/textarea";
 import { cn } from "@masscode/ui/lib/utils";
-import { type ProjectConfig } from "@masscode/contracts";
+import { ClientCommand, type Project, type ProjectConfig } from "@masscode/contracts";
+import { IconPlus } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 import { readProjectConfig, updateProjectConfig, useProjectStore } from "@/entities/project";
 import { updateSettings, useSettings } from "@/entities/settings";
+import { useThreadStore } from "@/entities/thread";
+import { addProject } from "@/features/add-project";
+import { send } from "@/shared/api";
 import {
   SettingsSection,
   SettingsGroup,
@@ -25,7 +30,20 @@ export function ProjectsPage() {
 
   return (
     <>
-      <SettingsSection title="All projects">
+      <SettingsSection
+        title="All projects"
+        action={
+          <Button
+            size="compact"
+            variant="secondary"
+            className="h-7 rounded-lg"
+            onClick={() => void addProject()}
+          >
+            <IconPlus className="size-3.5" />
+            Add project
+          </Button>
+        }
+      >
         <SettingsGroup>
           <SettingsRow label="Add Project opens in">
             <SettingsTextField
@@ -61,10 +79,11 @@ export function ProjectsPage() {
             host={projectHosts[project.id] ?? null}
             path={project.path}
           />
+          <RemoveProject key={`remove:${project.id}`} project={project} />
         </SettingsSection>
       ) : (
         <p className={cn(typeClass("caption"), "px-1 text-muted-foreground")}>
-          Per-project settings show here once you add a project.
+          No projects yet. Use Add project above to pick a folder or clone a repository.
         </p>
       )}
     </>
@@ -232,5 +251,72 @@ function ProjectThreadSettings({ host, path }: { host: string | null; path: stri
             : "Saved to masscode.toml in the project. Commit it to share with your team.")}
       </p>
     </>
+  );
+}
+
+/** Removing a project deletes its threads with it, so it asks first and says so. */
+function RemoveProject({ project }: { project: Project }) {
+  const threadCount = useThreadStore(
+    (state) => Object.values(state.threads).filter((info) => info.projectId === project.id).length,
+  );
+
+  const [stage, setStage] = useState<"idle" | "confirming" | "removing">("idle");
+
+  return (
+    <div className="mt-4">
+      <SettingsGroup>
+        <SettingsRow
+          label={
+            <RowLabel
+              title="Remove project"
+              description={
+                threadCount === 0
+                  ? "The folder on disk stays as it is."
+                  : `Deletes its ${threadCount === 1 ? "thread" : `${threadCount} threads`}, and their worktrees with no changes left in them. The folder on disk stays as it is.`
+              }
+            />
+          }
+        >
+          {stage === "idle" ? (
+            <Button
+              size="compact"
+              variant="ghost"
+              className="h-7 rounded-lg text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => setStage("confirming")}
+            >
+              Remove…
+            </Button>
+          ) : (
+            <div className="flex items-center gap-1">
+              <Button
+                size="compact"
+                variant="ghost"
+                className="h-7 rounded-lg"
+                disabled={stage === "removing"}
+                onClick={() => setStage("idle")}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="compact"
+                variant="ghost"
+                className="h-7 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
+                disabled={stage === "removing"}
+                onClick={() => {
+                  setStage("removing");
+                  send(ClientCommand.cases["project.remove"].make({ projectId: project.id }));
+                }}
+              >
+                {stage === "removing"
+                  ? "Removing…"
+                  : threadCount === 0
+                    ? `Remove ${project.name}`
+                    : `Remove ${project.name} and ${threadCount === 1 ? "its thread" : `${threadCount} threads`}`}
+              </Button>
+            </div>
+          )}
+        </SettingsRow>
+      </SettingsGroup>
+    </div>
   );
 }

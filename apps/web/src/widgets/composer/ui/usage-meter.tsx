@@ -20,15 +20,18 @@ export const tokenFormat = new Intl.NumberFormat("en", {
   maximumFractionDigits: 1,
 });
 
-/** Keyed by the category's name so a row keeps its colour whatever else is in the window. */
+/**
+ * Keyed by the category's name so a row keeps its colour whatever else is in the window. The
+ * chart series first, then brand and success at half strength: they follow the theme.
+ */
 const CATEGORY_COLOR = new Map([
-  ["Messages", "bg-[#2a78d6] dark:bg-[#3987e5]"],
-  ["System tools", "bg-[#eb6834] dark:bg-[#d95926]"],
-  ["MCP tools", "bg-[#1baf7a] dark:bg-[#199e70]"],
-  ["Skills", "bg-[#eda100] dark:bg-[#c98500]"],
-  ["System prompt", "bg-[#e87ba4] dark:bg-[#d55181]"],
-  ["Memory files", "bg-[#008300]"],
-  ["Custom agents", "bg-[#4a3aa7] dark:bg-[#9085e9]"],
+  ["Messages", "bg-chart-1"],
+  ["System prompt", "bg-chart-2"],
+  ["System tools", "bg-chart-3"],
+  ["MCP tools", "bg-chart-4"],
+  ["Skills", "bg-chart-5"],
+  ["Memory files", "bg-brand/50"],
+  ["Custom agents", "bg-success/60"],
 ]);
 
 function getCategoryColor(category: ContextUsage["categories"][number]) {
@@ -296,7 +299,7 @@ function LimitsSection({ provider, host }: { provider: ProviderKind; host: strin
               <div
                 className={cn(
                   "h-full rounded-full",
-                  limit.usedPercent >= 90 ? "bg-destructive" : "bg-[#2a78d6] dark:bg-[#3987e5]",
+                  limit.usedPercent >= 90 ? "bg-destructive" : "bg-chart-1",
                 )}
                 style={{ width: `${Math.min(limit.usedPercent, 100)}%` }}
               />

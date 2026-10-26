@@ -20,7 +20,12 @@ import { IconAdjustmentsHorizontal } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import { formatHarnessLabel } from "@/entities/provider";
 import { useSettings } from "@/entities/settings";
-import { DEFAULT_THREAD_LIST_VIEW, type ThreadListView } from "../model/thread-list-view.ts";
+import { Tooltip } from "@masmeert/ui/tooltip";
+import {
+  clearViewFilters,
+  isViewFiltered,
+  type ThreadListView,
+} from "../model/thread-list-view.ts";
 
 function OptionMenu(props: { label: string; value: ReactNode; children: ReactNode }) {
   return (
@@ -70,26 +75,31 @@ export function ThreadListMenu(props: {
   const settings = useSettings();
   const projectHosts = useProjectStore((state) => state.projectHosts);
 
-  const isFiltered =
-    view.status !== "active" ||
-    view.projects.length > 0 ||
-    view.provider !== "all" ||
-    view.activity !== "any";
+  const isFiltered = isViewFiltered(view);
+  const label = isFiltered ? "View options (some threads are hidden by filters)" : "View options";
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="View options"
-            className={cn(isFiltered && "bg-selected text-foreground")}
-          />
-        }
-      >
-        <IconAdjustmentsHorizontal className="size-4" />
-      </DropdownMenuTrigger>
+      <Tooltip content={label} side="bottom">
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={label}
+              className={cn("relative", isFiltered && "bg-selected text-foreground")}
+            />
+          }
+        >
+          <IconAdjustmentsHorizontal className="size-4" />
+          {isFiltered ? (
+            <span
+              aria-hidden="true"
+              className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-brand"
+            />
+          ) : null}
+        </DropdownMenuTrigger>
+      </Tooltip>
       <DropdownMenuContent align="end" sideOffset={8} collisionPadding={8} className="w-60">
         <ChoiceMenu
           label="Status"
@@ -166,15 +176,7 @@ export function ThreadListMenu(props: {
         {isFiltered ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() =>
-                props.onChange({
-                  ...DEFAULT_THREAD_LIST_VIEW,
-                  groupBy: view.groupBy,
-                  sortBy: view.sortBy,
-                })
-              }
-            >
+            <DropdownMenuItem onClick={() => props.onChange(clearViewFilters(view))}>
               Clear filters
             </DropdownMenuItem>
           </>

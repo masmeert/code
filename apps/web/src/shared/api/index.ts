@@ -14,4 +14,5 @@ export {
   send,
   sendIfConnected,
   sendRequest,
+  willQueue,
 } from "./daemon.ts";

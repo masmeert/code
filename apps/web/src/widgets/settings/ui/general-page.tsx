@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { EFFORT_LABEL, EFFORTS, PERMISSION_DESCRIPTION, PERMISSION_LABEL } from "@masscode/client";
 import { buildModelChoices, decodeChoice, useProviderStore } from "@/entities/provider";
 import { updateSettings, useSettings } from "@/entities/settings";
-import { getUpdateAction, useUpdateStatus } from "@/features/update-app";
+import { useUpdateAction, useUpdateStatus } from "@/features/update-app";
 import {
   SettingsSection,
   SettingsGroup,
@@ -39,41 +39,49 @@ export function GeneralPage() {
         <SettingsGroup>
           <SettingsRow label="Model">
             {linked.length ? (
-              <div className="flex gap-2">
-                <SettingsModelSelect
-                  value={savedModel}
-                  onChange={(newThreadModel) => updateSettings({ ...settings, newThreadModel })}
-                  fallback="Last used"
-                  className="w-44"
-                />
-                <SettingsSelect
-                  value={
-                    savedEffort && EFFORTS[effortProvider].includes(savedEffort)
-                      ? savedEffort
-                      : "default"
-                  }
-                  onChange={(value) =>
-                    updateSettings({
-                      ...settings,
-                      newThreadEffort: value === "default" ? null : value,
-                    })
-                  }
-                  options={[
-                    { value: "default", label: "Model default" },
-                    ...EFFORTS[effortProvider].map((effort) => ({
-                      value: effort,
-                      label: EFFORT_LABEL[effort],
-                    })),
-                  ]}
-                  className="w-36"
-                />
-              </div>
+              <SettingsModelSelect
+                value={savedModel}
+                onChange={(newThreadModel) => updateSettings({ ...settings, newThreadModel })}
+                fallback="Last used"
+                className="w-44"
+              />
             ) : (
               <p className={cn(typeClass("caption"), "text-muted-foreground")}>
                 Link a harness in Harnesses first
               </p>
             )}
           </SettingsRow>
+          {linked.length ? (
+            <SettingsRow
+              label={
+                <RowLabel
+                  title="Effort"
+                  description="How long the model thinks before it answers"
+                />
+              }
+            >
+              <SettingsSelect
+                value={
+                  savedEffort && EFFORTS[effortProvider].includes(savedEffort)
+                    ? savedEffort
+                    : "default"
+                }
+                onChange={(value) =>
+                  updateSettings({
+                    ...settings,
+                    newThreadEffort: value === "default" ? null : value,
+                  })
+                }
+                options={[
+                  { value: "default", label: "Model default" },
+                  ...EFFORTS[effortProvider].map((effort) => ({
+                    value: effort,
+                    label: EFFORT_LABEL[effort],
+                  })),
+                ]}
+              />
+            </SettingsRow>
+          ) : null}
           <SettingsRow
             label={
               <RowLabel
@@ -257,7 +265,7 @@ function UpdatesSection() {
 
   const isReady = UpdateStatus.guards.ready(status);
   const isAvailable = UpdateStatus.guards.available(status);
-  const updateAction = getUpdateAction(status);
+  const updateAction = useUpdateAction(status);
 
   return (
     <SettingsSection title="About">
@@ -279,7 +287,7 @@ function UpdatesSection() {
                 UpdateStatus.guards.failed(status) ? (
                   <span className="text-destructive">{status.message}</span>
                 ) : isReady ? (
-                  `${status.version} installs when MassCode restarts`
+                  `${status.version} installs when MassCode restarts.${updateAction.warning ? ` ${updateAction.warning}` : ""}`
                 ) : isAvailable ? (
                   `${status.version} is available`
                 ) : null
@@ -291,7 +299,11 @@ function UpdatesSection() {
             size="compact"
             variant={isReady || isAvailable ? "primary" : "secondary"}
             disabled={updateAction.isBusy}
-            className="h-7 rounded-lg tabular-nums disabled:opacity-100"
+            className={cn(
+              "h-7 rounded-lg tabular-nums disabled:opacity-100",
+              updateAction.isConfirming &&
+                "bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive",
+            )}
             onClick={updateAction.run}
           >
             {updateAction.label}

@@ -5,8 +5,18 @@ import { Terminal as HeadlessTerminal } from "@xterm/headless";
 import { accessSync, constants, existsSync } from "node:fs";
 import { basename } from "node:path";
 import { getErrorMessage } from "./errors.ts";
+import { readCommandOutput } from "./services.ts";
 
 const IN_FLIGHT_CHARACTER_LIMIT = 128 * 1024;
+
+/** Quiet this long after output, a starting shell has drawn its prompt and can take typed input. */
+const PROMPT_SETTLE_MS = 120;
+
+/** A shell that prints nothing gets its input after this anyway. */
+const PROMPT_WAIT_MS = 3000;
+
+/** After output, how long until the shell is checked for a running program; also the most often it's checked while output streams. */
+const BUSY_CHECK_MS = 300;
 
 /** How much of a run's output the agent gets: the end, where results and errors usually are. */
 const RUN_OUTPUT_CHARACTER_LIMIT = 16 * 1024;
@@ -32,6 +42,11 @@ interface RunExit {
 
 interface TerminalSession extends TerminalInfo {
   readonly shell: Bun.Subprocess;
+  /** The project script it was opened to run, by name. */
+  readonly script: string | undefined;
+  /** A program runs in the foreground of a plain shell, so closing it would stop that program. */
+  busy: boolean;
+  busyTimer: ReturnType<typeof setTimeout> | null;
   /** Set on a run; left out, or once the daemon shuts down, its exit goes unreported. */
   onExit: ((exit: RunExit) => void) | null;
   isStopped: boolean;
@@ -42,6 +57,9 @@ interface TerminalSession extends TerminalInfo {
   pendingOutput: string;
   unparsedCharacters: number;
   flushTimer: ReturnType<typeof setTimeout> | null;
+  /** A line to type once the shell is ready for it. */
+  pendingInput: string | null;
+  inputTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export type Terminals = ReturnType<typeof createTerminals>;
@@ -50,7 +68,8 @@ export function createTerminals(options: {
   findFolder(threadId: string): string | null;
   onOpened(terminal: TerminalInfo): void;
   onClosed(terminal: TerminalInfo): void;
-  onSpawned(threadId: string, pid: number): void;
+  onSpawned(threadId: string, pid: number, origin: { terminalId: string; script?: string }): void;
+  onBusyChanged(terminal: TerminalInfo & { busy: boolean }): void;
 }) {
   const sessions = new Map<string, TerminalSession>();
 
@@ -71,6 +90,7 @@ export function createTerminals(options: {
       readonly onExit: (exit: RunExit) => void;
       readonly env?: Record<string, string>;
     },
+    script?: string,
   ): TerminalSession | Error {
     const folder = options.findFolder(threadId);
 
@@ -112,6 +132,9 @@ export function createTerminals(options: {
         ...(run && { command: run.command }),
         onExit: run?.onExit ?? null,
         isStopped: false,
+        script,
+        busy: false,
+        busyTimer: null,
         shell: Bun.spawn(
           [
             shellPath,
@@ -157,10 +180,15 @@ export function createTerminals(options: {
         pendingOutput: "",
         unparsedCharacters: 0,
         flushTimer: null,
+        pendingInput: null,
+        inputTimer: null,
       };
 
       sessions.set(getTerminalKey(threadId, terminalId), session);
-      options.onSpawned(threadId, session.shell.pid);
+      options.onSpawned(threadId, session.shell.pid, {
+        terminalId,
+        ...(script !== undefined && { script }),
+      });
 
       if (run) runs.add(getTerminalKey(threadId, terminalId));
       void session.shell.exited.then((exitCode) => handleShellExit(session, exitCode));
@@ -177,6 +205,53 @@ export function createTerminals(options: {
   function bufferOutput(session: TerminalSession, bytes: Uint8Array) {
     session.pendingOutput += session.decoder.decode(bytes, { stream: true });
     session.flushTimer ??= setTimeout(() => flushOutput(session), 4);
+
+    if (session.pendingInput !== null) typeInputAfter(session, PROMPT_SETTLE_MS);
+
+    // Programs start and end with output (the echoed command, the next prompt), so that's when to look.
+    if (session.command === undefined)
+      session.busyTimer ??= setTimeout(() => void checkBusy(session), BUSY_CHECK_MS);
+  }
+
+  /** Whether a program other than the shell holds the terminal's foreground, as `tcgetpgrp` would say. */
+  async function checkBusy(session: TerminalSession) {
+    session.busyTimer = null;
+
+    const groups = await readCommandOutput([
+      "ps",
+      "-o",
+      "pgid=,tpgid=",
+      "-p",
+      String(session.shell.pid),
+    ]);
+
+    const [shellGroup, foregroundGroup] = groups.trim().split(/\s+/).map(Number);
+
+    const busy =
+      shellGroup !== undefined &&
+      foregroundGroup !== undefined &&
+      foregroundGroup > 0 &&
+      foregroundGroup !== shellGroup;
+
+    if (busy === session.busy || session.isStopped || session.shell.exitCode !== null) return;
+
+    session.busy = busy;
+    options.onBusyChanged({ threadId: session.threadId, terminalId: session.terminalId, busy });
+  }
+
+  /**
+   * Types the session's pending line once `delayMs` pass without output. Typed before the shell's
+   * line editor is up, the pty echoes it and the editor shows it again after the prompt.
+   */
+  function typeInputAfter(session: TerminalSession, delayMs: number) {
+    if (session.inputTimer) clearTimeout(session.inputTimer);
+
+    session.inputTimer = setTimeout(() => {
+      session.inputTimer = null;
+
+      if (session.pendingInput !== null) session.shell.terminal?.write(`${session.pendingInput}\r`);
+      session.pendingInput = null;
+    }, delayMs);
   }
 
   function flushOutput(session: TerminalSession) {
@@ -261,6 +336,9 @@ export function createTerminals(options: {
   }
 
   function handleShellExit(session: TerminalSession, exitCode: number) {
+    if (session.inputTimer) clearTimeout(session.inputTimer);
+
+    if (session.busyTimer) clearTimeout(session.busyTimer);
     flushOutput(session);
     session.shell.terminal?.close();
     // The screen parses writes asynchronously; an empty write's callback runs once it has caught up.
@@ -296,10 +374,11 @@ export function createTerminals(options: {
 
   return {
     list(): Array<TerminalInfo> {
-      return [...sessions.values()].map(({ threadId, terminalId, command }) => ({
+      return [...sessions.values()].map(({ threadId, terminalId, command, busy }) => ({
         threadId,
         terminalId,
         ...(command !== undefined && { command }),
+        ...(busy && { busy }),
       }));
     },
     /** Runs `command` in the thread's folder, with `env` on top of the daemon's; `onExit` gets how it ended. */
@@ -333,6 +412,7 @@ export function createTerminals(options: {
       rows: number,
       viewer: TerminalViewer,
       input?: string,
+      script?: string,
     ) {
       const existing = sessions.get(getTerminalKey(threadId, terminalId));
 
@@ -342,11 +422,12 @@ export function createTerminals(options: {
         existing ??
         (runs.has(getTerminalKey(threadId, terminalId))
           ? new Error("This command already finished.")
-          : startShell(threadId, terminalId, columns, rows));
+          : startShell(threadId, terminalId, columns, rows, undefined, script));
 
-      // The pty holds it until the shell reads its first line.
-      if (!existing && input && !(session instanceof Error))
-        session.shell.terminal?.write(`${input}\r`);
+      if (!existing && input && !(session instanceof Error)) {
+        session.pendingInput = input;
+        typeInputAfter(session, PROMPT_WAIT_MS);
+      }
 
       if (session instanceof Error)
         return viewer.send(

@@ -24,6 +24,7 @@ import {
   ThreadInfo,
   ThreadStatus,
   ThreadUsage,
+  ToolChange,
   UserAnswers,
   UserQuestion,
   WatchedPullRequest,
@@ -141,6 +142,8 @@ export const RuntimeEvent = Schema.TaggedUnion({
     threadId: Schema.String,
     messageId: Schema.String,
     text: Schema.String,
+    /** From its first words to its last; missing when the daemon didn't see it start. */
+    durationMs: Schema.optional(Schema.Number),
   },
   "tool.started": {
     threadId: Schema.String,
@@ -149,6 +152,8 @@ export const RuntimeEvent = Schema.TaggedUnion({
     summary: Schema.String,
     /** The subagent call (Task/Agent) this one was made inside of. */
     parentToolId: Schema.optional(Schema.String),
+    /** What it changes, for edits, writes and commands. */
+    change: Schema.optional(ToolChange),
   },
   /** How the subagent started by `toolId` is getting on. Live only: never stored. */
   "tool.progress": {
@@ -175,6 +180,8 @@ export const RuntimeEvent = Schema.TaggedUnion({
     agent: Schema.optional(Schema.String),
     /** Set when the agent asks questions rather than for permission. */
     questions: Schema.optional(Schema.Array(UserQuestion)),
+    /** What the tool would change, for edits, writes and commands. */
+    change: Schema.optional(ToolChange),
   },
   "approval.resolved": {
     threadId: Schema.String,
@@ -185,6 +192,8 @@ export const RuntimeEvent = Schema.TaggedUnion({
   "turn.completed": {
     threadId: Schema.String,
     durationMs: Schema.NullOr(Schema.Number),
+    /** The user stopped it. */
+    stopped: Schema.optional(Schema.Boolean),
   },
   /** What the turn started by `messageId` changed on disk, from the snapshots taken before and after it. */
   "turn.checkpoint": {
@@ -246,7 +255,10 @@ export const RuntimeEvent = Schema.TaggedUnion({
   },
   error: {
     threadId: Schema.NullOr(Schema.String),
+    /** In plain words, with what to do about it. */
     message: Schema.String,
+    /** The raw error behind it, for those who want it. */
+    detail: Schema.optional(Schema.String),
   },
   "settings.updated": { settings: Settings },
   "keepAwake.updated": { status: KeepAwakeStatus },
@@ -282,6 +294,14 @@ export const RuntimeEvent = Schema.TaggedUnion({
     status: Schema.NullOr(RepoStatus),
     action: Schema.NullOr(GitAction),
     error: Schema.NullOr(Schema.String),
+    /** Short hash of the commit a `commit` or `commit-push` action made, even when its push failed. */
+    commit: Schema.optional(Schema.String),
+  },
+  /** A `commit` or `commit-push` action at `path` moved on to its next step; its `git.status` follows when it ends. */
+  "git.progress": {
+    path: Schema.String,
+    action: GitAction,
+    phase: Schema.Literals(["committing", "pushing"]),
   },
   "auth.flow": { flow: AuthFlow },
   /** A subscription's rate limits; answers `provider.readLimits`. Empty with no error when the login has none (API keys). */
@@ -295,6 +315,12 @@ export const RuntimeEvent = Schema.TaggedUnion({
   "terminal.closed": {
     threadId: Schema.String,
     terminalId: Schema.String,
+  },
+  /** A program started or ended in the foreground of a plain shell terminal. */
+  "terminal.busy": {
+    threadId: Schema.String,
+    terminalId: Schema.String,
+    busy: Schema.Boolean,
   },
   /** The simulator the thread's Simulator panel shows; null when it shows none. */
   "thread.device": {

@@ -11,7 +11,7 @@ import { getProjectKey } from "@masscode/client";
 import { addProject } from "@/features/add-project";
 import { Button } from "@masmeert/ui/button";
 import { cn } from "@masscode/ui/lib/utils";
-import { type Project, parseRepository } from "@masscode/contracts";
+import { type Project, parseRepository, type ThreadInfo } from "@masscode/contracts";
 import {
   IconCheck,
   IconDeviceDesktop,
@@ -27,12 +27,20 @@ import {
   decodeChoice,
   encodeChoice,
   formatHarnessLabel,
+  useHasHarnessStatus,
   useProviders,
 } from "@/entities/provider";
-import { buildMachineOptions, THIS_MAC, toMachine, useHostStore } from "@/entities/host";
+import {
+  buildMachineOptions,
+  THIS_MAC,
+  toMachine,
+  useHostStore,
+  useIsHostConnected,
+} from "@/entities/host";
 import { useSetting, useSettings } from "@/entities/settings";
 import { createThread, usePathHost, useThreadStore } from "@/entities/thread";
 import { ThreadHeader } from "@/widgets/thread-header";
+import { openSettings } from "@/shared/lib/settings-route";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 const ADD_PROJECT = "\u0000add-project";
@@ -302,6 +310,24 @@ function CloneCopy({
   );
 }
 
+/** The thread worked in most recently, in the project when it has any, else anywhere. */
+function findLastUsedThread(threads: Readonly<Record<string, ThreadInfo>>, projectId?: string) {
+  let latest: ThreadInfo | undefined;
+  let latestInProject: ThreadInfo | undefined;
+
+  for (const info of Object.values(threads)) {
+    if (!latest || info.updatedAt > latest.updatedAt) latest = info;
+
+    if (
+      info.projectId === projectId &&
+      (!latestInProject || info.updatedAt > latestInProject.updatedAt)
+    )
+      latestInProject = info;
+  }
+
+  return latestInProject ?? latest;
+}
+
 /** A new chat that only exists in this window until its first message creates the thread. */
 export function DraftPage({
   path,
@@ -343,21 +369,30 @@ export function DraftPage({
 
   const choices = buildModelChoices(providers, settings);
   const saved = settings.newThreadModel;
-  const lastModel = findDefaultModel(providers, settings, settings.lastProvider);
+  // "Last used" in Settings: the model of the thread worked in last, in this project if it has one.
+  const lastThread = useThreadStore((state) => findLastUsedThread(state.threads, project?.id));
+  const lastProvider = lastThread?.provider ?? settings.lastProvider;
 
-  const preferred =
-    saved && choices.some((option) => option.value === saved)
-      ? saved
-      : lastModel
-        ? encodeChoice(settings.lastProvider, lastModel)
-        : undefined;
+  const lastModel =
+    lastThread?.model ?? findDefaultModel(providers, settings, lastProvider) ?? undefined;
 
   const [choice, setChoice] = useState<string | undefined>(undefined);
+  const hasHarnessStatus = useHasHarnessStatus(host);
+  const isCheckingProviders = !hasHarnessStatus || providers.some((provider) => provider.checking);
 
-  const selected =
-    [choice, preferred].find(
-      (candidate) => candidate && choices.some((option) => option.value === candidate),
-    ) ?? choices[0]?.value;
+  // The last harness's default, for when the last thread's model is no longer offered.
+  const harnessModel = findDefaultModel(providers, settings, settings.lastProvider);
+
+  const resolved = [
+    choice,
+    saved,
+    lastModel && encodeChoice(lastProvider, lastModel),
+    harnessModel && encodeChoice(settings.lastProvider, harnessModel),
+  ].find((candidate) => candidate && choices.some((option) => option.value === candidate));
+
+  // While harnesses are still being checked, the preferred model may not be listed yet: wait
+  // for it rather than flashing whichever model happens to come first.
+  const selected = resolved ?? (isCheckingProviders ? undefined : choices[0]?.value);
 
   // Shift-click adds models: the prompt then starts one thread per model, each in its own worktree.
   const [extras, setExtras] = useState<Array<string>>([]);
@@ -380,10 +415,32 @@ export function DraftPage({
         ? "worktree"
         : "local");
 
+  // Kept with its project: another project likely has no such branch.
+  const [pickedBase, setPickedBase] = useState<{ path: string; branch: string } | null>(null);
+  const baseBranch = pickedBase && pickedBase.path === path ? pickedBase.branch : null;
+
   const [projectSignal, setProjectSignal] = useState(0);
-  const isCheckingProviders = providers.some((provider) => provider.checking);
+  const isHostConnected = useIsHostConnected(host);
+  const threadCount = useThreadStore((state) => Object.keys(state.threads).length);
+  // Threads asked for and not yet listed: the prompt left the composer, so say it's on its way.
+  const [starting, setStarting] = useState<{ text: string; until: number } | null>(null);
+  const isStarting = starting !== null && threadCount < starting.until;
 
   function renderCenterContent() {
+    if (isStarting) {
+      return (
+        <span className="flex max-w-md flex-col items-center gap-3">
+          <IconLoader2 className="size-5 animate-spin" />
+          <span className="text-foreground">
+            {isHostConnected ? "Starting the thread…" : "Starts when MassCode reconnects…"}
+          </span>
+          <span className={cn(typeClass("caption"), "line-clamp-3 whitespace-pre-wrap")}>
+            {starting.text}
+          </span>
+        </span>
+      );
+    }
+
     if (missingOn && project) {
       return (
         <CloneCopy
@@ -406,11 +463,32 @@ export function DraftPage({
       );
     }
 
-    if (isCheckingProviders) return "Checking Claude and Codex…";
+    if (isCheckingProviders) {
+      return (
+        <span className="flex items-center gap-2">
+          <IconLoader2 className="size-4 animate-spin" />
+          {host
+            ? `Checking ${host} for Claude, Codex and Cursor…`
+            : "Checking for Claude, Codex and Cursor…"}
+        </span>
+      );
+    }
 
-    if (host) return `Link a harness on ${host} in Settings → Harnesses to start.`;
-
-    return "Link a harness in Settings to start.";
+    return (
+      <span className="flex flex-col items-center gap-3">
+        <span>
+          {host
+            ? `No harness is linked on ${host}. Link Claude, Codex or Cursor to start.`
+            : "No harness is linked. Link Claude, Codex or Cursor to start."}
+        </span>
+        <Button
+          className="rounded-lg [-webkit-app-region:no-drag]"
+          onClick={() => openSettings("harnesses")}
+        >
+          Open Harnesses settings
+        </Button>
+      </span>
+    );
   }
 
   function getPlaceholder() {
@@ -480,21 +558,30 @@ export function DraftPage({
               : [...current, value],
           )
         }
-        workspace={{ value: workspace, onChange: setWorkspace }}
+        workspace={{
+          value: workspace,
+          onChange: setWorkspace,
+          baseBranch,
+          onBaseBranchChange: (branch) => path && setPickedBase({ path, branch }),
+        }}
         placeholder={getPlaceholder()}
         onSubmit={(text, options, how) => {
           if (!selected || !path) return;
           const pickedModels = [selected, ...extraModels];
+          setStarting({ text, until: threadCount + pickedModels.length });
 
           for (const value of pickedModels) {
             const { provider, model } = decodeChoice(value);
+            const threadWorkspace = pickedModels.length > 1 ? "worktree" : workspace;
+
             createThread({
               path,
               provider,
               model,
               text,
               options,
-              workspace: pickedModels.length > 1 ? "worktree" : workspace,
+              workspace: threadWorkspace,
+              baseBranch: threadWorkspace === "worktree" ? (baseBranch ?? undefined) : undefined,
               // Several models, or ⌘Enter: start in the background and stay in the draft.
               shouldOpen: pickedModels.length === 1 && !how.alternate,
             });

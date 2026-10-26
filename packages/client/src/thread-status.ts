@@ -28,18 +28,13 @@ export function getStatusDotStyle(info: ThreadInfo, isUnread: boolean, isShelved
   return { label: "Idle", tone: "bg-brand" };
 }
 
-const THOUGHT_TITLES = [
-  "Schlepped",
-  "Combobulated",
-  "Channelled",
-  "Vibed",
-  "Concocted",
-  "Spelunked",
-];
+/** A finished thought's label: "Thought for 12s", or "Thought" when its length is unknown. */
+export function describeThought(durationMs: number | undefined) {
+  if (durationMs === undefined) return "Thought";
 
-/** A finished thought's title, the same every time for the same `id`. */
-export function thoughtTitle(id: string) {
-  return THOUGHT_TITLES[
-    [...id].reduce((sum, character) => sum + character.charCodeAt(0), 0) % THOUGHT_TITLES.length
-  ]!;
+  const seconds = Math.max(1, Math.round(durationMs / 1000));
+
+  return seconds < 60
+    ? `Thought for ${seconds}s`
+    : `Thought for ${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }

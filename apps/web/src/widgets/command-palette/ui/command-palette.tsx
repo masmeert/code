@@ -1,6 +1,7 @@
 import { formatProjectLabel } from "@masscode/client";
 import { ProjectBadge, useProjectStore } from "@/entities/project";
 import { searchCommands } from "@masmeert/ui/lib/command-search";
+import { formatBinding, isMac } from "@masmeert/ui/lib/keys";
 import { useRowCursor } from "@masmeert/ui/hooks/use-row-cursor";
 import { cn } from "@masscode/ui/lib/utils";
 import type { SearchHit } from "@masscode/contracts";
@@ -19,6 +20,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useHostStore } from "@/entities/host";
 import { searchMessages, useThreadStore } from "@/entities/thread";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
 
@@ -53,21 +55,50 @@ const SEARCH_DELAY_MS = 150;
 
 const NO_HITS: ReadonlyArray<SearchHit> = [];
 
-/** A search snippet with the matched words highlighted (the daemon wraps them in U+E000 / U+E001). */
+/** The daemon wraps each matched word in these. */
+const MATCH_START = "\uE000";
+
+const MATCH_END = "\uE001";
+
+/** At most this much text before the first match, so a narrow row still shows it. */
+const LEAD_CHARS = 24;
+
+/** The snippet as plain text, starting just before its first match. */
+function focusSnippet(text: string) {
+  const plain = text
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/`+|\*\*|__|~~/g, "")
+    .replace(/(^|\n)\s*(#{1,6}|>|[-*+]|\d+\.)\s+/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const matchAt = plain.indexOf(MATCH_START);
+
+  if (matchAt <= LEAD_CHARS) return plain;
+
+  // From a word boundary, so the lead doesn't open on half a word.
+  const wordAt = plain.indexOf(" ", matchAt - LEAD_CHARS);
+
+  return `…${plain.slice(wordAt === -1 || wordAt >= matchAt ? matchAt : wordAt + 1)}`;
+}
+
+/** A search snippet with the matched words highlighted. */
 function Snippet({ text }: { text: string }) {
   return (
     <>
-      {text.split("").map((part, index) => {
-        if (index === 0) return <Fragment key={index}>{part}</Fragment>;
-        const [match, rest] = part.split("");
+      {focusSnippet(text)
+        .split(MATCH_START)
+        .map((part, index) => {
+          if (index === 0) return <Fragment key={index}>{part}</Fragment>;
+          const [match, rest] = part.split(MATCH_END);
 
-        return (
-          <Fragment key={index}>
-            <mark className="rounded-sm bg-brand/15 text-foreground">{match}</mark>
-            {rest}
-          </Fragment>
-        );
-      })}
+          return (
+            <Fragment key={index}>
+              <mark className="rounded-sm bg-brand/15 font-medium text-foreground">{match}</mark>
+              {rest}
+            </Fragment>
+          );
+        })}
     </>
   );
 }
@@ -95,7 +126,13 @@ function Palette(props: PaletteProps) {
   const projects = useProjectStore((state) => state.projects);
   const projectHosts = useProjectStore((state) => state.projectHosts);
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState(NO_HITS);
+  // The query the hits answer, so a search still under way doesn't read as finding nothing.
+  const [search, setSearch] = useState({ query: "", hits: NO_HITS });
+
+  const isAnyHostConnected = useHostStore(
+    (state) => state.connected || Object.values(state.hosts).some((host) => host.connected),
+  );
+
   const idPrefix = useId();
   const shouldReduceMotion = useReducedMotion() ?? false;
   const input = useRef<HTMLInputElement>(null);
@@ -112,12 +149,15 @@ function Palette(props: PaletteProps) {
 
   // Message search goes to the daemon once there's something to look for.
   useEffect(() => {
-    if (!messageQuery) return setHits(NO_HITS);
+    if (!messageQuery) return;
 
     let isCancelled = false;
 
     const timer = setTimeout(
-      () => void searchMessages(messageQuery).then((found) => !isCancelled && setHits(found)),
+      () =>
+        void searchMessages(messageQuery).then(
+          (hits) => !isCancelled && setSearch({ query: messageQuery, hits }),
+        ),
       SEARCH_DELAY_MS,
     );
 
@@ -128,11 +168,15 @@ function Palette(props: PaletteProps) {
   }, [messageQuery]);
 
   // Rebuilt when the store changes, not per keystroke: the search caches each entry's normalized
-  // text by identity. Newest first, which equal scores keep.
+  // text by identity. Newest first, which equal scores keep; archived threads after the rest.
   const threadEntries = useMemo(
     () =>
       Object.values(threads)
-        .sort((left, right) => right.updatedAt - left.updatedAt)
+        .sort(
+          (left, right) =>
+            Number(left.archivedAt !== null) - Number(right.archivedAt !== null) ||
+            right.updatedAt - left.updatedAt,
+        )
         .map((thread) => ({ label: thread.title, thread })),
     [threads],
   );
@@ -157,16 +201,28 @@ function Palette(props: PaletteProps) {
       isActionsOnly
         ? []
         : searchCommands(threadEntries, needle)
+            // Stable, so matches keep their ranking within each group.
+            .toSorted(
+              (left, right) =>
+                Number(left.thread.archivedAt !== null) - Number(right.thread.archivedAt !== null),
+            )
             .slice(0, MAX_THREADS)
             .map(({ thread }) => {
               const project = projectById.get(thread.projectId);
 
               return {
                 id: `thread:${thread.id}`,
-                section: needle ? "Threads" : "Recent threads",
+                section:
+                  thread.archivedAt !== null
+                    ? "Archived threads"
+                    : needle
+                      ? "Threads"
+                      : "Recent threads",
                 icon: project ? <ProjectBadge project={project} /> : <IconMessage />,
                 label: thread.title,
-                detail: `${project ? formatProjectLabel(project.name, projectHosts[project.id]) : thread.cwd.split("/").at(-1)}${thread.archivedAt ? ", archived" : ""}`,
+                detail: project
+                  ? formatProjectLabel(project.name, projectHosts[project.id])
+                  : thread.cwd.split("/").at(-1),
                 run: createRowAction(latest, (latestProps) => latestProps.onOpenThread(thread.id)),
               };
             }),
@@ -202,7 +258,15 @@ function Palette(props: PaletteProps) {
   );
 
   // Hits from an older query stay up until the new ones land, but not once there's no search at all.
-  const shownHits = messageQuery ? hits : NO_HITS;
+  const shownHits = messageQuery ? search.hits : NO_HITS;
+
+  const messageSearchStatus = !messageQuery
+    ? null
+    : !isAnyHostConnected
+      ? "Can't search messages while MassCode is disconnected"
+      : search.query !== messageQuery
+        ? "Searching messages…"
+        : null;
 
   const messageRows = useMemo(
     (): ReadonlyArray<Row> =>
@@ -249,6 +313,9 @@ function Palette(props: PaletteProps) {
         ?.scrollIntoView({ block: "nearest" });
   }, [activeIndex, activeId]);
 
+  // Rows with a shortcut of their own keep it; the others are numbered ⌘1–9, in order.
+  const quickPicks = rows.filter((row) => !row.hint).slice(0, 9);
+
   function onKeyDown(event: React.KeyboardEvent) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
@@ -264,9 +331,9 @@ function Palette(props: PaletteProps) {
     } else if (event.key === "Tab") {
       // Focus stays in the field; the arrows move through the rows.
       event.preventDefault();
-    } else if ((event.metaKey || event.ctrlKey) && /^[1-9]$/.test(event.key)) {
+    } else if ((isMac ? event.metaKey : event.ctrlKey) && /^[1-9]$/.test(event.key)) {
       event.preventDefault();
-      rows[Number(event.key) - 1]?.run();
+      quickPicks[Number(event.key) - 1]?.run();
     }
   }
 
@@ -322,8 +389,11 @@ function Palette(props: PaletteProps) {
             className="isolate min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5"
           >
             {rows.length === 0 ? (
-              <div className={cn(typeClass("body"), "px-2 py-6 text-center text-muted-foreground")}>
-                Nothing matches
+              <div
+                role="status"
+                className={cn(typeClass("body"), "px-2 py-6 text-center text-muted-foreground")}
+              >
+                {messageSearchStatus ?? "Nothing matches"}
               </div>
             ) : null}
             {rows.map((row, index) => (
@@ -332,7 +402,8 @@ function Palette(props: PaletteProps) {
                   <div
                     aria-hidden
                     className={cn(
-                      "px-2 pb-1 text-[11px] text-muted-foreground",
+                      typeClass("caption", "compact"),
+                      "px-2 pb-1 text-muted-foreground",
                       index > 0 ? "pt-2.5" : "pt-1",
                     )}
                   >
@@ -342,6 +413,7 @@ function Palette(props: PaletteProps) {
                 <PaletteRow
                   row={row}
                   index={index}
+                  quickPick={row.hint ? undefined : quickPicks.indexOf(row) + 1 || undefined}
                   isActive={index === activeIndex}
                   shouldGlide={index === activeIndex && shouldGlide}
                   idPrefix={idPrefix}
@@ -349,6 +421,17 @@ function Palette(props: PaletteProps) {
                 />
               </Fragment>
             ))}
+            {rows.length > 0 && messageSearchStatus ? (
+              <div
+                role="status"
+                className={cn(
+                  typeClass("caption", "compact"),
+                  "px-2 pt-2.5 pb-1 text-muted-foreground",
+                )}
+              >
+                {messageSearchStatus}
+              </div>
+            ) : null}
           </motion.div>
         </div>
       </div>
@@ -360,6 +443,8 @@ function Palette(props: PaletteProps) {
 const PaletteRow = memo(function PaletteRow(props: {
   row: Row;
   index: number;
+  /** Its ⌘1–9 number, for rows without a shortcut of their own. */
+  quickPick: number | undefined;
   isActive: boolean;
   idPrefix: string;
   /** Whether the highlight glides in from the previous row, rather than appearing here. */
@@ -380,7 +465,8 @@ const PaletteRow = memo(function PaletteRow(props: {
       onMouseMove={isActive ? undefined : () => props.onPoint(row.id)}
       onClick={row.run}
       className={cn(
-        "relative flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] outline-none",
+        typeClass("body", "compact"),
+        "relative flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left outline-none",
         isActive ? "text-foreground" : "text-muted-foreground",
       )}
     >
@@ -397,13 +483,22 @@ const PaletteRow = memo(function PaletteRow(props: {
       <span className="min-w-0 flex-1">
         <span className="block truncate text-foreground">{row.label}</span>
         {row.detail ? (
-          <span className="block truncate text-[11px] text-muted-foreground">{row.detail}</span>
+          <span
+            className={cn(typeClass("caption", "compact"), "block truncate text-muted-foreground")}
+          >
+            {row.detail}
+          </span>
         ) : null}
       </span>
-      {index < 9 ? (
-        <span className="shrink-0 text-[11px] text-muted-foreground">⌘{index + 1}</span>
-      ) : row.hint ? (
-        <span className="shrink-0 text-[11px] text-muted-foreground">{row.hint}</span>
+      {row.hint || props.quickPick ? (
+        <kbd
+          className={cn(
+            typeClass("caption", "compact"),
+            "shrink-0 font-sans text-muted-foreground",
+          )}
+        >
+          {row.hint || formatBinding(`mod+${props.quickPick}`)}
+        </kbd>
       ) : null}
     </button>
   );

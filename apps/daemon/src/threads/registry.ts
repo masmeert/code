@@ -82,6 +82,10 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
   const pendingDeltas = new Map<string, TextDelta>();
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let seq = 0;
+  /** When each thought still streaming started, for how long it took. */
+  const thoughtStarts = new Map<string, number>();
+  /** Each thread's last error since its last message: one failure can surface twice (the agent crashing, and the command it was answering). */
+  const lastErrors = new Map<string, string>();
 
   let latestSettings = yield* settingsStore.get;
 
@@ -210,7 +214,31 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
     for (const event of batch) recordAndPublish(event);
   }
 
-  function publish(event: RuntimeEvent) {
+  /** Notes when a thought starts streaming, and says how long it took once it completes. */
+  function timeThought(event: RuntimeEvent): RuntimeEvent {
+    if (RuntimeEvent.guards["reasoning.delta"](event) && !thoughtStarts.has(event.messageId))
+      thoughtStarts.set(event.messageId, Date.now());
+
+    if (!RuntimeEvent.guards["reasoning.completed"](event)) return event;
+
+    const startedAt = thoughtStarts.get(event.messageId);
+    thoughtStarts.delete(event.messageId);
+
+    return startedAt === undefined || event.durationMs !== undefined
+      ? event
+      : { ...event, durationMs: Date.now() - startedAt };
+  }
+
+  function publish(published: RuntimeEvent) {
+    const event = timeThought(published);
+
+    if (RuntimeEvent.guards.error(event) && event.threadId) {
+      if (lastErrors.get(event.threadId) === event.message) return;
+      lastErrors.set(event.threadId, event.message);
+    }
+
+    if (RuntimeEvent.guards["user.message"](event)) lastErrors.delete(event.threadId);
+
     if (isTextDelta(event)) {
       const pending = pendingDeltas.get(event.messageId);
       pendingDeltas.set(
@@ -442,6 +470,8 @@ export const createThreadRegistry = Effect.fn("createThreadRegistry")(function* 
     subscribe: Effect.map(PubSub.subscribe(pubsub), Stream.fromSubscription),
     /** Drops a removed thread's text still streaming or waiting to go out. */
     forgetStreaming: (threadId: string) => {
+      lastErrors.delete(threadId);
+
       for (const [messageId, message] of streaming)
         if (message.threadId === threadId) streaming.delete(messageId);
 

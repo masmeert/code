@@ -3,17 +3,19 @@ import { useRowCursor } from "@masmeert/ui/hooks/use-row-cursor";
 import { formatProjectLabel } from "@masscode/client";
 import { cn } from "@masscode/ui/lib/utils";
 import { MorphingModal } from "@masscode/ui/motion/morphing-modal";
+import { Button } from "@masmeert/ui/button";
+import { isMac, matches } from "@masmeert/ui/lib/keys";
 import {
   IconArrowUpRight,
   IconChevronRight,
   IconLoader2,
-  IconBroadcast,
   IconPlayerStop,
 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 import { openPreview } from "@/entities/browser";
 import { buildFallbackProject, ProjectBadge, useProjectStore } from "@/entities/project";
 import { type HostedService, killService, useServices } from "@/entities/service";
+import { findTerminalScript, useTerminalStore } from "@/entities/terminal";
 import { useThreadStore } from "@/entities/thread";
 import { IconButton } from "@/shared/ui";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
@@ -34,6 +36,7 @@ export function ServicesModal({
       onClose={onClose}
       placement="center"
       className="max-w-2xl"
+      ariaLabel="Services"
     >
       {isOpen ? (
         <ServicesView
@@ -66,10 +69,17 @@ function canPreview(service: HostedService) {
   return window.desktop !== undefined && !service.host;
 }
 
+/** Stopping can't be undone, so it takes a second press within this long. */
+const STOP_CONFIRM_MS = 4000;
+
+const STOP_SHORTCUT = isMac ? "⌘⌫" : "Ctrl+Backspace";
+
 function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) => void }) {
   const services = useServices();
   const threads = useThreadStore((state) => state.threads);
   const projects = useProjectStore((state) => state.projects);
+  const terminals = useTerminalStore((state) => state.terminals);
+  const [confirmingStop, setConfirmingStop] = useState<string | null>(null);
   const [killing, setKilling] = useState<ReadonlySet<string>>(new Set());
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
@@ -90,7 +100,17 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
       return {
         id: getServiceKey(service),
         service,
-        program: describeProgram(service),
+        // A script's server is better known by the script's name. Older daemons don't say which
+        // terminal started it: then it's the script whose command is what runs.
+        program:
+          service.script ??
+          (service.terminalId === undefined
+            ? undefined
+            : findTerminalScript(service.terminalId)?.name) ??
+          (terminals[service.threadId] ?? [])
+            .map(findTerminalScript)
+            .find((script) => script && service.command.includes(script.command.trim()))?.name ??
+          describeProgram(service),
         threadTitle: info?.title || "Untitled thread",
         project,
         projectLabel: project ? formatProjectLabel(project.name, service.host) : "Unknown project",
@@ -114,10 +134,21 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
       openPreview(service.threadId, `http://localhost:${service.ports[0]}/`);
   }
 
+  useEffect(() => {
+    if (confirmingStop === null) return;
+
+    const timer = setTimeout(() => setConfirmingStop(null), STOP_CONFIRM_MS);
+
+    return () => clearTimeout(timer);
+  }, [confirmingStop]);
+
   async function kill(service: HostedService) {
     const key = getServiceKey(service);
 
     if (killing.has(key)) return;
+
+    if (confirmingStop !== key) return setConfirmingStop(key);
+    setConfirmingStop(null);
     setKilling((current) => new Set([...current, key]));
     setErrors(({ [key]: _cleared, ...rest }) => rest);
 
@@ -135,13 +166,14 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
         setIsOverHeader(false);
+        setConfirmingStop(null);
         moveActive(event.key === "ArrowDown" ? 1 : -1);
       } else if (!active) {
         return;
       } else if (event.key === "Enter" && !(event.target instanceof HTMLButtonElement)) {
         event.preventDefault();
         open(active);
-      } else if (event.metaKey && (event.key === "Backspace" || event.key === "Delete")) {
+      } else if (matches(event, "mod+backspace") || matches(event, "mod+delete")) {
         event.preventDefault();
         void kill(active);
       }
@@ -160,18 +192,13 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
 
   return (
     <div className="-m-5 flex max-h-[min(34rem,calc(100vh-4rem))] flex-col">
-      <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-4">
-        <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-border bg-muted text-foreground">
-          <IconBroadcast className="size-4" />
-        </span>
-        <div className="min-w-0">
-          <h2 className="text-[15px] leading-5 font-semibold">Services</h2>
-          <p className={cn(typeClass("caption"), "text-muted-foreground")}>
-            {rows.length === 0
-              ? "Nothing running"
-              : `${rows.length} running across ${projectLabels.length} ${projectLabels.length === 1 ? "project" : "projects"}`}
-          </p>
-        </div>
+      <div className="shrink-0 border-b border-border px-5 pt-5 pb-4">
+        <h2 className={cn(typeClass("body"), "font-medium")}>Services</h2>
+        <p className={cn(typeClass("caption"), "text-muted-foreground")}>
+          {rows.length === 0
+            ? "Nothing running"
+            : `${rows.length} running across ${projectLabels.length} ${projectLabels.length === 1 ? "project" : "projects"}`}
+        </p>
       </div>
       {rows.length === 0 ? (
         <p className={cn(typeClass("body"), "px-5 py-5 text-muted-foreground")}>
@@ -203,13 +230,19 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
                     )
                   }
                   className={cn(
-                    "flex h-10 w-full shrink-0 items-center gap-2.5 rounded-xl px-3 text-left text-[13px] font-medium text-foreground transition-colors outline-none hover:bg-hover focus-visible:ring-4 focus-visible:ring-ring",
+                    typeClass("body", "compact"),
+                    "flex h-10 w-full shrink-0 items-center gap-2.5 rounded-xl px-3 text-left font-medium text-foreground transition-colors outline-none hover:bg-hover focus-visible:ring-4 focus-visible:ring-ring",
                     !isCollapsed && "sticky top-0 z-10 bg-background hover:bg-background",
                   )}
                 >
                   {grouped[0]?.project ? <ProjectBadge project={grouped[0].project} /> : null}
                   <span className="min-w-0 truncate">{label}</span>
-                  <span className="ml-auto rounded-full bg-muted px-1.5 py-px text-[11px] leading-4 font-normal text-muted-foreground tabular-nums">
+                  <span
+                    className={cn(
+                      typeClass("caption", "compact"),
+                      "ml-auto rounded-full bg-muted px-1.5 py-px leading-4 font-normal text-muted-foreground tabular-nums",
+                    )}
+                  >
                     {grouped.length}
                   </span>
                   <IconChevronRight
@@ -224,6 +257,7 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
                     {grouped.map(({ id, service, program, threadTitle }) => {
                       const isActive = id === activeId && !isOverHeader;
                       const isKilling = killing.has(id);
+                      const isConfirming = confirmingStop === id;
 
                       return (
                         <div
@@ -249,17 +283,28 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
                           >
                             :{service.ports[0]}
                           </span>
-                          <span className="w-24 shrink-0 truncate text-[13px] text-foreground">
+                          <span
+                            className={cn(
+                              typeClass("body", "compact"),
+                              "w-24 shrink-0 truncate text-foreground",
+                            )}
+                          >
                             {program}
                           </span>
                           <span
                             className={cn(
                               typeClass("caption"),
                               "min-w-0 flex-1 truncate",
-                              errors[id] ? "selectable text-destructive" : "text-muted-foreground",
+                              errors[id] || isConfirming
+                                ? "selectable text-destructive"
+                                : "text-muted-foreground",
                             )}
                           >
-                            {errors[id] ?? threadTitle}
+                            {isKilling
+                              ? `Stopping ${program}…`
+                              : isConfirming
+                                ? `Stopping ${program} can't be undone. Press ${STOP_SHORTCUT} or Stop again.`
+                                : (errors[id] ?? threadTitle)}
                           </span>
                           {isKilling ? (
                             <IconLoader2 className="mr-1.5 size-3.5 shrink-0 animate-spin text-muted-foreground" />
@@ -268,25 +313,34 @@ function ServicesView({ onSelectThread }: { onSelectThread: (threadId: string) =
                               onClick={(event) => event.stopPropagation()}
                               className={cn(
                                 "flex shrink-0 items-center",
-                                !isActive && "pointer-events-none opacity-0",
+                                !isActive && !isConfirming && "pointer-events-none opacity-0",
                               )}
                             >
                               {canPreview(service) ? (
                                 <IconButton
-                                  label={`Open localhost:${service.ports[0]} (↵)`}
+                                  label={`Open localhost:${service.ports[0]} (↩)`}
                                   onClick={() => open(service)}
                                   className="hover:bg-foreground/5"
                                 >
                                   <IconArrowUpRight className="size-3.5" />
                                 </IconButton>
                               ) : null}
-                              <IconButton
-                                label={`Stop ${program} (⌘⌫)`}
+                              <Button
+                                size="compact"
+                                variant="ghost"
+                                title={`Stop ${program} (${STOP_SHORTCUT})`}
+                                aria-label={
+                                  isConfirming ? `Confirm stopping ${program}` : `Stop ${program}`
+                                }
                                 onClick={() => void kill(service)}
-                                className="hover:bg-destructive/10 hover:text-destructive"
+                                className={cn(
+                                  "h-7 gap-1.5 rounded-lg px-2 text-destructive hover:bg-destructive/10 hover:text-destructive",
+                                  isConfirming && "bg-destructive/10",
+                                )}
                               >
                                 <IconPlayerStop className="size-3 fill-current" />
-                              </IconButton>
+                                {isConfirming ? "Stop now" : "Stop"}
+                              </Button>
                             </span>
                           )}
                         </div>

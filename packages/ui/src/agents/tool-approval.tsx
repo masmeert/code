@@ -189,14 +189,18 @@ export function ToolApproval({
                 </div>
               ) : null}
             </div>
-            <span
-              className={cn(
-                "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
-                getStatusBadgeClass(status),
-              )}
-            >
-              {getStatusCopy(status)}
-            </span>
+            {/* While pending, the question and its buttons already say an answer is needed. */}
+            {pending ? null : (
+              <span
+                className={cn(
+                  typeClass("caption", "compact"),
+                  "shrink-0 rounded-full border px-2 py-0.5 font-medium transition-colors",
+                  getStatusBadgeClass(status),
+                )}
+              >
+                {getStatusCopy(status)}
+              </span>
+            )}
           </div>
           {description ? (
             <p className="mt-2 leading-5 text-muted-foreground">{description}</p>
@@ -226,7 +230,7 @@ export function ToolApproval({
         </div>
       </div>
 
-      <AgentDisclosure id={detailsId} open={currentOpen}>
+      <AgentDisclosure id={detailsId} open={currentOpen && Boolean(parameters.length || children)}>
         {children ? (
           <div className="mx-4 mb-4 rounded-xl border border-border/50 bg-background/70 p-3">
             {children}

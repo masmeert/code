@@ -139,15 +139,17 @@ export function FormActionRow({
   label,
   detail,
   actionLabel,
+  isDisabled = false,
   onPress,
 }: {
   label: string;
   detail?: string;
   actionLabel: string;
+  isDisabled?: boolean;
   onPress: () => void;
 }) {
   return (
-    <Button onPress={onPress} modifiers={ROW_BUTTON}>
+    <Button onPress={onPress} modifiers={[...ROW_BUTTON, disabled(isDisabled)]}>
       <HStack spacing={12}>
         <VStack alignment="leading" spacing={2}>
           <Text modifiers={[lineLimit(1)]}>{label}</Text>
@@ -158,7 +160,7 @@ export function FormActionRow({
           ) : null}
         </VStack>
         <Spacer />
-        <Text modifiers={[foregroundStyle("blue")]}>{actionLabel}</Text>
+        <Text modifiers={[foregroundStyle(isDisabled ? "gray" : "blue")]}>{actionLabel}</Text>
       </HStack>
     </Button>
   );
@@ -220,13 +222,17 @@ export function FormChoiceSection<Value extends string>({
 export function FormSwitchRow({
   label,
   value,
+  isDisabled = false,
   onChange,
 }: {
   label: string;
   value: boolean;
+  isDisabled?: boolean;
   onChange: (value: boolean) => void;
 }) {
-  return <Toggle label={label} isOn={value} onIsOnChange={onChange} />;
+  return (
+    <Toggle label={label} isOn={value} onIsOnChange={onChange} modifiers={[disabled(isDisabled)]} />
+  );
 }
 
 /** An action in the list; `isDestructive` turns it red, as iOS does for removing things. */

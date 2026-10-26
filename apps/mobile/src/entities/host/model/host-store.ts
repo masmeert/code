@@ -136,7 +136,14 @@ export function applyConnectionLoss(hostId: string, loss: ConnectionLoss) {
 /** Tries every host it isn't connected to now, without waiting out the backoff. */
 export function reconnectAll() {
   for (const [hostId, host] of Object.entries(useHostStore.getState().hosts))
-    if (host.connection === "offline") reconnect(hostId);
+    if (host.connection === "offline") {
+      reconnect(hostId);
+      updateHost(hostId, (current) => ({ ...current, connection: "connecting" }));
+    }
+}
+
+export function useIsHostConnected(hostId: string) {
+  return useHostStore((state) => state.hosts[hostId]?.connection === "connected");
 }
 
 /** Tries the host now, without waiting out the backoff; also after it unpaired or was outdated. */

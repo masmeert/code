@@ -114,7 +114,12 @@ export function GitPage() {
                       <div className="flex items-baseline gap-1.5">
                         <span className="font-medium">{SOURCE_CONTROL_LABEL[kind]}</span>
                         {status?.version ? (
-                          <span className="truncate font-mono text-[11px] text-muted-foreground">
+                          <span
+                            className={cn(
+                              typeClass("caption", "compact"),
+                              "truncate font-mono text-muted-foreground",
+                            )}
+                          >
                             {status.version}
                           </span>
                         ) : null}
@@ -137,7 +142,8 @@ export function GitPage() {
                 {status ? (
                   <span
                     className={cn(
-                      "rounded-md px-1.5 py-px text-[10px] font-medium",
+                      typeClass("micro"),
+                      "rounded-md px-1.5 py-px font-medium",
                       status.authenticated
                         ? "bg-success/15 text-success"
                         : status.installed
@@ -243,7 +249,9 @@ function WriterModelSelect() {
 
   if (!linked.length)
     return (
-      <span className="text-[13px] text-muted-foreground">Link a harness in Harnesses first</span>
+      <span className={cn(typeClass("body", "compact"), "text-muted-foreground")}>
+        Link a harness in Harnesses first
+      </span>
     );
 
   return (

@@ -2,10 +2,18 @@ import { IconChevronRight } from "@tabler/icons-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { AgentDisclosure } from "@masscode/ui/agents/agent-disclosure";
 import { ThinkingShimmer } from "@masscode/ui/agents/loading-states/thinking-shimmer";
+import { ToolChangePreview } from "@masscode/ui/agents/tool-change";
 import { ToolResultOutput } from "@masscode/ui/agents/tool-result";
 import type { AgentCodeLanguage } from "@masscode/ui/agents/agent-code";
 import { cn } from "@masscode/ui/lib/utils";
-import { categoryOf, livePhrase, summarize, type ToolCall, toolVerb } from "@masscode/client";
+import {
+  categoryOf,
+  livePhrase,
+  relativizePaths,
+  summarize,
+  type ToolCall,
+  toolVerb,
+} from "@masscode/client";
 import { typeClass } from "@masmeert/ui/lib/type-scale";
 
 const outputLanguage = (call: ToolCall): AgentCodeLanguage =>
@@ -43,10 +51,13 @@ export function ToolCallRow({
   call,
   live,
   reveal,
+  folder,
 }: {
   call: ToolCall;
   live: boolean;
   reveal: ToolReveal | null;
+  /** The thread's folder: paths inside it show relative to it. */
+  folder?: string;
 }) {
   const revealHere = reveal?.toolId === call.id ? reveal : null;
   const [open, setOpen] = useRevealOpen(revealHere);
@@ -57,7 +68,9 @@ export function ToolCallRow({
   const contentId = useId();
   const running = live && call.output === null;
   const children = call.children ?? [];
-  const expandable = Boolean(call.output) || children.length > 0;
+  // A failed edit says why in its output; one that went through shows what it changed.
+  const change = call.isError || call.change?._tag === "command" ? undefined : call.change;
+  const expandable = Boolean(call.output) || Boolean(change) || children.length > 0;
 
   return (
     <div ref={row}>
@@ -82,7 +95,9 @@ export function ToolCallRow({
             running && "animate-pulse",
           )}
         >
-          {call.summary}
+          {["read", "edit"].includes(categoryOf(call.name))
+            ? relativizePaths(call.summary, folder)
+            : call.summary}
         </span>
         {children.length ? (
           <span className={cn(typeClass("caption"), "shrink-0 text-muted-foreground")}>
@@ -96,11 +111,19 @@ export function ToolCallRow({
           {children.length ? (
             <div className="mb-1.5 ml-1.5 border-l border-border pl-3">
               {children.map((child) => (
-                <ToolCallRow key={child.id} call={child} live={live} reveal={null} />
+                <ToolCallRow
+                  key={child.id}
+                  call={child}
+                  live={live}
+                  reveal={null}
+                  folder={folder}
+                />
               ))}
             </div>
           ) : null}
-          {call.output ? (
+          {change ? (
+            <ToolChangePreview change={change} className="mb-1.5" />
+          ) : call.output ? (
             <div className="mb-1.5 scrollbar-hide max-h-72 overflow-y-auto rounded-lg bg-muted/80 p-3">
               <ToolResultOutput language={outputLanguage(call)} className={typeClass("caption")}>
                 {call.output}
@@ -122,10 +145,13 @@ export function ToolGroup({
   calls,
   live,
   reveal = null,
+  folder,
 }: {
   calls: ReadonlyArray<ToolCall>;
   live: boolean;
   reveal?: ToolReveal | null;
+  /** The thread's folder: paths inside it show relative to it. */
+  folder?: string;
 }) {
   const revealHere = calls.some((call) => call.id === reveal?.toolId) ? reveal : null;
   const [open, setOpen] = useRevealOpen(revealHere);
@@ -136,7 +162,7 @@ export function ToolGroup({
   if (calls.length === 1)
     return (
       <div className={cn(typeClass("body"), "w-full")}>
-        <ToolCallRow call={calls[0]!} live={live} reveal={revealHere} />
+        <ToolCallRow call={calls[0]!} live={live} reveal={revealHere} folder={folder} />
       </div>
     );
 
@@ -160,7 +186,13 @@ export function ToolGroup({
       <AgentDisclosure id={contentId} open={open}>
         <div className="mt-0.5 ml-1.5 border-l border-border pl-3">
           {calls.map((call) => (
-            <ToolCallRow key={call.id} call={call} live={live} reveal={revealHere} />
+            <ToolCallRow
+              key={call.id}
+              call={call}
+              live={live}
+              reveal={revealHere}
+              folder={folder}
+            />
           ))}
         </div>
       </AgentDisclosure>

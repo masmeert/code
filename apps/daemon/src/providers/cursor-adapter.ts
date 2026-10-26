@@ -2,7 +2,13 @@
  * Cursor via `cursor-agent acp`, the Agent Client Protocol server in Cursor's CLI. It runs on the
  * user's Cursor login.
  */
-import { Effort, RuntimeEvent, type ModelOption, type SlashCommand } from "@masscode/contracts";
+import {
+  Effort,
+  RuntimeEvent,
+  ToolChange,
+  type ModelOption,
+  type SlashCommand,
+} from "@masscode/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -405,6 +411,7 @@ function start({
           {
             title: toolCall.kind === "execute" ? "Run command" : (toolCall.title ?? "Allow this?"),
             detail: command ?? getContentText(toolCall.content),
+            change: command ? ToolChange.cases.command.make({ command }) : undefined,
           },
         );
 

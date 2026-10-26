@@ -487,7 +487,7 @@ const make = Effect.gen(function* () {
     { thread_id: string; message_id: string; sender: "user" | "assistant"; snippet: string },
     { query: string; limit: number }
   >(
-    `SELECT thread_id, message_id, sender, snippet(messages_fts, 0, char(57344), char(57345), '…', 16) AS snippet
+    `SELECT thread_id, message_id, sender, snippet(messages_fts, 0, char(57344), char(57345), '…', 32) AS snippet
      FROM messages_fts WHERE messages_fts MATCH $query ORDER BY seq DESC LIMIT $limit`,
   );
 

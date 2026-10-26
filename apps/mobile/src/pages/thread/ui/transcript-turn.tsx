@@ -1,21 +1,23 @@
 import {
   type Block,
+  describeThought,
   hasNewestItem,
   hasSameItems,
   livePhrase,
   summarize,
-  thoughtTitle,
   type ToolCall,
   type ToolItem,
   toBlocks,
+  toDiffLines,
   toolVerb,
   toToolGroups,
   type Turn,
 } from "@masscode/client";
-import { type Attachment, MessageSender } from "@masscode/contracts";
+import { type Attachment, MessageSender, ToolChange } from "@masscode/contracts";
+import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { memo, useEffect, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, View } from "react-native";
+import { Alert, Image, Modal, Pressable, ScrollView, Share, View } from "react-native";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { useHostStore } from "@/entities/host";
 import { fetchImageUrl } from "@/entities/thread";
@@ -90,14 +92,19 @@ export const TranscriptTurn = memo(function TranscriptTurn({
     );
 
   if (turn.from === "setup")
-    return (
+    return turn.item.stopped || turn.item.run.exitCode === 0 ? (
       <Text className="px-4 py-2 text-xs text-muted-foreground">
-        {turn.item.stopped
-          ? "Worktree setup was stopped"
-          : turn.item.run.exitCode === 0
-            ? "Worktree set up"
-            : `Worktree setup failed (exit ${turn.item.run.exitCode})`}
+        {turn.item.stopped ? "Worktree setup was stopped" : "Worktree set up"}
       </Text>
+    ) : (
+      <View className="px-4 py-2">
+        <Disclosure label={<Text className="text-sm text-destructive">Worktree setup failed</Text>}>
+          <Text selectable className="py-1 font-mono text-xs leading-5 text-foreground/85">
+            {turn.item.run.output.trim() ||
+              "The setup command printed nothing. Check it in the project's masscode.toml."}
+          </Text>
+        </Disclosure>
+      </View>
     );
 
   return (
@@ -214,32 +221,73 @@ function isSameTurn(previous: TurnProps, next: TurnProps) {
   return next.turn.from === turn.from && "item" in next.turn && next.turn.item === turn.item;
 }
 
-function BlockView({
+interface BlockProps {
+  readonly hostId: string;
+  readonly threadId: string;
+  readonly block: Block;
+  readonly isLive: boolean;
+  /** Holds the turn's newest item while the thread works: it says what the agent is doing now. */
+  readonly isStreaming: boolean;
+}
+
+/**
+ * `toBlocks` makes new tool and work blocks on every change; the rest are the items themselves.
+ * Skipping the unchanged ones keeps a streaming reply from parsing the turn's other markdown again.
+ */
+function isSameBlock(previous: BlockProps, next: BlockProps) {
+  if (
+    previous.hostId !== next.hostId ||
+    previous.threadId !== next.threadId ||
+    previous.isLive !== next.isLive ||
+    previous.isStreaming !== next.isStreaming
+  )
+    return false;
+
+  if (previous.block === next.block) return true;
+
+  if (previous.block.kind === "tools" && next.block.kind === "tools")
+    return hasSameItems(previous.block.calls, next.block.calls);
+
+  if (previous.block.kind === "work" && next.block.kind === "work")
+    return hasSameItems(previous.block.items, next.block.items);
+
+  return false;
+}
+
+/** Long-pressed, the iOS share sheet offers to copy the whole reply, or send it elsewhere. */
+function shareReply(text: string) {
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  Share.share({ message: text }).catch(() =>
+    Alert.alert("Couldn't open the share sheet", "Long-press the reply again to copy it."),
+  );
+}
+
+const BlockView = memo(function BlockView({
   hostId,
   threadId,
   block,
   isLive,
   isStreaming,
-}: {
-  hostId: string;
-  threadId: string;
-  block: Block;
-  isLive: boolean;
-  /** Holds the turn's newest item while the thread works: it says what the agent is doing now. */
-  isStreaming: boolean;
-}) {
+}: BlockProps) {
   switch (block.kind) {
     case "assistant":
       return (
-        <Markdown
-          text={block.text}
-          onOpenThread={(linked) =>
-            router.push({
-              pathname: "/thread/[hostId]/[threadId]",
-              params: { hostId, threadId: linked },
-            })
-          }
-        />
+        <Pressable
+          accessibilityHint="Long press to copy or share this reply"
+          onLongPress={() => shareReply(block.text)}
+        >
+          {/* Not selectable: selecting would take the long press that copies the reply. */}
+          <Markdown
+            text={block.text}
+            isSelectable={false}
+            onOpenThread={(linked) =>
+              router.push({
+                pathname: "/thread/[hostId]/[threadId]",
+                params: { hostId, threadId: linked },
+              })
+            }
+          />
+        </Pressable>
       );
     case "reasoning":
       return (
@@ -250,7 +298,9 @@ function BlockView({
                 <Text className="text-sm text-foreground">Thinking…</Text>
               </Pulsing>
             ) : (
-              <Text className="text-sm text-muted-foreground">{thoughtTitle(block.id)}</Text>
+              <Text className="text-sm text-muted-foreground">
+                {describeThought(block.durationMs)}
+              </Text>
             )
           }
         >
@@ -262,6 +312,17 @@ function BlockView({
     case "work": {
       const calls = block.items.filter((item): item is ToolItem => item.kind === "tool");
       const newest = block.items.at(-1);
+
+      // Unknown as soon as one of the thoughts wasn't timed.
+      const thoughtMs = block.items.reduce<number | undefined>(
+        (total, item) =>
+          item.kind !== "reasoning"
+            ? total
+            : total === undefined || item.durationMs === undefined
+              ? undefined
+              : total + item.durationMs,
+        0,
+      );
 
       return (
         <Disclosure
@@ -276,7 +337,7 @@ function BlockView({
               </Pulsing>
             ) : (
               <Text numberOfLines={1} className="shrink text-sm text-muted-foreground">
-                {calls.length > 0 ? summarize(calls) : thoughtTitle(block.items[0]?.id ?? "")}
+                {calls.length > 0 ? summarize(calls) : describeThought(thoughtMs)}
               </Text>
             )
           }
@@ -325,12 +386,43 @@ function BlockView({
           ) : null}
         </View>
       );
+    case "stopped":
+      return (
+        <View className="flex-row items-center gap-1.5">
+          <Icon name="stop.fill" className="size-3 text-muted-foreground" />
+          <Text className="text-xs text-muted-foreground">Stopped</Text>
+        </View>
+      );
     case "error":
-      return <Text className="text-sm text-destructive">{block.text}</Text>;
+      return (
+        <View className="flex-row gap-2.5 rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2.5">
+          <Icon name="exclamationmark.circle" className="mt-0.5 size-4 text-destructive" />
+          <View className="min-w-0 flex-1">
+            <Text selectable className="text-sm leading-5 text-foreground">
+              {block.text}
+            </Text>
+            {block.detail ? (
+              <Disclosure
+                isNested
+                label={<Text className="text-xs text-muted-foreground">Details</Text>}
+              >
+                <ScrollView
+                  className="max-h-48 rounded-lg bg-muted/60"
+                  contentContainerClassName="p-2"
+                >
+                  <Text selectable className="font-mono text-xs leading-5 text-muted-foreground">
+                    {block.detail}
+                  </Text>
+                </ScrollView>
+              </Disclosure>
+            ) : null}
+          </View>
+        </View>
+      );
     default:
       return null;
   }
-}
+}, isSameBlock);
 
 /** Consecutive calls, one summary line; a lone call is its own row. */
 function ToolGroup({ calls, isLive }: { calls: ReadonlyArray<ToolItem>; isLive: boolean }) {
@@ -365,6 +457,8 @@ function ToolGroup({ calls, isLive }: { calls: ReadonlyArray<ToolItem>; isLive: 
 /** A subagent's progress and stop button live in its row at the transcript's end, not here. */
 export function ToolCallRow({ call, isLive }: { call: ToolCall; isLive: boolean }) {
   const children = call.children ?? [];
+  // A failed edit says why in its output; one that went through shows what it changed.
+  const change = call.isError || call.change?._tag === "command" ? undefined : call.change;
 
   const label = (
     <>
@@ -384,7 +478,7 @@ export function ToolCallRow({ call, isLive }: { call: ToolCall; isLive: boolean 
     </>
   );
 
-  return call.output || children.length > 0 ? (
+  return call.output || change || children.length > 0 ? (
     <Disclosure label={label} isNested>
       {children.length > 0 ? (
         <View className="mb-1.5 ml-1.5 border-l border-border pl-3">
@@ -393,7 +487,9 @@ export function ToolCallRow({ call, isLive }: { call: ToolCall; isLive: boolean 
           ))}
         </View>
       ) : null}
-      {call.output ? (
+      {change ? (
+        <ToolChangePreview change={change} />
+      ) : call.output ? (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -415,6 +511,61 @@ export function ToolCallRow({ call, isLive }: { call: ToolCall; isLive: boolean 
     </Disclosure>
   ) : (
     <View className="min-h-8 flex-row items-center gap-2">{label}</View>
+  );
+}
+
+/** What an edit or write changed: the edit's lines marked + and −, or the written file. */
+function ToolChangePreview({ change }: { change: Exclude<ToolChange, { _tag: "command" }> }) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      className="mb-1.5 rounded-lg bg-muted/80"
+      contentContainerClassName="py-2"
+    >
+      {ToolChange.guards.write(change) ? (
+        <Text
+          selectable
+          numberOfLines={24}
+          className="px-3 font-mono text-xs leading-5 text-foreground/85"
+        >
+          {change.content}
+        </Text>
+      ) : (
+        <View>
+          {change.edits.map((edit, editIndex) => (
+            // Edits keep their order and never move, so their position is who they are.
+            <View
+              key={editIndex}
+              className={cn(editIndex > 0 && "mt-2 border-t border-border pt-2")}
+            >
+              {toDiffLines(edit.before, edit.after).map((line, lineIndex) => (
+                <Text
+                  key={lineIndex}
+                  selectable
+                  className={cn(
+                    "pr-3 font-mono text-xs leading-5 text-foreground/85",
+                    line.type === "added" && "bg-success/10",
+                    line.type === "removed" && "bg-destructive/10",
+                  )}
+                >
+                  <Text
+                    className={cn(
+                      "text-muted-foreground",
+                      line.type === "added" && "text-success",
+                      line.type === "removed" && "text-destructive",
+                    )}
+                  >
+                    {{ added: " + ", removed: " − ", context: "   " }[line.type]}
+                  </Text>
+                  {line.text}
+                </Text>
+              ))}
+            </View>
+          ))}
+        </View>
+      )}
+    </ScrollView>
   );
 }
 

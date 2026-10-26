@@ -233,6 +233,8 @@ export function createThread(input: {
   text: string;
   options: TurnOptions;
   workspace: Workspace;
+  /** New worktrees only: the local branch to start from. */
+  baseBranch?: string;
   shouldOpen?: boolean;
 }) {
   const { shouldOpen = true, ...command } = input;

@@ -3,6 +3,8 @@ import { realpathSync } from "node:fs";
 
 const SCAN_INTERVAL_MS = 5000;
 
+const FOLLOW_UP_SCAN_MS = [0, 1000, 3000];
+
 const STOP_TIMEOUT_MS = 3000;
 
 const MAX_COMMAND_LENGTH = 500;
@@ -17,6 +19,13 @@ interface Listener {
   readonly ports: ReadonlyArray<number>;
 }
 
+/** What started a process: a thread's agent, or one of its terminals. */
+interface Owner {
+  readonly threadId: string;
+  readonly terminalId?: string;
+  readonly script?: string;
+}
+
 interface ThreadFolder {
   readonly id: string;
   readonly cwd: string;
@@ -25,8 +34,8 @@ interface ThreadFolder {
 
 export type Services = ReturnType<typeof createServices>;
 
-/** Empty when the command fails or is missing: lsof isn't on every Linux host. */
-async function readOutput(command: ReadonlyArray<string>) {
+/** What `command` prints; empty when it fails or is missing (lsof isn't on every Linux host). */
+export async function readCommandOutput(command: ReadonlyArray<string>) {
   try {
     return await new Response(
       Bun.spawn([...command], { stdout: "pipe", stderr: "ignore" }).stdout,
@@ -39,7 +48,7 @@ async function readOutput(command: ReadonlyArray<string>) {
 async function readProcesses() {
   const processes = new Map<number, ProcessRow>();
 
-  for (const line of (await readOutput(["ps", "-A", "-ww", "-o", "pid=,ppid=,args="])).split(
+  for (const line of (await readCommandOutput(["ps", "-A", "-ww", "-o", "pid=,ppid=,args="])).split(
     "\n",
   )) {
     const match = /^\s*(\d+)\s+(\d+)\s(.*)$/.exec(line);
@@ -59,9 +68,9 @@ async function readListeners() {
   const listeners = new Map<number, { name: string; ports: Set<number> }>();
   let current: { name: string; ports: Set<number> } | undefined;
 
-  for (const line of (await readOutput(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"])).split(
-    "\n",
-  )) {
+  for (const line of (
+    await readCommandOutput(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"])
+  ).split("\n")) {
     const value = line.slice(1);
 
     if (line.startsWith("p")) {
@@ -91,7 +100,7 @@ async function readWorkingDirectories(pids: ReadonlyArray<number>) {
   let pid = 0;
 
   for (const line of (
-    await readOutput(["lsof", "-a", "-d", "cwd", "-p", pids.join(","), "-Fn"])
+    await readCommandOutput(["lsof", "-a", "-d", "cwd", "-p", pids.join(","), "-Fn"])
   ).split("\n")) {
     if (line.startsWith("p")) pid = Number(line.slice(1));
     else if (line.startsWith("n")) folders.set(pid, line.slice(1));
@@ -148,13 +157,13 @@ function listDescendants(pid: number, processes: ReadonlyMap<number, ProcessRow>
 }
 
 function toService(
-  threadId: string,
+  owner: Owner,
   pid: number,
   listener: Listener,
   processes: ReadonlyMap<number, ProcessRow>,
 ): Service {
   return {
-    threadId,
+    ...owner,
     pid,
     ports: listener.ports,
     name: listener.name,
@@ -186,7 +195,7 @@ export function createServices(options: {
   onChanged(services: ReadonlyArray<Service>): void;
 }) {
   /** Agent and terminal processes, by pid: what they start is their thread's. */
-  const owners = new Map<number, string>();
+  const owners = new Map<number, Owner>();
   let services: ReadonlyArray<Service> = [];
   let scanning: Promise<void> | null = null;
 
@@ -228,13 +237,13 @@ export function createServices(options: {
 
       const ancestors = listAncestors(pid, processes);
 
-      const threadId = ancestors
+      const owner = ancestors
         .map((ancestor) => owners.get(ancestor))
-        .find((owner) => owner !== undefined);
+        .find((candidate) => candidate !== undefined);
 
       const root = ancestors.at(-1);
 
-      if (threadId !== undefined) owned.push(toService(threadId, pid, listener, processes));
+      if (owner !== undefined) owned.push(toService(owner, pid, listener, processes));
       else if (
         root !== undefined &&
         processes.get(root)?.parentPid === 1 &&
@@ -249,7 +258,7 @@ export function createServices(options: {
       const folder = folders.get(root);
       const threadId = folder === undefined ? null : findFolderThread(folder);
 
-      if (threadId !== null) owned.push(toService(threadId, pid, listener, processes));
+      if (threadId !== null) owned.push(toService({ threadId }, pid, listener, processes));
     }
 
     return owned.sort((left, right) => (left.ports[0] ?? 0) - (right.ports[0] ?? 0));
@@ -299,8 +308,12 @@ export function createServices(options: {
 
   return {
     list: () => services,
-    track(threadId: string, pid: number | undefined) {
-      if (pid !== undefined) owners.set(pid, threadId);
+    track(threadId: string, pid: number | undefined, terminal?: Omit<Owner, "threadId">) {
+      if (pid !== undefined) owners.set(pid, { threadId, ...terminal });
+    },
+    /** Scans now and again over the next seconds, while a server started from a terminal binds its port or one that ended lets go. */
+    refresh() {
+      for (const delayMs of FOLLOW_UP_SCAN_MS) setTimeout(() => void scan(), delayMs);
     },
     async kill(threadId: string, pid: number) {
       await scan();

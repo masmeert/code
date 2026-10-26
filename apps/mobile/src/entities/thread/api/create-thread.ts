@@ -17,7 +17,8 @@ export function createThread(
     hostId,
     (requestId) => ClientCommand.cases["thread.create"].make({ requestId, ...command }),
     (reply) => {
-      if (ServerFrame.guards["thread.createFailed"](reply)) callbacks.onFailed(reply.message);
+      if (ServerFrame.guards["thread.createFailed"](reply))
+        callbacks.onFailed(`${hostName} couldn't start the thread. ${reply.message}`);
       else if (
         ServerFrame.guards.event(reply) &&
         RuntimeEvent.guards["thread.created"](reply.event)

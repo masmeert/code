@@ -49,7 +49,10 @@ export function ThreadHeader({
   return (
     // Same row geometry as the sidebar's title bar, so both line up with the traffic lights.
     <header
-      className={`@container flex h-10 shrink-0 items-center gap-2 pr-4 pb-[3px] [-webkit-app-region:drag] ${isSidebarOpen ? "pl-5" : hasTrafficLights ? "pl-[86px]" : "pl-3"}`}
+      className={cn(
+        "@container flex h-10 shrink-0 items-center gap-2 border-b border-border pr-4 pb-[2px] [-webkit-app-region:drag]",
+        isSidebarOpen ? "pl-5" : hasTrafficLights ? "pl-[86px]" : "pl-3",
+      )}
     >
       {isSidebarOpen ? null : (
         <SidebarTrigger className="mr-1 size-7 rounded-lg text-muted-foreground [-webkit-app-region:no-drag] hover:bg-hover hover:text-foreground">

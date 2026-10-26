@@ -3,6 +3,7 @@ import { ClientCommand, PROVIDER_NAME, type ProviderKind } from "@masscode/contr
 import { Button, HStack, Image, RNHostView, Section, Spacer, Text } from "@expo/ui/swift-ui";
 import {
   buttonStyle,
+  disabled,
   // oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- @expo/ui names it after SwiftUI.
   contentShape as hitArea,
   font,
@@ -14,7 +15,7 @@ import {
 import { router, Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import { useThreadSettings } from "@/features/thread-settings";
-import { useHostStore } from "@/entities/host";
+import { alertNotConnected, useHostStore } from "@/entities/host";
 import { ProviderLogo, useProviderStore } from "@/entities/provider";
 import { send } from "@/shared/api";
 import { FormLinkRow, FormList, FormSection } from "@/shared/ui";
@@ -29,6 +30,10 @@ export function ThreadSettingsPage() {
 
   const settings = useHostStore((state) =>
     session ? state.hosts[session.hostId]?.settings : undefined,
+  );
+
+  const isConnected = useHostStore((state) =>
+    session ? state.hosts[session.hostId]?.connection === "connected" : false,
   );
 
   const providers =
@@ -85,23 +90,26 @@ export function ThreadSettingsPage() {
   function toggleFavorite(kind: ProviderKind, modelId: string, favorites: ReadonlyArray<string>) {
     if (!settings || !session) return;
 
-    send(
-      session.hostId,
-      ClientCommand.cases["settings.update"].make({
-        settings: {
-          ...settings,
-          providers: {
-            ...settings.providers,
-            [kind]: {
-              ...settings.providers[kind],
-              favoriteModels: favorites.includes(modelId)
-                ? favorites.filter((id) => id !== modelId)
-                : [...favorites, modelId],
+    if (
+      !send(
+        session.hostId,
+        ClientCommand.cases["settings.update"].make({
+          settings: {
+            ...settings,
+            providers: {
+              ...settings.providers,
+              [kind]: {
+                ...settings.providers[kind],
+                favoriteModels: favorites.includes(modelId)
+                  ? favorites.filter((id) => id !== modelId)
+                  : [...favorites, modelId],
+              },
             },
           },
-        },
-      }),
-    );
+        }),
+      )
+    )
+      alertNotConnected(session.hostId);
   }
 
   function save() {
@@ -227,7 +235,7 @@ export function ThreadSettingsPage() {
                           <Spacer />
                           <Button
                             onPress={() => toggleFavorite(group.kind, model.id, group.favorites)}
-                            modifiers={[buttonStyle("borderless")]}
+                            modifiers={[buttonStyle("borderless"), disabled(!isConnected)]}
                           >
                             <Image
                               systemName={isFavorite ? "star.fill" : "star"}

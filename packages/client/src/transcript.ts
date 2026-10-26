@@ -8,6 +8,7 @@ import {
   RuntimeEvent,
   type ServerFrame,
   type StoredEvent,
+  type ToolChange,
   type UserAnswers,
   type UserQuestion,
 } from "@masscode/contracts";
@@ -21,6 +22,8 @@ export interface ToolCall {
   readonly isError: boolean;
   /** Calls made by the subagent this call started. */
   readonly children?: ReadonlyArray<ToolCall>;
+  /** What it changes, for edits, writes and commands; missing on calls stored before it was sent. */
+  readonly change?: ToolChange;
 }
 
 export type TranscriptItem =
@@ -55,7 +58,13 @@ export type TranscriptItem =
     }
   | { readonly kind: "assistant"; readonly id: string; readonly text: string }
   /** The agent's thinking, folded to a line in the transcript. */
-  | { readonly kind: "reasoning"; readonly id: string; readonly text: string }
+  | {
+      readonly kind: "reasoning";
+      readonly id: string;
+      readonly text: string;
+      /** How long it thought; missing while it streams, and when the daemon didn't time it. */
+      readonly durationMs?: number;
+    }
   | {
       readonly kind: "forked";
       readonly id: string;
@@ -76,6 +85,7 @@ export type TranscriptItem =
       readonly summary: string;
       readonly output: string | null;
       readonly isError: boolean;
+      readonly change?: ToolChange;
       /** Calls made by the subagent this call started. Missing on items cached before subagents showed. */
       readonly children?: ReadonlyArray<ToolCall>;
       /** What that subagent is doing now, in its own words; updated every half minute or so. */
@@ -97,6 +107,8 @@ export type TranscriptItem =
       readonly questions?: ReadonlyArray<UserQuestion>;
       /** What was answered; absent until then, and when the questions were skipped. */
       readonly answers?: UserAnswers;
+      /** What the tool would change, for edits, writes and commands. */
+      readonly change?: ToolChange;
     }
   /** MassCode compacted the conversation while it was idle, before its prompt cache expired. */
   | { readonly kind: "compacted"; readonly id: string; readonly tokens: number }
@@ -107,7 +119,15 @@ export type TranscriptItem =
       readonly run: CommandRun;
       readonly stopped: boolean;
     }
-  | { readonly kind: "error"; readonly id: string; readonly text: string };
+  /** The user stopped the turn. */
+  | { readonly kind: "stopped"; readonly id: string }
+  | {
+      readonly kind: "error";
+      readonly id: string;
+      readonly text: string;
+      /** The raw error behind `text`, when there's more to it. */
+      readonly detail?: string;
+    };
 
 /**
  * One thread's messages, loaded when it's opened (the thread list never needs them).
@@ -241,7 +261,15 @@ export function reduceItems(
           kind: "reasoning",
           id: completed.messageId,
           text: completed.text,
+          ...(completed.durationMs !== undefined && { durationMs: completed.durationMs }),
         })),
+      "turn.completed": ({ stopped }) => {
+        if (!stopped) return items;
+
+        const key = `stopped:${id ?? crypto.randomUUID()}`;
+
+        return upsert(items, key, () => ({ kind: "stopped", id: key }));
+      },
       "tool.started": (tool) => {
         const call = {
           id: tool.toolId,
@@ -249,6 +277,7 @@ export function reduceItems(
           summary: tool.summary,
           output: null,
           isError: false,
+          ...(tool.change && { change: tool.change }),
         };
 
         const parent = items.findLast((item) => item.id === tool.parentToolId);
@@ -303,6 +332,7 @@ export function reduceItems(
           resolved: false,
           decision: null,
           questions: approval.questions,
+          change: approval.change,
         })),
       "approval.resolved": (approval) =>
         items.map((item) =>
@@ -312,8 +342,17 @@ export function reduceItems(
         ),
       error: (error) => {
         const key = id === null ? crypto.randomUUID() : `error:${id}`;
+        // Stored before the daemon said in words why a Claude turn ended early.
+        const code = /^Turn ended: (\w+)$/.exec(error.message)?.[1];
 
-        return upsert(items, key, () => ({ kind: "error", id: key, text: error.message }));
+        return upsert(items, key, () => ({
+          kind: "error",
+          id: key,
+          text: code
+            ? "The agent ended this turn early. Send a message to carry on."
+            : error.message,
+          ...((code ?? error.detail) !== undefined && { detail: code ?? error.detail }),
+        }));
       },
     },
     () => items,

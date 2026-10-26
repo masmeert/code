@@ -16,7 +16,7 @@ import {
   type TurnOptions,
 } from "@masscode/contracts";
 import * as Effect from "effect/Effect";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { coalesceLoads } from "../coalesce-loads.ts";
 import type { Devices } from "../devices.ts";
@@ -37,7 +37,7 @@ import type { ProviderRegistry } from "../providers/provider-registry.ts";
 import type { createSkillCatalog } from "../skills.ts";
 import { DATA_DIR } from "../storage/toml-file.ts";
 import type { SettingsStore } from "../storage/settings-store.ts";
-import type { ThreadStore } from "../storage/thread-store.ts";
+import type { ThreadHome, ThreadStore } from "../storage/thread-store.ts";
 import type { Services } from "../services.ts";
 import type { Terminals } from "../terminals.ts";
 import { deriveRequestUuid, isBusy, type ThreadEntry } from "./entry.ts";
@@ -101,6 +101,21 @@ function resolveAttachments(inputs: ReadonlyArray<AttachmentInput>) {
     catch: (error) =>
       new CommandError({ message: `Couldn't attach files: ${getErrorMessage(error)}` }),
   });
+}
+
+/** Why an agent can't start in the thread's folder, and what to do; null when the folder is there. */
+export async function describeMissingFolder(home: ThreadHome) {
+  if (
+    await stat(home.path).then(
+      (info) => info.isDirectory(),
+      () => false,
+    )
+  )
+    return null;
+
+  return home.isWorktree
+    ? `This thread's worktree folder no longer exists (${home.path}), so its agent can't start. Start a new thread to keep working on the project.`
+    : `This thread's folder no longer exists (${home.path}), so its agent can't start. Put the folder back, or start a new thread in another folder.`;
 }
 
 export type Agents = Effect.Success<ReturnType<typeof createAgents>>;
@@ -174,9 +189,11 @@ export const createAgents = Effect.fn("createAgents")(function* ({
       return;
     }
 
-    publish(event);
+    if (RuntimeEvent.guards["turn.completed"](event)) {
+      publish(entry.isStopRequested ? { ...event, stopped: true } : event);
+      endTurn(entry);
+    } else publish(event);
 
-    if (RuntimeEvent.guards["turn.completed"](event)) endTurn(entry);
     sendQueuedOnCue(entry, event);
   }
 
@@ -188,6 +205,11 @@ export const createAgents = Effect.fn("createAgents")(function* ({
     if (entry.session) return entry.session;
 
     const threadId = entry.info.id;
+    const missingFolder = yield* Effect.promise(() => describeMissingFolder(entry.home));
+
+    // Spawned in a missing folder, the harness fails with errors that don't say so.
+    if (missingFolder) return yield* new CommandError({ message: missingFolder });
+
     const generation = ++entry.generation;
     const settings = yield* settingsStore.get;
 
@@ -259,7 +281,13 @@ export const createAgents = Effect.fn("createAgents")(function* ({
     const isTurnCut = threads.get(threadId) === entry && isTurnActive(entry.info.status);
 
     if (isTurnCut) {
-      publish(RuntimeEvent.cases["turn.completed"].make({ threadId, durationMs: null }));
+      publish(
+        RuntimeEvent.cases["turn.completed"].make({
+          threadId,
+          durationMs: null,
+          stopped: entry.isStopRequested || undefined,
+        }),
+      );
       endTurn(entry);
 
       if (reason) publish(RuntimeEvent.cases.error.make({ threadId, message: reason }));

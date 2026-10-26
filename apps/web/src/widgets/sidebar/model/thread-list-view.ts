@@ -16,7 +16,7 @@ const ThreadListView = Schema.Struct({
 
 export type ThreadListView = typeof ThreadListView.Type;
 
-export const DEFAULT_THREAD_LIST_VIEW: ThreadListView = {
+const DEFAULT_THREAD_LIST_VIEW: ThreadListView = {
   status: "active",
   projects: [],
   provider: "all",
@@ -24,6 +24,21 @@ export const DEFAULT_THREAD_LIST_VIEW: ThreadListView = {
   groupBy: "state",
   sortBy: "updated",
 };
+
+/** Whether the view hides some threads; grouping and sorting only arrange them. */
+export function isViewFiltered(view: ThreadListView) {
+  return (
+    view.status !== DEFAULT_THREAD_LIST_VIEW.status ||
+    view.projects.length > 0 ||
+    view.provider !== DEFAULT_THREAD_LIST_VIEW.provider ||
+    view.activity !== DEFAULT_THREAD_LIST_VIEW.activity
+  );
+}
+
+/** The view showing every thread again, arranged the same way. */
+export function clearViewFilters(view: ThreadListView): ThreadListView {
+  return { ...DEFAULT_THREAD_LIST_VIEW, groupBy: view.groupBy, sortBy: view.sortBy };
+}
 
 const STORAGE_KEY = "masscode.sidebar.view";
 

@@ -59,13 +59,15 @@ export function loadOlder(hostId: string, threadId: string) {
 
   if (!transcript?.page?.hasMore || transcript.loadingOlder) return;
 
-  setTranscript(hostId, threadId, { ...transcript, loadingOlder: true });
-  send(
-    hostId,
-    ClientCommand.cases["thread.loadOlder"].make({
-      threadId,
-      before: transcript.page.before,
-      turnLimit: TURN_LIMIT,
-    }),
-  );
+  if (
+    send(
+      hostId,
+      ClientCommand.cases["thread.loadOlder"].make({
+        threadId,
+        before: transcript.page.before,
+        turnLimit: TURN_LIMIT,
+      }),
+    )
+  )
+    setTranscript(hostId, threadId, { ...transcript, loadingOlder: true });
 }
