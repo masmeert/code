@@ -117,7 +117,7 @@ export function registerBridge(findDaemon: () => Promise<{ port: number; token: 
       if (Date.now() - (announced.get(key) ?? 0) < 3000) return;
       announced.set(key, Date.now());
 
-      const notification = new Notification({ title, body });
+      const notification = new Notification({ title, body, sound: "chime" });
       shown.add(notification);
       notification.on("close", () => shown.delete(notification));
       notification.on("click", () => {

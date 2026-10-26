@@ -11,6 +11,8 @@ extraResources:
     to: renderer
   - from: ../daemon/dist/masscode-daemon
     to: masscode-daemon
+  - from: resources/chime.caf
+    to: chime.caf
 publish:
   provider: github
   owner: masmeert
