@@ -2,6 +2,20 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.18](https://github.com/masmeert/code/compare/v0.1.17...v0.1.18) (2026-10-26)
+
+
+### Added
+
+* **desktop:** play a chime with notifications ([7c816d7](https://github.com/masmeert/code/commit/7c816d783ebda48a080ff561e51c62dd98181420))
+* **settings:** regroup and trim settings pages ([401ea7b](https://github.com/masmeert/code/commit/401ea7be5ae0db5191029e940206e93874581a1a))
+* **ui:** polish pass with clearer feedback, undo and safer actions ([f7ce18a](https://github.com/masmeert/code/commit/f7ce18a3068cda0edfd93e90838c192f4b184d8e))
+
+
+### Fixed
+
+* **ui:** bump @masmeert/ui to 0.3.5 ([b220abe](https://github.com/masmeert/code/commit/b220abe569818292e5ba55773d6a3d944146920c))
+
 ## [0.1.17](https://github.com/masmeert/code/compare/v0.1.16...v0.1.17) (2026-10-25)
 
 
