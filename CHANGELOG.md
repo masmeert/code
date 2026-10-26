@@ -2,6 +2,13 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.20](https://github.com/masmeert/code/compare/v0.1.19...v0.1.20) (2026-10-26)
+
+
+### Fixed
+
+* **desktop:** name the chime file with its extension ([9ff7568](https://github.com/masmeert/code/commit/9ff756857ea49c4a1595fc5a2f15d65eafe31248))
+
 ## [0.1.19](https://github.com/masmeert/code/compare/v0.1.18...v0.1.19) (2026-10-26)
 
 
