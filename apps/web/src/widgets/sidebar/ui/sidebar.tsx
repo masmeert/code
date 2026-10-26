@@ -283,22 +283,18 @@ export function Sidebar(props: {
   }, []);
 
   // One hover pill glides between rows; rows glide too, so one leaving closes its gap smoothly.
+  // The pill follows where rows will land, not the glide, so it hides until they settle.
   // Each row carries the hairline above it, centred in the gap and hidden next to a filled
   // (hovered or current) row.
   function renderCards(infos: Array<ThreadInfo>) {
     return (
-      <SharedLayoutBg inset={0} pillClassName="rounded-xl" className="gap-1">
+      <SharedLayoutBg
+        inset={0}
+        pillClassName="rounded-xl"
+        className="gap-1 has-[>[data-gliding]]:[&>[data-slot=fluid-hover-highlight]]:opacity-0!"
+      >
         {infos.map((info) => (
-          <motion.div
-            key={info.id}
-            layout="position"
-            transition={shouldReduceMotion ? { duration: 0 } : spring.moderate}
-            className={cn(
-              "before:pointer-events-none before:absolute before:inset-x-3 before:-top-[2.5px] before:h-px before:bg-border/60",
-              "first:before:hidden has-[[aria-current=page]]:before:hidden data-fluid-hover-active:before:hidden",
-              "[:has([aria-current=page])+&]:before:hidden [[data-fluid-hover-active]+&]:before:hidden",
-            )}
-          >
+          <GlidingRow key={info.id} shouldReduceMotion={shouldReduceMotion}>
             <ThreadCard
               info={info}
               project={getThreadProject(info)}
@@ -311,7 +307,7 @@ export function Sidebar(props: {
               }
               onSelect={props.onSelect}
             />
-          </motion.div>
+          </GlidingRow>
         ))}
       </SharedLayoutBg>
     );
@@ -831,6 +827,38 @@ function MenuRow({ action, onDone }: { action: CardAction; onDone: () => void })
 }
 
 // Memoized: any thread's status or activity replaces `threads`, and only that thread's row should redraw.
+/** A sidebar row that glides to its new place, marked `data-gliding` until it lands. */
+function GlidingRow({
+  children,
+  className,
+  shouldReduceMotion,
+}: {
+  children: ReactNode;
+  /** Added by `SharedLayoutBg`. */
+  className?: string;
+  shouldReduceMotion: boolean | null;
+}) {
+  const row = useRef<HTMLDivElement>(null);
+
+  return (
+    <motion.div
+      ref={row}
+      layout="position"
+      transition={shouldReduceMotion ? { duration: 0 } : spring.moderate}
+      onLayoutAnimationStart={() => row.current?.setAttribute("data-gliding", "")}
+      onLayoutAnimationComplete={() => row.current?.removeAttribute("data-gliding")}
+      className={cn(
+        "before:pointer-events-none before:absolute before:inset-x-3 before:-top-[2.5px] before:h-px before:bg-border/60",
+        "first:before:hidden has-[[aria-current=page]]:before:hidden data-fluid-hover-active:before:hidden",
+        "[:has([aria-current=page])+&]:before:hidden [[data-fluid-hover-active]+&]:before:hidden",
+        className,
+      )}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 const ThreadCard = memo(function ThreadCard(props: {
   info: ThreadInfo;
   project: Project;

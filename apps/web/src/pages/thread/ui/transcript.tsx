@@ -229,7 +229,9 @@ export function TurnList({
   isBusy: boolean;
 }) {
   const turns = useMemo(() => toTurns(items), [items]);
-  const isLoaded = useTranscript(threadId)?.status === "live";
+  const transcript = useTranscript(threadId);
+  // A brand-new thread is live before its first event arrives; only a caught-up one is truly empty.
+  const isLoaded = transcript?.status === "live" && transcript.cursor > 0;
 
   // Older turns skip layout and paint while off screen. Switched on after the first
   // frame with turns in it (the transcript can arrive after the view opens), so every
