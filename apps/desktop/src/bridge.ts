@@ -3,7 +3,8 @@ import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification } from "
 import * as Schema from "effect/Schema";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, extname } from "node:path";
+import { execFile } from "node:child_process";
+import { basename, extname, join } from "node:path";
 import { automateBrowser } from "./browser-automation.ts";
 import {
   addHost,
@@ -117,7 +118,17 @@ export function registerBridge(findDaemon: () => Promise<{ port: number; token: 
       if (Date.now() - (announced.get(key) ?? 0) < 3000) return;
       announced.set(key, Date.now());
 
-      const notification = new Notification({ title, body, sound: "chime.caf" });
+      // macOS doesn't play a bundled sound for Electron's notifications, so the chime plays here.
+      const notification = new Notification({ title, body, silent: true });
+      execFile(
+        "afplay",
+        [
+          app.isPackaged
+            ? join(process.resourcesPath, "chime.caf")
+            : join(app.getAppPath(), "resources", "chime.caf"),
+        ],
+        () => {},
+      );
       shown.add(notification);
       notification.on("close", () => shown.delete(notification));
       notification.on("click", () => {
