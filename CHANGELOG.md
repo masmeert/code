@@ -2,6 +2,13 @@
 
 Release notes for the MassCode desktop app. release-please writes each section from the `feat`, `fix` and `perf` commits since the last release, so write commit subjects for the people using the app.
 
+## [0.1.21](https://github.com/masmeert/code/compare/v0.1.20...v0.1.21) (2026-10-30)
+
+
+### Fixed
+
+* **sound:** play sound ([949ba57](https://github.com/masmeert/code/commit/949ba57523ee1c46d70e372e303c345dac98090f))
+
 ## [0.1.20](https://github.com/masmeert/code/compare/v0.1.19...v0.1.20) (2026-10-26)
 
 
