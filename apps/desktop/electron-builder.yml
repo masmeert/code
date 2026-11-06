@@ -1,4 +1,5 @@
 appId: com.apkiosk.masscode
+copyright: Copyright © 2026 Brol Software
 directories:
   output: release
 files:
